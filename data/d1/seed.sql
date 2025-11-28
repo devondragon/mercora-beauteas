@@ -466,119 +466,124 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
 -- FAQ Page (Expanded)
 ('Frequently Asked Questions', 'faq', '
 <div class="max-w-4xl mx-auto">
-  <h1 class="text-4xl font-serif mb-8">Frequently Asked Questions</h1>
+  <h1 class="text-4xl font-serif mb-4 text-center">Questions & Guidance</h1>
+  <p class="text-xl text-center text-text-secondary mb-12 italic">Everything you need to know about your BeauTeas journey</p>
 
-  <h2 class="text-2xl font-serif mt-8 mb-6">Getting Started</h2>
+  <div class="bg-gradient-to-r from-primary-50 to-surface-light rounded-lg p-8 mb-12 text-center">
+    <p class="text-lg">We believe informed choices lead to beautiful results. Explore our most thoughtfully answered questions below.</p>
+  </div>
+
+  <h2 class="text-2xl font-serif mt-8 mb-6">Beginning Your Journey</h2>
   <div class="space-y-6">
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">How long until I see results?</h3>
-      <p>Most customers notice improved hydration and energy within the first week. Visible skin improvements typically appear after 3-4 weeks of daily use. For best results, we recommend drinking 1-2 cups per day consistently.</p>
+      <h3 class="text-xl font-serif mb-3">When will I notice a transformation?</h3>
+      <p class="text-text-secondary">Most devotees observe enhanced hydration and vitality within the first week. Visible skin refinement typically emerges after three to four weeks of consistent ritual. For optimal results, we recommend incorporating one to two cups into your daily practice.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Which blend should I start with?</h3>
-      <p>We recommend starting with our <a href="/product/clearly-calendula-sample-pack" class="text-primary-600 hover:text-primary-700 underline">Sample Pack</a>, which includes all three blends. This lets you experience the full day of skincare benefits and discover which flavors you love most.</p>
+      <h3 class="text-xl font-serif mb-3">Which blend should I begin with?</h3>
+      <p class="text-text-secondary">We suggest commencing with our <a href="/product/clearly-calendula-sample-pack" class="text-primary-600 hover:text-primary-700 underline">Curated Sample Collection</a>, which presents all three blends. This allows you to experience the complete arc of daily skincare benefits and discover which infusions resonate most deeply with you.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">How many cups should I drink per day?</h3>
-      <p>We recommend 1-2 cups daily for optimal skin benefits. You can drink one blend or mix and match throughout the day—Morning with breakfast, Afternoon for a midday boost, and Evening before bed. Consistency matters more than quantity.</p>
+      <h3 class="text-xl font-serif mb-3">How many cups comprise an ideal ritual?</h3>
+      <p class="text-text-secondary">We recommend one to two cups daily for optimal skin benefits. You may enjoy a single blend or curate your own sequence throughout the day—Morning to awaken, Afternoon to restore, and Evening to prepare for restorative sleep. Consistency proves more valuable than quantity.</p>
     </div>
   </div>
 
   <h2 class="text-2xl font-serif mt-10 mb-6">Skin Types & Concerns</h2>
   <div class="space-y-6">
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Will BeauTeas work for my skin type?</h3>
-      <p>Our teas are formulated to benefit all skin types. The calendula and other botanical ingredients work from within, targeting inflammation, bacteria, and collagen production—processes that affect everyone''s skin. Whether you have oily, dry, combination, or sensitive skin, you can benefit from our blends.</p>
+      <h3 class="text-xl font-serif mb-3">Will BeauTeas complement my skin type?</h3>
+      <p class="text-text-secondary">Our blends are formulated to benefit all skin types. The calendula and botanical ingredients work from within, addressing inflammation, bacterial concerns, and collagen synthesis—processes universal to all skin. Whether you experience oily, dry, combination, or sensitive skin, our blends offer meaningful support.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Can BeauTeas help with hormonal acne?</h3>
-      <p>Yes! Spearmint, featured in all our blends, has been shown in studies to help regulate androgen levels that contribute to hormonal breakouts. Many customers with hormonal acne find our teas helpful as part of their routine. For persistent hormonal acne, we also recommend consulting a dermatologist.</p>
+      <h3 class="text-xl font-serif mb-3">Can BeauTeas address hormonal concerns?</h3>
+      <p class="text-text-secondary">Indeed. Spearmint, featured thoughtfully in all our blends, has demonstrated in clinical studies the ability to help regulate androgen levels that contribute to hormonal breakouts. Many devotees with hormonal skin concerns find our teas an invaluable component of their regimen. For persistent concerns, we recommend complementing your ritual with professional dermatological guidance.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">I have sensitive skin. Are your teas safe for me?</h3>
-      <p>Our teas are gentle and work from the inside out, so they''re suitable for sensitive skin. Unlike topical products that can irritate, the beneficial compounds are delivered through your bloodstream. However, if you have known allergies to any of our ingredients, please consult your healthcare provider first.</p>
+      <h3 class="text-xl font-serif mb-3">I have sensitive skin. Are your teas suitable?</h3>
+      <p class="text-text-secondary">Our blends are inherently gentle, working from within rather than upon the surface. Unlike topical treatments that may provoke irritation, the beneficial compounds are delivered through your system with extraordinary gentleness. Should you have known sensitivities to any botanical ingredients, we recommend consulting your healthcare provider beforehand.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Can men drink BeauTeas too?</h3>
-      <p>Absolutely! Healthy skin isn''t gendered, and our teas work for everyone. The anti-inflammatory, antibacterial, and antioxidant benefits of calendula and our other ingredients support skin health regardless of gender. Many of our customers are men who appreciate clear, healthy skin.</p>
-    </div>
-  </div>
-
-  <h2 class="text-2xl font-serif mt-10 mb-6">Ingredients & Safety</h2>
-  <div class="space-y-6">
-    <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Are BeauTeas really organic?</h3>
-      <p>Yes! All BeauTeas products are 100% USDA Certified Organic. Every ingredient—from our tea leaves to our calendula petals—is certified organic and sourced from trusted suppliers who share our commitment to quality.</p>
-    </div>
-
-    <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Do your teas contain common allergens?</h3>
-      <p>Our teas are naturally free from gluten, dairy, nuts, and soy. They contain no artificial flavors, colors, or preservatives. If you have specific plant allergies, please check our <a href="/ingredients" class="text-primary-600 hover:text-primary-700 underline">ingredients page</a> for a complete list of botanicals in each blend.</p>
-    </div>
-
-    <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Can I drink BeauTeas if I''m pregnant or nursing?</h3>
-      <p>While our teas are made with gentle, organic ingredients, we recommend consulting with your healthcare provider before consuming any herbal products during pregnancy or while nursing. Some herbs may not be suitable during pregnancy.</p>
-    </div>
-
-    <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Do your teas contain caffeine?</h3>
-      <p>Our Morning (black tea) and Afternoon (green tea) blends contain caffeine. Our Evening blend is completely caffeine-free, making it perfect for your nighttime routine. If you''re caffeine-sensitive, you can enjoy the Evening blend anytime.</p>
-    </div>
-
-    <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Can I drink BeauTeas with medications?</h3>
-      <p>If you take prescription medications, especially blood thinners or hormone-related medications, please consult your healthcare provider before adding any herbal tea to your routine. While our teas are gentle, some herbs can interact with medications.</p>
+      <h3 class="text-xl font-serif mb-3">Do gentlemen enjoy BeauTeas as well?</h3>
+      <p class="text-text-secondary">Absolutely. Radiant skin knows no gender, and our blends serve everyone equally. The anti-inflammatory, antibacterial, and antioxidant properties of calendula and our carefully selected botanicals support skin health universally. A significant portion of our devoted clientele are men who appreciate clear, healthy, confident skin.</p>
     </div>
   </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-6">Product & Packaging</h2>
+  <h2 class="text-2xl font-serif mt-10 mb-6">Ingredients & Wellness</h2>
   <div class="space-y-6">
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Are the tea bags compostable?</h3>
-      <p>Yes! Our tea bags are made from sugarcane fiber, not plastic. They''re fully compostable and break down naturally, reducing environmental impact. The boxes are also recyclable.</p>
+      <h3 class="text-xl font-serif mb-3">Is BeauTeas truly organic?</h3>
+      <p class="text-text-secondary">Without exception. Every BeauTeas product bears 100% USDA Certified Organic certification. Each ingredient—from our premium tea leaves to our golden calendula petals—is certified organic and sourced from artisan suppliers who share our uncompromising commitment to purity and quality.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">How should I store my tea?</h3>
-      <p>Store your BeauTeas in a cool, dry place away from direct sunlight. The box is designed to protect freshness, but you can also transfer bags to an airtight container if preferred. Use within 12 months of purchase for best flavor and potency.</p>
+      <h3 class="text-xl font-serif mb-3">Are common allergens present?</h3>
+      <p class="text-text-secondary">Our blends are naturally free from gluten, dairy, nuts, and soy. They contain no artificial flavors, colors, or preservatives—only pure botanical goodness. Should you have specific plant sensitivities, please consult our <a href="/ingredients" class="text-primary-600 hover:text-primary-700 underline">ingredients page</a> for a comprehensive list of botanicals in each blend.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Do you offer loose leaf tea?</h3>
-      <p>Currently, we only offer our teas in convenient tea bags. This ensures consistent dosing of the beneficial herbs for optimal skincare results, and makes brewing quick and easy. We''re exploring loose leaf options for the future.</p>
+      <h3 class="text-xl font-serif mb-3">May I enjoy BeauTeas during pregnancy or nursing?</h3>
+      <p class="text-text-secondary">While our blends feature gentle, organic ingredients, we recommend consulting with your healthcare provider before incorporating any herbal products during pregnancy or nursing. Certain botanicals may require professional guidance during these precious times.</p>
+    </div>
+
+    <div class="border-b border-border pb-6">
+      <h3 class="text-xl font-serif mb-3">Which blends contain caffeine?</h3>
+      <p class="text-text-secondary">Our Morning (black tea) and Afternoon (green tea) blends contain natural caffeine for gentle invigoration. Our Evening blend is entirely caffeine-free, designed for your nighttime sanctuary. Those sensitive to caffeine may enjoy the Evening blend at any hour.</p>
+    </div>
+
+    <div class="border-b border-border pb-6">
+      <h3 class="text-xl font-serif mb-3">May I enjoy BeauTeas alongside medications?</h3>
+      <p class="text-text-secondary">If you take prescription medications, particularly blood thinners or hormone-related treatments, please consult your healthcare provider before incorporating herbal teas into your regimen. While our blends are gentle, certain botanicals may interact with medications.</p>
     </div>
   </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-6">Orders & Subscriptions</h2>
+  <h2 class="text-2xl font-serif mt-10 mb-6">Presentation & Care</h2>
   <div class="space-y-6">
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Do you offer subscriptions?</h3>
-      <p>Yes! Subscribe and save 10% on every order. Choose monthly or bi-monthly delivery, and you can pause, skip, or cancel anytime. Subscribers never run out of their favorite teas. <a href="/subscriptions" class="text-primary-600 hover:text-primary-700 underline">Learn more about subscriptions</a>.</p>
+      <h3 class="text-xl font-serif mb-3">Are your sachets environmentally conscious?</h3>
+      <p class="text-text-secondary">Indeed. Our sachets are crafted from sugarcane fiber, entirely free of plastic. They are fully compostable and return naturally to the earth, reflecting our commitment to sustainability. Our packaging is also recyclable.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">What is your return policy?</h3>
-      <p>We want you to love your BeauTeas! If you''re not satisfied with your purchase, contact us within 30 days for a full refund or exchange. We stand behind our products 100%. <a href="/shipping-returns" class="text-primary-600 hover:text-primary-700 underline">View full policy</a>.</p>
+      <h3 class="text-xl font-serif mb-3">How should I preserve my collection?</h3>
+      <p class="text-text-secondary">Store your BeauTeas in a cool, dry sanctuary away from direct sunlight. Our packaging is designed to protect freshness and potency, though you may transfer sachets to an airtight vessel if preferred. For optimal flavor and efficacy, enjoy within twelve months of acquisition.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Do you ship internationally?</h3>
-      <p>Yes! We ship to Canada, UK, and Australia. International shipping rates are calculated at checkout. Please note that international orders may be subject to customs duties and taxes.</p>
+      <h3 class="text-xl font-serif mb-3">Do you offer loose leaf preparations?</h3>
+      <p class="text-text-secondary">Currently, we present our blends exclusively in our signature sachets. This ensures precise dosing of beneficial botanicals for optimal skincare results, while maintaining the elegance and ease of preparation. We are thoughtfully exploring loose leaf offerings for the future.</p>
+    </div>
+  </div>
+
+  <h2 class="text-2xl font-serif mt-10 mb-6">Membership & Service</h2>
+  <div class="space-y-6">
+    <div class="border-b border-border pb-6">
+      <h3 class="text-xl font-serif mb-3">Do you offer membership privileges?</h3>
+      <p class="text-text-secondary">Yes. Our membership program extends a 10% courtesy on every order, with complimentary delivery on all shipments. Select monthly or bi-monthly delivery, with complete flexibility to pause, adjust, or conclude at any time. Members never find themselves without their essential blends. <a href="/subscriptions" class="text-primary-600 hover:text-primary-700 underline">Discover membership benefits</a>.</p>
+    </div>
+
+    <div class="border-b border-border pb-6">
+      <h3 class="text-xl font-serif mb-3">What is your satisfaction commitment?</h3>
+      <p class="text-text-secondary">We stand behind every sachet we create. Should BeauTeas not meet your expectations for any reason, contact us within 30 days for a complete refund or exchange. Your satisfaction is our highest priority. <a href="/shipping-returns" class="text-primary-600 hover:text-primary-700 underline">View our complete policy</a>.</p>
+    </div>
+
+    <div class="border-b border-border pb-6">
+      <h3 class="text-xl font-serif mb-3">Do you deliver internationally?</h3>
+      <p class="text-text-secondary">We are delighted to ship to Canada, the United Kingdom, and Australia. International delivery rates are calculated at checkout. Please note that international orders may be subject to local customs duties and taxes.</p>
     </div>
 
     <div class="pb-6">
-      <h3 class="text-xl font-serif mb-3">How can I contact you?</h3>
-      <p>We''d love to hear from you! Email us at hello@beauteas.com or reach out through our social media channels. We typically respond within 24 hours. <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">Visit our contact page</a>.</p>
+      <h3 class="text-xl font-serif mb-3">How may I reach you?</h3>
+      <p class="text-text-secondary">We welcome your correspondence. Reach us at hello@beauteas.com or connect through our social channels. Our client care team responds within 24 hours. <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">Visit our contact page</a>.</p>
     </div>
   </div>
 </div>
-', 'Find answers to common questions about BeauTeas organic skincare teas, including brewing, ingredients, skin types, allergies, and more.', 'FAQ - Frequently Asked Questions | BeauTeas', 'Get answers to frequently asked questions about BeauTeas organic skincare teas. Learn about ingredients, skin types, allergies, subscriptions, and more.', 'faq, questions, answers, help, support, organic tea, skincare, allergies, skin type', 'published', strftime(''%s'', ''now''), 'default', 4, 1, 'FAQ', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Find answers to your questions about BeauTeas organic skincare teas, including brewing rituals, ingredients, skin types, and our commitment to quality.', 'Questions & Guidance | BeauTeas', 'Explore thoughtfully answered questions about BeauTeas organic skincare teas. Learn about our ingredients, brewing rituals, skin benefits, and membership privileges.', 'faq, questions, guidance, help, organic tea, skincare, ingredients, skin type', 'published', strftime(''%s'', ''now''), 'default', 4, 1, 'FAQ', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
 -- Shipping & Returns Page - Elevated Luxury Tone
 ('Shipping & Delivery', 'shipping-returns', '
@@ -661,39 +666,50 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
 -- Contact Us Page - Elevated Luxury Tone
 ('Contact Us', 'contact', '
 <div class="max-w-4xl mx-auto">
-  <h1 class="text-4xl font-serif mb-4 text-center">We''d Love to Hear From You</h1>
-  <p class="text-xl text-center text-text-secondary mb-12 italic">Questions, reflections, or simply a desire to connect—we''re here</p>
+  <h1 class="text-4xl font-serif mb-4 text-center">Let Us Hear From You</h1>
+  <p class="text-xl text-center text-text-secondary mb-12 italic">Questions, reflections, or simply a desire to connect—we welcome your correspondence</p>
 
-  <div class="grid md:grid-cols-2 gap-8 mb-10">
-    <div class="bg-surface-light rounded-lg p-6">
-      <h2 class="text-xl font-serif mb-4">📧 Email Us</h2>
-      <p class="mb-2"><a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700">hello@beauteas.com</a></p>
-      <p class="text-text-secondary text-sm">We typically respond within 24 hours</p>
+  <div class="bg-gradient-to-r from-primary-50 to-surface-light rounded-lg p-8 mb-12 text-center">
+    <p class="text-lg">Every message we receive is read personally by our team. We believe in authentic connection—the same philosophy that inspires our blends.</p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-8 mb-12">
+    <div class="border border-border rounded-lg p-8 text-center">
+      <h2 class="text-xl font-serif mb-4">Correspondence</h2>
+      <p class="mb-3"><a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700 text-lg">hello@beauteas.com</a></p>
+      <p class="text-text-secondary text-sm">Our client care team responds within 24 hours</p>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-6">
-      <h2 class="text-xl font-serif mb-4">📱 Follow Us</h2>
-      <p class="mb-2">Connect with us on social media for tea tips, skincare advice, and community inspiration.</p>
-      <div class="flex gap-4 mt-4">
-        <a href="https://instagram.com/beauteas" class="text-primary-600 hover:text-primary-700">Instagram</a>
-        <a href="https://facebook.com/beauteas" class="text-primary-600 hover:text-primary-700">Facebook</a>
-        <a href="https://pinterest.com/beauteas" class="text-primary-600 hover:text-primary-700">Pinterest</a>
+    <div class="border border-border rounded-lg p-8 text-center">
+      <h2 class="text-xl font-serif mb-4">Join Our World</h2>
+      <p class="mb-4 text-text-secondary">Connect with our community for ritual inspiration, skincare wisdom, and moments of beauty.</p>
+      <div class="flex justify-center gap-6">
+        <a href="https://instagram.com/beauteas" class="text-primary-600 hover:text-primary-700 font-medium">Instagram</a>
+        <a href="https://facebook.com/beauteas" class="text-primary-600 hover:text-primary-700 font-medium">Facebook</a>
+        <a href="https://pinterest.com/beauteas" class="text-primary-600 hover:text-primary-700 font-medium">Pinterest</a>
       </div>
     </div>
   </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-4">Common Questions</h2>
-  <p class="mb-4">Before reaching out, you might find your answer in our <a href="/faq" class="text-primary-600 hover:text-primary-700 underline">FAQ page</a>. We''ve compiled answers to the most common questions about our teas, shipping, and more.</p>
+  <div class="grid md:grid-cols-2 gap-8 mb-12">
+    <div class="bg-surface-light rounded-lg p-8">
+      <h2 class="text-xl font-serif mb-4">Questions & Guidance</h2>
+      <p class="text-text-secondary">Many inquiries find their answers in our thoughtfully curated <a href="/faq" class="text-primary-600 hover:text-primary-700 underline">Questions & Guidance</a> section, where we address the topics most important to our community.</p>
+    </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-4">Business Inquiries</h2>
-  <p class="mb-4">Interested in wholesale partnerships, press features, or collaborations? Please email <a href="mailto:partnerships@beauteas.com" class="text-primary-600 hover:text-primary-700">partnerships@beauteas.com</a> with details about your inquiry.</p>
+    <div class="bg-surface-light rounded-lg p-8">
+      <h2 class="text-xl font-serif mb-4">Partnership Inquiries</h2>
+      <p class="text-text-secondary">For wholesale opportunities, press collaborations, or brand partnerships, please direct your inquiry to <a href="mailto:partnerships@beauteas.com" class="text-primary-600 hover:text-primary-700">partnerships@beauteas.com</a>.</p>
+    </div>
+  </div>
 
-  <div class="bg-primary-100 rounded-lg p-6 mt-10">
-    <h3 class="text-xl font-serif mb-3">Join Our Community</h3>
-    <p>Sign up for our newsletter to receive exclusive offers, skincare tips, and be the first to know about new products. We promise not to spam—just good tea vibes!</p>
+  <div class="bg-primary-100 rounded-lg p-10 text-center">
+    <h3 class="text-2xl font-serif mb-4">Become an Insider</h3>
+    <p class="text-lg mb-2">Join our inner circle for exclusive offerings, botanical wisdom, and early access to new creations.</p>
+    <p class="text-text-secondary text-sm">We honor your inbox—only meaningful correspondence, never noise.</p>
   </div>
 </div>
-', 'Contact BeauTeas for questions about our organic skincare teas, orders, or partnerships. We''d love to hear from you!', 'Contact Us - BeauTeas', 'Get in touch with BeauTeas. Email us at hello@beauteas.com for questions about organic skincare teas, orders, or partnerships.', 'contact, email, support, customer service, help', 'published', strftime(''%s'', ''now''), 'default', 6, 1, 'Contact', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Connect with BeauTeas for questions about our organic skincare teas, orders, or partnership opportunities. We welcome your correspondence.', 'Contact Us | BeauTeas', 'Reach out to BeauTeas. Email hello@beauteas.com for questions about organic skincare teas, orders, or partnership opportunities.', 'contact, correspondence, client care, partnerships, connect', 'published', strftime(''%s'', ''now''), 'default', 6, 1, 'Contact', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
 -- Privacy Policy Page
 ('Privacy Policy', 'privacy-policy', '
@@ -854,101 +870,126 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
 </div>
 ', 'BeauTeas Terms of Service - Review the terms and conditions for using our website and purchasing products.', 'Terms of Service | BeauTeas', 'BeauTeas terms of service and conditions. Read about ordering, shipping, returns, health disclaimers, and more.', 'terms, service, conditions, legal, agreement, policy', 'published', strftime(''%s'', ''now''), 'legal', 8, 1, 'Terms', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
--- Subscription Details Page
-('Tea Subscriptions', 'subscriptions', '
+-- Subscription Details Page - Elevated Luxury Tone
+('The Membership', 'subscriptions', '
 <div class="max-w-4xl mx-auto">
-  <h1 class="text-4xl font-serif mb-8">Subscribe & Save</h1>
+  <h1 class="text-4xl font-serif mb-4 text-center">The BeauTeas Membership</h1>
+  <p class="text-xl text-center text-text-secondary mb-12 italic">An invitation to uninterrupted radiance</p>
 
-  <p class="text-lg mb-8">Never run out of your favorite skincare teas! Subscribe and save 10% on every order, plus enjoy free shipping on all subscription deliveries.</p>
-
-  <div class="bg-primary-100 rounded-lg p-8 mb-10">
-    <h2 class="text-2xl font-serif mb-4">Subscription Benefits</h2>
-    <ul class="space-y-3">
-      <li class="flex items-start">
-        <span class="text-primary-600 mr-3">✓</span>
-        <span><strong>Save 10%</strong> on every order, automatically applied</span>
-      </li>
-      <li class="flex items-start">
-        <span class="text-primary-600 mr-3">✓</span>
-        <span><strong>Free shipping</strong> on all subscription deliveries</span>
-      </li>
-      <li class="flex items-start">
-        <span class="text-primary-600 mr-3">✓</span>
-        <span><strong>Flexible scheduling</strong> — choose monthly or bi-monthly delivery</span>
-      </li>
-      <li class="flex items-start">
-        <span class="text-primary-600 mr-3">✓</span>
-        <span><strong>Easy management</strong> — skip, pause, or cancel anytime</span>
-      </li>
-      <li class="flex items-start">
-        <span class="text-primary-600 mr-3">✓</span>
-        <span><strong>Early access</strong> to new products and exclusive offers</span>
-      </li>
-    </ul>
+  <div class="bg-gradient-to-r from-primary-50 to-surface-light rounded-lg p-10 mb-12 text-center">
+    <p class="text-lg leading-relaxed">True transformation requires consistency. Our membership ensures your ritual remains unbroken, with your preferred blends arriving precisely when you need them—accompanied by exclusive privileges reserved for our most devoted community.</p>
   </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-6">How It Works</h2>
-
-  <div class="grid md:grid-cols-3 gap-6 mb-10">
-    <div class="text-center">
-      <div class="w-16 h-16 bg-primary-200 rounded-full flex items-center justify-center mx-auto mb-4">
-        <span class="text-2xl">1</span>
+  <div class="bg-primary-100 rounded-lg p-10 mb-12">
+    <h2 class="text-2xl font-serif mb-6 text-center">Membership Privileges</h2>
+    <div class="grid md:grid-cols-2 gap-6">
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Preferred Pricing</p>
+          <p class="text-text-secondary text-sm">10% courtesy applied to every order, automatically</p>
+        </div>
       </div>
-      <h3 class="font-serif text-xl mb-2">Choose Your Teas</h3>
-      <p class="text-text-secondary">Select your favorite blends or try the Sample Pack to experience all three</p>
-    </div>
-    <div class="text-center">
-      <div class="w-16 h-16 bg-primary-200 rounded-full flex items-center justify-center mx-auto mb-4">
-        <span class="text-2xl">2</span>
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Complimentary Delivery</p>
+          <p class="text-text-secondary text-sm">Every shipment arrives with our compliments</p>
+        </div>
       </div>
-      <h3 class="font-serif text-xl mb-2">Set Your Schedule</h3>
-      <p class="text-text-secondary">Pick monthly or bi-monthly delivery — we''ll remind you before each shipment</p>
-    </div>
-    <div class="text-center">
-      <div class="w-16 h-16 bg-primary-200 rounded-full flex items-center justify-center mx-auto mb-4">
-        <span class="text-2xl">3</span>
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Complete Flexibility</p>
+          <p class="text-text-secondary text-sm">Monthly or bi-monthly cadence, adjust anytime</p>
+        </div>
       </div>
-      <h3 class="font-serif text-xl mb-2">Enjoy & Save</h3>
-      <p class="text-text-secondary">Your tea arrives automatically with 10% off and free shipping every time</p>
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Effortless Management</p>
+          <p class="text-text-secondary text-sm">Pause, modify, or conclude at your discretion</p>
+        </div>
+      </div>
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Priority Access</p>
+          <p class="text-text-secondary text-sm">First to experience new creations and limited editions</p>
+        </div>
+      </div>
+      <div class="flex items-start">
+        <span class="text-primary-700 mr-4 text-lg">—</span>
+        <div>
+          <p class="font-medium">Exclusive Offerings</p>
+          <p class="text-text-secondary text-sm">Member-only promotions and seasonal surprises</p>
+        </div>
+      </div>
     </div>
   </div>
 
-  <h2 class="text-2xl font-serif mt-10 mb-6">Subscription FAQ</h2>
+  <h2 class="text-2xl font-serif text-center mt-12 mb-8">How Membership Works</h2>
+
+  <div class="grid md:grid-cols-3 gap-8 mb-12">
+    <div class="text-center">
+      <div class="w-16 h-16 border-2 border-primary-300 rounded-full flex items-center justify-center mx-auto mb-4">
+        <span class="text-xl font-serif text-primary-700">I</span>
+      </div>
+      <h3 class="font-serif text-xl mb-2">Curate Your Collection</h3>
+      <p class="text-text-secondary">Select your preferred blends, or begin with our Curated Sample Collection to discover your ritual</p>
+    </div>
+    <div class="text-center">
+      <div class="w-16 h-16 border-2 border-primary-300 rounded-full flex items-center justify-center mx-auto mb-4">
+        <span class="text-xl font-serif text-primary-700">II</span>
+      </div>
+      <h3 class="font-serif text-xl mb-2">Choose Your Cadence</h3>
+      <p class="text-text-secondary">Monthly or bi-monthly delivery—we''ll send a gentle reminder before each shipment</p>
+    </div>
+    <div class="text-center">
+      <div class="w-16 h-16 border-2 border-primary-300 rounded-full flex items-center justify-center mx-auto mb-4">
+        <span class="text-xl font-serif text-primary-700">III</span>
+      </div>
+      <h3 class="font-serif text-xl mb-2">Receive & Radiate</h3>
+      <p class="text-text-secondary">Your blends arrive thoughtfully packaged, with preferred pricing and complimentary delivery</p>
+    </div>
+  </div>
+
+  <h2 class="text-2xl font-serif mt-12 mb-6">Common Inquiries</h2>
 
   <div class="space-y-6">
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">Can I change my products?</h3>
-      <p>Yes! Log into your account to swap products, adjust quantities, or try different blends anytime before your next shipment.</p>
+      <h3 class="text-xl font-serif mb-3">May I adjust my selections?</h3>
+      <p class="text-text-secondary">Certainly. Access your account to modify blends, adjust quantities, or explore different infusions anytime before your next shipment. Your membership evolves with your preferences.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">What if I need to skip a month?</h3>
-      <p>No problem! Skip any delivery through your account or by contacting us. You can skip as many months as you like without canceling.</p>
+      <h3 class="text-xl font-serif mb-3">What if I need to pause my membership?</h3>
+      <p class="text-text-secondary">Life ebbs and flows, and we understand. Pause any delivery through your account or by reaching out to our team. Skip as many months as you wish without affecting your membership status.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">How do I cancel my subscription?</h3>
-      <p>You can cancel anytime—no commitments or fees. Log into your account or email us at hello@beauteas.com. Cancellations take effect before your next billing date.</p>
+      <h3 class="text-xl font-serif mb-3">Is there a commitment period?</h3>
+      <p class="text-text-secondary">None whatsoever. Your membership carries no obligations or minimum terms. You may conclude at any time through your account or via hello@beauteas.com. Changes take effect before your next billing cycle.</p>
     </div>
 
     <div class="border-b border-border pb-6">
-      <h3 class="text-xl font-serif mb-3">When will I be charged?</h3>
-      <p>You''ll be charged when you first subscribe, then on the same date each month (or every other month). We''ll send a reminder email 3 days before each charge.</p>
+      <h3 class="text-xl font-serif mb-3">When does billing occur?</h3>
+      <p class="text-text-secondary">Your first billing occurs upon joining. Subsequent charges arrive on the same date each month (or every other month, per your preference). We send a courteous reminder three days prior to each charge.</p>
     </div>
 
     <div class="pb-6">
-      <h3 class="text-xl font-serif mb-3">Can I give a subscription as a gift?</h3>
-      <p>Yes! Gift subscriptions are available for 3, 6, or 12-month terms. The recipient can choose their preferred blends and delivery schedule. <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">Contact us</a> to set up a gift subscription.</p>
+      <h3 class="text-xl font-serif mb-3">Can membership be gifted?</h3>
+      <p class="text-text-secondary">A thoughtful gesture indeed. Gift memberships are available in three, six, or twelve-month terms. The recipient chooses their preferred blends and cadence. <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">Connect with us</a> to arrange a gift membership.</p>
     </div>
   </div>
 
-  <div class="bg-surface-light rounded-lg p-8 mt-10 text-center">
-    <h3 class="text-2xl font-serif mb-4">Ready to Subscribe?</h3>
-    <p class="mb-6">Start with our best-selling Sample Pack and experience all three blends.</p>
-    <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium">Subscribe to Sample Pack</a>
+  <div class="bg-surface-light rounded-lg p-10 mt-12 text-center">
+    <h3 class="text-2xl font-serif mb-4">Begin Your Membership</h3>
+    <p class="text-text-secondary mb-6">Commence with our Curated Sample Collection and discover which blends resonate with your ritual.</p>
+    <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium">Join the Membership</a>
   </div>
 </div>
-', 'Subscribe to BeauTeas and save 10% on organic skincare teas. Free shipping, flexible scheduling, cancel anytime.', 'Tea Subscriptions - Save 10% | BeauTeas', 'Subscribe to BeauTeas organic skincare teas and save 10% on every order. Free shipping, flexible delivery, easy to manage. Cancel anytime.', 'subscription, subscribe, save, discount, delivery, monthly, organic tea', 'published', strftime(''%s'', ''now''), 'default', 9, 0, 'Subscriptions', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Join the BeauTeas Membership for preferred pricing, complimentary delivery, and priority access to new blends. Flexible, no commitment.', 'The Membership | BeauTeas', 'Join the BeauTeas Membership. Enjoy 10% preferred pricing, complimentary delivery, and priority access to new organic skincare tea blends. No commitment, complete flexibility.', 'membership, subscription, preferred pricing, complimentary delivery, exclusive access, organic tea', 'published', strftime(''%s'', ''now''), 'default', 9, 0, 'Subscriptions', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
 -- Skin Concern Guide Page (SEO-focused)
 ('Skin Concern Guide', 'skin-concerns', '
@@ -1175,93 +1216,108 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
 </div>
 ', 'Learn about the organic ingredients in BeauTeas skincare teas: calendula, spearmint, chamomile, rooibos, and more.', 'Our Ingredients - Organic Tea Ingredients | BeauTeas', 'Discover the organic ingredients in BeauTeas skincare teas. Learn about calendula, spearmint, chamomile, rooibos, and other botanicals that support healthy skin.', 'ingredients, organic, calendula, spearmint, chamomile, rooibos, green tea, black tea, skincare', 'published', strftime(''%s'', ''now''), 'default', 11, 0, 'Ingredients', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
--- Testimonials Page
-('Customer Stories', 'testimonials', '
+-- Testimonials Page - Elevated Luxury Tone
+('Transformations', 'testimonials', '
 <div class="max-w-4xl mx-auto">
-  <h1 class="text-4xl font-serif mb-8">Customer Stories</h1>
+  <h1 class="text-4xl font-serif mb-4 text-center">Voices of Radiance</h1>
+  <p class="text-xl text-center text-text-secondary mb-12 italic">The stories that inspire us—shared by those who''ve discovered their glow</p>
 
-  <p class="text-lg mb-10">Real results from real people. Here''s what our customers are saying about their BeauTeas journey.</p>
+  <div class="bg-gradient-to-r from-primary-50 to-surface-light rounded-lg p-8 mb-12 text-center">
+    <p class="text-lg">Every transformation begins with a single cup. These are the journeys of our community—authentic experiences from those who''ve made BeauTeas part of their daily ritual.</p>
+  </div>
 
   <div class="space-y-8">
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"I''ve struggled with hormonal acne for years. After just one month of drinking BeauTeas daily, my skin has never looked better. The Evening blend has become my nightly ritual—I look forward to it every day."</p>
-      <p class="font-medium">— Sarah M., 28</p>
-      <p class="text-sm text-text-secondary">Drinks: Evening Blend</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"For years, hormonal concerns affected not just my skin, but my confidence. After one month of incorporating BeauTeas into my daily ritual, the transformation has been remarkable. The Evening blend has become sacred to me—a moment of peace I anticipate each night."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— Sarah M.</p>
+        <p class="text-sm text-text-secondary">Evening Ritual Devotee</p>
+      </div>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"I was skeptical that tea could help my skin, but I''m a believer now! The Morning blend replaced my coffee and I have more stable energy. My coworkers have commented on how much clearer my skin looks."</p>
-      <p class="font-medium">— Jennifer L., 34</p>
-      <p class="text-sm text-text-secondary">Drinks: Morning Blend</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"I approached BeauTeas with skepticism—could tea truly influence skin clarity? I am now a devoted believer. The Morning blend has elegantly replaced my coffee, offering sustained energy without the crash. Colleagues have remarked on the clarity of my complexion."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— Jennifer L.</p>
+        <p class="text-sm text-text-secondary">Morning Ritual Devotee</p>
+      </div>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"The Sample Pack was the perfect way to try all three. I love having a tea for every part of my day. My skin is less oily and I haven''t had a major breakout in weeks. Plus, they taste amazing!"</p>
-      <p class="font-medium">— Michael T., 26</p>
-      <p class="text-sm text-text-secondary">Drinks: Sample Pack (all three)</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"The Curated Sample Collection proved to be the ideal introduction. I now cherish having a distinct blend for each chapter of my day. The refinement in my skin texture has been notable—and the flavors themselves are genuinely exquisite."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— Michael T.</p>
+        <p class="text-sm text-text-secondary">Complete Collection Devotee</p>
+      </div>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"As someone with sensitive skin, I was nervous to try something new. But since these work from the inside, there''s no irritation like with topical products. My redness has definitely reduced."</p>
-      <p class="font-medium">— Amanda R., 41</p>
-      <p class="text-sm text-text-secondary">Drinks: Evening Blend</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"As someone with particularly reactive skin, I approached new products with caution. But BeauTeas works from within—there''s no surface irritation, only gentle transformation. The visible reduction in redness has been genuinely remarkable."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— Amanda R.</p>
+        <p class="text-sm text-text-secondary">Evening Ritual Devotee</p>
+      </div>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"I bought these for the skincare benefits, but I stayed for the taste. The Afternoon blend is now my favorite part of my workday. And yes, my skin does look better—my partner noticed before I did!"</p>
-      <p class="font-medium">— David K., 32</p>
-      <p class="text-sm text-text-secondary">Drinks: Afternoon Blend</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"I was drawn initially by the promise of clearer skin, but I remain devoted for the experience itself. The Afternoon blend has become the most anticipated moment of my workday—a pause that feels like a gift. That my skin has visibly improved is an elegant bonus."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— David K.</p>
+        <p class="text-sm text-text-secondary">Afternoon Ritual Devotee</p>
+      </div>
     </div>
 
-    <div class="bg-surface-light rounded-lg p-8">
-      <div class="flex items-center mb-4">
-        <div class="text-primary-500 text-xl">★★★★★</div>
-        <span class="ml-2 text-text-secondary">Verified Purchase</span>
+    <div class="border border-border rounded-lg p-8">
+      <div class="flex items-center justify-between mb-4">
+        <span class="text-primary-500 text-lg tracking-wider">★ ★ ★ ★ ★</span>
+        <span class="text-sm text-text-secondary italic">Verified Member</span>
       </div>
-      <p class="text-lg italic mb-4">"I bought the subscription for myself but ended up getting one for my daughter too. We both have clearer skin and it''s become our little bonding ritual. Love that it''s organic and actually works!"</p>
-      <p class="font-medium">— Patricia W., 52</p>
-      <p class="text-sm text-text-secondary">Drinks: Sample Pack (subscription)</p>
+      <p class="text-lg italic mb-6 leading-relaxed">"What began as a personal ritual has become a shared tradition with my daughter. We both enjoy clearer, more radiant complexions, but more than that—it''s become our quiet moment of connection. That it''s organic and genuinely effective makes it all the more special."</p>
+      <div class="flex items-center justify-between">
+        <p class="font-serif">— Patricia W.</p>
+        <p class="text-sm text-text-secondary">Membership Devotee</p>
+      </div>
     </div>
   </div>
 
-  <div class="bg-primary-100 rounded-lg p-8 mt-12">
-    <h2 class="text-2xl font-serif mb-4 text-center">Results Take Time</h2>
-    <p class="text-center mb-4">Most customers see noticeable improvements in 3-4 weeks of daily use. Skin concerns that took months or years to develop won''t disappear overnight, but with consistent use, our teas support your skin''s natural healing processes.</p>
-    <p class="text-center text-sm text-text-secondary">Individual results may vary. BeauTeas are designed to support skin health as part of a healthy lifestyle.</p>
+  <div class="bg-primary-100 rounded-lg p-10 mt-12">
+    <h2 class="text-2xl font-serif mb-4 text-center">The Beauty of Patience</h2>
+    <p class="text-center mb-4 leading-relaxed">True transformation unfolds gracefully. Most devotees observe meaningful improvement within three to four weeks of consistent ritual. Concerns that developed over months or years naturally require time to resolve—but with dedication, our blends support your skin''s innate capacity for renewal.</p>
+    <p class="text-center text-sm text-text-secondary italic">Individual experiences may vary. BeauTeas are designed to support skin wellness as part of a holistic lifestyle.</p>
   </div>
 
   <div class="text-center mt-12">
-    <h3 class="text-2xl font-serif mb-4">Ready to Start Your Journey?</h3>
-    <p class="mb-6">Join thousands of happy customers who''ve discovered the power of skincare tea.</p>
-    <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium">Try the Sample Pack</a>
+    <h3 class="text-2xl font-serif mb-4">Begin Your Transformation</h3>
+    <p class="text-text-secondary mb-6">Join our community of devoted members who''ve discovered the art of radiant skin.</p>
+    <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium">Discover the Collection</a>
   </div>
 
   <div class="border-t border-border mt-12 pt-8">
-    <h3 class="text-xl font-serif mb-4 text-center">Share Your Story</h3>
-    <p class="text-center text-text-secondary">Have BeauTeas made a difference in your skin? We''d love to hear from you! Email us at <a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700">hello@beauteas.com</a> or tag us on Instagram <a href="https://instagram.com/beauteas" class="text-primary-600 hover:text-primary-700">@beauteas</a>.</p>
+    <h3 class="text-xl font-serif mb-4 text-center">Share Your Journey</h3>
+    <p class="text-center text-text-secondary">Has BeauTeas become part of your transformation? We would be honored to hear your story. Reach us at <a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700">hello@beauteas.com</a> or share your moments on Instagram <a href="https://instagram.com/beauteas" class="text-primary-600 hover:text-primary-700">@beauteas</a>.</p>
   </div>
 </div>
-', 'Read customer reviews and success stories from BeauTeas organic skincare tea users. Real results from real people.', 'Customer Stories & Reviews | BeauTeas', 'Read reviews and success stories from BeauTeas customers. Discover how organic skincare teas have helped with acne, skin clarity, and overall wellness.', 'testimonials, reviews, customer stories, success, results, before after, organic tea', 'published', strftime(''%s'', ''now''), 'default', 12, 0, 'Testimonials', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Read transformative stories from BeauTeas devotees. Authentic experiences from those who''ve discovered their radiance through organic skincare teas.', 'Voices of Radiance - Transformations | BeauTeas', 'Discover authentic transformation stories from BeauTeas members. Read how organic skincare teas have helped our community achieve clearer, more radiant skin.', 'transformations, testimonials, stories, radiance, results, skincare journey, organic tea', 'published', strftime(''%s'', ''now''), 'default', 12, 0, 'Testimonials', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
 
 -- The BeauTeas Ritual Page (Luxury Lifestyle)
 ('The BeauTeas Ritual', 'ritual', '
