@@ -113,7 +113,7 @@ export default function AdminHeader() {
                 </div>
                 <div className="hidden md:block">
                   <div className="text-sm font-medium text-white">Admin User</div>
-                  <div className="text-xs text-gray-400">admin@voltique.com</div>
+                  <div className="text-xs text-gray-400">admin@beauteas.com</div>
                 </div>
               </div>
             </div>

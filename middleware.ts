@@ -94,7 +94,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Maintenance - Voltique</title>
+          <title>Maintenance - BeauTeas</title>
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -115,7 +115,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
             .logo {
               font-size: 2rem;
               font-weight: bold;
-              color: #f97316;
+              color: #c4a87c;
               margin-bottom: 2rem;
             }
             .message {
@@ -131,7 +131,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
               width: 40px;
               height: 40px;
               border: 4px solid #374151;
-              border-top: 4px solid #f97316;
+              border-top: 4px solid #c4a87c;
               border-radius: 50%;
               animation: spin 1s linear infinite;
               margin: 2rem auto;
@@ -144,7 +144,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
         </head>
         <body>
           <div class="container">
-            <div class="logo">Voltique</div>
+            <div class="logo">BeauTeas</div>
             <div class="message">${maintenanceMessage}</div>
             <div class="submessage">We'll be back online shortly.</div>
             <div class="spinner"></div>

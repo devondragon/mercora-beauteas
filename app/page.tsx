@@ -56,8 +56,8 @@ export default async function HomePage() {
           This Gear Powers Your Next Escape
         </h1>
         <p className="text-gray-400 text-base sm:text-lg max-w-2xl mx-auto mb-6 sm:mb-8 px-4">
-          High-performance electric gear, rugged and designed for the edge of
-          the map. Modular. Adaptable. Voltique.
+          Organic skincare teas crafted to reveal your most radiant skin.
+          Pure botanicals. Transformative ritual. BeauTeas.
         </p>
         <Link href="/category/featured" className="inline-block">
           <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black transition rounded">

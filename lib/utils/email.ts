@@ -72,9 +72,9 @@ export async function sendOrderConfirmationEmail(orderData: OrderData): Promise<
     const resendClient = getResendClient();
     
     const { data, error } = await resendClient.emails.send({
-      from: 'Volt at Voltique<volt@russellkmoore.me>',
+      from: 'BeauTeas<hello@beauteas.com>',
       to: [orderData.customerEmail],
-      subject: `Order Confirmation #${orderData.orderNumber} - Voltique`,
+      subject: `Order Confirmation #${orderData.orderNumber} - BeauTeas`,
       html: emailHtml,
     });
 
@@ -104,7 +104,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
     
     // Use Cloudflare Image service for optimized delivery in emails
     // Set width to 100px for email images and quality to 80 for good balance
-    return `https://voltique-images.russellkmoore.me/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
+    return `https://beauteas-images.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
   };
 
   const itemsHTML = orderData.items.map(item => {
@@ -131,15 +131,15 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Order Confirmation - Voltique</title>
+      <title>Order Confirmation - BeauTeas</title>
     </head>
     <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;">
       <div style="background-color: #ffffff; margin: 0 auto; padding: 20px 0 48px; margin-bottom: 64px; max-width: 600px;">
-        
+
         <!-- Header -->
         <div style="text-align: center; padding: 32px 0; border-bottom: 1px solid #e6ebf1;">
-          <h1 style="color: #f97316; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">Voltique</h1>
-          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Premium Outdoor Gear</p>
+          <h1 style="color: #c4a87c; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">BeauTeas</h1>
+          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Organic Skincare Teas</p>
         </div>
 
         <!-- Order Confirmation -->
@@ -197,7 +197,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <!-- Footer -->
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your order? Reply to this email or contact our support team.</p>
-          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing Voltique!</p>
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
         </div>
 
       </div>
@@ -219,7 +219,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
     
     // Use Cloudflare Image service for optimized delivery in emails
     // Set width to 100px for email images and quality to 80 for good balance
-    return `https://voltique-images.russellkmoore.me/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
+    return `https://beauteas-images.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
   };
 
   // Generate status-specific content
@@ -319,15 +319,15 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Order Update - Voltique</title>
+      <title>Order Update - BeauTeas</title>
     </head>
     <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;">
       <div style="background-color: #ffffff; margin: 0 auto; padding: 20px 0 48px; margin-bottom: 64px; max-width: 600px;">
-        
+
         <!-- Header -->
         <div style="text-align: center; padding: 32px 0; border-bottom: 1px solid #e6ebf1;">
-          <h1 style="color: #f97316; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">Voltique</h1>
-          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Premium Outdoor Gear</p>
+          <h1 style="color: #c4a87c; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">BeauTeas</h1>
+          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Organic Skincare Teas</p>
         </div>
 
         <!-- Status Update -->
@@ -375,7 +375,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <!-- Footer -->
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your order? Reply to this email or contact our support team.</p>
-          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing Voltique!</p>
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
         </div>
 
       </div>
@@ -410,9 +410,9 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
     }
     
     const { data, error } = await resendClient.emails.send({
-      from: 'Volt at Voltique<volt@russellkmoore.me>',
+      from: 'BeauTeas<hello@beauteas.com>',
       to: [orderData.customerEmail],
-      subject: `${subject} - Voltique`,
+      subject: `${subject} - BeauTeas`,
       html: emailHtml,
     });
 

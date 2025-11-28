@@ -25,17 +25,17 @@
   "r2_buckets": [
     {
       "binding": "MEDIA",
-      "bucket_name": "voltique-images"
+      "bucket_name": "beauteas-images"
     },
     {
       "binding": "NEXT_INC_CACHE_R2_BUCKET",
-      "bucket_name": "voltique-images"
+      "bucket_name": "beauteas-images"
     }
   ],
   "vectorize": [
     {
       "binding": "VECTORIZE",
-      "index_name": "voltique-index"
+      "index_name": "beauteas-index"
     }
   ],
   "ai": {

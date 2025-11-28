@@ -84,7 +84,7 @@ export default async function CategoryPage({ params }: any) {
       
       // Construct full R2 URL for relative paths
       if (imageUrl && !imageUrl.startsWith('http')) {
-        return `https://voltique-images.russellkmoore.me/${imageUrl}`;
+        return `https://beauteas-images.beauteas.com/${imageUrl}`;
       }
       return imageUrl;
     }

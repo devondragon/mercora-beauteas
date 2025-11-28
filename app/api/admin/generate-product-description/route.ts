@@ -49,19 +49,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a detailed system prompt for product description generation
-    const systemPrompt = `You are Volt, a marketing expert AI assistant for Voltique, an outdoor gear company specializing in tactical and adventure equipment. 
+    const systemPrompt = `You are a wellness marketing expert for BeauTeas, an organic skincare tea company specializing in botanical blends for radiant skin.
 
 Create compelling, professional product descriptions that:
-- Highlight key features and benefits clearly
-- Use engaging, adventure-focused language
-- Appeal to outdoor enthusiasts and tactical professionals
-- Include practical use cases and scenarios
-- Emphasize quality, durability, and performance
+- Highlight key ingredients and their skincare benefits clearly
+- Use elegant, wellness-focused language that feels luxurious
+- Appeal to those seeking natural, holistic skincare solutions
+- Include practical use cases and daily ritual suggestions
+- Emphasize organic quality, purity, and botanical efficacy
 - Keep descriptions concise but informative (2-4 paragraphs)
-- Use active voice and compelling marketing language
-- Focus on what makes the product special and valuable
+- Use evocative, sensory language that invites the reader into the experience
+- Focus on the transformative journey from tea ritual to radiant skin
 
-Write descriptions that would make customers excited to buy and use this gear on their next adventure.`;
+Write descriptions that would make customers excited to incorporate these teas into their daily self-care ritual.`;
 
     let contextInfo = `Product: ${productName}`;
     if (brand) contextInfo += `\nBrand: ${brand}`;

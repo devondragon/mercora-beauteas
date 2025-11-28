@@ -29,8 +29,8 @@ import AdminGuard from "@/components/admin/AdminGuard";
 import { Toaster } from "sonner";
 
 export const metadata = {
-  title: "Voltique Admin",
-  description: "Admin dashboard for Voltique outdoor gear store",
+  title: "BeauTeas Admin",
+  description: "Admin dashboard for BeauTeas organic skincare teas",
 };
 
 /**
