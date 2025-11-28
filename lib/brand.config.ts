@@ -100,15 +100,19 @@ export const brand = {
   // === Footer Links ===
   footerLinks: {
     column1: [
-      // These are pulled from CMS pages
+      // These are pulled from CMS pages (About, FAQ, etc.)
     ],
     column2: [
-      { label: "Contact us", href: "#" },
-      { label: "Keep in touch", href: "#" },
+      { label: "The Ritual", href: "/ritual" },
+      { label: "Gift Guide", href: "/gifts" },
+      { label: "Our Promise", href: "/our-promise" },
+      { label: "Subscriptions", href: "/subscriptions" },
     ],
     column3: [
-      { label: "Blog", href: "#" },
-      { label: "Brewing Directions", href: "#" },
+      { label: "How It Works", href: "/how-it-works" },
+      { label: "Brewing Guide", href: "/brewing-directions" },
+      { label: "Contact Us", href: "/contact" },
+      { label: "Shipping", href: "/shipping-returns" },
     ],
   },
 } as const;
