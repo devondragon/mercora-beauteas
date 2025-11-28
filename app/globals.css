@@ -2,26 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optimize font loading to reduce preload warnings */
+/* Font configuration - driven by brand.config.ts fonts */
 @layer base {
   html {
-    /* Use system fonts initially to reduce preload delay */
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    /* Use serif fonts as fallback for BeauTeas elegant brand */
+    font-family: Georgia, 'Times New Roman', serif;
   }
-  
-  /* Progressive font enhancement */
-  .font-sans {
-    font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Heading font - Lora */
+  .font-serif, h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-lora), Georgia, serif;
     font-display: swap;
   }
-  
-  /* Only load mono font when actually needed */
+
+  /* Body font - Alegreya */
+  .font-body, body, p {
+    font-family: var(--font-alegreya), Georgia, serif;
+    font-display: swap;
+  }
+
+  /* Monospace font for code */
   .font-mono {
-    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', monospace;
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
     font-display: swap;
   }
-  
+
   /* Reduce layout shift during font loading */
   body {
     font-synthesis: none;

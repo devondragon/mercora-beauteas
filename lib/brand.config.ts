@@ -1,5 +1,5 @@
 /**
- * Brand Configuration
+ * Brand Configuration - BeauTeas
  *
  * Central configuration file for all brand-related settings.
  * This enables easy rebranding of the Mercora platform for different storefronts
@@ -21,80 +21,80 @@
 
 export const brand = {
   // === Identity ===
-  name: "Voltique",
-  tagline: "Gear for the wild",
-  description: "AI-powered outdoor gear eCommerce platform",
-  copyright: `©${new Date().getFullYear()} Voltique. All rights reserved.`,
+  name: "BeauTeas",
+  tagline: "Build Your Beauty from Within",
+  description: "Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.",
+  copyright: `©${new Date().getFullYear()} BeauTeas. All rights reserved.`,
 
   // === Colors ===
-  // These are consumed by tailwind.config.ts for the color palette
+  // BeauTeas uses a warm, light theme with blush/peach accents
   colors: {
-    // Primary brand color (accent color for buttons, links, highlights)
+    // Primary brand color (blush/peach accent)
     primary: {
-      50: "#fff7ed",
-      100: "#ffedd5",
-      200: "#fed7aa",
-      300: "#fdba74",
-      400: "#fb923c",
-      500: "#f97316",   // Main primary
-      600: "#ea580c",
-      700: "#c2410c",
-      800: "#9a3412",
-      900: "#7c2d12",
+      50: "#fdf8f6",
+      100: "#f9ede8",
+      200: "#f3dcd4",
+      300: "#ebc3bb",   // Main primary - blush
+      400: "#dfa699",
+      500: "#cf8577",
+      600: "#b86a5d",
+      700: "#99544a",
+      800: "#7f4740",
+      900: "#6a3d38",
     },
-    // Surface colors (backgrounds, cards)
+    // Surface colors (light theme - cream backgrounds)
     surface: {
-      dark: "#000000",      // Dark mode background
-      DEFAULT: "#0a0a0a",   // Default surface (neutral-950)
-      light: "#171717",     // Elevated surface (neutral-900)
-      lighter: "#262626",   // More elevated (neutral-800)
+      dark: "#fdf8f6",      // Main background (warm cream)
+      DEFAULT: "#f5ebe6",   // Default surface
+      light: "#e8d5cf",     // Elevated surface
+      lighter: "#d4b8ad",   // More elevated
     },
-    // Text colors
+    // Text colors (dark text on light backgrounds)
     text: {
-      primary: "#ffffff",     // Primary text on dark
-      secondary: "#a3a3a3",   // Muted text (neutral-400)
-      muted: "#737373",       // Very muted (neutral-500)
-      inverse: "#000000",     // Text on light backgrounds
+      primary: "#222222",     // Primary text (charcoal)
+      secondary: "#555555",   // Muted text
+      muted: "#777777",       // Very muted text
+      inverse: "#ffffff",     // Text on dark backgrounds
     },
     // Border colors
     border: {
-      DEFAULT: "#404040",     // Default border (neutral-700)
-      light: "#525252",       // Lighter border (neutral-600)
-      dark: "#262626",        // Darker border (neutral-800)
+      DEFAULT: "#e8d5cf",     // Default border (soft blush)
+      light: "#f3dcd4",       // Lighter border
+      dark: "#d4b8ad",        // Darker border
     },
   },
 
   // === Typography ===
   fonts: {
     // Font family names (must match imports in app/layout.tsx)
-    heading: "Geist",
-    body: "Geist",
+    heading: "Lora",
+    body: "Alegreya",
     mono: "Geist Mono",
     // CSS variable names
-    headingVar: "--font-geist-sans",
-    bodyVar: "--font-geist-sans",
+    headingVar: "--font-lora",
+    bodyVar: "--font-alegreya",
     monoVar: "--font-geist-mono",
   },
 
   // === Theme Mode ===
-  // 'dark' or 'light' - determines default color scheme
-  mode: "dark" as const,
+  // 'light' for BeauTeas warm cream aesthetic
+  mode: "light" as const,
 
   // === MCP Server Metadata ===
   mcp: {
-    capabilities: "commerce,outdoor-gear,multi-agent,e-commerce",
-    description: "Voltique MCP Server for multi-agent outdoor gear commerce",
+    capabilities: "commerce,tea,skincare,organic,e-commerce",
+    description: "BeauTeas MCP Server for organic skincare tea commerce",
   },
 
-  // === Social Media (defaults, can be overridden in admin) ===
+  // === Social Media ===
   social: {
-    instagram: "",
-    facebook: "",
+    instagram: "https://instagram.com/beauteas",
+    facebook: "https://facebook.com/beauteas",
     twitter: "",
     youtube: "",
-    linkedin: "",
+    linkedin: "https://linkedin.com/company/beauteas",
     tiktok: "",
-    pinterest: "",
+    pinterest: "https://pinterest.com/beauteas",
   },
 
   // === Footer Links ===
@@ -105,13 +105,10 @@ export const brand = {
     column2: [
       { label: "Contact us", href: "#" },
       { label: "Keep in touch", href: "#" },
-      { label: "Careers", href: "#" },
     ],
     column3: [
-      { label: "News & media", href: "#" },
-      { label: "Community", href: "#" },
-      { label: "Events", href: "#" },
-      { label: "Specs", href: "#" },
+      { label: "Blog", href: "#" },
+      { label: "Brewing Directions", href: "#" },
     ],
   },
 } as const;

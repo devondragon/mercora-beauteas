@@ -43,30 +43,36 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Lora, Alegreya, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PromotionalBanner from "@/components/PromotionalBanner";
 import { Toaster } from "sonner";
-import { dark } from "@clerk/themes";
 import { Suspense } from "react";
 import WebVitals from "@/components/analytics/WebVitals";
 import { brand } from "@/lib/brand";
 import { BrandProvider } from "@/lib/brand";
+import { ClerkProvider } from "@clerk/nextjs";
 
-import {
-  ClerkProvider,
-} from "@clerk/nextjs";
-
-// Configure primary font family with CSS variables
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Configure heading font - Lora serif for elegant headings
+const lora = Lora({
+  variable: "--font-lora",
   subsets: ["latin"],
   display: "swap",
-  preload: false, // Reduce initial preload burden
-  weight: ["400", "500", "600"], // Only load weights we actually use
-  fallback: ["system-ui", "arial"], // Better fallback strategy
+  preload: false,
+  weight: ["400", "500", "600", "700"],
+  fallback: ["Georgia", "serif"],
+});
+
+// Configure body font - Alegreya for readable body text
+const alegreya = Alegreya({
+  variable: "--font-alegreya",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  weight: ["400", "500", "600", "700"],
+  fallback: ["Georgia", "serif"],
 });
 
 // Configure monospace font for code and technical content
@@ -74,8 +80,8 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
-  preload: false, // Load on demand only
-  weight: ["400"], // Single weight to minimize preload
+  preload: false,
+  weight: ["400"],
   fallback: ["ui-monospace", "SFMono-Regular"],
 });
 
@@ -113,7 +119,10 @@ export default function RootLayout({
   return (
     <ClerkProvider
       appearance={{
-        baseTheme: dark,
+        variables: {
+          colorPrimary: brand.colors.primary[300],
+          colorTextOnPrimaryBackground: brand.colors.text.primary,
+        },
       }}
     >
       <html lang="en" suppressHydrationWarning>
@@ -131,7 +140,7 @@ export default function RootLayout({
           <link rel="mcp-schema" href="/api/mcp/schema" type="application/json" />
         </head>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-surface-dark text-text-primary flex flex-col min-h-screen`}
+          className={`${lora.variable} ${alegreya.variable} ${geistMono.variable} antialiased bg-surface-dark text-text-primary flex flex-col min-h-screen font-body`}
           suppressHydrationWarning
         >
           <BrandProvider>

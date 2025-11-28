@@ -36,8 +36,12 @@ const config: Config = {
         ring: brand.colors.border.DEFAULT,
       },
       fontFamily: {
-        sans: [brand.fonts.heading, "system-ui", "sans-serif"],
-        body: [brand.fonts.body, "system-ui", "sans-serif"],
+        // Heading font
+        sans: [brand.fonts.heading, "Georgia", "serif"],
+        serif: [brand.fonts.heading, "Georgia", "serif"],
+        // Body font
+        body: [brand.fonts.body, "Georgia", "serif"],
+        // Monospace
         mono: [brand.fonts.mono, "ui-monospace", "monospace"],
       },
     },
