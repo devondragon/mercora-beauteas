@@ -1,13 +1,25 @@
 /**
+ * Wrangler Configuration for BeauTeas
+ *
+ * Multi-environment setup:
+ *   - dev: Development/staging environment
+ *   - production: Live production environment
+ *
+ * Deploy commands:
+ *   npm run build && wrangler deploy --env dev
+ *   npm run build && wrangler deploy --env production
+ *
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mercora",
+  "name": "beauteas",
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Shared configuration (inherited by all environments)
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"
@@ -15,70 +27,90 @@
   "observability": {
     "enabled": true
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "mercora-db",
-      "database_id": "a27c0044-672d-4355-aa47-4410746f45f9"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "beauteas-images"
-    },
-    {
-      "binding": "NEXT_INC_CACHE_R2_BUCKET",
-      "bucket_name": "beauteas-images"
-    }
-  ],
-  "vectorize": [
-    {
-      "binding": "VECTORIZE",
-      "index_name": "beauteas-index"
-    }
-  ],
   "ai": {
     "binding": "AI"
   },
   "durable_objects": {
     "bindings": []
   },
-  /**
-   * Smart Placement
-   * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-   */
-  // "placement": { "mode": "smart" },
+
+  // Environment-specific configurations
+  "env": {
+    // === DEV ENVIRONMENT ===
+    "dev": {
+      "name": "beauteas-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "beauteas-db-dev",
+          "database_id": "REPLACE_WITH_DEV_DATABASE_ID"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "beauteas-images-dev"
+        },
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "beauteas-images-dev"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "VECTORIZE",
+          "index_name": "beauteas-index-dev"
+        }
+      ],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bGVhcm5pbmctbGlnZXItMTAuY2xlcmsuYWNjb3VudHMuZGV2JA",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Rwyc6LL7e1EcFUl2kqrcgWa8KDNzC9m4lc38wQQKiKVmekTxi3q6R6R2nohizFzRNNw9bHTeN8mripgZzgUYUDd00nlOhCWEs"
+      }
+    },
+
+    // === PRODUCTION ENVIRONMENT ===
+    "production": {
+      "name": "beauteas",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "beauteas-db",
+          "database_id": "REPLACE_WITH_PRD_DATABASE_ID"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "beauteas-images"
+        },
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "beauteas-images"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "VECTORIZE",
+          "index_name": "beauteas-index"
+        }
+      ],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY"
+      }
+    }
+  }
 
   /**
-   * Bindings
-   * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-   * databases, object storage, AI inference, real-time communication and more.
-   * https://developers.cloudflare.com/workers/runtime-apis/bindings/
+   * Secrets (set per environment):
+   *   wrangler secret put CLERK_SECRET_KEY --env dev
+   *   wrangler secret put STRIPE_SECRET_KEY --env dev
+   *   wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
+   *   wrangler secret put RESEND_API_KEY --env dev
+   *
+   *   wrangler secret put CLERK_SECRET_KEY --env production
+   *   wrangler secret put STRIPE_SECRET_KEY --env production
+   *   wrangler secret put STRIPE_WEBHOOK_SECRET --env production
+   *   wrangler secret put RESEND_API_KEY --env production
    */
-
-  /**
-   * Environment Variables
-   * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-   */
-  "vars": {
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bGVhcm5pbmctbGlnZXItMTAuY2xlcmsuYWNjb3VudHMuZGV2JA",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Rwyc6LL7e1EcFUl2kqrcgWa8KDNzC9m4lc38wQQKiKVmekTxi3q6R6R2nohizFzRNNw9bHTeN8mripgZzgUYUDd00nlOhCWEs"
-  },
-  /**
-   * Note: Use secrets to store sensitive data.
-   * https://developers.cloudflare.com/workers/configuration/secrets/
-   */
-
-  /**
-   * Static Assets
-   * https://developers.cloudflare.com/workers/static-assets/binding/
-   */
-  // "assets": { "directory": "./public/", "binding": "ASSETS" },
-
-  /**
-   * Service Bindings (communicate between multiple Workers)
-   * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-   */
-  // "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
 }
