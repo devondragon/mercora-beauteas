@@ -105,10 +105,13 @@ export const brand = {
     column2: [
       { label: "Contact Us", href: "/contact" },
       { label: "Shipping & Returns", href: "/shipping-returns" },
+      { label: "Subscriptions", href: "/subscriptions" },
     ],
     column3: [
       { label: "How It Works", href: "/how-it-works" },
       { label: "Brewing Guide", href: "/brewing-directions" },
+      { label: "Ingredients", href: "/ingredients" },
+      { label: "Skin Concerns", href: "/skin-concerns" },
     ],
   },
 } as const;
