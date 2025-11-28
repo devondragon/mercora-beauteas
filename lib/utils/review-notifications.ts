@@ -73,14 +73,14 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
             ? 'Our merchandising team just replied to your feedback.'
             : `We wanted to let you know the status of your review for <strong>${input.productName}</strong>.`}
         </p>
-        <div style="margin-top: 16px; padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff;">
+        <div style="margin-top: 16px; padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #c4a87c, #a88f5f); color: #fff;">
           <p style="margin: 0; font-size: 18px; font-weight: 700;">${input.productName}</p>
           <p style="margin: 4px 0 0; font-size: 14px; opacity: 0.9;">Current status: ${statusLabel}</p>
         </div>
         ${reviewDetails}
         ${responseSection}
         <p style="margin: 24px 0 0; color: #9ca3af; font-size: 14px; line-height: 22px;">
-          Thanks again for taking the time to share your experience. Your feedback helps fellow adventurers choose the right gear.
+          Thanks again for taking the time to share your experience. Your feedback helps others discover their perfect skincare tea blend.
         </p>
         <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">— The BeauTeas Team</p>
       </div>
