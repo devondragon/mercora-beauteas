@@ -43,51 +43,45 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Lora, Alegreya } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PromotionalBanner from "@/components/PromotionalBanner";
 import { Toaster } from "sonner";
-import { dark } from "@clerk/themes";
 import { Suspense } from "react";
 import WebVitals from "@/components/analytics/WebVitals";
+import { ClerkProvider } from "@clerk/nextjs";
 
-import {
-  ClerkProvider,
-} from "@clerk/nextjs";
-
-// Configure primary font family with CSS variables
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Configure primary font family - Lora for headings
+const lora = Lora({
+  variable: "--font-lora",
   subsets: ["latin"],
   display: "swap",
-  preload: false, // Reduce initial preload burden
-  weight: ["400", "500", "600"], // Only load weights we actually use
-  fallback: ["system-ui", "arial"], // Better fallback strategy
+  preload: false,
+  weight: ["400", "500", "600", "700"],
+  fallback: ["Georgia", "serif"],
 });
 
-// Configure monospace font for code and technical content
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Configure body font - Alegreya for readable body text
+const alegreya = Alegreya({
+  variable: "--font-alegreya",
   subsets: ["latin"],
   display: "swap",
-  preload: false, // Load on demand only
-  weight: ["400"], // Single weight to minimize preload
-  fallback: ["ui-monospace", "SFMono-Regular"],
+  preload: false,
+  weight: ["400", "500", "600", "700"],
+  fallback: ["Georgia", "serif"],
 });
 
-// SEO metadata for the application
+// SEO metadata for BeauTeas
 export const metadata: Metadata = {
-  title: "Mercora",
-  description: "Marketplace powered by open knowledge",
+  title: "BeauTeas - Build Your Beauty from Within",
+  description: "Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.",
   other: {
-    // Suppress browser preload warnings
-    "resource-hints": "minimal",
     // MCP Server Discovery
     "mcp-server": "/api/mcp",
     "mcp-schema": "/api/mcp/schema",
-    "mcp-capabilities": "commerce,outdoor-gear,multi-agent,e-commerce",
+    "mcp-capabilities": "commerce,tea,skincare,organic,e-commerce",
     "mcp-version": "1.0.0",
   },
 };
@@ -113,7 +107,10 @@ export default function RootLayout({
   return (
     <ClerkProvider
       appearance={{
-        baseTheme: dark,
+        variables: {
+          colorPrimary: "#ebc3bb",
+          colorTextOnPrimaryBackground: "#222222",
+        },
       }}
     >
       <html lang="en" suppressHydrationWarning>
@@ -121,9 +118,9 @@ export default function RootLayout({
           {/* MCP Server Discovery Meta Tags */}
           <meta name="mcp-server" content="/api/mcp" />
           <meta name="mcp-schema" content="/api/mcp/schema" />
-          <meta name="mcp-capabilities" content="commerce,outdoor-gear,multi-agent,e-commerce" />
+          <meta name="mcp-capabilities" content="commerce,tea,skincare,organic,e-commerce" />
           <meta name="mcp-version" content="1.0.0" />
-          <meta name="mcp-description" content="Voltique MCP Server for multi-agent outdoor gear commerce" />
+          <meta name="mcp-description" content="BeauTeas MCP Server for organic skincare tea commerce" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
 
           {/* Additional MCP Discovery */}
@@ -131,7 +128,7 @@ export default function RootLayout({
           <link rel="mcp-schema" href="/api/mcp/schema" type="application/json" />
         </head>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-black text-white flex flex-col min-h-screen`}
+          className={`${lora.variable} ${alegreya.variable} antialiased bg-cream-100 text-charcoal flex flex-col min-h-screen font-body`}
           suppressHydrationWarning
         >
           {/* Promotional banner - shown above header when enabled */}
@@ -157,7 +154,7 @@ export default function RootLayout({
             position="top-center"
             toastOptions={{
               className:
-                "bg-orange-500/80 text-black font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
+                "bg-blush-300 text-charcoal font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
               duration: 3000,
             }}
           />
