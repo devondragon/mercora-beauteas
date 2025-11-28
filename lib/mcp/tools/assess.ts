@@ -17,10 +17,10 @@ export async function assessFulfillmentCapability(
     const categories = await listCategories();
     const categoryNames = categories.map(cat => typeof cat.name === 'string' ? cat.name.toLowerCase() : String(cat.name || '').toLowerCase());
     
-    // Define Voltique's core specialties
+    // Define BeauTeas core specialties
     const ourSpecialties = [
-      'camping', 'hiking', 'backpacking', 'outdoor', 'tent', 'sleeping bag',
-      'backpack', 'headlamp', 'stove', 'gear', 'adventure', 'trail', 'mountain'
+      'tea', 'skincare', 'organic', 'calendula', 'chamomile', 'spearmint',
+      'rooibos', 'green tea', 'black tea', 'herbal', 'botanical', 'wellness'
     ];
     
     // Assess each requested item
@@ -233,7 +233,7 @@ function generateNextActions(canFulfill: string[], cannotFulfill: string[], fulf
   }
   
   if (fulfillmentPercentage > 80) {
-    actions.push('Proceed with Voltique order');
+    actions.push('Proceed with BeauTeas order');
   } else {
     actions.push('Consider splitting order across multiple retailers');
   }

@@ -57,8 +57,8 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
         <Container style={container}>
           {/* Header */}
           <Section style={header}>
-            <Heading style={h1}>Voltique</Heading>
-            <Text style={tagline}>Premium Outdoor Gear</Text>
+            <Heading style={h1}>BeauTeas</Heading>
+            <Text style={tagline}>Organic Skincare Teas</Text>
           </Section>
 
           {/* Order Confirmation */}
@@ -170,7 +170,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
               Questions about your order? Reply to this email or contact our support team.
             </Text>
             <Text style={footerText}>
-              Thank you for choosing Voltique!
+              Thank you for choosing BeauTeas!
             </Text>
           </Section>
         </Container>
@@ -199,7 +199,7 @@ const header = {
 };
 
 const h1 = {
-  color: '#f97316', // Orange-500
+  color: '#c4a87c', // BeauTeas Gold
   fontSize: '32px',
   fontWeight: 'bold',
   margin: '0',

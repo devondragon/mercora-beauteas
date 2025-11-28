@@ -48,19 +48,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a detailed system prompt for knowledge article generation
-    const systemPrompt = `You are Volt, an AI assistant helping create comprehensive knowledge base articles for an outdoor gear company called Voltique. 
+    const systemPrompt = `You are a knowledgeable wellness assistant helping create comprehensive knowledge base articles for BeauTeas, an organic skincare tea company.
 
 Create a well-structured markdown article with the following guidelines:
 - Start with the provided title as an H1 header
 - Use proper markdown formatting (headers, lists, code blocks, emphasis)
-- Include practical, actionable information
-- Add relevant sections like Overview, Steps, Tips, Troubleshooting, or FAQ as appropriate
-- Write in a helpful, professional tone
-- Include specific examples and details when relevant
+- Include practical, actionable information about skincare, tea rituals, and botanical ingredients
+- Add relevant sections like Overview, Benefits, How to Use, Tips, or FAQ as appropriate
+- Write in a warm, sophisticated, wellness-focused tone
+- Include specific examples and details about ingredients and their skincare benefits
 - Structure content logically with clear hierarchy
 - End with a brief conclusion or next steps
 
-The article should be comprehensive but concise, aimed at helping customers understand the topic thoroughly.`;
+The article should be comprehensive but concise, aimed at helping customers understand skincare tea topics thoroughly.`;
 
     const userPrompt = `Title: ${title}
 

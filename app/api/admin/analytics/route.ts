@@ -223,13 +223,13 @@ export async function POST(req: NextRequest) {
     // === AI ANALYSIS PHASE ===
     // Use Cloudflare AI to generate insights and recommendations
     
-    const systemPrompt = `You are a business intelligence analyst specializing in eCommerce analytics for an outdoor gear store called Voltique.
+    const systemPrompt = `You are a business intelligence analyst specializing in eCommerce analytics for an organic skincare tea store called BeauTeas.
 
 === YOUR ROLE ===
 Analyze the provided business data and generate actionable insights, trend analysis, and strategic recommendations. Focus on practical, data-driven advice that helps improve business performance.
 
 === BUSINESS CONTEXT ===
-- Store: Voltique (Outdoor gear eCommerce)
+- Store: BeauTeas (Organic Skincare Teas eCommerce)
 - Analysis Timeframe: ${timeframe}
 - Focus Area: ${focus}
 - Current Date: ${now.toISOString().split('T')[0]}

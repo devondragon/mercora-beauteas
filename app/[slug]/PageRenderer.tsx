@@ -145,9 +145,9 @@ export default function PageRenderer({ page }: PageRendererProps) {
                     please don&rsquo;t hesitate to contact us.
                   </p>
                   <div className="flex flex-wrap gap-4">
-                    <a 
-                      href="mailto:support@voltique.com" 
-                      className="text-orange-400 hover:text-orange-300 transition-colors"
+                    <a
+                      href="mailto:hello@beauteas.com"
+                      className="text-primary-400 hover:text-primary-300 transition-colors"
                     >
                       Contact Support
                     </a>

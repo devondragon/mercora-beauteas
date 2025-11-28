@@ -77,7 +77,7 @@ export default function cloudflareLoader({
   const paramsString = params.join(",");
   
   // Construct Cloudflare image URL with transformations
-  return `https://voltique-images.russellkmoore.me/cdn-cgi/image/${paramsString}/${normalizeSrc(
+  return `https://beauteas-images.beauteas.com/cdn-cgi/image/${paramsString}/${normalizeSrc(
     src
   )}`;
 }

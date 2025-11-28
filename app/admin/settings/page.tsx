@@ -647,7 +647,7 @@ export default function AdminSettingsPage() {
               <div className="mt-3 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Store Name:</span>
-                  <span className="text-white font-medium">Voltique</span>
+                  <span className="text-white font-medium">BeauTeas</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Currency:</span>
@@ -655,7 +655,7 @@ export default function AdminSettingsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Contact:</span>
-                  <span className="text-white font-medium">hello@voltique.com</span>
+                  <span className="text-white font-medium">hello@beauteas.com</span>
                 </div>
               </div>
             </div>

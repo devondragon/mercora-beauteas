@@ -66,29 +66,29 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
   const html = `
     <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #0f172a; padding: 32px; color: #f9fafb;">
       <div style="max-width: 520px; margin: 0 auto; background-color: #111827; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.4);">
-        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #f97316;">Voltique Reviews</h2>
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #c4a87c;">BeauTeas Reviews</h2>
         <p style="margin: 16px 0 0; color: #e5e7eb; line-height: 24px;">${greeting}</p>
         <p style="margin: 12px 0 0; color: #d1d5db; line-height: 24px;">
           ${input.event === 'response'
             ? 'Our merchandising team just replied to your feedback.'
             : `We wanted to let you know the status of your review for <strong>${input.productName}</strong>.`}
         </p>
-        <div style="margin-top: 16px; padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff;">
+        <div style="margin-top: 16px; padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #c4a87c, #a88f5f); color: #fff;">
           <p style="margin: 0; font-size: 18px; font-weight: 700;">${input.productName}</p>
           <p style="margin: 4px 0 0; font-size: 14px; opacity: 0.9;">Current status: ${statusLabel}</p>
         </div>
         ${reviewDetails}
         ${responseSection}
         <p style="margin: 24px 0 0; color: #9ca3af; font-size: 14px; line-height: 22px;">
-          Thanks again for taking the time to share your experience. Your feedback helps fellow adventurers choose the right gear.
+          Thanks again for taking the time to share your experience. Your feedback helps others discover their perfect skincare tea blend.
         </p>
-        <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">— Voltique Merchandising Team</p>
+        <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">— The BeauTeas Team</p>
       </div>
     </div>
   `;
 
   await resend.emails.send({
-    from: 'Voltique Reviews <volt@russellkmoore.me>',
+    from: 'BeauTeas Reviews <hello@beauteas.com>',
     to: [input.email],
     subject,
     html,
@@ -102,12 +102,12 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   const html = `
     <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #0f172a; padding: 32px; color: #f9fafb;">
       <div style="max-width: 520px; margin: 0 auto; background-color: #111827; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.4);">
-        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #f97316;">How's your new gear?</h2>
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #c4a87c;">How are you enjoying your tea?</h2>
         <p style="margin: 16px 0 0; color: #e5e7eb; line-height: 24px;">${greeting}</p>
         <p style="margin: 12px 0 0; color: #d1d5db; line-height: 24px;">
           We hope you're putting <strong>${input.productName}</strong> to good use. When you have a moment, we'd love to hear how it's working out. You'll find the prompt alongside order <strong>${input.orderId}</strong> in your history.
         </p>
-        <a href="https://voltique.russellkmoore.me/orders" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border-radius: 9999px; text-decoration: none; font-weight: 600;">Share your review</a>
+        <a href="https://beauteas.com/orders" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #c4a87c, #a88f5f); color: #fff; border-radius: 9999px; text-decoration: none; font-weight: 600;">Share your review</a>
         <p style="margin: 24px 0 0; color: #9ca3af; font-size: 14px; line-height: 22px;">
           Reviews help other shoppers make confident choices and give our team insight into what to improve next.
         </p>
@@ -117,7 +117,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   `;
 
   await resend.emails.send({
-    from: 'Voltique Reviews <volt@russellkmoore.me>',
+    from: 'BeauTeas Reviews <hello@beauteas.com>',
     to: [input.email],
     subject: `How's your ${input.productName}?`,
     html,

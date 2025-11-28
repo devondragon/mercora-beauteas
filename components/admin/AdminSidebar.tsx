@@ -145,11 +145,11 @@ export default function AdminSidebar() {
         <div className="flex items-center justify-between p-4 border-b border-neutral-700">
           {!sidebarCollapsed && (
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-lg">V</span>
+              <div className="w-8 h-8 bg-[#c4a87c] rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-lg">B</span>
               </div>
               <div>
-                <h1 className="text-white font-semibold text-lg">Voltique</h1>
+                <h1 className="text-white font-semibold text-lg">BeauTeas</h1>
                 <p className="text-gray-400 text-xs">Admin Panel</p>
               </div>
             </div>
@@ -207,7 +207,7 @@ export default function AdminSidebar() {
         {!sidebarCollapsed && (
           <div className="p-4 border-t border-neutral-700">
             <div className="text-xs text-gray-500">
-              <div className="mb-1">Voltique Admin v1.0</div>
+              <div className="mb-1">BeauTeas Admin v1.0</div>
               <div>Powered by MACH Alliance</div>
             </div>
           </div>

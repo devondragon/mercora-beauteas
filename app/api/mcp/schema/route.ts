@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   // MCP Server Schema Documentation
   const schema = {
-    name: "voltique-mcp-server",
+    name: "beauteas-mcp-server",
     version: "1.0.0",
-    description: "Voltique MCP Server for multi-agent outdoor gear commerce",
+    description: "BeauTeas MCP Server for multi-agent skincare tea commerce",
     capabilities: {
       tools: true,
       resources: false,
@@ -444,8 +444,8 @@ export async function GET(request: NextRequest) {
     },
     examples: {
       multi_agent_workflow: [
-        "1. assess_request - Determine what items Voltique can fulfill",
-        "2. bulk_add_to_cart - Add all Voltique items efficiently", 
+        "1. assess_request - Determine what items BeauTeas can fulfill",
+        "2. bulk_add_to_cart - Add all BeauTeas items efficiently", 
         "3. get_cart - Validate totals against budget",
         "4. get_shipping_options - Compare shipping methods and costs",
         "5. validate_payment - Verify payment method and calculate fees",
