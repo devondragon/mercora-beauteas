@@ -2,10 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* BeauTeas font configuration */
+/* Font configuration - driven by brand.config.ts fonts */
 @layer base {
   html {
-    /* Use serif fonts for BeauTeas elegant brand */
+    /* Use serif fonts as fallback for BeauTeas elegant brand */
     font-family: Georgia, 'Times New Roman', serif;
   }
 
@@ -18,6 +18,12 @@
   /* Body font - Alegreya */
   .font-body, body, p {
     font-family: var(--font-alegreya), Georgia, serif;
+    font-display: swap;
+  }
+
+  /* Monospace font for code */
+  .font-mono {
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
     font-display: swap;
   }
 
@@ -152,7 +158,7 @@
     input:focus-visible,
     select:focus-visible,
     textarea:focus-visible {
-      outline: 2px solid #ebc3bb;
+      outline: 2px solid #f97316;
       outline-offset: 2px;
     }
   }

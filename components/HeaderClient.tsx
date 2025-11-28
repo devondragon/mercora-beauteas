@@ -64,6 +64,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import CartDrawer from "@/components/cart/CartDrawer";
 import { CartHydrationGuard } from "@/components/cart/CartHydrationGuard";
 import ClientOnly from "@/components/ClientOnly";
+import { useBrand } from "@/lib/brand";
 import type { MACHCategory } from '@/lib/types/mach';
 
 /**
@@ -130,6 +131,7 @@ const getCategorySlug = (category: MACHCategory): string => {
 export default function HeaderClient({
   categories,
 }: HeaderClientProps) {
+  const { name: brandName } = useBrand();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -161,7 +163,7 @@ export default function HeaderClient({
         return (
           <div key={category.id}>
             <DropdownMenuItem
-              className="hover:text-blush-600 p-0"
+              className="hover:text-primary-500 p-0"
               asChild
             >
               <Link 
@@ -191,9 +193,9 @@ export default function HeaderClient({
   const getIndentationClass = (level: number): string => {
     const indentationClasses = {
       0: '',
-      1: 'ml-4 border-l-2 border-blush-400/40 pl-3',
-      2: 'ml-8 border-l-2 border-blush-400/20 pl-3',
-      3: 'ml-10 border-l-2 border-blush-400/10 pl-3'
+      1: 'ml-4 border-l-2 border-primary-500/20 pl-3',
+      2: 'ml-8 border-l-2 border-primary-500/10 pl-3',
+      3: 'ml-10 border-l-2 border-primary-500/5 pl-3'
     };
     return indentationClasses[level as keyof typeof indentationClasses] || 'ml-12 border-l border-neutral-700 pl-4';
   };
@@ -227,11 +229,11 @@ export default function HeaderClient({
             <Link
               href={`/category/${getCategorySlug(group.parent)}`}
               onClick={onCategorySelect}
-              className="flex items-center justify-between w-full p-4 bg-gradient-to-r from-blush-400/20 to-blush-300/10 rounded-lg border border-blush-400/30 hover:border-blush-500 transition-all duration-200 group"
+              className="flex items-center justify-between w-full p-4 bg-gradient-to-r from-primary-600/20 to-primary-500/10 rounded-lg border border-primary-500/30 hover:border-primary-400 transition-all duration-200 group"
               prefetch={true}
             >
               <div>
-                <div className="text-cream-100 font-semibold text-base group-hover:text-blush-200 transition-colors">
+                <div className="text-text-primary font-semibold text-base group-hover:text-primary-300 transition-colors">
                   {getCategoryName(group.parent)}
                 </div>
                 {group.children.length > 0 && (
@@ -240,7 +242,7 @@ export default function HeaderClient({
                   </div>
                 )}
               </div>
-              <ChevronRight className="w-5 h-5 text-blush-400 group-hover:text-blush-300 transition-colors" />
+              <ChevronRight className="w-5 h-5 text-primary-400 group-hover:text-primary-300 transition-colors" />
             </Link>
             
             {/* Child Categories - Compact Grid */}
@@ -251,7 +253,7 @@ export default function HeaderClient({
                     key={child.id}
                     href={`/category/${getCategorySlug(child)}`}
                     onClick={onCategorySelect}
-                    className="text-sm text-gray-300 hover:text-blush-400 py-2 px-3 rounded-md hover:bg-neutral-800/50 transition-all duration-200 truncate"
+                    className="text-sm text-text-secondary hover:text-primary-400 py-2 px-3 rounded-md hover:bg-surface-lighter/50 transition-all duration-200 truncate"
                     prefetch={true}
                   >
                     {getCategoryName(child)}
@@ -261,7 +263,7 @@ export default function HeaderClient({
                   <Link
                     href={`/category/${getCategorySlug(group.parent)}`}
                     onClick={onCategorySelect}
-                    className="text-xs text-blush-400 hover:text-blush-300 py-2 px-3 rounded-md hover:bg-neutral-800/50 transition-all duration-200 col-span-2 text-center border border-blush-400/20 hover:border-blush-300/40"
+                    className="text-xs text-primary-500 hover:text-primary-400 py-2 px-3 rounded-md hover:bg-surface-lighter/50 transition-all duration-200 col-span-2 text-center border border-primary-500/20 hover:border-primary-400/40"
                     prefetch={true}
                   >
                     View all {group.children.length} items →
@@ -282,7 +284,7 @@ export default function HeaderClient({
                   key={group.parent.id}
                   href={`/category/${getCategorySlug(group.parent)}`}
                   onClick={onCategorySelect}
-                  className="text-sm text-gray-300 hover:text-blush-400 py-3 px-4 rounded-md hover:bg-neutral-800/50 transition-all duration-200 truncate text-center border border-neutral-700 hover:border-blush-400/30"
+                  className="text-sm text-text-secondary hover:text-primary-400 py-3 px-4 rounded-md hover:bg-surface-lighter/50 transition-all duration-200 truncate text-center border border-border-default hover:border-primary-500/30"
                   prefetch={true}
                 >
                   {getCategoryName(group.parent)}
@@ -326,7 +328,7 @@ export default function HeaderClient({
               <Link
                 href={`/category/${getCategorySlug(category)}`}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`block text-cream-100 hover:text-blush-300 py-2 px-2 rounded hover:bg-neutral-800 flex-1 ${hasChildCategories ? 'font-semibold' : ''}`}
+                className={`block text-text-primary hover:text-primary-500 py-2 px-2 rounded hover:bg-surface-lighter flex-1 ${hasChildCategories ? 'font-semibold' : ''}`}
                 prefetch={true}
               >
                 {getCategoryName(category)}
@@ -344,17 +346,17 @@ export default function HeaderClient({
   );
 
   return (
-    <div className="flex justify-between items-center px-4 sm:px-6 py-4 bg-cream-100 text-charcoal border-b border-blush-200">
-      <Link href="/" className="text-lg sm:text-xl font-serif font-bold text-charcoal hover:text-blush-500 transition-colors">
-        BeauTeas
+    <div className="flex justify-between items-center px-4 sm:px-6 py-4 bg-surface-dark text-text-primary">
+      <Link href="/" className="text-lg sm:text-xl font-bold hover:text-primary-500 transition-colors">
+        {brandName}
       </Link>
 
       {/* Desktop Navigation */}
       <div className="hidden md:flex gap-2 sm:gap-4 items-center">
-        <Link
+        <Link 
           href="/"
           prefetch={true}
-          className="flex items-center gap-2 px-4 py-2 text-charcoal hover:bg-blush-100 hover:text-blush-600 rounded-md transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
         >
           <Home className="h-4 w-4" />
           Home
@@ -364,13 +366,13 @@ export default function HeaderClient({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="text-charcoal hover:bg-blush-100 hover:text-blush-600"
+              className="text-text-primary hover:bg-text-primary hover:text-primary-500"
             >
               <Grid3X3 className="mr-2 h-4 w-4" />
               Categories <ChevronDown className="ml-1 h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-cream-50 text-charcoal max-h-96 overflow-y-auto border-blush-200">
+          <DropdownMenuContent align="start" className="bg-white text-black max-h-96 overflow-y-auto">
             {rootCategories.length > 0 ? (
               <CategoryDropdownTree cats={rootCategories} />
             ) : (
@@ -378,7 +380,7 @@ export default function HeaderClient({
               categories.map((category) => (
                 <DropdownMenuItem
                   key={category.id}
-                  className="hover:text-blush-600 hover:border-l-2 border-blush-400 p-0"
+                  className="hover:text-primary-500 hover:border-l-2 border-primary-500 p-0"
                   asChild
                 >
                   <Link 
@@ -412,7 +414,7 @@ export default function HeaderClient({
           <SheetTrigger asChild>
             <Button
               variant="ghost"
-              className="text-charcoal hover:bg-blush-100 hover:text-blush-600"
+              className="text-text-primary hover:bg-text-primary hover:text-primary-500"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -435,8 +437,8 @@ export default function HeaderClient({
                 <h2 className="text-xl font-bold text-white">Menu</h2>
                 <p className="text-sm text-gray-400">Browse our outdoor gear</p>
               </div>
-              <div className="w-8 h-8 bg-blush-400/20 rounded-full flex items-center justify-center">
-                <Grid3X3 className="w-4 h-4 text-blush-400" />
+              <div className="w-8 h-8 bg-primary-500/20 rounded-full flex items-center justify-center">
+                <Grid3X3 className="w-4 h-4 text-primary-400" />
               </div>
             </div>
 
@@ -444,7 +446,7 @@ export default function HeaderClient({
               <Link 
                 href="/" 
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center space-x-3 text-cream-100 hover:text-blush-300 py-3 px-4 rounded-lg hover:bg-neutral-800"
+                className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
                 prefetch={true}
               >
                 <Home className="h-5 w-5" />
@@ -457,7 +459,7 @@ export default function HeaderClient({
 
               <div className="border-t border-neutral-700 pt-6 space-y-3">
                 <button 
-                  className="flex items-center space-x-3 text-cream-100 hover:text-blush-300 py-3 px-4 rounded-lg hover:bg-neutral-800 w-full text-left"
+                  className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter w-full text-left"
                   onClick={() => {
                     setIsMobileMenuOpen(false);
                     // Force open the agent drawer

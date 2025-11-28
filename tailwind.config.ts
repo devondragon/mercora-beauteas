@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import { brand } from "./lib/brand.config";
 
 const config: Config = {
   content: [
@@ -8,40 +9,40 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // BeauTeas brand palette
-        background: "#fdf8f6",      // Warm cream background
-        foreground: "#222222",      // Charcoal text
-        border: "#e8d5cf",          // Soft blush border
-        ring: "#ebc3bb",            // Blush ring/focus
-        // Brand colors
-        blush: {
-          50: "#fdf8f6",
-          100: "#f9ede8",
-          200: "#f3dcd4",
-          300: "#ebc3bb",           // Primary brand color
-          400: "#dfa699",
-          500: "#cf8577",
-          600: "#b86a5d",
-          700: "#99544a",
-          800: "#7f4740",
-          900: "#6a3d38",
-        },
-        cream: {
-          50: "#fffefa",
-          100: "#fdf8f6",
-          200: "#f5ebe6",
-          300: "#e8d5cf",
-          400: "#d4b8ad",
-        },
-        charcoal: {
-          DEFAULT: "#222222",
-          light: "#3a3a3a",
-          lighter: "#555555",
-        },
+        // === Semantic Colors (use these in components) ===
+        // These map to brand colors and enable easy theming
+
+        // Primary accent color (buttons, links, highlights)
+        primary: brand.colors.primary,
+
+        // Surface colors for backgrounds
+        surface: brand.colors.surface,
+
+        // Text colors
+        "text-primary": brand.colors.text.primary,
+        "text-secondary": brand.colors.text.secondary,
+        "text-muted": brand.colors.text.muted,
+        "text-inverse": brand.colors.text.inverse,
+
+        // Border colors
+        "border-default": brand.colors.border.DEFAULT,
+        "border-light": brand.colors.border.light,
+        "border-dark": brand.colors.border.dark,
+
+        // === Legacy mappings (for backwards compatibility) ===
+        background: brand.colors.surface.dark,
+        foreground: brand.colors.text.primary,
+        border: brand.colors.border.dark,
+        ring: brand.colors.border.DEFAULT,
       },
       fontFamily: {
-        serif: ['Lora', 'Georgia', 'serif'],
-        body: ['Alegreya', 'Georgia', 'serif'],
+        // Heading font
+        sans: [brand.fonts.heading, "Georgia", "serif"],
+        serif: [brand.fonts.heading, "Georgia", "serif"],
+        // Body font
+        body: [brand.fonts.body, "Georgia", "serif"],
+        // Monospace
+        mono: [brand.fonts.mono, "ui-monospace", "monospace"],
       },
     },
   },
