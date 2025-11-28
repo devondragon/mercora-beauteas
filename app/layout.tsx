@@ -43,7 +43,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { Lora, Alegreya } from "next/font/google";
+import { Lora, Alegreya, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -51,9 +51,11 @@ import PromotionalBanner from "@/components/PromotionalBanner";
 import { Toaster } from "sonner";
 import { Suspense } from "react";
 import WebVitals from "@/components/analytics/WebVitals";
+import { brand } from "@/lib/brand";
+import { BrandProvider } from "@/lib/brand";
 import { ClerkProvider } from "@clerk/nextjs";
 
-// Configure primary font family - Lora for headings
+// Configure heading font - Lora serif for elegant headings
 const lora = Lora({
   variable: "--font-lora",
   subsets: ["latin"],
@@ -73,15 +75,25 @@ const alegreya = Alegreya({
   fallback: ["Georgia", "serif"],
 });
 
-// SEO metadata for BeauTeas
+// Configure monospace font for code and technical content
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  weight: ["400"],
+  fallback: ["ui-monospace", "SFMono-Regular"],
+});
+
+// SEO metadata for the application (driven by brand config)
 export const metadata: Metadata = {
-  title: "BeauTeas - Build Your Beauty from Within",
-  description: "Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.",
+  title: brand.name,
+  description: brand.description,
   other: {
     // MCP Server Discovery
     "mcp-server": "/api/mcp",
     "mcp-schema": "/api/mcp/schema",
-    "mcp-capabilities": "commerce,tea,skincare,organic,e-commerce",
+    "mcp-capabilities": brand.mcp.capabilities,
     "mcp-version": "1.0.0",
   },
 };
@@ -108,19 +120,19 @@ export default function RootLayout({
     <ClerkProvider
       appearance={{
         variables: {
-          colorPrimary: "#ebc3bb",
-          colorTextOnPrimaryBackground: "#222222",
+          colorPrimary: brand.colors.primary[300],
+          colorTextOnPrimaryBackground: brand.colors.text.primary,
         },
       }}
     >
       <html lang="en" suppressHydrationWarning>
         <head>
-          {/* MCP Server Discovery Meta Tags */}
+          {/* MCP Server Discovery Meta Tags (driven by brand config) */}
           <meta name="mcp-server" content="/api/mcp" />
           <meta name="mcp-schema" content="/api/mcp/schema" />
-          <meta name="mcp-capabilities" content="commerce,tea,skincare,organic,e-commerce" />
+          <meta name="mcp-capabilities" content={brand.mcp.capabilities} />
           <meta name="mcp-version" content="1.0.0" />
-          <meta name="mcp-description" content="BeauTeas MCP Server for organic skincare tea commerce" />
+          <meta name="mcp-description" content={brand.mcp.description} />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
 
           {/* Additional MCP Discovery */}
@@ -128,39 +140,41 @@ export default function RootLayout({
           <link rel="mcp-schema" href="/api/mcp/schema" type="application/json" />
         </head>
         <body
-          className={`${lora.variable} ${alegreya.variable} antialiased bg-cream-100 text-charcoal flex flex-col min-h-screen font-body`}
+          className={`${lora.variable} ${alegreya.variable} ${geistMono.variable} antialiased bg-surface-dark text-text-primary flex flex-col min-h-screen font-body`}
           suppressHydrationWarning
         >
-          {/* Promotional banner - shown above header when enabled */}
-          <Suspense fallback={null}>
-            <PromotionalBanner />
-          </Suspense>
+          <BrandProvider>
+            {/* Promotional banner - shown above header when enabled */}
+            <Suspense fallback={null}>
+              <PromotionalBanner />
+            </Suspense>
 
-          {/* Global navigation header with suspense boundary */}
-          <Suspense fallback={<div className="h-16 bg-neutral-900" />}>
-            <Header />
-          </Suspense>
+            {/* Global navigation header with suspense boundary */}
+            <Suspense fallback={<div className="h-16 bg-surface-light" />}>
+              <Header />
+            </Suspense>
 
-          {/* Main content area - grows to fill available space */}
-          <main className="flex-1" suppressHydrationWarning>
-            {children}
-          </main>
+            {/* Main content area - grows to fill available space */}
+            <main className="flex-1" suppressHydrationWarning>
+              {children}
+            </main>
 
-          {/* Global footer */}
-          <Footer />
+            {/* Global footer */}
+            <Footer />
 
-          {/* Global toast notification system */}
-          <Toaster
-            position="top-center"
-            toastOptions={{
-              className:
-                "bg-blush-300 text-charcoal font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
-              duration: 3000,
-            }}
-          />
-          
-          {/* Core Web Vitals monitoring */}
-          <WebVitals />
+            {/* Global toast notification system */}
+            <Toaster
+              position="top-center"
+              toastOptions={{
+                className:
+                  "bg-primary-500/80 text-text-inverse font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
+                duration: 3000,
+              }}
+            />
+
+            {/* Core Web Vitals monitoring */}
+            <WebVitals />
+          </BrandProvider>
         </body>
       </html>
     </ClerkProvider>
