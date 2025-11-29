@@ -89,10 +89,10 @@ The branding is configured in `lib/brand.config.ts` - see [THEMING.md](docs/THEM
 4. **Database Setup**
    ```bash
    # Apply schema migrations to dev
-   npx wrangler d1 migrations apply beauteas-db-dev --env dev
+   npx wrangler d1 migrations apply beauteas-db-dev --env dev --remote
 
    # Load sample data (optional)
-   npx wrangler d1 execute beauteas-db-dev --env dev --file=data/d1/seed.sql
+   npx wrangler d1 execute beauteas-db-dev --env dev --remote --file=data/d1/seed.sql
    ```
 
 5. **Set Secrets (per environment)**

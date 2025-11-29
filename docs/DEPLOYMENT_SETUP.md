@@ -191,7 +191,7 @@ Public keys are configured in `wrangler.jsonc` vars per environment (see Step 3 
 In Clerk Dashboard:
 1. Go to **Domains**
 2. Add your domains:
-   - Dev: `beauteas-dev.<your-subdomain>.workers.dev`
+   - Dev: `beauteas-dev.<your-account-subdomain>.workers.dev`
    - Production: `beauteas.com`
 3. Configure redirect URLs for authentication
 
@@ -256,32 +256,32 @@ Public keys are configured in `wrangler.jsonc` vars per environment.
 ### **Step 1: Run Migrations (per environment)**
 ```bash
 # Apply migrations to DEV database
-wrangler d1 migrations apply beauteas-db-dev --env dev
+wrangler d1 migrations apply beauteas-db-dev --env dev --remote
 
 # Apply migrations to PRODUCTION database
-wrangler d1 migrations apply beauteas-db --env production
+wrangler d1 migrations apply beauteas-db --env production --remote
 ```
 
 ### **Step 2: Seed Data (Optional)**
 ```bash
 # Seed DEV database
-wrangler d1 execute beauteas-db-dev --env dev --file=./data/d1/seed.sql
+wrangler d1 execute beauteas-db-dev --env dev --remote --file=./data/d1/seed.sql
 
 # Seed PRODUCTION database (when ready)
-wrangler d1 execute beauteas-db --env production --file=./data/d1/seed.sql
+wrangler d1 execute beauteas-db --env production --remote --file=./data/d1/seed.sql
 ```
 
 ### **Step 3: Verify Database**
 ```bash
 # Check DEV tables
-wrangler d1 execute beauteas-db-dev --env dev \
+wrangler d1 execute beauteas-db-dev --env dev --remote \
   --command="SELECT name FROM sqlite_master WHERE type='table';"
 
 # Check DEV product count
-wrangler d1 execute beauteas-db-dev --env dev \
+wrangler d1 execute beauteas-db-dev --env dev --remote \
   --command="SELECT COUNT(*) FROM products;"
 
-# Check PRODUCTION (same commands with --env production)
+# Check PRODUCTION (same commands with --env production --remote)
 ```
 
 ---
@@ -356,7 +356,7 @@ npm run deploy:production
 ### **Step 4: Deploy Verification**
 1. Check deployment logs for errors
 2. Visit your deployed site:
-   - DEV: `beauteas-dev.<your-subdomain>.workers.dev`
+   - DEV: `beauteas-dev.<your-account-subdomain>.workers.dev`
    - PRODUCTION: `beauteas.com` (after custom domain setup)
 3. Test core functionality:
    - User registration/login
@@ -380,7 +380,7 @@ Update webhook endpoints in third-party services for each environment:
 #### **Stripe Webhooks**
 1. Go to Stripe Dashboard > **Developers > Webhooks**
 2. Create separate endpoints for each environment:
-   - DEV: `https://beauteas-dev.<subdomain>.workers.dev/api/webhooks/stripe`
+   - DEV: `https://beauteas-dev.<your-account-subdomain>.workers.dev/api/webhooks/stripe`
    - PRODUCTION: `https://beauteas.com/api/webhooks/stripe`
 
 #### **Clerk Webhooks (if any)**
@@ -522,7 +522,7 @@ wrangler d1 info beauteas-db-dev --env dev
 wrangler d1 info beauteas-db --env production
 
 # Test API endpoints
-curl https://beauteas-dev.<subdomain>.workers.dev/api/products
+curl https://beauteas-dev.<your-account-subdomain>.workers.dev/api/products
 curl https://beauteas.com/api/products
 
 # Check secrets per environment
