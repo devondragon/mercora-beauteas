@@ -71,21 +71,39 @@ The branding is configured in `lib/brand.config.ts` - see [THEMING.md](docs/THEM
    # Add your Clerk and Stripe keys
    ```
 
-3. **Database Setup**
+3. **Create Cloudflare Resources**
    ```bash
-   # Create the database
-   npx wrangler d1 create beauteas-db
+   # Create DEV environment resources
+   wrangler d1 create beauteas-db-dev
+   wrangler r2 bucket create beauteas-images-dev
+   wrangler vectorize create beauteas-index-dev --dimensions=1024 --metric=cosine
 
-   # Update wrangler.jsonc with the database ID
+   # Create PRODUCTION resources (when ready)
+   wrangler d1 create beauteas-db
+   wrangler r2 bucket create beauteas-images
+   wrangler vectorize create beauteas-index --dimensions=1024 --metric=cosine
 
-   # Apply schema migrations
-   npx wrangler d1 migrations apply beauteas-db --local
-
-   # Load sample data (optional)
-   npx wrangler d1 execute beauteas-db --local --file=data/d1/seed.sql
+   # Update wrangler.jsonc with the database IDs
    ```
 
-4. **Start Development**
+4. **Database Setup**
+   ```bash
+   # Apply schema migrations to dev
+   npx wrangler d1 migrations apply beauteas-db-dev --env dev --remote
+
+   # Load sample data (optional)
+   npx wrangler d1 execute beauteas-db-dev --env dev --remote --file=data/d1/seed.sql
+   ```
+
+5. **Set Secrets (per environment)**
+   ```bash
+   wrangler secret put CLERK_SECRET_KEY --env dev
+   wrangler secret put STRIPE_SECRET_KEY --env dev
+   wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
+   wrangler secret put RESEND_API_KEY --env dev
+   ```
+
+6. **Start Development**
    ```bash
    npm run dev
    ```
@@ -104,11 +122,24 @@ The branding is configured in `lib/brand.config.ts` - see [THEMING.md](docs/THEM
 
 ### Key Commands
 ```bash
-npm run dev          # Start dev server
-npm run build        # Build for production
-npm run deploy       # Deploy to Cloudflare
-npm run lint         # Run linter
+npm run dev               # Start local dev server
+npm run build             # Build for production
+npm run deploy            # Deploy to DEV (safe default)
+npm run deploy:dev        # Deploy to DEV explicitly
+npm run deploy:production # Deploy to PRODUCTION
+npm run preview:dev       # Local preview with dev bindings
+npm run lint              # Run linter
 ```
+
+### Environment Architecture
+BeauTeas uses isolated environments to prevent accidental production changes:
+
+| Environment | Worker | Database | R2 Bucket | Vectorize |
+|-------------|--------|----------|-----------|-----------|
+| **dev** | beauteas-dev | beauteas-db-dev | beauteas-images-dev | beauteas-index-dev |
+| **production** | beauteas | beauteas-db | beauteas-images | beauteas-index |
+
+The default `npm run deploy` command deploys to dev for safety. Production requires explicit `npm run deploy:production`.
 
 ### Project Structure
 ```

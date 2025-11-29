@@ -1,21 +1,36 @@
-# Mercora Production Deployment Guide
+# BeauTeas Deployment Guide
 
-> **Complete step-by-step guide for deploying Mercora to production**
+> **Complete step-by-step guide for deploying BeauTeas to Cloudflare**
 
-This comprehensive guide covers the complete deployment process for Mercora, including all third-party services, infrastructure configuration, security setup, and admin dashboard deployment.
+This comprehensive guide covers the complete deployment process for BeauTeas, including multi-environment setup, all third-party services, infrastructure configuration, security setup, and admin dashboard deployment.
 
 ## 🏗️ Infrastructure Overview
 
-Mercora runs on Cloudflare's edge infrastructure with integrated services:
+BeauTeas runs on Cloudflare's edge infrastructure with integrated services:
 
 - **Hosting**: Cloudflare Workers + Next.js 15 with App Router
 - **Database**: Cloudflare D1 (distributed SQLite with Drizzle ORM)
 - **Storage**: Cloudflare R2 Object Storage for images and content
 - **AI Platform**: Cloudflare AI (Llama 3.1 8B + BGE embeddings)
-- **Vector Database**: Cloudflare Vectorize (38-item index)
+- **Vector Database**: Cloudflare Vectorize for semantic search
 - **Authentication**: Clerk Authentication (with admin role support)
 - **Payments**: Stripe with Stripe Tax for global tax calculation
+- **Email**: Resend for transactional emails
 - **Admin Dashboard**: Complete admin interface with AI analytics
+
+## 🔀 Multi-Environment Architecture
+
+BeauTeas uses isolated environments to prevent accidental production changes:
+
+| Environment | Worker | Database | R2 Bucket | Vectorize |
+|-------------|--------|----------|-----------|-----------|
+| **dev** | beauteas-dev | beauteas-db-dev | beauteas-images-dev | beauteas-index-dev |
+| **production** | beauteas | beauteas-db | beauteas-images | beauteas-index |
+
+**Safety Model:**
+- `npm run deploy` defaults to dev environment (safe)
+- `npm run deploy:production` required for production (explicit)
+- No top-level resource bindings to prevent accidents
 
 ## 📋 Prerequisites
 
@@ -46,69 +61,91 @@ Mercora runs on Cloudflare's edge infrastructure with integrated services:
 
 ### **Step 2: Create Cloudflare Resources**
 
-#### **D1 Database**
-```bash
-# Create production database
-npx wrangler d1 create mercora-db
+Create resources for both environments. Start with dev, create production when ready.
 
+#### **DEV Environment Resources**
+```bash
+# D1 Database
+wrangler d1 create beauteas-db-dev
 # Note the database ID from output
-# Example: c1ea0c17-14ae-48cc-ade8-4433e9130594
+
+# R2 Bucket
+wrangler r2 bucket create beauteas-images-dev
+
+# Vectorize Index
+wrangler vectorize create beauteas-index-dev \
+  --dimensions=1024 \
+  --metric=cosine
 ```
 
-#### **R2 Bucket**
+#### **PRODUCTION Environment Resources**
 ```bash
-# Create storage bucket
-npx wrangler r2 bucket create voltique-images
+# D1 Database
+wrangler d1 create beauteas-db
+# Note the database ID from output
 
-# Configure public access for images (optional)
-npx wrangler r2 bucket notification create voltique-images \
-  --event-type object-create \
-  --prefix images/
-```
+# R2 Bucket
+wrangler r2 bucket create beauteas-images
 
-#### **Vectorize Index**
-```bash
-# Create vector database for AI
-npx wrangler vectorize create voltique-index \
-  --dimensions=768 \
+# Vectorize Index
+wrangler vectorize create beauteas-index \
+  --dimensions=1024 \
   --metric=cosine
 ```
 
 #### **AI Binding**
-AI binding is automatically available on Workers paid plans.
+AI binding is automatically available on Workers paid plans and shared across environments.
 
 ### **Step 3: Configure wrangler.jsonc**
-Update your `wrangler.jsonc` with the created resource IDs:
+Update `wrangler.jsonc` with the database IDs from the creation output:
 
-```json
+```jsonc
 {
-  "name": "mercora-production",
-  "compatibility_date": "2024-01-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "mercora-db",
-      "database_id": "your-d1-database-id-here"
+  "name": "beauteas",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Shared configuration
+  "assets": { "binding": "ASSETS", "directory": ".open-next/assets" },
+  "observability": { "enabled": true },
+  "ai": { "binding": "AI" },
+
+  "env": {
+    "dev": {
+      "name": "beauteas-dev",
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "beauteas-db-dev",
+        "database_id": "YOUR_DEV_DATABASE_ID"
+      }],
+      "r2_buckets": [
+        { "binding": "MEDIA", "bucket_name": "beauteas-images-dev" },
+        { "binding": "NEXT_INC_CACHE_R2_BUCKET", "bucket_name": "beauteas-images-dev" }
+      ],
+      "vectorize": [{ "binding": "VECTORIZE", "index_name": "beauteas-index-dev" }],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_...",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_..."
+      }
+    },
+    "production": {
+      "name": "beauteas",
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "beauteas-db",
+        "database_id": "YOUR_PRODUCTION_DATABASE_ID"
+      }],
+      "r2_buckets": [
+        { "binding": "MEDIA", "bucket_name": "beauteas-images" },
+        { "binding": "NEXT_INC_CACHE_R2_BUCKET", "bucket_name": "beauteas-images" }
+      ],
+      "vectorize": [{ "binding": "VECTORIZE", "index_name": "beauteas-index" }],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_...",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_..."
+      }
     }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "voltique-images"
-    }
-  ],
-  "vectorize": [
-    {
-      "binding": "VECTORIZE",
-      "index_name": "voltique-index"
-    }
-  ],
-  "ai": {
-    "binding": "AI"
-  },
-  "vars": {
-    "NODE_ENV": "production"
   }
 }
 ```
@@ -137,28 +174,25 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key_here
 CLERK_SECRET_KEY=sk_test_your_secret_key_here
 ```
 
-#### **Production (Cloudflare Secrets)**
+#### **Cloudflare Secrets (per environment)**
 ```bash
-# Add Clerk secret to Cloudflare
-echo "sk_test_your_secret_key_here" | npx wrangler secret put CLERK_SECRET_KEY
+# DEV environment
+wrangler secret put CLERK_SECRET_KEY --env dev
+# Enter: sk_test_your_dev_secret_key
 
-# Add public key to wrangler.jsonc vars
+# PRODUCTION environment
+wrangler secret put CLERK_SECRET_KEY --env production
+# Enter: sk_live_your_production_secret_key
 ```
 
-Update `wrangler.jsonc` vars:
-```json
-{
-  "vars": {
-    "NODE_ENV": "production",
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_your_publishable_key_here"
-  }
-}
-```
+Public keys are configured in `wrangler.jsonc` vars per environment (see Step 3 above).
 
 ### **Step 4: Configure Domains**
 In Clerk Dashboard:
 1. Go to **Domains**
-2. Add your production domain (e.g., `voltique.russellkmoore.me`)
+2. Add your domains:
+   - Dev: `beauteas-dev.<your-account-subdomain>.workers.dev`
+   - Production: `beauteas.com`
 3. Configure redirect URLs for authentication
 
 ---
@@ -200,50 +234,54 @@ STRIPE_SECRET_KEY=sk_test_your_secret_key_here
 STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 ```
 
-#### **Production (Cloudflare Secrets)**
+#### **Cloudflare Secrets (per environment)**
 ```bash
-# Add Stripe secrets to Cloudflare
-echo "sk_test_your_secret_key_here" | npx wrangler secret put STRIPE_SECRET_KEY
-echo "whsec_your_webhook_secret_here" | npx wrangler secret put STRIPE_WEBHOOK_SECRET
+# DEV environment
+wrangler secret put STRIPE_SECRET_KEY --env dev
+wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
+wrangler secret put RESEND_API_KEY --env dev
+
+# PRODUCTION environment
+wrangler secret put STRIPE_SECRET_KEY --env production
+wrangler secret put STRIPE_WEBHOOK_SECRET --env production
+wrangler secret put RESEND_API_KEY --env production
 ```
 
-Update `wrangler.jsonc` vars:
-```json
-{
-  "vars": {
-    "NODE_ENV": "production",
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_your_clerk_key",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_your_stripe_key"
-  }
-}
-```
+Public keys are configured in `wrangler.jsonc` vars per environment.
 
 ---
 
 ## 4️⃣ Database Setup
 
-### **Step 1: Run Migrations**
+### **Step 1: Run Migrations (per environment)**
 ```bash
-# Apply migrations to local database (for development)
-npx wrangler d1 migrations apply mercora-db --local
+# Apply migrations to DEV database
+wrangler d1 migrations apply beauteas-db-dev --env dev --remote
 
-# Apply migrations to production database
-npx wrangler d1 migrations apply mercora-db
+# Apply migrations to PRODUCTION database
+wrangler d1 migrations apply beauteas-db --env production --remote
 ```
 
 ### **Step 2: Seed Data (Optional)**
 ```bash
-# Execute seed data if you have any
-npx wrangler d1 execute mercora-db --file=./lib/db/seed.sql
+# Seed DEV database
+wrangler d1 execute beauteas-db-dev --env dev --remote --file=./data/d1/seed.sql
+
+# Seed PRODUCTION database (when ready)
+wrangler d1 execute beauteas-db --env production --remote --file=./data/d1/seed.sql
 ```
 
 ### **Step 3: Verify Database**
 ```bash
-# Check tables were created
-npx wrangler d1 execute mercora-db --command="SELECT name FROM sqlite_master WHERE type='table';"
+# Check DEV tables
+wrangler d1 execute beauteas-db-dev --env dev --remote \
+  --command="SELECT name FROM sqlite_master WHERE type='table';"
 
-# Check product count
-npx wrangler d1 execute mercora-db --command="SELECT COUNT(*) FROM products;"
+# Check DEV product count
+wrangler d1 execute beauteas-db-dev --env dev --remote \
+  --command="SELECT COUNT(*) FROM products;"
+
+# Check PRODUCTION (same commands with --env production --remote)
 ```
 
 ---
@@ -289,32 +327,41 @@ curl -X GET "https://yourdomain.com/api/admin/vectorize?token=your-admin-token"
 Verify all environment variables and secrets are configured:
 
 ```bash
-# Check Cloudflare secrets
-npx wrangler secret list
+# Check DEV secrets
+wrangler secret list --env dev
+
+# Check PRODUCTION secrets
+wrangler secret list --env production
 
 # Verify wrangler.jsonc configuration
 cat wrangler.jsonc
 ```
 
-### **Step 2: Build and Deploy**
+### **Step 2: Deploy to DEV**
 ```bash
 # Install dependencies
 npm install
 
-# Build for production
-npm run build
-
-# Deploy to Cloudflare Workers
+# Deploy to DEV (safe default)
 npm run deploy
+# Or explicitly: npm run deploy:dev
 ```
 
-### **Step 3: Deploy Verification**
+### **Step 3: Deploy to PRODUCTION**
+```bash
+# Deploy to PRODUCTION (explicit command required)
+npm run deploy:production
+```
+
+### **Step 4: Deploy Verification**
 1. Check deployment logs for errors
-2. Visit your deployed site
+2. Visit your deployed site:
+   - DEV: `beauteas-dev.<your-account-subdomain>.workers.dev`
+   - PRODUCTION: `beauteas.com` (after custom domain setup)
 3. Test core functionality:
    - User registration/login
    - Product browsing and filtering
-   - AI chat with Volt assistant
+   - AI chat assistant
    - Shopping cart and checkout flow (with test cards)
 4. Test admin dashboard:
    - Access admin dashboard at `/admin`
@@ -328,20 +375,23 @@ npm run deploy
 ## 7️⃣ Post-Deployment Configuration
 
 ### **Step 1: Update Webhook URLs**
-Update webhook endpoints in third-party services to point to production:
+Update webhook endpoints in third-party services for each environment:
 
 #### **Stripe Webhooks**
 1. Go to Stripe Dashboard > **Developers > Webhooks**
-2. Update endpoint URL to: `https://yourdomain.com/api/webhooks/stripe`
+2. Create separate endpoints for each environment:
+   - DEV: `https://beauteas-dev.<your-account-subdomain>.workers.dev/api/webhooks/stripe`
+   - PRODUCTION: `https://beauteas.com/api/webhooks/stripe`
 
 #### **Clerk Webhooks (if any)**
-Update Clerk webhook URLs to production domain.
+Update Clerk webhook URLs for each environment.
 
-### **Step 2: Configure Custom Domain (Optional)**
-If using a custom domain:
-1. Add domain to Cloudflare Workers
-2. Configure DNS records
-3. Update authentication redirect URLs
+### **Step 2: Configure Custom Domains**
+For production:
+1. Go to Cloudflare Dashboard > Workers & Pages > beauteas > Settings > Domains
+2. Add custom domain: `beauteas.com`
+3. Configure DNS records (CNAME to workers.dev)
+4. Update Clerk and Stripe with production domain
 
 ### **Step 3: Enable Analytics (Optional)**
 Consider adding:
@@ -353,33 +403,42 @@ Consider adding:
 
 ## 8️⃣ Going Live (Production Keys)
 
-When ready for real payments, switch to live Stripe keys:
+When ready for real payments, configure the production environment with live keys:
 
-### **Step 1: Get Live Stripe Keys**
+### **Step 1: Get Live Keys**
 From Stripe Dashboard (toggle to "Live" mode):
+1. Copy live **Publishable key** (starts with `pk_live_`)
+2. Copy live **Secret key** (starts with `sk_live_`)
+3. Create production webhook and copy signing secret
+
+From Clerk Dashboard (switch to production instance):
 1. Copy live **Publishable key** (starts with `pk_live_`)
 2. Copy live **Secret key** (starts with `sk_live_`)
 
 ### **Step 2: Update Production Secrets**
 ```bash
-# Update to live Stripe keys
-echo "sk_live_your_live_secret_key" | npx wrangler secret put STRIPE_SECRET_KEY
-echo "whsec_your_live_webhook_secret" | npx wrangler secret put STRIPE_WEBHOOK_SECRET
+# Update production secrets with live keys
+wrangler secret put CLERK_SECRET_KEY --env production
+wrangler secret put STRIPE_SECRET_KEY --env production
+wrangler secret put STRIPE_WEBHOOK_SECRET --env production
+wrangler secret put RESEND_API_KEY --env production
 ```
 
-### **Step 3: Update Public Variables**
-Update `wrangler.jsonc`:
-```json
-{
+### **Step 3: Update wrangler.jsonc Production Vars**
+Update the production environment vars in `wrangler.jsonc`:
+```jsonc
+"production": {
+  // ...
   "vars": {
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_your_live_publishable_key"
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_your_clerk_key",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_your_stripe_key"
   }
 }
 ```
 
-### **Step 4: Redeploy**
+### **Step 4: Deploy to Production**
 ```bash
-npm run deploy
+npm run deploy:production
 ```
 
 ---
@@ -450,17 +509,25 @@ npm run deploy
 
 ### **Debug Commands**
 ```bash
-# View deployment logs
-npx wrangler tail
+# View DEV deployment logs
+wrangler tail --env dev
 
-# Check database status
-npx wrangler d1 info mercora-db
+# View PRODUCTION deployment logs
+wrangler tail --env production
+
+# Check DEV database status
+wrangler d1 info beauteas-db-dev --env dev
+
+# Check PRODUCTION database status
+wrangler d1 info beauteas-db --env production
 
 # Test API endpoints
-curl https://yourdomain.com/api/products
+curl https://beauteas-dev.<your-account-subdomain>.workers.dev/api/products
+curl https://beauteas.com/api/products
 
-# Check secrets
-npx wrangler secret list
+# Check secrets per environment
+wrangler secret list --env dev
+wrangler secret list --env production
 ```
 
 ---
@@ -474,4 +541,4 @@ npx wrangler secret list
 
 ---
 
-**🎉 Your Mercora platform is now ready for production!**
+**🍵 Your BeauTeas store is now ready for production!**
