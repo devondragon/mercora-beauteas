@@ -91,24 +91,39 @@ User Query → AI Embeddings → Vector Search → Context Retrieval → LLM Res
    # Add your Clerk and Stripe keys
    ```
 
-3. **Database Setup**
+3. **Create Cloudflare Resources**
    ```bash
-   # Create the database (first time only)
-   npx wrangler d1 create mercora-db
-   
-   # Update wrangler.jsonc with the database ID from the output above
-   # Copy the database ID and update the "database_id" field in the d1_databases section
-   
-   # Apply schema migrations
-   npx wrangler d1 migrations apply mercora-db --local     # Local development
-   npx wrangler d1 migrations apply mercora-db --remote    # Remote production
+   # Create DEV environment resources
+   wrangler d1 create mercora-db-dev
+   wrangler r2 bucket create mercora-images-dev
+   wrangler vectorize create mercora-index-dev --dimensions=1024 --metric=cosine
 
-   # Load sample data (optional)
-   npx wrangler d1 execute mercora-db --local --file=data/d1/seed.sql   # Local
-   npx wrangler d1 execute mercora-db --remote --file=data/d1/seed.sql  # Remote
+   # Create PRODUCTION resources (when ready)
+   wrangler d1 create mercora-db
+   wrangler r2 bucket create mercora-images
+   wrangler vectorize create mercora-index --dimensions=1024 --metric=cosine
+
+   # Update wrangler.jsonc with the database IDs
    ```
 
-4. **Start Development**
+4. **Database Setup**
+   ```bash
+   # Apply schema migrations to dev
+   wrangler d1 migrations apply mercora-db-dev --env dev
+
+   # Load sample data (optional)
+   wrangler d1 execute mercora-db-dev --env dev --file=data/d1/seed.sql
+   ```
+
+5. **Set Secrets (per environment)**
+   ```bash
+   wrangler secret put CLERK_SECRET_KEY --env dev
+   wrangler secret put STRIPE_SECRET_KEY --env dev
+   wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
+   wrangler secret put RESEND_API_KEY --env dev
+   ```
+
+6. **Start Development**
    ```bash
    npm run dev
    ```
@@ -139,18 +154,31 @@ User Query → AI Embeddings → Vector Search → Context Retrieval → LLM Res
 ### **Key Commands**
 ```bash
 # Development
-npm run dev                 # Start dev server
-npm run build              # Build for production
-npm run deploy             # Deploy to Cloudflare
+npm run dev               # Start local dev server
+npm run build             # Build for production
+npm run deploy            # Deploy to DEV (safe default)
+npm run deploy:dev        # Deploy to DEV explicitly
+npm run deploy:production # Deploy to PRODUCTION
+npm run preview:dev       # Local preview with dev bindings
 
-# Database
-npx wrangler d1 migrations apply mercora-db --local    # Apply schema migrations (local)
-npx wrangler d1 migrations apply mercora-db            # Apply schema migrations (production)
-npx wrangler d1 execute mercora-db --local --file=data/d1/seed.sql  # Load sample data (local)
+# Database (per environment)
+wrangler d1 migrations apply mercora-db-dev --env dev         # Apply migrations to dev
+wrangler d1 migrations apply mercora-db --env production      # Apply migrations to production
+wrangler d1 execute mercora-db-dev --env dev --file=data/d1/seed.sql  # Seed dev
 
 # AI Content Management (Development Mode - Auth Disabled)
 curl -X GET "localhost:3000/api/admin/vectorize"  # Index products + knowledge (consolidated)
 ```
+
+### **Multi-Environment Architecture**
+Mercora uses isolated environments to prevent accidental production changes:
+
+| Environment | Worker | Database | R2 Bucket | Vectorize |
+|-------------|--------|----------|-----------|-----------|
+| **dev** | mercora-dev | mercora-db-dev | mercora-images-dev | mercora-index-dev |
+| **production** | mercora | mercora-db | mercora-images | mercora-index |
+
+The default `npm run deploy` command deploys to dev for safety. Production requires explicit `npm run deploy:production`.
 
 ### **Project Structure**
 ```
