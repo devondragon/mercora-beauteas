@@ -256,29 +256,29 @@ Public keys are configured in `wrangler.jsonc` vars per environment.
 ### **Step 1: Run Migrations (per environment)**
 ```bash
 # Apply migrations to DEV database
-wrangler d1 migrations apply mercora-db-dev --env dev
+wrangler d1 migrations apply --env dev --remote
 
 # Apply migrations to PRODUCTION database
-wrangler d1 migrations apply mercora-db --env production
+wrangler d1 migrations apply --env production --remote
 ```
 
 ### **Step 2: Seed Data (Optional)**
 ```bash
 # Seed DEV database
-wrangler d1 execute mercora-db-dev --env dev --file=./data/d1/seed.sql
+wrangler d1 execute --env dev --remote --file=./data/d1/seed.sql
 
 # Seed PRODUCTION database (when ready)
-wrangler d1 execute mercora-db --env production --file=./data/d1/seed.sql
+wrangler d1 execute --env production --remote --file=./data/d1/seed.sql
 ```
 
 ### **Step 3: Verify Database**
 ```bash
 # Check DEV tables
-wrangler d1 execute mercora-db-dev --env dev \
+wrangler d1 execute --env dev --remote \
   --command="SELECT name FROM sqlite_master WHERE type='table';"
 
 # Check DEV product count
-wrangler d1 execute mercora-db-dev --env dev \
+wrangler d1 execute --env dev --remote \
   --command="SELECT COUNT(*) FROM products;"
 
 # Check PRODUCTION (same commands with --env production)
@@ -356,7 +356,7 @@ npm run deploy:production
 ### **Step 4: Deploy Verification**
 1. Check deployment logs for errors
 2. Visit your deployed site:
-   - DEV: `mercora-dev.<your-subdomain>.workers.dev`
+   - DEV: `mercora-dev.<your-account-subdomain>.workers.dev`
    - PRODUCTION: Your custom domain
 3. Test core functionality:
    - User registration/login
@@ -380,7 +380,7 @@ Update webhook endpoints in third-party services for each environment:
 #### **Stripe Webhooks**
 1. Go to Stripe Dashboard > **Developers > Webhooks**
 2. Create separate endpoints for each environment:
-   - DEV: `https://mercora-dev.<subdomain>.workers.dev/api/webhooks/stripe`
+   - DEV: `https://mercora-dev.<your-account-subdomain>.workers.dev/api/webhooks/stripe`
    - PRODUCTION: `https://yourdomain.com/api/webhooks/stripe`
 
 #### **Clerk Webhooks (if any)**
@@ -522,7 +522,7 @@ wrangler d1 info mercora-db-dev --env dev
 wrangler d1 info mercora-db --env production
 
 # Test API endpoints
-curl https://mercora-dev.<subdomain>.workers.dev/api/products
+curl https://mercora-dev.<your-account-subdomain>.workers.dev/api/products
 curl https://yourdomain.com/api/products
 
 # Check secrets per environment

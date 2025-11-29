@@ -108,11 +108,11 @@ User Query → AI Embeddings → Vector Search → Context Retrieval → LLM Res
 
 4. **Database Setup**
    ```bash
-   # Apply schema migrations to dev
-   wrangler d1 migrations apply mercora-db-dev --env dev
+   # Apply schema migrations to dev (remote)
+   wrangler d1 migrations apply --env dev --remote
 
    # Load sample data (optional)
-   wrangler d1 execute mercora-db-dev --env dev --file=data/d1/seed.sql
+   wrangler d1 execute --env dev --remote --file=data/d1/seed.sql
    ```
 
 5. **Set Secrets (per environment)**
@@ -162,9 +162,9 @@ npm run deploy:production # Deploy to PRODUCTION
 npm run preview:dev       # Local preview with dev bindings
 
 # Database (per environment)
-wrangler d1 migrations apply mercora-db-dev --env dev         # Apply migrations to dev
-wrangler d1 migrations apply mercora-db --env production      # Apply migrations to production
-wrangler d1 execute mercora-db-dev --env dev --file=data/d1/seed.sql  # Seed dev
+wrangler d1 migrations apply --env dev --remote         # Apply migrations to dev
+wrangler d1 migrations apply --env production --remote  # Apply migrations to production
+wrangler d1 execute --env dev --remote --file=data/d1/seed.sql  # Seed dev
 
 # AI Content Management (Development Mode - Auth Disabled)
 curl -X GET "localhost:3000/api/admin/vectorize"  # Index products + knowledge (consolidated)
