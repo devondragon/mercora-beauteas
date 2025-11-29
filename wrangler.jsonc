@@ -1,4 +1,29 @@
 /**
+ * Wrangler Configuration for Mercora
+ *
+ * IMPORTANT: This config requires an environment flag (--env dev or --env production).
+ * There are no top-level resource bindings to prevent accidental deployments.
+ *
+ * Multi-environment setup:
+ *   - dev: Development/staging environment (safe default)
+ *   - production: Live production environment (explicit only)
+ *
+ * Deploy commands:
+ *   npm run deploy             # Deploys to DEV (safe default)
+ *   npm run deploy:dev         # Deploys to DEV explicitly
+ *   npm run deploy:production  # Deploys to PRODUCTION (requires explicit command)
+ *
+ * Resource creation (run once per environment):
+ *   # DEV
+ *   wrangler d1 create mercora-db-dev
+ *   wrangler r2 bucket create mercora-images-dev
+ *   wrangler vectorize create mercora-index-dev --dimensions=1024 --metric=cosine
+ *
+ *   # PRODUCTION
+ *   wrangler d1 create mercora-db
+ *   wrangler r2 bucket create mercora-images
+ *   wrangler vectorize create mercora-index --dimensions=1024 --metric=cosine
+ *
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
@@ -8,6 +33,8 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Shared configuration (inherited by all environments)
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"
@@ -15,70 +42,97 @@
   "observability": {
     "enabled": true
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "mercora-db",
-      "database_id": "a27c0044-672d-4355-aa47-4410746f45f9"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "voltique-images"
-    },
-    {
-      "binding": "NEXT_INC_CACHE_R2_BUCKET",
-      "bucket_name": "voltique-images"
-    }
-  ],
-  "vectorize": [
-    {
-      "binding": "VECTORIZE",
-      "index_name": "voltique-index"
-    }
-  ],
   "ai": {
     "binding": "AI"
   },
   "durable_objects": {
     "bindings": []
   },
-  /**
-   * Smart Placement
-   * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-   */
-  // "placement": { "mode": "smart" },
+
+  // Environment-specific configurations
+  "env": {
+    // === DEV ENVIRONMENT ===
+    // Deploy with: npm run deploy:dev
+    // Worker URL: mercora-dev.<your-subdomain>.workers.dev
+    "dev": {
+      "name": "mercora-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mercora-db-dev",
+          "database_id": "REPLACE_WITH_DEV_DATABASE_ID"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "mercora-images-dev"
+        },
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "mercora-images-dev"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "VECTORIZE",
+          "index_name": "mercora-index-dev"
+        }
+      ],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YOUR_DEV_CLERK_KEY",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_YOUR_DEV_STRIPE_KEY"
+      }
+    },
+
+    // === PRODUCTION ENVIRONMENT ===
+    // Deploy with: npm run deploy:production
+    // Configure custom domain in Cloudflare Dashboard
+    "production": {
+      "name": "mercora",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mercora-db",
+          "database_id": "REPLACE_WITH_PRD_DATABASE_ID"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "mercora-images"
+        },
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "mercora-images"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "VECTORIZE",
+          "index_name": "mercora-index"
+        }
+      ],
+      "vars": {
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_YOUR_PRODUCTION_CLERK_KEY",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_YOUR_PRODUCTION_STRIPE_KEY"
+      }
+    }
+  }
 
   /**
-   * Bindings
-   * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-   * databases, object storage, AI inference, real-time communication and more.
-   * https://developers.cloudflare.com/workers/runtime-apis/bindings/
+   * Secrets Setup (per environment):
+   *
+   * DEV:
+   *   wrangler secret put CLERK_SECRET_KEY --env dev
+   *   wrangler secret put STRIPE_SECRET_KEY --env dev
+   *   wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
+   *   wrangler secret put RESEND_API_KEY --env dev
+   *
+   * PRODUCTION:
+   *   wrangler secret put CLERK_SECRET_KEY --env production
+   *   wrangler secret put STRIPE_SECRET_KEY --env production
+   *   wrangler secret put STRIPE_WEBHOOK_SECRET --env production
+   *   wrangler secret put RESEND_API_KEY --env production
    */
-
-  /**
-   * Environment Variables
-   * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-   */
-  "vars": {
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bGVhcm5pbmctbGlnZXItMTAuY2xlcmsuYWNjb3VudHMuZGV2JA",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Rwyc6LL7e1EcFUl2kqrcgWa8KDNzC9m4lc38wQQKiKVmekTxi3q6R6R2nohizFzRNNw9bHTeN8mripgZzgUYUDd00nlOhCWEs"
-  },
-  /**
-   * Note: Use secrets to store sensitive data.
-   * https://developers.cloudflare.com/workers/configuration/secrets/
-   */
-
-  /**
-   * Static Assets
-   * https://developers.cloudflare.com/workers/static-assets/binding/
-   */
-  // "assets": { "directory": "./public/", "binding": "ASSETS" },
-
-  /**
-   * Service Bindings (communicate between multiple Workers)
-   * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-   */
-  // "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
 }
