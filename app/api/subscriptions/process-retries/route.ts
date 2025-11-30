@@ -13,7 +13,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
 import {
   getPendingRetryAttempts,
   updatePaymentRetryAttempt,
@@ -29,14 +28,12 @@ import {
 } from "@/lib/models/subscriptions";
 import { getCustomer } from "@/lib/models/mach/customer";
 import { sendPaymentFailedEmail } from "@/lib/utils/subscription-emails";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // POST /api/subscriptions/process-retries - Process pending payment retries
 // This endpoint should be secured and called by a cron job
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     // Verify the request is authorized (use a secret key or API key)
     const authHeader = request.headers.get("Authorization");

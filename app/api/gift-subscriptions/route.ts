@@ -9,13 +9,11 @@ import {
 import { getSubscriptionPlan } from "@/lib/models/subscriptions";
 import { getCustomerByClerkId } from "@/lib/models/mach/customer";
 import { sendGiftSubscriptionEmails } from "@/lib/utils/subscription-emails";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // POST /api/gift-subscriptions - Purchase a gift subscription
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     const user = await currentUser();
     const body = await request.json();

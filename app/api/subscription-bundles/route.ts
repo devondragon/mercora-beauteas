@@ -3,10 +3,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { createBundle, listBundles, getBundle } from "@/lib/models/coupons";
 import { getSubscriptionPlan } from "@/lib/models/subscriptions";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // GET /api/subscription-bundles - List all bundles
 export async function GET(request: NextRequest) {
@@ -59,6 +56,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/subscription-bundles - Create a new bundle (admin only)
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     const user = await currentUser();
     if (!user) {

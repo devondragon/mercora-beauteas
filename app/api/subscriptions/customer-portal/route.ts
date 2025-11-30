@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { getCustomerByClerkId } from "@/lib/models/mach/customer";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // POST /api/subscriptions/customer-portal - Create a Stripe Customer Portal session
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     const user = await currentUser();
     if (!user) {

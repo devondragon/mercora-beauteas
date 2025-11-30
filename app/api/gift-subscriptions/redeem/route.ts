@@ -13,13 +13,11 @@ import {
 } from "@/lib/models/subscriptions";
 import { getCustomerByClerkId } from "@/lib/models/mach/customer";
 import { sendSubscriptionConfirmationEmail } from "@/lib/utils/subscription-emails";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // POST /api/gift-subscriptions/redeem - Redeem a gift subscription
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     const user = await currentUser();
     if (!user) {

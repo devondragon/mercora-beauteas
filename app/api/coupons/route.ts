@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import Stripe from "stripe";
 import { createCoupon, listCoupons, updateCouponStripeId } from "@/lib/models/coupons";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 // GET /api/coupons - List all coupons (admin only)
 export async function GET(request: NextRequest) {
@@ -39,6 +36,7 @@ export async function GET(request: NextRequest) {
 
 // POST /api/coupons - Create a new coupon (admin only)
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
   try {
     const user = await currentUser();
     if (!user) {
