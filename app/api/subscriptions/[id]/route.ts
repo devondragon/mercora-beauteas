@@ -122,7 +122,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const body: UpdateSubscriptionRequest & { action?: string } = await request.json();
+    const body: UpdateSubscriptionRequest & {
+      action?: string;
+      pause_duration_days?: number;
+    } = await request.json();
     const stripe = getStripeServer();
 
     // Handle specific actions
@@ -134,17 +137,34 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      // Pause the Stripe subscription
-      await stripe.subscriptions.update(subscription.stripe_subscription_id, {
-        pause_collection: {
-          behavior: "mark_uncollectible",
-        },
-      });
+      // Calculate resume date if pause duration is specified
+      let resumeAt: string | undefined;
+      if (body.pause_duration_days && body.pause_duration_days > 0) {
+        const resumeDate = new Date();
+        resumeDate.setDate(resumeDate.getDate() + body.pause_duration_days);
+        resumeAt = resumeDate.toISOString();
+
+        // Pause until specific date in Stripe
+        await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+          pause_collection: {
+            behavior: "mark_uncollectible",
+            resumes_at: Math.floor(resumeDate.getTime() / 1000),
+          },
+        });
+      } else {
+        // Pause indefinitely
+        await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+          pause_collection: {
+            behavior: "mark_uncollectible",
+          },
+        });
+      }
 
       const previousStatus = subscription.status;
       await updateSubscription(id, {
         status: "paused",
         paused_at: new Date().toISOString(),
+        resume_at: resumeAt,
       });
 
       await logSubscriptionEvent({
@@ -152,12 +172,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         event_type: "paused",
         previous_status: previousStatus,
         new_status: "paused",
+        data: {
+          pause_duration_days: body.pause_duration_days,
+          resume_at: resumeAt,
+        },
       });
 
       const updated = await getSubscription(id);
       return NextResponse.json({
         data: updated,
         meta: { schema: "subscription" },
+        message: resumeAt
+          ? `Subscription paused until ${new Date(resumeAt).toLocaleDateString()}`
+          : "Subscription paused indefinitely",
       });
     }
 

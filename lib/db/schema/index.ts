@@ -112,3 +112,6 @@ export * from "./reviews";
 
 // Subscriptions schema (application-specific)
 export * from "./subscriptions";
+
+// Coupons, Gift Subscriptions, and Bundles schema (application-specific)
+export * from "./coupons";
