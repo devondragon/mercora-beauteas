@@ -511,6 +511,53 @@ export async function listSubscriptionInvoices(
   return invoices.map(hydrateInvoice);
 }
 
+/**
+ * List all invoices for a customer across all their subscriptions
+ * This is more efficient than fetching invoices per subscription (avoids N+1)
+ */
+export async function listCustomerInvoices(
+  customerId: string,
+  limit: number = 100
+): Promise<Array<SubscriptionInvoice & { subscription_name?: string; plan_name?: string }>> {
+  const db = await getDbAsync();
+
+  // Join invoices with subscriptions and plans to get all customer invoices in one query
+  const results = await db
+    .select({
+      invoice: subscription_invoices,
+      subscriptionPlanId: subscriptions.plan_id,
+    })
+    .from(subscription_invoices)
+    .innerJoin(subscriptions, eq(subscription_invoices.subscription_id, subscriptions.id))
+    .where(eq(subscriptions.customer_id, customerId))
+    .orderBy(desc(subscription_invoices.created_at))
+    .limit(limit);
+
+  // Get unique plan IDs
+  const planIds = [...new Set(results.map(r => r.subscriptionPlanId))];
+
+  // Fetch plans in one query
+  const plans = planIds.length > 0
+    ? await db
+        .select()
+        .from(subscription_plans)
+        .where(sql`${subscription_plans.id} IN ${planIds}`)
+    : [];
+
+  const planMap = new Map(plans.map(p => [p.id, p]));
+
+  // Hydrate and add subscription/plan names
+  return results.map(r => {
+    const invoice = hydrateInvoice(r.invoice);
+    const plan = planMap.get(r.subscriptionPlanId);
+    return {
+      ...invoice,
+      subscription_name: plan?.name || "Subscription",
+      plan_name: plan?.name,
+    };
+  });
+}
+
 export async function updateInvoice(
   id: string,
   data: Partial<{

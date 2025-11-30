@@ -34,44 +34,15 @@ export default function BillingHistoryPage() {
     setError(null);
 
     try {
-      // Fetch all subscriptions with invoices
-      const response = await fetch("/api/subscriptions?includeInactive=true");
+      // Fetch all invoices in a single efficient request
+      const response = await fetch("/api/billing-history");
       if (!response.ok) {
         throw new Error("Failed to fetch billing history");
       }
       const data = await response.json();
 
-      // For each subscription, fetch invoices
-      const allInvoices: SubscriptionInvoice[] = [];
-      for (const subscription of data.data || []) {
-        try {
-          const invoiceResponse = await fetch(
-            `/api/subscriptions/${subscription.id}?includeInvoices=true`
-          );
-          if (invoiceResponse.ok) {
-            const invoiceData = await invoiceResponse.json();
-            if (invoiceData.invoices) {
-              allInvoices.push(
-                ...invoiceData.invoices.map((inv: SubscriptionInvoice) => ({
-                  ...inv,
-                  subscription_name:
-                    invoiceData.data?.plan?.name || "Subscription",
-                }))
-              );
-            }
-          }
-        } catch {
-          // Continue even if one subscription fails
-        }
-      }
-
-      // Sort by date, newest first
-      allInvoices.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      setInvoices(allInvoices);
+      // Invoices are already sorted by the API
+      setInvoices(data.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -135,13 +106,21 @@ export default function BillingHistoryPage() {
       ? invoices
       : invoices.filter((inv) => inv.status === statusFilter);
 
-  // Calculate totals
+  // Calculate totals - use Money type structure (amount_paid.amount)
   const totals = invoices.reduce(
     (acc, inv) => {
+      // Handle both Money type (object with amount) and legacy number format
+      const amountPaid = typeof inv.amount_paid === 'object' && inv.amount_paid !== null
+        ? (inv.amount_paid as any).amount || 0
+        : (inv.amount_paid as number) || 0;
+      const amountDue = typeof inv.amount_due === 'object' && inv.amount_due !== null
+        ? (inv.amount_due as any).amount || 0
+        : (inv.amount_due as number) || 0;
+
       if (inv.status === "paid") {
-        acc.paid += inv.amount_paid;
+        acc.paid += amountPaid;
       } else if (inv.status === "open") {
-        acc.outstanding += inv.amount_due - inv.amount_paid;
+        acc.outstanding += amountDue - amountPaid;
       }
       return acc;
     },

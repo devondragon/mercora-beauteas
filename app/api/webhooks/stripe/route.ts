@@ -61,6 +61,12 @@ import {
 } from '@/lib/utils/subscription-emails';
 import { createOrder } from '@/lib/models/mach/orders';
 import type { SubscriptionStatus } from '@/lib/types/subscription';
+import {
+  withDbRetry,
+  validateStatusTransition,
+  isEventProcessed,
+  markEventProcessed,
+} from '@/lib/utils/webhook-helpers';
 
 // =====================================================
 // Helper: Get customer details from Stripe
@@ -135,6 +141,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Check for duplicate event processing (idempotency)
+    if (isEventProcessed(event.id)) {
+      console.log(`[Webhook] Event ${event.id} already processed, skipping`);
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+
     // Handle different event types
     switch (event.type) {
       case 'payment_intent.succeeded':
@@ -209,9 +221,13 @@ export async function POST(req: NextRequest) {
         console.log(`Unhandled event type: ${event.type}`);
     }
 
+    // Mark event as processed
+    markEventProcessed(event.id, event.type);
+
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error('Error processing webhook:', error);
+    // Return 500 so Stripe will retry the webhook
     return NextResponse.json(
       { error: 'Webhook processing failed' },
       { status: 500 }
@@ -522,31 +538,47 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
   console.log('Subscription updated:', stripeSubscription.id);
 
   try {
-    const subscription = await getSubscriptionByStripeId(stripeSubscription.id);
+    const subscription = await withDbRetry(
+      'getSubscriptionByStripeId',
+      () => getSubscriptionByStripeId(stripeSubscription.id)
+    );
 
     if (!subscription) {
       console.log('Subscription not found locally:', stripeSubscription.id);
       return;
     }
 
-    const newStatus = mapStripeSubscriptionStatus(stripeSubscription.status);
+    const proposedStatus = mapStripeSubscriptionStatus(stripeSubscription.status);
     const previousStatus = subscription.status;
 
-    await updateSubscription(subscription.id, {
-      status: newStatus,
-      current_period_start: new Date(stripeSubscription.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
-      trial_end: stripeSubscription.trial_end
-        ? new Date(stripeSubscription.trial_end * 1000).toISOString()
-        : undefined,
-      cancel_at_period_end: stripeSubscription.cancel_at_period_end,
-      cancelled_at: stripeSubscription.canceled_at
-        ? new Date(stripeSubscription.canceled_at * 1000).toISOString()
-        : undefined,
-      ended_at: stripeSubscription.ended_at
-        ? new Date(stripeSubscription.ended_at * 1000).toISOString()
-        : undefined,
-    });
+    // Validate status transition
+    const validatedStatus = validateStatusTransition(previousStatus, proposedStatus);
+    const newStatus = validatedStatus || previousStatus; // Keep current status if transition is invalid
+
+    if (!validatedStatus && previousStatus !== proposedStatus) {
+      console.warn(
+        `[Webhook] Invalid status transition blocked: ${previousStatus} -> ${proposedStatus}. ` +
+        `Subscription ${subscription.id} will remain at ${previousStatus}`
+      );
+    }
+
+    await withDbRetry('updateSubscription', () =>
+      updateSubscription(subscription.id, {
+        status: newStatus,
+        current_period_start: new Date(stripeSubscription.current_period_start * 1000).toISOString(),
+        current_period_end: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
+        trial_end: stripeSubscription.trial_end
+          ? new Date(stripeSubscription.trial_end * 1000).toISOString()
+          : undefined,
+        cancel_at_period_end: stripeSubscription.cancel_at_period_end,
+        cancelled_at: stripeSubscription.canceled_at
+          ? new Date(stripeSubscription.canceled_at * 1000).toISOString()
+          : undefined,
+        ended_at: stripeSubscription.ended_at
+          ? new Date(stripeSubscription.ended_at * 1000).toISOString()
+          : undefined,
+      })
+    );
 
     // Log status change if it changed
     if (previousStatus !== newStatus) {
@@ -559,13 +591,15 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
         eventType = 'expired';
       }
 
-      await logSubscriptionEvent({
-        subscription_id: subscription.id,
-        event_type: eventType,
-        previous_status: previousStatus,
-        new_status: newStatus,
-        stripe_event_id: eventId,
-      });
+      await withDbRetry('logSubscriptionEvent', () =>
+        logSubscriptionEvent({
+          subscription_id: subscription.id,
+          event_type: eventType,
+          previous_status: previousStatus,
+          new_status: newStatus,
+          stripe_event_id: eventId,
+        })
+      );
     }
   } catch (error) {
     console.error('Error handling subscription updated:', error);

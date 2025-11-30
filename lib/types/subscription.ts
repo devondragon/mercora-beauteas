@@ -5,7 +5,8 @@
  * customer subscriptions, invoices, and payment methods.
  */
 
-import { Money, Address } from "./mach";
+import { Money } from "./money";
+import { Address } from "./mach";
 
 // =====================================================
 // Subscription Plan Types

@@ -74,36 +74,83 @@ export default function ChangePlanPage() {
     }
   }, [isLoaded, user, fetchData]);
 
-  // Calculate proration preview when a plan is selected
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewIsEstimate, setPreviewIsEstimate] = useState(false);
+
+  // Fetch proration preview from Stripe API when a plan is selected
   useEffect(() => {
     if (!selectedPlan || !currentPlan || !subscription) {
       setPreviewData(null);
+      setPreviewIsEstimate(false);
       return;
     }
 
-    // Simple proration calculation (in production this would come from Stripe)
-    const currentPrice = currentPlan.price.amount;
-    const newPrice = selectedPlan.price.amount;
-    const priceDiff = newPrice - currentPrice;
+    const fetchProrationPreview = async () => {
+      setPreviewLoading(true);
+      try {
+        const response = await fetch(
+          `/api/subscriptions/${subscriptionId}/preview-change?new_plan_id=${selectedPlan.id}`
+        );
 
-    // Estimate remaining days in billing cycle
-    const now = new Date();
-    const periodEnd = subscription.current_period_end
-      ? new Date(subscription.current_period_end)
-      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const daysRemaining = Math.max(
-      0,
-      Math.ceil((periodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
-    );
-    const daysInPeriod = 30; // Simplified
-    const proratedAmount = Math.round((priceDiff * daysRemaining) / daysInPeriod);
+        if (response.ok) {
+          const data = await response.json();
+          const preview = data.data;
 
-    setPreviewData({
-      proratedAmount,
-      effectiveDate: now.toISOString(),
-      nextBillingAmount: newPrice,
-    });
-  }, [selectedPlan, currentPlan, subscription]);
+          // Calculate net proration (charge minus credit)
+          const netProration = (preview.prorated_amount || 0) - (preview.credit_amount || 0);
+
+          setPreviewData({
+            proratedAmount: netProration,
+            effectiveDate: new Date().toISOString(),
+            nextBillingAmount: preview.next_billing_amount || selectedPlan.price.amount,
+          });
+          setPreviewIsEstimate(preview.is_estimate || false);
+        } else {
+          // Fallback to client-side estimate if API fails
+          const currentPrice = currentPlan.price.amount;
+          const newPrice = selectedPlan.price.amount;
+          const priceDiff = newPrice - currentPrice;
+
+          const now = new Date();
+          const periodEnd = subscription.current_period_end
+            ? new Date(subscription.current_period_end)
+            : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+          const totalDays = Math.ceil(
+            (periodEnd.getTime() - new Date(subscription.current_period_start || now).getTime()) /
+              (24 * 60 * 60 * 1000)
+          );
+          const daysRemaining = Math.max(
+            0,
+            Math.ceil((periodEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+          );
+          const proratedAmount = totalDays > 0
+            ? Math.round((priceDiff * daysRemaining) / totalDays)
+            : 0;
+
+          setPreviewData({
+            proratedAmount,
+            effectiveDate: now.toISOString(),
+            nextBillingAmount: newPrice,
+          });
+          setPreviewIsEstimate(true);
+        }
+      } catch {
+        // Fallback to client-side estimate
+        const currentPrice = currentPlan.price.amount;
+        const newPrice = selectedPlan.price.amount;
+        setPreviewData({
+          proratedAmount: newPrice - currentPrice,
+          effectiveDate: new Date().toISOString(),
+          nextBillingAmount: newPrice,
+        });
+        setPreviewIsEstimate(true);
+      } finally {
+        setPreviewLoading(false);
+      }
+    };
+
+    fetchProrationPreview();
+  }, [selectedPlan, currentPlan, subscription, subscriptionId]);
 
   const handleChangePlan = async () => {
     if (!selectedPlan) return;
@@ -291,7 +338,7 @@ export default function ChangePlanPage() {
         </div>
 
         {/* Change Preview */}
-        {selectedPlan && comparison && previewData && (
+        {selectedPlan && comparison && (previewData || previewLoading) && (
           <Card className={`${comparison.bgColor} ${comparison.borderColor} border p-6`}>
             <div className="flex items-center gap-2 mb-4">
               <comparison.icon className={`h-5 w-5 ${comparison.color}`} />
@@ -300,48 +347,67 @@ export default function ChangePlanPage() {
               </h2>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Current Price</span>
-                <span className="text-white">
-                  {currentPlan && formatPrice(currentPlan.price.amount, currentPlan.price.currency)}
-                  /{currentPlan?.interval}
-                </span>
+            {previewLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <RefreshCw className="h-5 w-5 animate-spin text-gray-400 mr-2" />
+                <span className="text-gray-400">Calculating proration...</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">New Price</span>
-                <span className={`font-bold ${comparison.color}`}>
-                  {formatPrice(selectedPlan.price.amount, selectedPlan.price.currency)}/
-                  {selectedPlan.interval}
-                </span>
-              </div>
-              {previewData.proratedAmount !== 0 && (
-                <div className="flex justify-between border-t border-neutral-600 pt-3">
-                  <span className="text-gray-400">
-                    {previewData.proratedAmount > 0 ? "Prorated charge" : "Prorated credit"}
-                  </span>
-                  <span
-                    className={
-                      previewData.proratedAmount > 0 ? "text-red-400" : "text-green-400"
-                    }
-                  >
-                    {previewData.proratedAmount > 0 ? "" : "-"}
-                    {formatPrice(
-                      Math.abs(previewData.proratedAmount),
-                      selectedPlan.price.currency
-                    )}
-                  </span>
+            ) : previewData && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Current Price</span>
+                    <span className="text-white">
+                      {currentPlan && formatPrice(currentPlan.price.amount, currentPlan.price.currency)}
+                      /{currentPlan?.interval}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">New Price</span>
+                    <span className={`font-bold ${comparison.color}`}>
+                      {formatPrice(selectedPlan.price.amount, selectedPlan.price.currency)}/
+                      {selectedPlan.interval}
+                    </span>
+                  </div>
+                  {previewData.proratedAmount !== 0 && (
+                    <div className="flex justify-between border-t border-neutral-600 pt-3">
+                      <span className="text-gray-400">
+                        {previewData.proratedAmount > 0 ? "Prorated charge" : "Prorated credit"}
+                        {previewIsEstimate && " (estimate)"}
+                      </span>
+                      <span
+                        className={
+                          previewData.proratedAmount > 0 ? "text-red-400" : "text-green-400"
+                        }
+                      >
+                        {previewData.proratedAmount > 0 ? "" : "-"}
+                        {formatPrice(
+                          Math.abs(previewData.proratedAmount),
+                          selectedPlan.price.currency
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <p className="mt-4 text-sm text-gray-400">
-              {comparison.type === "upgrade"
-                ? "Your new plan will take effect immediately. You'll be charged a prorated amount for the remainder of your current billing period."
-                : comparison.type === "downgrade"
-                ? "Your current plan will remain active until the end of your billing period. The new plan will take effect on your next renewal date."
-                : "This change won't affect your billing amount."}
-            </p>
+                {previewIsEstimate && (
+                  <div className="mt-3 flex items-start gap-2 rounded bg-yellow-900/30 p-3 text-sm">
+                    <AlertCircle className="h-4 w-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <span className="text-yellow-400">
+                      This is an estimate. The final amount will be calculated when you confirm the change.
+                    </span>
+                  </div>
+                )}
+
+                <p className="mt-4 text-sm text-gray-400">
+                  {comparison.type === "upgrade"
+                    ? "Your new plan will take effect immediately. You'll be charged a prorated amount for the remainder of your current billing period."
+                    : comparison.type === "downgrade"
+                    ? "Your current plan will remain active until the end of your billing period. The new plan will take effect on your next renewal date."
+                    : "This change won't affect your billing amount."}
+                </p>
+              </>
+            )}
           </Card>
         )}
 
