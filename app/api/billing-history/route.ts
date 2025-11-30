@@ -12,6 +12,10 @@ import { currentUser } from "@clerk/nextjs/server";
 import { listCustomerInvoices } from "@/lib/models/subscriptions";
 import { getCustomerByClerkId } from "@/lib/models/mach/customer";
 
+// API pagination limits
+const DEFAULT_INVOICE_LIMIT = 100;
+const MAX_INVOICE_LIMIT = 500;
+
 /**
  * GET /api/billing-history - List all invoices for the authenticated customer
  */
@@ -23,7 +27,8 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
-    const limit = Math.min(parseInt(url.searchParams.get("limit") || "100"), 500);
+    const requestedLimit = parseInt(url.searchParams.get("limit") || String(DEFAULT_INVOICE_LIMIT));
+    const limit = Math.min(requestedLimit, MAX_INVOICE_LIMIT);
 
     // Get customer
     const customer = await getCustomerByClerkId(user.id);

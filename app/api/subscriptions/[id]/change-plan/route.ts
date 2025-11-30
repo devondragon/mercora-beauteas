@@ -26,9 +26,26 @@ export async function POST(
     const body = await request.json();
     const { new_plan_id, proration_behavior = "create_prorations" } = body;
 
+    // Validate new_plan_id
     if (!new_plan_id) {
       return NextResponse.json(
         { error: "new_plan_id is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate proration_behavior against allowed Stripe values
+    const validProrationBehaviors = [
+      "create_prorations",
+      "none",
+      "always_invoice",
+    ] as const;
+
+    if (!validProrationBehaviors.includes(proration_behavior)) {
+      return NextResponse.json(
+        {
+          error: `Invalid proration_behavior. Must be one of: ${validProrationBehaviors.join(", ")}`
+        },
         { status: 400 }
       );
     }

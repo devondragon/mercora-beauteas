@@ -200,6 +200,23 @@ export interface SubscriptionInvoice {
   extensions?: Record<string, unknown>;
 }
 
+/**
+ * Extended invoice type that includes subscription/plan name for display purposes
+ */
+export interface SubscriptionInvoiceWithPlan extends SubscriptionInvoice {
+  subscription_name?: string;
+  plan_name?: string;
+}
+
+/**
+ * Helper to safely extract amount from Money type
+ */
+export function getMoneyAmount(money: Money | number | undefined | null): number {
+  if (money === undefined || money === null) return 0;
+  if (typeof money === 'number') return money;
+  return money.amount || 0;
+}
+
 // =====================================================
 // Payment Method Types
 // =====================================================

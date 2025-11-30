@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,13 +18,15 @@ import {
   XCircle,
   Filter,
 } from "lucide-react";
-import type { SubscriptionInvoice } from "@/lib/types/subscription";
+import type { SubscriptionInvoiceWithPlan } from "@/lib/types/subscription";
+import { getMoneyAmount } from "@/lib/types/subscription";
 
 type InvoiceStatus = "all" | "paid" | "open" | "void" | "draft";
 
 export default function BillingHistoryPage() {
+  const router = useRouter();
   const { user, isLoaded } = useUser();
-  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
+  const [invoices, setInvoices] = useState<SubscriptionInvoiceWithPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus>("all");
@@ -106,16 +109,11 @@ export default function BillingHistoryPage() {
       ? invoices
       : invoices.filter((inv) => inv.status === statusFilter);
 
-  // Calculate totals - use Money type structure (amount_paid.amount)
+  // Calculate totals using type-safe helper
   const totals = invoices.reduce(
     (acc, inv) => {
-      // Handle both Money type (object with amount) and legacy number format
-      const amountPaid = typeof inv.amount_paid === 'object' && inv.amount_paid !== null
-        ? (inv.amount_paid as any).amount || 0
-        : (inv.amount_paid as number) || 0;
-      const amountDue = typeof inv.amount_due === 'object' && inv.amount_due !== null
-        ? (inv.amount_due as any).amount || 0
-        : (inv.amount_due as number) || 0;
+      const amountPaid = getMoneyAmount(inv.amount_paid);
+      const amountDue = getMoneyAmount(inv.amount_due);
 
       if (inv.status === "paid") {
         acc.paid += amountPaid;
@@ -152,7 +150,7 @@ export default function BillingHistoryPage() {
               Please sign in to view your billing history.
             </p>
             <Button
-              onClick={() => (window.location.href = "/sign-in")}
+              onClick={() => router.push("/sign-in")}
               className="bg-orange-600 hover:bg-orange-700"
             >
               Sign In
@@ -170,7 +168,7 @@ export default function BillingHistoryPage() {
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
-            onClick={() => (window.location.href = "/account/subscriptions")}
+            onClick={() => router.push("/account/subscriptions")}
             className="text-gray-400 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -317,11 +315,11 @@ export default function BillingHistoryPage() {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-400">
                       <Calendar className="h-3 w-3" />
-                      <span>{formatDate(invoice.created_at)}</span>
-                      {(invoice as any).subscription_name && (
+                      <span>{formatDate(invoice.created_at || "")}</span>
+                      {invoice.subscription_name && (
                         <>
                           <span>•</span>
-                          <span>{(invoice as any).subscription_name}</span>
+                          <span>{invoice.subscription_name}</span>
                         </>
                       )}
                     </div>

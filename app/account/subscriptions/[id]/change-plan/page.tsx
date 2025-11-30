@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Card } from "@/components/ui/card";
@@ -76,9 +76,19 @@ export default function ChangePlanPage() {
 
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewIsEstimate, setPreviewIsEstimate] = useState(false);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch proration preview from Stripe API when a plan is selected
+  // Debounce delay in milliseconds to prevent rapid API calls
+  const PRORATION_PREVIEW_DEBOUNCE_MS = 300;
+
+  // Fetch proration preview from Stripe API when a plan is selected (debounced)
   useEffect(() => {
+    // Clear any pending debounced calls
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+
     if (!selectedPlan || !currentPlan || !subscription) {
       setPreviewData(null);
       setPreviewIsEstimate(false);
@@ -149,7 +159,15 @@ export default function ChangePlanPage() {
       }
     };
 
-    fetchProrationPreview();
+    // Debounce the API call to prevent rapid requests during plan selection
+    debounceTimeoutRef.current = setTimeout(fetchProrationPreview, PRORATION_PREVIEW_DEBOUNCE_MS);
+
+    // Cleanup timeout on unmount or dependency change
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
   }, [selectedPlan, currentPlan, subscription, subscriptionId]);
 
   const handleChangePlan = async () => {
@@ -244,7 +262,7 @@ export default function ChangePlanPage() {
             <h2 className="mb-2 text-xl font-semibold text-white">Sign In Required</h2>
             <p className="mb-4 text-gray-400">Please sign in to change your plan.</p>
             <Button
-              onClick={() => (window.location.href = "/sign-in")}
+              onClick={() => router.push("/sign-in")}
               className="bg-orange-600 hover:bg-orange-700"
             >
               Sign In
