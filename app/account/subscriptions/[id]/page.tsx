@@ -301,8 +301,8 @@ export default function SubscriptionDetailPage() {
                 <dd className="font-medium text-white">
                   {subscription.plan
                     ? `${formatPrice(
-                        subscription.plan.price_amount,
-                        subscription.plan.currency_code
+                        subscription.plan.price.amount,
+                        subscription.plan.price.currency
                       )}/${subscription.plan.interval}`
                     : "—"}
                 </dd>
@@ -493,7 +493,7 @@ export default function SubscriptionDetailPage() {
                     >
                       <div>
                         <p className="font-medium text-white">
-                          {formatPrice(invoice.amount_due, invoice.currency_code)}
+                          {formatPrice(invoice.amount_due.amount, invoice.amount_due.currency)}
                         </p>
                         <p className="text-sm text-gray-400">
                           {formatDate(invoice.created_at)}
@@ -511,9 +511,9 @@ export default function SubscriptionDetailPage() {
                         >
                           {invoice.status}
                         </span>
-                        {invoice.invoice_url && (
+                        {invoice.hosted_invoice_url && (
                           <a
-                            href={invoice.invoice_url}
+                            href={invoice.hosted_invoice_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm text-orange-400 hover:text-orange-300"

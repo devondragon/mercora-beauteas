@@ -326,7 +326,7 @@ export default function BillingHistoryPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-white">
-                        {formatPrice(invoice.amount_due, invoice.currency_code)}
+                        {formatPrice(invoice.amount_due.amount, invoice.amount_due.currency)}
                       </p>
                       <span
                         className={`rounded px-2 py-0.5 text-xs ${getStatusColor(
@@ -348,9 +348,9 @@ export default function BillingHistoryPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {invoice.invoice_pdf && (
+                    {invoice.invoice_pdf_url && (
                       <a
-                        href={invoice.invoice_pdf}
+                        href={invoice.invoice_pdf_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 rounded bg-neutral-700 px-3 py-1.5 text-sm text-gray-300 transition hover:bg-neutral-600"
@@ -359,9 +359,9 @@ export default function BillingHistoryPage() {
                         PDF
                       </a>
                     )}
-                    {invoice.invoice_url && (
+                    {invoice.hosted_invoice_url && (
                       <a
-                        href={invoice.invoice_url}
+                        href={invoice.hosted_invoice_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 rounded bg-neutral-700 px-3 py-1.5 text-sm text-gray-300 transition hover:bg-neutral-600"

@@ -124,7 +124,7 @@ function getBaseEmailTemplate(title: string, content: string): string {
             Questions about your subscription? Reply to this email or contact our support team.
           </p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">
-            <a href="\${process.env.NEXT_PUBLIC_APP_URL}/account/subscriptions" style="color: #f97316;">Manage Your Subscription</a>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL}/account/subscriptions" style="color: #f97316;">Manage Your Subscription</a>
           </p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0;">
             Thank you for being a BeauTeas subscriber!

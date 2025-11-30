@@ -282,7 +282,7 @@ export default function ChangePlanPage() {
                 <PlanCard
                   key={plan.id}
                   plan={plan}
-                  selected={selectedPlan?.id === plan.id}
+                  isSelected={selectedPlan?.id === plan.id}
                   onSelect={setSelectedPlan}
                 />
               ))}

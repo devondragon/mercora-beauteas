@@ -27,7 +27,7 @@ import {
   logSubscriptionEvent,
   getSubscriptionWithPlan,
 } from "@/lib/models/subscriptions";
-import { getCustomer } from "@/lib/models/customer";
+import { getCustomer } from "@/lib/models/mach/customer";
 import { sendPaymentFailedEmail } from "@/lib/utils/subscription-emails";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {

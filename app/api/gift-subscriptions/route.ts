@@ -7,7 +7,7 @@ import {
   getGiftByRedeemCode,
 } from "@/lib/models/coupons";
 import { getSubscriptionPlan } from "@/lib/models/subscriptions";
-import { getCustomerByClerkId } from "@/lib/models/customer";
+import { getCustomerByClerkId } from "@/lib/models/mach/customer";
 import { sendGiftSubscriptionEmails } from "@/lib/utils/subscription-emails";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {

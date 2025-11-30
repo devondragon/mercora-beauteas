@@ -364,7 +364,7 @@ export default function SubscribePage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">{selectedPlan.name}</span>
                   <span className="font-medium text-white">
-                    {formatPrice(selectedPlan.price_amount, selectedPlan.currency_code)}
+                    {formatPrice(selectedPlan.price.amount, selectedPlan.price.currency)}
                     <span className="text-sm text-gray-400">
                       /{selectedPlan.interval}
                     </span>
@@ -377,13 +377,13 @@ export default function SubscribePage() {
                     </span>
                   </div>
                 )}
-                {selectedPlan.setup_fee_amount > 0 && (
+                {selectedPlan.setup_fee && selectedPlan.setup_fee.amount > 0 && (
                   <div className="flex items-center justify-between border-t border-neutral-600 pt-2">
                     <span className="text-gray-400">Setup fee (one-time)</span>
                     <span className="text-white">
                       {formatPrice(
-                        selectedPlan.setup_fee_amount,
-                        selectedPlan.currency_code
+                        selectedPlan.setup_fee.amount,
+                        selectedPlan.setup_fee.currency
                       )}
                     </span>
                   </div>
@@ -397,8 +397,8 @@ export default function SubscribePage() {
                 stripe={stripePromise}
                 options={{
                   mode: "subscription",
-                  amount: selectedPlan.price_amount,
-                  currency: selectedPlan.currency_code.toLowerCase(),
+                  amount: selectedPlan.price.amount,
+                  currency: selectedPlan.price.currency.toLowerCase(),
                   appearance: {
                     theme: "night",
                     variables: {
