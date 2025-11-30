@@ -33,6 +33,7 @@ import { getStripe, getWebhookSecret } from '@/lib/stripe';
 import Stripe from 'stripe';
 import {
   getSubscriptionByStripeId,
+  getSubscriptionWithPlan,
   updateSubscription,
   logSubscriptionEvent,
   createSubscriptionInvoice,
@@ -41,9 +42,63 @@ import {
   savePaymentMethod,
   getPaymentMethodByStripeId,
   removePaymentMethod,
+  getSubscriptionPlan,
 } from '@/lib/models/subscriptions';
+import {
+  createPaymentRetryAttempt,
+  getNextRetryDate,
+  DUNNING_CONFIG,
+} from '@/lib/models/coupons';
+import {
+  sendSubscriptionConfirmationEmail,
+  sendPaymentSuccessEmail,
+  sendPaymentFailedEmail,
+  sendTrialEndingEmail,
+  sendSubscriptionCancelledEmail,
+  sendSubscriptionPausedEmail,
+  sendSubscriptionResumedEmail,
+  sendRenewalReminderEmail,
+} from '@/lib/utils/subscription-emails';
 import { createOrder } from '@/lib/models/mach/orders';
 import type { SubscriptionStatus } from '@/lib/types/subscription';
+
+// =====================================================
+// Helper: Get customer details from Stripe
+// =====================================================
+
+interface CustomerDetails {
+  email: string;
+  name: string;
+}
+
+async function getCustomerDetails(
+  stripe: Stripe,
+  customerId: string | Stripe.Customer | Stripe.DeletedCustomer | null
+): Promise<CustomerDetails | null> {
+  if (!customerId) return null;
+
+  try {
+    let customer: Stripe.Customer | Stripe.DeletedCustomer;
+
+    if (typeof customerId === 'string') {
+      customer = await stripe.customers.retrieve(customerId);
+    } else {
+      customer = customerId;
+    }
+
+    if (customer.deleted) {
+      return null;
+    }
+
+    return {
+      email: customer.email || '',
+      name: customer.name || customer.email?.split('@')[0] || 'Valued Customer',
+    };
+  } catch (error) {
+    console.error('Error fetching customer details:', error);
+    return null;
+  }
+}
 
 /**
  * POST handler for Stripe webhook events
@@ -135,6 +190,10 @@ export async function POST(req: NextRequest) {
 
       case 'invoice.payment_failed':
         await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice, event.id);
+        break;
+
+      case 'invoice.upcoming':
+        await handleInvoiceUpcoming(event.data.object as Stripe.Invoice);
         break;
 
       // Payment Method Events
@@ -347,6 +406,29 @@ async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
       });
     }
 
+    // Send payment success email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, invoice.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      await sendPaymentSuccessEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        invoiceNumber: invoice.number || undefined,
+        amountPaid: invoice.amount_paid,
+        invoiceUrl: invoice.hosted_invoice_url || undefined,
+        invoicePdfUrl: invoice.invoice_pdf || undefined,
+        nextBillingDate: subscription.current_period_end,
+      });
+      console.log(`Payment success email sent for subscription ${subscription.id}`);
+    }
+
     console.log(`Invoice payment processed for subscription ${subscription.id}`);
 
   } catch (error) {
@@ -410,6 +492,24 @@ async function handleSubscriptionCreated(stripeSubscription: Stripe.Subscription
       new_status: newStatus,
       stripe_event_id: eventId,
     });
+
+    // Send confirmation email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, stripeSubscription.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      await sendSubscriptionConfirmationEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+      });
+      console.log(`Confirmation email sent for subscription ${subscription.id}`);
+    }
   } catch (error) {
     console.error('Error handling subscription created:', error);
   }
@@ -500,6 +600,30 @@ async function handleSubscriptionDeleted(stripeSubscription: Stripe.Subscription
       new_status: 'cancelled',
       stripe_event_id: eventId,
     });
+
+    // Send cancellation email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, stripeSubscription.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      const endDate = stripeSubscription.current_period_end
+        ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+        : new Date().toISOString();
+
+      await sendSubscriptionCancelledEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        endDate,
+        reason: subscription.cancel_reason,
+      });
+      console.log(`Cancellation email sent for subscription ${subscription.id}`);
+    }
   } catch (error) {
     console.error('Error handling subscription deleted:', error);
   }
@@ -519,19 +643,40 @@ async function handleTrialWillEnd(stripeSubscription: Stripe.Subscription, event
       return;
     }
 
+    const trialEndDate = stripeSubscription.trial_end
+      ? new Date(stripeSubscription.trial_end * 1000).toISOString()
+      : null;
+
     await logSubscriptionEvent({
       subscription_id: subscription.id,
       event_type: 'trial_ended',
-      data: {
-        trial_end: stripeSubscription.trial_end
-          ? new Date(stripeSubscription.trial_end * 1000).toISOString()
-          : null,
-      },
+      data: { trial_end: trialEndDate },
       stripe_event_id: eventId,
     });
 
-    // TODO: Send trial ending notification email
-    console.log(`Trial ending soon for subscription ${subscription.id}`);
+    // Send trial ending notification email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, stripeSubscription.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan && trialEndDate) {
+      const daysRemaining = Math.ceil(
+        (new Date(trialEndDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      );
+
+      await sendTrialEndingEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        trialEndDate,
+        daysRemaining: Math.max(daysRemaining, 1),
+      });
+      console.log(`Trial ending email sent for subscription ${subscription.id}`);
+    }
   } catch (error) {
     console.error('Error handling trial will end:', error);
   }
@@ -553,9 +698,15 @@ async function handleSubscriptionPaused(stripeSubscription: Stripe.Subscription,
 
     const previousStatus = subscription.status;
 
+    // Get resume date if set
+    const resumeAt = stripeSubscription.pause_collection?.resumes_at
+      ? new Date(stripeSubscription.pause_collection.resumes_at * 1000).toISOString()
+      : undefined;
+
     await updateSubscription(subscription.id, {
       status: 'paused',
       paused_at: new Date().toISOString(),
+      resume_at: resumeAt,
     });
 
     await logSubscriptionEvent({
@@ -565,6 +716,25 @@ async function handleSubscriptionPaused(stripeSubscription: Stripe.Subscription,
       new_status: 'paused',
       stripe_event_id: eventId,
     });
+
+    // Send paused email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, stripeSubscription.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      await sendSubscriptionPausedEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        pausedUntil: resumeAt,
+      });
+      console.log(`Paused email sent for subscription ${subscription.id}`);
+    }
   } catch (error) {
     console.error('Error handling subscription paused:', error);
   }
@@ -599,6 +769,24 @@ async function handleSubscriptionResumed(stripeSubscription: Stripe.Subscription
       new_status: 'active',
       stripe_event_id: eventId,
     });
+
+    // Send resumed email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, stripeSubscription.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      await sendSubscriptionResumedEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+      });
+      console.log(`Resumed email sent for subscription ${subscription.id}`);
+    }
   } catch (error) {
     console.error('Error handling subscription resumed:', error);
   }
@@ -700,6 +888,8 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice, eventId: stri
     const previousStatus = subscription.status;
     await updateSubscription(subscription.id, { status: 'past_due' });
 
+    const attemptNumber = invoice.attempt_count || 1;
+
     // Log the failure
     await logSubscriptionEvent({
       subscription_id: subscription.id,
@@ -709,15 +899,129 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice, eventId: stri
       data: {
         invoice_id: invoice.id,
         amount: invoice.amount_due,
-        attempt_count: invoice.attempt_count,
+        attempt_count: attemptNumber,
       },
       stripe_event_id: eventId,
     });
 
-    // TODO: Send payment failed notification email
-    console.log(`Payment failed for subscription ${subscription.id}`);
+    // Create payment retry attempt for dunning
+    const nextRetryDate = getNextRetryDate(attemptNumber);
+    if (nextRetryDate) {
+      await createPaymentRetryAttempt({
+        subscription_id: subscription.id,
+        invoice_id: invoice.id,
+        attempt_number: attemptNumber,
+        amount: invoice.amount_due,
+        currency_code: invoice.currency.toUpperCase(),
+        scheduled_at: nextRetryDate.toISOString(),
+      });
+    }
+
+    // Send payment failed email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, invoice.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      // Get payment method last 4 digits if available
+      let lastFourDigits: string | undefined;
+      if (invoice.default_payment_method) {
+        try {
+          const pmId = typeof invoice.default_payment_method === 'string'
+            ? invoice.default_payment_method
+            : invoice.default_payment_method.id;
+          const pm = await stripe.paymentMethods.retrieve(pmId);
+          lastFourDigits = pm.card?.last4;
+        } catch (e) {
+          // Ignore error fetching payment method
+        }
+      }
+
+      await sendPaymentFailedEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        attemptNumber,
+        maxAttempts: DUNNING_CONFIG.maxAttempts,
+        nextRetryDate: nextRetryDate?.toISOString(),
+        updatePaymentUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/account/subscriptions/${subscription.id}/payment-method`,
+        lastFourDigits,
+        failureReason: invoice.last_finalization_error?.message,
+      });
+      console.log(`Payment failed email sent for subscription ${subscription.id}`);
+    }
+
+    console.log(`Payment failed for subscription ${subscription.id}, attempt ${attemptNumber}`);
   } catch (error) {
     console.error('Error handling invoice payment failed:', error);
+  }
+}
+
+/**
+ * Handle invoice upcoming event (sent ~3 days before renewal)
+ * Used to send renewal reminder emails
+ */
+async function handleInvoiceUpcoming(invoice: Stripe.Invoice) {
+  console.log('Invoice upcoming:', invoice.id);
+
+  if (!invoice.subscription) {
+    return; // Not a subscription invoice
+  }
+
+  try {
+    const stripeSubscriptionId = typeof invoice.subscription === 'string'
+      ? invoice.subscription
+      : invoice.subscription.id;
+
+    const subscription = await getSubscriptionByStripeId(stripeSubscriptionId);
+    if (!subscription) {
+      console.log('Subscription not found locally:', stripeSubscriptionId);
+      return;
+    }
+
+    // Send renewal reminder email
+    const stripe = getStripe();
+    const customerDetails = await getCustomerDetails(stripe, invoice.customer);
+    const plan = await getSubscriptionPlan(subscription.plan_id);
+
+    if (customerDetails && plan) {
+      // Calculate next billing date from invoice
+      const nextBillingDate = invoice.next_payment_attempt
+        ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+        : invoice.due_date
+        ? new Date(invoice.due_date * 1000).toISOString()
+        : undefined;
+
+      await sendRenewalReminderEmail({
+        customerName: customerDetails.name,
+        customerEmail: customerDetails.email,
+        subscriptionId: subscription.id,
+        planName: plan.name,
+        planPrice: plan.price.amount,
+        planInterval: plan.interval,
+        currency: plan.price.currency,
+        amountPaid: invoice.amount_due,
+        nextBillingDate,
+      });
+      console.log(`Renewal reminder email sent for subscription ${subscription.id}`);
+    }
+
+    // Log the event
+    await logSubscriptionEvent({
+      subscription_id: subscription.id,
+      event_type: 'renewed',
+      data: {
+        invoice_id: invoice.id,
+        amount: invoice.amount_due,
+        next_payment_attempt: invoice.next_payment_attempt,
+      },
+    });
+  } catch (error) {
+    console.error('Error handling invoice upcoming:', error);
   }
 }
 
