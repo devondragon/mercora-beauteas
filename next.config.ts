@@ -87,6 +87,27 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Shopify URL pattern redirects — maps old Shopify paths to Mercora equivalents.
+  // Phase 1 stubs: structural patterns only. Phase 4 (MIGR-08) adds slug-level mapping.
+  async redirects() {
+    return [
+      {
+        source: "/products/:slug",
+        destination: "/product/:slug",
+        permanent: true,
+      },
+      {
+        source: "/collections/:slug",
+        destination: "/category/:slug",
+        permanent: true,
+      },
+      {
+        source: "/pages/:slug",
+        destination: "/:slug",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
