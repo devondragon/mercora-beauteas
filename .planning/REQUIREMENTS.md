@@ -116,50 +116,50 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEO-01 | Phase ? | Pending |
-| SEO-02 | Phase ? | Pending |
-| SEO-03 | Phase ? | Pending |
-| SEO-04 | Phase ? | Pending |
-| SEO-05 | Phase ? | Pending |
-| SEO-06 | Phase ? | Pending |
-| SEO-07 | Phase ? | Pending |
-| SUBI-01 | Phase ? | Pending |
-| SUBI-02 | Phase ? | Pending |
-| SUBI-03 | Phase ? | Pending |
-| SUBI-04 | Phase ? | Pending |
-| SUBI-05 | Phase ? | Pending |
-| SUBI-06 | Phase ? | Pending |
-| SUBI-07 | Phase ? | Pending |
-| SUBI-08 | Phase ? | Pending |
-| SUBX-01 | Phase ? | Pending |
-| SUBX-02 | Phase ? | Pending |
-| SUBX-03 | Phase ? | Pending |
-| SUBX-04 | Phase ? | Pending |
-| SUBX-05 | Phase ? | Pending |
-| SUBX-06 | Phase ? | Pending |
-| SUBX-07 | Phase ? | Pending |
-| SUBX-08 | Phase ? | Pending |
-| SUBX-09 | Phase ? | Pending |
-| SUBA-01 | Phase ? | Pending |
-| SUBA-02 | Phase ? | Pending |
-| SUBA-03 | Phase ? | Pending |
-| SUBA-04 | Phase ? | Pending |
-| SUBA-05 | Phase ? | Pending |
-| MIGR-01 | Phase ? | Pending |
-| MIGR-02 | Phase ? | Pending |
-| MIGR-03 | Phase ? | Pending |
-| MIGR-04 | Phase ? | Pending |
-| MIGR-05 | Phase ? | Pending |
-| MIGR-06 | Phase ? | Pending |
-| MIGR-07 | Phase ? | Pending |
-| MIGR-08 | Phase ? | Pending |
-| MIGR-09 | Phase ? | Pending |
+| SEO-01 | Phase 1 | Pending |
+| SEO-02 | Phase 1 | Pending |
+| SEO-03 | Phase 1 | Pending |
+| SEO-04 | Phase 1 | Pending |
+| SEO-05 | Phase 1 | Pending |
+| SEO-06 | Phase 1 | Pending |
+| SEO-07 | Phase 1 | Pending |
+| SUBI-01 | Phase 2 | Pending |
+| SUBI-02 | Phase 2 | Pending |
+| SUBI-03 | Phase 2 | Pending |
+| SUBI-04 | Phase 2 | Pending |
+| SUBI-05 | Phase 2 | Pending |
+| SUBI-06 | Phase 2 | Pending |
+| SUBI-07 | Phase 2 | Pending |
+| SUBI-08 | Phase 2 | Pending |
+| SUBX-01 | Phase 3 | Pending |
+| SUBX-02 | Phase 3 | Pending |
+| SUBX-03 | Phase 3 | Pending |
+| SUBX-04 | Phase 3 | Pending |
+| SUBX-05 | Phase 3 | Pending |
+| SUBX-06 | Phase 3 | Pending |
+| SUBX-07 | Phase 3 | Pending |
+| SUBX-08 | Phase 3 | Pending |
+| SUBX-09 | Phase 3 | Pending |
+| SUBA-01 | Phase 5 | Pending |
+| SUBA-02 | Phase 5 | Pending |
+| SUBA-03 | Phase 5 | Pending |
+| SUBA-04 | Phase 5 | Pending |
+| SUBA-05 | Phase 5 | Pending |
+| MIGR-01 | Phase 4 | Pending |
+| MIGR-02 | Phase 4 | Pending |
+| MIGR-03 | Phase 4 | Pending |
+| MIGR-04 | Phase 4 | Pending |
+| MIGR-05 | Phase 4 | Pending |
+| MIGR-06 | Phase 4 | Pending |
+| MIGR-07 | Phase 4 | Pending |
+| MIGR-08 | Phase 4 | Pending |
+| MIGR-09 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 38 total
-- Mapped to phases: 0
-- Unmapped: 38 ⚠️
+- Mapped to phases: 38
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after initial definition*
+*Last updated: 2026-03-05 after roadmap creation*
