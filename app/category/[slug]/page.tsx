@@ -36,23 +36,76 @@
  * @returns JSX element with category page layout
  */
 
+import type { Metadata } from "next";
 import { getCategoryBySlug } from "@/lib/models";
 import { getProductsByCategory } from "@/lib/models/mach/products";
 import CategoryDisplay from "./CategoryDisplay";
 import Image from "next/image";
 import Breadcrumbs from "@/components/Breadcrumbs";
+import {
+  BASE_URL,
+  SITE_NAME,
+  resolveLocalizedField,
+  resolveImageUrl,
+} from "@/lib/seo/metadata";
+
+/**
+ * Generate SEO metadata for a category page including Open Graph tags
+ * and canonical URL. Uses category SEO fields when available, falling
+ * back to category name and description.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const category = await getCategoryBySlug(slug);
+  if (!category) return { title: "Category Not Found" };
+
+  const name = resolveLocalizedField(category.name);
+  const description = resolveLocalizedField(category.description);
+  const imageUrl = resolveImageUrl(category.primary_image);
+  const metaTitle = category.seo?.meta_title
+    ? resolveLocalizedField(category.seo.meta_title)
+    : undefined;
+  const metaDescription = category.seo?.meta_description
+    ? resolveLocalizedField(category.seo.meta_description)
+    : undefined;
+
+  return {
+    title: metaTitle || name,
+    description: metaDescription || description,
+    alternates: {
+      canonical: `/category/${slug}`,
+    },
+    openGraph: {
+      title: metaTitle || name,
+      description: metaDescription || description,
+      url: `${BASE_URL}/category/${slug}`,
+      siteName: SITE_NAME,
+      images: imageUrl ? [{ url: imageUrl, alt: name }] : [],
+      type: "website",
+    },
+  };
+}
 
 /**
  * Category page component that displays products for a specific category
- * 
+ *
  * @param params - URL parameters object containing the category slug
  * @returns Server-rendered category page with products
  */
-export default async function CategoryPage({ params }: any) {
-  const category = await getCategoryBySlug(params.slug);
-  
+export default async function CategoryPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const category = await getCategoryBySlug(slug);
+
   if (!category) {
-    return <div>Category not found for slug: {params.slug}</div>;
+    return <div>Category not found for slug: {slug}</div>;
   }
   
   let products: any[] = [];
@@ -99,7 +152,7 @@ export default async function CategoryPage({ params }: any) {
   const breadcrumbItems = [
     { label: "Home", href: "/" },
     { label: "Categories", href: "/categories" },
-    { label: categoryName, href: `/category/${params.slug}`, current: true }
+    { label: categoryName, href: `/category/${slug}`, current: true }
   ];
 
   return (
