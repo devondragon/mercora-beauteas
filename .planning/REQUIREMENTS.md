@@ -10,8 +10,8 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 ### SEO
 
 - [ ] **SEO-01**: Dynamic sitemap at `/sitemap.xml` includes all products, categories, and CMS pages
-- [ ] **SEO-02**: Product pages have `generateMetadata()` with title, description, canonical URL, OG tags (og:title, og:description, og:image), and Twitter cards
-- [ ] **SEO-03**: Category pages have `generateMetadata()` with title, description, canonical URL, and OG tags
+- [x] **SEO-02**: Product pages have `generateMetadata()` with title, description, canonical URL, OG tags (og:title, og:description, og:image), and Twitter cards
+- [x] **SEO-03**: Category pages have `generateMetadata()` with title, description, canonical URL, and OG tags
 - [ ] **SEO-04**: Product pages include JSON-LD `Product` schema with pricing, availability, and aggregate ratings
 - [ ] **SEO-05**: Root layout includes JSON-LD `Organization` schema for BeauTeas
 - [ ] **SEO-06**: Product and category pages include JSON-LD `Breadcrumb` schema
@@ -117,8 +117,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SEO-01 | Phase 1 | Pending |
-| SEO-02 | Phase 1 | Pending |
-| SEO-03 | Phase 1 | Pending |
+| SEO-02 | Phase 1 | Complete |
+| SEO-03 | Phase 1 | Complete |
 | SEO-04 | Phase 1 | Pending |
 | SEO-05 | Phase 1 | Pending |
 | SEO-06 | Phase 1 | Pending |
