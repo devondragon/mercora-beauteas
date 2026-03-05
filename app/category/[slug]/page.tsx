@@ -48,6 +48,10 @@ import {
   resolveLocalizedField,
   resolveImageUrl,
 } from "@/lib/seo/metadata";
+import {
+  JsonLdScript,
+  buildBreadcrumbJsonLd,
+} from "@/lib/seo/json-ld";
 
 /**
  * Generate SEO metadata for a category page including Open Graph tags
@@ -155,8 +159,16 @@ export default async function CategoryPage({
     { label: categoryName, href: `/category/${slug}`, current: true }
   ];
 
+  // Build JSON-LD breadcrumb structured data for rich results
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd([
+    { name: "Home", url: BASE_URL },
+    { name: "Categories", url: `${BASE_URL}/categories` },
+    { name: categoryName },
+  ]);
+
   return (
     <div>
+      <JsonLdScript data={breadcrumbJsonLd} />
       {/* Mobile Breadcrumb Navigation */}
       <Breadcrumbs items={breadcrumbItems} className="lg:hidden" />
       

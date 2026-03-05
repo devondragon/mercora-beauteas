@@ -51,6 +51,11 @@ import {
   resolveLocalizedField,
   resolveImageUrl,
 } from "@/lib/seo/metadata";
+import {
+  JsonLdScript,
+  buildProductJsonLd,
+  buildBreadcrumbJsonLd,
+} from "@/lib/seo/json-ld";
 
 export const revalidate = 0;
 
@@ -123,8 +128,19 @@ export default async function ProductPage({
     }),
   ]);
 
+  // Build JSON-LD structured data for rich results
+  const productName = resolveLocalizedField(product.name);
+  const productUrl = `${BASE_URL}/product/${slug}`;
+  const productJsonLd = buildProductJsonLd(product, productUrl);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd([
+    { name: "Home", url: BASE_URL },
+    { name: productName },
+  ]);
+
   return (
     <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+      <JsonLdScript data={productJsonLd} />
+      <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
         <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} />
       </div>

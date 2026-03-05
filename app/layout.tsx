@@ -54,7 +54,11 @@ import WebVitals from "@/components/analytics/WebVitals";
 import { brand } from "@/lib/brand";
 import { BrandProvider } from "@/lib/brand";
 import { BASE_URL, SITE_NAME } from "@/lib/seo/metadata";
+import { JsonLdScript, buildOrganizationJsonLd } from "@/lib/seo/json-ld";
 import { ClerkProvider } from "@clerk/nextjs";
+
+// Organization JSON-LD (static data, built at module level)
+const organizationJsonLd = buildOrganizationJsonLd();
 
 // Configure heading font - Lora serif for elegant headings
 const lora = Lora({
@@ -149,6 +153,9 @@ export default function RootLayout({
           suppressHydrationWarning
         >
           <BrandProvider>
+            {/* Organization structured data for Google Knowledge Panel */}
+            <JsonLdScript data={organizationJsonLd} />
+
             {/* Promotional banner - shown above header when enabled */}
             <Suspense fallback={null}>
               <PromotionalBanner />
