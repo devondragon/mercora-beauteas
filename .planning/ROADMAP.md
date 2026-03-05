@@ -30,12 +30,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Product pages include JSON-LD Product schema with pricing and availability; all pages include Organization schema; product and category pages include Breadcrumb schema
   4. Requesting any known Shopify URL pattern (`/products/slug`, `/collections/slug`, `/pages/slug`) returns a 301 redirect to the corresponding Mercora URL
   5. Google Rich Results Test validates structured data on product pages without errors
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md -- Dynamic sitemap generation and Shopify URL redirect stubs
+- [ ] 01-02-PLAN.md -- Product and category page metadata (OG tags, Twitter cards, canonical URLs)
+- [ ] 01-03-PLAN.md -- JSON-LD structured data (Product, Organization, BreadcrumbList)
 
 ### Phase 2: Subscription Infrastructure
 **Goal**: The database schema, Stripe API integration, and webhook pipeline exist so that subscriptions can be created, billed, and synchronized between Stripe and D1
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. SEO Foundations | 0/3 | Not started | - |
+| 1. SEO Foundations | 0/3 | Planning complete | - |
 | 2. Subscription Infrastructure | 0/3 | Not started | - |
 | 3. Subscription Customer Experience | 0/3 | Not started | - |
 | 4. Data Migration | 0/3 | Not started | - |
