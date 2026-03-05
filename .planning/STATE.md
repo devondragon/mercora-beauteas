@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: executing
+stopped_at: Completed 01-01-PLAN.md (Sitemap & Redirects)
+last_updated: "2026-03-05T22:58:50.941Z"
+last_activity: 2026-03-05 -- Completed 01-02-PLAN.md (Page Metadata)
+progress:
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 2
+  percent: 67
+---
+
 # Project State
 
 ## Project Reference
@@ -14,7 +30,7 @@ Plan: 2 of 3 in current phase
 Status: Executing
 Last activity: 2026-03-05 -- Completed 01-02-PLAN.md (Page Metadata)
 
-Progress: [██░░░░░░░░] 13%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -34,6 +50,7 @@ Progress: [██░░░░░░░░] 13%
 - Trend: n/a (insufficient data)
 
 *Updated after each plan completion*
+| Phase 01 P01 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -48,6 +65,8 @@ Recent decisions affecting current work:
 - [Roadmap]: MIGR-08 (redirect map) feeds back into SEO-07 -- Phase 1 stubs redirects, Phase 4 populates them
 - [01-02]: Product pages include Twitter cards; category pages omit them (lower social sharing)
 - [01-02]: Shared SEO helpers in lib/seo/metadata.ts for consistent metadata generation across pages
+- [Phase 01-01]: Used Next.js MetadataRoute.Sitemap convention for type-safe dynamic sitemap generation
+- [Phase 01-01]: Used permanent: true (308) for Shopify redirects per Next.js best practice
 
 ### Pending Todos
 
@@ -61,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-05
-Stopped at: Completed 01-02-PLAN.md (Page Metadata)
+Last session: 2026-03-05T22:58:50.938Z
+Stopped at: Completed 01-01-PLAN.md (Sitemap & Redirects)
 Resume file: None
