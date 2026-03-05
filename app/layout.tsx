@@ -53,6 +53,7 @@ import { Suspense } from "react";
 import WebVitals from "@/components/analytics/WebVitals";
 import { brand } from "@/lib/brand";
 import { BrandProvider } from "@/lib/brand";
+import { BASE_URL, SITE_NAME } from "@/lib/seo/metadata";
 import { ClerkProvider } from "@clerk/nextjs";
 
 // Configure heading font - Lora serif for elegant headings
@@ -87,7 +88,11 @@ const geistMono = Geist_Mono({
 
 // SEO metadata for the application (driven by brand config)
 export const metadata: Metadata = {
-  title: brand.name,
+  metadataBase: new URL(BASE_URL),
+  title: {
+    default: SITE_NAME,
+    template: `%s | ${SITE_NAME}`,
+  },
   description: brand.description,
   other: {
     // MCP Server Discovery
