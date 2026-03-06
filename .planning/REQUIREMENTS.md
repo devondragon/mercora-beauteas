@@ -33,12 +33,12 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 - [x] **SUBX-01**: Product pages show "One-time purchase" vs "Subscribe & Save" toggle with frequency dropdown (every 2 weeks, monthly, every 2 months) and discount display
 - [ ] **SUBX-02**: Dedicated subscription checkout flow using Stripe SetupIntent for payment method collection (not PaymentIntent)
 - [ ] **SUBX-03**: After SetupIntent confirmation, Stripe Subscription is created with selected product, frequency, and discount applied
-- [ ] **SUBX-04**: Customer can pause an active subscription
-- [ ] **SUBX-05**: Customer can resume a paused subscription
-- [ ] **SUBX-06**: Customer can skip the next renewal
-- [ ] **SUBX-07**: Customer can cancel a subscription
+- [x] **SUBX-04**: Customer can pause an active subscription
+- [x] **SUBX-05**: Customer can resume a paused subscription
+- [x] **SUBX-06**: Customer can skip the next renewal
+- [x] **SUBX-07**: Customer can cancel a subscription
 - [x] **SUBX-08**: API routes for subscription actions: list own subscriptions (GET), create subscription (POST), and per-subscription actions (pause/resume/skip/cancel)
-- [ ] **SUBX-09**: Email sent on subscription created, renewed, payment failed, paused, resumed, and canceled events
+- [x] **SUBX-09**: Email sent on subscription created, renewed, payment failed, paused, resumed, and canceled events
 
 ### Subscription Admin
 
@@ -134,12 +134,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUBX-01 | Phase 3 | Complete |
 | SUBX-02 | Phase 3 | Pending |
 | SUBX-03 | Phase 3 | Pending |
-| SUBX-04 | Phase 3 | Pending |
-| SUBX-05 | Phase 3 | Pending |
-| SUBX-06 | Phase 3 | Pending |
-| SUBX-07 | Phase 3 | Pending |
+| SUBX-04 | Phase 3 | Complete |
+| SUBX-05 | Phase 3 | Complete |
+| SUBX-06 | Phase 3 | Complete |
+| SUBX-07 | Phase 3 | Complete |
 | SUBX-08 | Phase 3 | Complete |
-| SUBX-09 | Phase 3 | Pending |
+| SUBX-09 | Phase 3 | Complete |
 | SUBA-01 | Phase 5 | Pending |
 | SUBA-02 | Phase 5 | Pending |
 | SUBA-03 | Phase 5 | Pending |
