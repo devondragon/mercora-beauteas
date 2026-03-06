@@ -31,6 +31,9 @@
 import { loadStripe as loadStripeLib, Stripe } from '@stripe/stripe-js';
 import StripeServer from 'stripe';
 
+// Workers-compatible crypto provider for webhook signature verification
+const cryptoProvider = StripeServer.createSubtleCryptoProvider();
+
 // Environment variables with validation
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -83,6 +86,55 @@ export const getStripe = (): StripeServer => {
   }
   return stripe;
 };
+
+/**
+ * Get a Stripe SDK instance configured for Cloudflare Workers runtime.
+ * Uses fetch-based HTTP client instead of Node.js http module.
+ *
+ * Use this for ALL new subscription operations instead of CloudflareStripe.
+ * The standard Stripe SDK provides typed responses, automatic retries,
+ * and proper error handling.
+ *
+ * @returns Stripe SDK instance configured for Workers
+ */
+export function getStripeForWorkers(): StripeServer {
+  if (!secretKey) {
+    throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+  }
+  return new StripeServer(secretKey, {
+    apiVersion: '2025-08-27.basil',
+    httpClient: StripeServer.createFetchHttpClient(),
+    typescript: true,
+  });
+}
+
+/**
+ * Verify Stripe webhook signature using async SubtleCrypto (Workers-compatible).
+ * Replaces the broken CloudflareStripe.webhooks.constructEvent which just parses JSON.
+ *
+ * SECURITY CRITICAL: This performs actual HMAC-SHA256 signature validation.
+ * The old CloudflareStripe.constructEvent was a no-op that accepted any payload.
+ *
+ * @param payload - Raw request body string (read with req.text(), NOT req.json())
+ * @param signature - Value of 'stripe-signature' header
+ * @param secret - Webhook signing secret from STRIPE_WEBHOOK_SECRET env var
+ * @returns Verified Stripe.Event object
+ * @throws Error if signature is invalid or verification fails
+ */
+export async function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string
+): Promise<StripeServer.Event> {
+  const stripe = getStripeForWorkers();
+  return stripe.webhooks.constructEventAsync(
+    payload,
+    signature,
+    secret,
+    undefined,     // tolerance (use default 300 seconds)
+    cryptoProvider  // SubtleCrypto for Workers
+  );
+}
 
 /**
  * Cloudflare Workers-compatible Stripe API client
@@ -190,6 +242,7 @@ export class CloudflareStripe {
   }
 
   webhooks = {
+    /** @deprecated Use verifyWebhookSignature() instead -- this does NOT verify signatures */
     constructEvent: (payload: string, signature: string, secret: string) => {
       // Basic webhook verification - in production, you'd want more robust verification
       // For now, just parse the payload
