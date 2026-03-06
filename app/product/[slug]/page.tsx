@@ -43,6 +43,7 @@
 import type { Metadata } from "next";
 import { auth } from "@clerk/nextjs/server";
 import { getProductBySlug, getProductReviews, getProductReviewEligibility } from "@/lib/models";
+import { listSubscriptionPlans } from "@/lib/models/mach/subscriptions";
 import { notFound } from "next/navigation";
 import ProductDisplay from "./ProductDisplay";
 import {
@@ -116,7 +117,7 @@ export default async function ProductPage({
   const product = await getProductBySlug(slug);
   if (!product) return notFound();
 
-  const [reviews, reviewEligibility] = await Promise.all([
+  const [reviews, reviewEligibility, subscriptionPlans] = await Promise.all([
     getProductReviews({
       productId: product.id,
       status: ["published"],
@@ -126,6 +127,7 @@ export default async function ProductPage({
       productId: product.id,
       customerId: userId,
     }),
+    listSubscriptionPlans(product.id),
   ]);
 
   // Build JSON-LD structured data for rich results
@@ -142,7 +144,7 @@ export default async function ProductPage({
       <JsonLdScript data={productJsonLd} />
       <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
-        <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} />
+        <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} subscriptionPlans={subscriptionPlans} />
       </div>
     </main>
   );

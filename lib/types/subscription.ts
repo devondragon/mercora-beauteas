@@ -9,8 +9,8 @@ export interface SubscriptionPlan {
   discount_percent: number;
   stripe_price_id: string | null;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface CustomerSubscription {
