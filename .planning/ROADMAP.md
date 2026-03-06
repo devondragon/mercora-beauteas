@@ -63,12 +63,12 @@ Plans:
   3. A customer with an active subscription can pause, resume, skip next renewal, and cancel -- each action reflected in both Stripe and the customer-facing UI
   4. API routes exist for listing own subscriptions (GET), creating a subscription (POST), and per-subscription lifecycle actions (pause, resume, skip, cancel)
   5. Emails are sent for subscription created, renewed, payment failed, paused, resumed, and canceled events
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md -- Subscription API routes (7 endpoints) and product page Subscribe & Save toggle UI
+- [ ] 03-02-PLAN.md -- Subscription checkout flow with SetupIntent and confirmation page
+- [ ] 03-03-PLAN.md -- Subscription management page with pause/resume/skip/cancel actions
 
 ### Phase 4: Data Migration
 **Goal**: All Shopify data (products, customers, orders, reviews, images, pages) is migrated to Mercora with a validated redirect map, ready for DNS cutover
@@ -118,6 +118,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. SEO Foundations | 0/3 | Planning complete | - |
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
-| 3. Subscription Customer Experience | 0/3 | Not started | - |
+| 3. Subscription Customer Experience | 0/3 | Planning complete | - |
 | 4. Data Migration | 0/3 | Not started | - |
 | 5. Subscription Admin | 0/2 | Not started | - |
