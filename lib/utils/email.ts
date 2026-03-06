@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 
 let resend: Resend | null = null;
 
@@ -388,7 +389,7 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
   try {
     const emailHtml = generateOrderStatusUpdateHTML(orderData);
     const resendClient = getResendClient();
-    
+
     // Determine subject based on status
     let subject = `Order Update #${orderData.orderNumber}`;
     switch (orderData.status) {
@@ -408,7 +409,7 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
         subject = `Order Refunded #${orderData.orderNumber}`;
         break;
     }
-    
+
     const { data, error } = await resendClient.emails.send({
       from: 'BeauTeas<hello@beauteas.com>',
       to: [orderData.customerEmail],
@@ -426,5 +427,180 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
   } catch (error) {
     console.error('Email sending failed:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+// ─── Subscription Lifecycle Emails ──────────────────────────────
+
+const FREQUENCY_DISPLAY: Record<SubscriptionFrequency, string> = {
+  biweekly: 'Every 2 Weeks',
+  monthly: 'Monthly',
+  bimonthly: 'Every 2 Months',
+};
+
+const SUBSCRIPTION_SUBJECTS: Record<string, string> = {
+  created: 'Your Subscription is Active!',
+  renewed: 'Subscription Renewed',
+  payment_failed: 'Action Required: Payment Failed',
+  paused: 'Subscription Paused',
+  resumed: 'Subscription Resumed',
+  canceled: 'Subscription Canceled',
+};
+
+export async function sendSubscriptionEmail(
+  type: 'created' | 'renewed' | 'payment_failed' | 'paused' | 'resumed' | 'canceled',
+  data: SubscriptionEmailData
+): Promise<EmailResult> {
+  try {
+    const subject = `${SUBSCRIPTION_SUBJECTS[type]} - BeauTeas`;
+    const emailHtml = generateSubscriptionEmailHTML(type, data);
+    const resendClient = getResendClient();
+
+    const { data: resendData, error } = await resendClient.emails.send({
+      from: 'BeauTeas<hello@beauteas.com>',
+      to: [data.customerEmail],
+      subject,
+      html: emailHtml,
+    });
+
+    if (error) {
+      console.error('Subscription email sending error:', error);
+      return { success: false, error: error.message || 'Email sending failed' };
+    }
+
+    console.log(`Subscription ${type} email sent:`, resendData?.id);
+    return { success: true, id: resendData?.id };
+  } catch (error) {
+    console.error('Subscription email sending failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+function generateSubscriptionEmailHTML(
+  type: 'created' | 'renewed' | 'payment_failed' | 'paused' | 'resumed' | 'canceled',
+  data: SubscriptionEmailData
+): string {
+  const frequencyLabel = FREQUENCY_DISPLAY[data.frequency];
+  const typeMessages = getTypeSpecificContent(type, data);
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${SUBSCRIPTION_SUBJECTS[type]} - BeauTeas</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;">
+      <div style="background-color: #ffffff; margin: 0 auto; padding: 20px 0 48px; margin-bottom: 64px; max-width: 600px;">
+
+        <!-- Header -->
+        <div style="text-align: center; padding: 32px 0; border-bottom: 1px solid #e6ebf1;">
+          <h1 style="color: #c4a87c; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">BeauTeas</h1>
+          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Organic Skincare Teas</p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 24px 32px;">
+          <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">${SUBSCRIPTION_SUBJECTS[type]}</h2>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${data.customerName},</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">${typeMessages.body}</p>
+
+          ${typeMessages.extra}
+
+          <!-- Subscription Details -->
+          <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin: 24px 0;">
+            <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 12px;">Subscription Details</h3>
+            <table style="width: 100%;">
+              <tr>
+                <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Product:</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${data.productName}</td>
+              </tr>
+              <tr>
+                <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Frequency:</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${frequencyLabel}</td>
+              </tr>
+              <tr>
+                <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Subscription ID:</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${data.subscriptionId}</td>
+              </tr>
+              ${data.nextBillingDate ? `
+              <tr>
+                <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Next Billing Date:</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${data.nextBillingDate}</td>
+              </tr>` : ''}
+              ${data.amount !== undefined ? `
+              <tr>
+                <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Amount:</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">$${(data.amount / 100).toFixed(2)}</td>
+              </tr>` : ''}
+            </table>
+          </div>
+
+          <!-- Manage Subscription Button -->
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${data.manageUrl}" style="display: inline-block; background-color: #c4a87c; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+              Manage Subscription
+            </a>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your subscription? Reply to this email or contact our support team.</p>
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+        </div>
+
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function getTypeSpecificContent(
+  type: 'created' | 'renewed' | 'payment_failed' | 'paused' | 'resumed' | 'canceled',
+  data: SubscriptionEmailData
+): { body: string; extra: string } {
+  switch (type) {
+    case 'created':
+      return {
+        body: 'Your subscription has been activated! We will automatically prepare and ship your order according to your selected schedule.',
+        extra: '',
+      };
+    case 'renewed':
+      return {
+        body: 'Your subscription has been renewed and your next order is being prepared.',
+        extra: '',
+      };
+    case 'payment_failed':
+      return {
+        body: 'We were unable to process the payment for your subscription. Please update your payment method to keep your subscription active.',
+        extra: `
+          <div style="background-color: #fef3f2; border-left: 4px solid #dc2626; border-radius: 4px; padding: 12px 16px; margin: 16px 0;">
+            <p style="color: #7f1d1d; font-size: 14px; margin: 0 0 4px;"><strong>Reason:</strong> ${data.failureReason || 'Unknown error'}</p>
+            ${data.nextRetryDate ? `<p style="color: #7f1d1d; font-size: 14px; margin: 0;"><strong>Next retry:</strong> ${data.nextRetryDate}</p>` : ''}
+          </div>
+          <div style="text-align: center; margin: 16px 0;">
+            <a href="${data.manageUrl}" style="display: inline-block; background-color: #dc2626; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+              Update Payment Method
+            </a>
+          </div>
+        `,
+      };
+    case 'paused':
+      return {
+        body: 'Your subscription has been paused. You will not be charged until you resume it. You can resume your subscription at any time from your account.',
+        extra: '',
+      };
+    case 'resumed':
+      return {
+        body: 'Your subscription has been resumed! Your next order will be processed according to your regular schedule.',
+        extra: '',
+      };
+    case 'canceled':
+      return {
+        body: 'Your subscription has been canceled. We are sorry to see you go! If you change your mind, you can start a new subscription at any time.',
+        extra: '',
+      };
   }
 }
