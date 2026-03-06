@@ -59,6 +59,16 @@ export async function getSubscriptionPlanById(id: string) {
   return plan ?? undefined;
 }
 
+export async function getSubscriptionPlanByStripePriceId(stripePriceId: string) {
+  const db = await getDbAsync();
+  const [plan] = await db
+    .select()
+    .from(subscription_plans)
+    .where(eq(subscription_plans.stripe_price_id, stripePriceId))
+    .limit(1);
+  return plan ?? undefined;
+}
+
 // ─── Customer Subscriptions ───────────────────────────────────────
 
 export async function getSubscriptionByStripeId(stripeSubscriptionId: string) {
