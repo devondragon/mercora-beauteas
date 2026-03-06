@@ -13,7 +13,7 @@ This roadmap delivers the three launch-blocking capabilities for DNS cutover: SE
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: SEO Foundations** - Dynamic sitemap, metadata, JSON-LD structured data, and Shopify 301 redirect stubs to preserve search rankings
-- [ ] **Phase 2: Subscription Infrastructure** - D1 schema, CloudflareStripe adapter extensions, webhook signature fix, and webhook event handlers
+- [ ] **Phase 2: Subscription Infrastructure** - D1 schema, Stripe SDK for Workers, webhook signature fix, and webhook event handlers
 - [ ] **Phase 3: Subscription Customer Experience** - Subscribe & Save UI, SetupIntent checkout, lifecycle management, and email notifications
 - [ ] **Phase 4: Data Migration** - Shopify ETL pipeline for products, customers, orders, reviews, images, and redirect map generation
 - [ ] **Phase 5: Subscription Admin** - Admin dashboard with MRR metrics, subscription table, plan management, and event timeline
@@ -43,15 +43,15 @@ Plans:
 **Requirements**: SUBI-01, SUBI-02, SUBI-03, SUBI-04, SUBI-05, SUBI-06, SUBI-07, SUBI-08
 **Success Criteria** (what must be TRUE):
   1. D1 database has `subscription_plans`, `customer_subscriptions`, and `subscription_events` tables with a Drizzle migration applied successfully
-  2. CloudflareStripe adapter can create/update/cancel subscriptions, create/retrieve customers, create SetupIntents, and create/list prices against Stripe test mode
-  3. Webhook endpoint rejects requests with invalid or missing Stripe signatures (HMAC verification)
+  2. Stripe Node SDK initialized with `createFetchHttpClient()` can create/update/cancel subscriptions, create/retrieve customers, create SetupIntents, and create/list prices against Stripe test mode
+  3. Webhook endpoint rejects requests with invalid or missing Stripe signatures (HMAC verification via constructEventAsync)
   4. Stripe test-mode subscription lifecycle events (created, updated, deleted, paused, resumed, invoice paid, invoice failed) are processed and reflected in D1 state with audit entries in `subscription_events`
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md -- D1 subscription schema, TypeScript types, and model CRUD layer
+- [ ] 02-02-PLAN.md -- Workers-compatible Stripe SDK initialization and webhook signature fix
+- [ ] 02-03-PLAN.md -- Webhook event handlers for subscription lifecycle and invoice events, plus subscription emails
 
 ### Phase 3: Subscription Customer Experience
 **Goal**: Customers can subscribe to tea products at a discount, manage their subscriptions, and receive email notifications for all subscription lifecycle events
@@ -117,7 +117,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. SEO Foundations | 0/3 | Planning complete | - |
-| 2. Subscription Infrastructure | 0/3 | Not started | - |
+| 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Not started | - |
 | 4. Data Migration | 0/3 | Not started | - |
 | 5. Subscription Admin | 0/2 | Not started | - |
