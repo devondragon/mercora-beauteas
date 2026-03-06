@@ -109,3 +109,9 @@ export * from "./mcp";
 
 // Reviews & Ratings schema (application-specific)
 export * from "./reviews";
+
+// Subscription schema (application-specific)
+export * from "./subscription";
+
+// Webhook events dedup table (application-specific)
+export * from "./webhook-events";
