@@ -24,9 +24,9 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 - [x] **SUBI-03**: Model layer with CRUD operations for subscription plans, customer subscriptions, and stats queries
 - [x] **SUBI-04**: CloudflareStripe adapter extended with `subscriptions.create/update/cancel`, `customers.create/retrieve`, `setupIntents.create`, and `prices.create/list` methods
 - [x] **SUBI-05**: CloudflareStripe webhook signature verification fixed with proper HMAC validation (security critical)
-- [ ] **SUBI-06**: Stripe webhook handler processes `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, and `customer.subscription.resumed` events
-- [ ] **SUBI-07**: Stripe webhook handler processes `invoice.payment_succeeded` (creates renewal order), `invoice.payment_failed`, and `invoice.upcoming` (skip-next logic) events
-- [ ] **SUBI-08**: Each webhook event updates D1 subscription state, creates audit event in `subscription_events`, and triggers appropriate email
+- [x] **SUBI-06**: Stripe webhook handler processes `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, and `customer.subscription.resumed` events
+- [x] **SUBI-07**: Stripe webhook handler processes `invoice.payment_succeeded` (creates renewal order), `invoice.payment_failed`, and `invoice.upcoming` (skip-next logic) events
+- [x] **SUBI-08**: Each webhook event updates D1 subscription state, creates audit event in `subscription_events`, and triggers appropriate email
 
 ### Subscription Customer Experience
 
@@ -128,9 +128,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUBI-03 | Phase 2 | Complete |
 | SUBI-04 | Phase 2 | Complete |
 | SUBI-05 | Phase 2 | Complete |
-| SUBI-06 | Phase 2 | Pending |
-| SUBI-07 | Phase 2 | Pending |
-| SUBI-08 | Phase 2 | Pending |
+| SUBI-06 | Phase 2 | Complete |
+| SUBI-07 | Phase 2 | Complete |
+| SUBI-08 | Phase 2 | Complete |
 | SUBX-01 | Phase 3 | Pending |
 | SUBX-02 | Phase 3 | Pending |
 | SUBX-03 | Phase 3 | Pending |
