@@ -31,8 +31,8 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 ### Subscription Customer Experience
 
 - [x] **SUBX-01**: Product pages show "One-time purchase" vs "Subscribe & Save" toggle with frequency dropdown (every 2 weeks, monthly, every 2 months) and discount display
-- [ ] **SUBX-02**: Dedicated subscription checkout flow using Stripe SetupIntent for payment method collection (not PaymentIntent)
-- [ ] **SUBX-03**: After SetupIntent confirmation, Stripe Subscription is created with selected product, frequency, and discount applied
+- [x] **SUBX-02**: Dedicated subscription checkout flow using Stripe SetupIntent for payment method collection (not PaymentIntent)
+- [x] **SUBX-03**: After SetupIntent confirmation, Stripe Subscription is created with selected product, frequency, and discount applied
 - [x] **SUBX-04**: Customer can pause an active subscription
 - [x] **SUBX-05**: Customer can resume a paused subscription
 - [x] **SUBX-06**: Customer can skip the next renewal
@@ -132,8 +132,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUBI-07 | Phase 2 | Complete |
 | SUBI-08 | Phase 2 | Complete |
 | SUBX-01 | Phase 3 | Complete |
-| SUBX-02 | Phase 3 | Pending |
-| SUBX-03 | Phase 3 | Pending |
+| SUBX-02 | Phase 3 | Complete |
+| SUBX-03 | Phase 3 | Complete |
 | SUBX-04 | Phase 3 | Complete |
 | SUBX-05 | Phase 3 | Complete |
 | SUBX-06 | Phase 3 | Complete |
