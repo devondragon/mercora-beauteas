@@ -19,9 +19,9 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 
 ### Subscription Infrastructure
 
-- [ ] **SUBI-01**: D1 schema with `subscription_plans`, `customer_subscriptions`, and `subscription_events` tables via Drizzle ORM
-- [ ] **SUBI-02**: TypeScript types for SubscriptionPlan, CustomerSubscription, and SubscriptionEvent
-- [ ] **SUBI-03**: Model layer with CRUD operations for subscription plans, customer subscriptions, and stats queries
+- [x] **SUBI-01**: D1 schema with `subscription_plans`, `customer_subscriptions`, and `subscription_events` tables via Drizzle ORM
+- [x] **SUBI-02**: TypeScript types for SubscriptionPlan, CustomerSubscription, and SubscriptionEvent
+- [x] **SUBI-03**: Model layer with CRUD operations for subscription plans, customer subscriptions, and stats queries
 - [x] **SUBI-04**: CloudflareStripe adapter extended with `subscriptions.create/update/cancel`, `customers.create/retrieve`, `setupIntents.create`, and `prices.create/list` methods
 - [x] **SUBI-05**: CloudflareStripe webhook signature verification fixed with proper HMAC validation (security critical)
 - [ ] **SUBI-06**: Stripe webhook handler processes `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, and `customer.subscription.resumed` events
@@ -123,9 +123,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEO-05 | Phase 1 | Complete |
 | SEO-06 | Phase 1 | Complete |
 | SEO-07 | Phase 1 | Complete |
-| SUBI-01 | Phase 2 | Pending |
-| SUBI-02 | Phase 2 | Pending |
-| SUBI-03 | Phase 2 | Pending |
+| SUBI-01 | Phase 2 | Complete |
+| SUBI-02 | Phase 2 | Complete |
+| SUBI-03 | Phase 2 | Complete |
 | SUBI-04 | Phase 2 | Complete |
 | SUBI-05 | Phase 2 | Complete |
 | SUBI-06 | Phase 2 | Pending |
