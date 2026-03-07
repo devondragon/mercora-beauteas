@@ -81,12 +81,12 @@ Plans:
   4. Historical orders are visible as read-only records with preserved dates and status
   5. Judge.me reviews appear on their corresponding product pages with recalculated aggregate ratings
   6. A redirect map generated from migrated data powers the SEO-07 301 redirects, and post-migration validation confirms record counts match across all tables
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01-PLAN.md -- ETL foundation, shared library, redirect_map schema, categories and products/variants/images migration
+- [ ] 04-02-PLAN.md -- Customers (Clerk import), orders, reviews (with rating recalculation), and CMS pages migration
+- [ ] 04-03-PLAN.md -- Redirect map generation, post-migration validation, orchestrator, and middleware D1 redirect lookup
 
 ### Phase 5: Subscription Admin
 **Goal**: Store operators can monitor subscription health, manage plans, and investigate individual subscription histories from the admin dashboard
@@ -119,5 +119,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. SEO Foundations | 0/3 | Planning complete | - |
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Planning complete | - |
-| 4. Data Migration | 0/3 | Not started | - |
+| 4. Data Migration | 0/3 | Planning complete | - |
 | 5. Subscription Admin | 0/2 | Not started | - |
