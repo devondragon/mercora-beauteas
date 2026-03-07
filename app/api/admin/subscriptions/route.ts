@@ -5,6 +5,41 @@ import {
   getAdminSubscriptionStats,
 } from "@/lib/models/mach/subscriptions";
 
+/**
+ * Transform a subscription item from the model layer (camelCase + nested objects)
+ * to the flat snake_case shape expected by the UI Subscription interface.
+ */
+function transformSubscriptionForClient(item: any) {
+  const {
+    planFrequency,
+    planDiscountPercent,
+    productName,
+    productSlug,
+    customerPerson,
+    variantPriceAmount,
+    ...base
+  } = item;
+  const person = customerPerson as {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  } | null;
+  return {
+    ...base,
+    plan_frequency: planFrequency ?? "monthly",
+    plan_discount_percent: planDiscountPercent ?? 0,
+    product_name: productName ?? "Unknown Product",
+    product_slug: productSlug ?? "",
+    customer_name:
+      person?.full_name ||
+      [person?.first_name, person?.last_name].filter(Boolean).join(" ") ||
+      "Unknown",
+    customer_email: person?.email ?? "",
+    variant_price_amount: variantPriceAmount ?? 0,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await checkAdminPermissions(request);
   if (!auth.success) {
@@ -29,9 +64,11 @@ export async function GET(request: NextRequest) {
       getAdminSubscriptionStats(),
     ]);
 
+    const transformedItems = items.map(transformSubscriptionForClient);
+
     return NextResponse.json({
       success: true,
-      data: items,
+      data: transformedItems,
       stats,
       meta: { total, limit, offset },
     });
