@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Subscription Infrastructure** - D1 schema, Stripe SDK for Workers, webhook signature fix, and webhook event handlers
 - [ ] **Phase 3: Subscription Customer Experience** - Subscribe & Save UI, SetupIntent checkout, lifecycle management, and email notifications
 - [x] **Phase 4: Data Migration** - Shopify ETL pipeline for products, customers, orders, reviews, images, and redirect map generation (completed 2026-03-07)
-- [ ] **Phase 5: Subscription Admin** - Admin dashboard with MRR metrics, subscription table, plan management, and event timeline
+- [x] **Phase 5: Subscription Admin** - Admin dashboard with MRR metrics, subscription table, plan management, and event timeline (completed 2026-03-07)
 
 ## Phase Details
 
@@ -121,4 +121,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Planning complete | - |
 | 4. Data Migration | 3/3 | Complete   | 2026-03-07 |
-| 5. Subscription Admin | 1/3 | In Progress|  |
+| 5. Subscription Admin | 3/3 | Complete   | 2026-03-07 |
