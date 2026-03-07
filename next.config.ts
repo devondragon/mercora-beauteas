@@ -94,17 +94,17 @@ const nextConfig: NextConfig = {
       {
         source: "/products/:slug",
         destination: "/product/:slug",
-        permanent: true,
+        statusCode: 301,
       },
       {
         source: "/collections/:slug",
         destination: "/category/:slug",
-        permanent: true,
+        statusCode: 301,
       },
       {
         source: "/pages/:slug",
         destination: "/:slug",
-        permanent: true,
+        statusCode: 301,
       },
     ];
   },
