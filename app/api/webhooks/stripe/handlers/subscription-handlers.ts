@@ -13,6 +13,7 @@ import type Stripe from 'stripe';
 import {
   getSubscriptionByStripeId,
   getSubscriptionPlanByStripePriceId,
+  getSubscriptionPlanById,
   createCustomerSubscription,
   updateSubscriptionStatus,
   updateSubscriptionPeriod,
@@ -21,6 +22,10 @@ import {
 import { getStripeForWorkers } from '@/lib/stripe';
 import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency } from '@/lib/types/subscription';
+import { BASE_URL, resolveLocalizedField } from '@/lib/seo/metadata';
+import { getDbAsync } from '@/lib/db';
+import { products } from '@/lib/db/schema/products';
+import { eq } from 'drizzle-orm';
 
 /**
  * Retrieve Stripe customer details for email sending.
@@ -40,6 +45,25 @@ async function getCustomerDetails(customerId: string): Promise<{ email: string; 
   } catch (error) {
     console.error('[webhook] Failed to retrieve customer details:', error);
     return { email: '', name: '' };
+  }
+}
+
+/**
+ * Resolve a human-readable product name from the products table.
+ * Falls back to 'Your Subscription' on any error.
+ */
+async function getProductName(productId: string): Promise<string> {
+  try {
+    const db = await getDbAsync();
+    const [product] = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+    return product ? resolveLocalizedField(product.name, 'Your Subscription') : 'Your Subscription';
+  } catch (error) {
+    console.error('[webhook] Failed to resolve product name:', error);
+    return 'Your Subscription';
   }
 }
 
@@ -103,14 +127,15 @@ export async function handleSubscriptionCreated(
   // Send lifecycle email (fire-and-forget)
   const customer = await getCustomerDetails(stripeCustomerId);
   if (customer.email) {
+    const productName = await getProductName(plan.product_id);
     sendSubscriptionEmail('created', {
       customerEmail: customer.email,
       customerName: customer.name || 'Valued Customer',
-      productName: plan.product_id, // Plan stores product_id; product name lookup deferred to Phase 3
+      productName,
       frequency: plan.frequency as SubscriptionFrequency,
       subscriptionId: d1Sub.id,
       nextBillingDate: periodEnd ? new Date(periodEnd).toLocaleDateString() : undefined,
-      manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+      manageUrl: `${BASE_URL}/subscriptions`,
     }).catch((err) => console.error('[webhook] Failed to send created email:', err));
   }
 
@@ -152,13 +177,15 @@ export async function handleSubscriptionUpdated(
     // Send paused email (fire-and-forget)
     const customer = await getCustomerDetails(stripeCustomerId);
     if (customer.email) {
+      const plan = await getSubscriptionPlanById(d1Sub.plan_id);
+      const productName = plan ? await getProductName(plan.product_id) : 'Your Subscription';
       sendSubscriptionEmail('paused', {
         customerEmail: customer.email,
         customerName: customer.name || 'Valued Customer',
-        productName: d1Sub.plan_id,
-        frequency: 'monthly' as SubscriptionFrequency, // Fallback; plan lookup could enhance this
+        productName,
+        frequency: (plan?.frequency || 'monthly') as SubscriptionFrequency,
         subscriptionId: d1Sub.id,
-        manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+        manageUrl: `${BASE_URL}/subscriptions`,
       }).catch((err) => console.error('[webhook] Failed to send paused email:', err));
     }
 
@@ -179,13 +206,15 @@ export async function handleSubscriptionUpdated(
     // Send resumed email (fire-and-forget)
     const customer = await getCustomerDetails(stripeCustomerId);
     if (customer.email) {
+      const plan = await getSubscriptionPlanById(d1Sub.plan_id);
+      const productName = plan ? await getProductName(plan.product_id) : 'Your Subscription';
       sendSubscriptionEmail('resumed', {
         customerEmail: customer.email,
         customerName: customer.name || 'Valued Customer',
-        productName: d1Sub.plan_id,
-        frequency: 'monthly' as SubscriptionFrequency,
+        productName,
+        frequency: (plan?.frequency || 'monthly') as SubscriptionFrequency,
         subscriptionId: d1Sub.id,
-        manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+        manageUrl: `${BASE_URL}/subscriptions`,
       }).catch((err) => console.error('[webhook] Failed to send resumed email:', err));
     }
 
@@ -268,13 +297,15 @@ export async function handleSubscriptionDeleted(
   // Send canceled email (fire-and-forget)
   const customer = await getCustomerDetails(stripeCustomerId);
   if (customer.email) {
+    const plan = await getSubscriptionPlanById(d1Sub.plan_id);
+    const productName = plan ? await getProductName(plan.product_id) : 'Your Subscription';
     sendSubscriptionEmail('canceled', {
       customerEmail: customer.email,
       customerName: customer.name || 'Valued Customer',
-      productName: d1Sub.plan_id,
-      frequency: 'monthly' as SubscriptionFrequency,
+      productName,
+      frequency: (plan?.frequency || 'monthly') as SubscriptionFrequency,
       subscriptionId: d1Sub.id,
-      manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+      manageUrl: `${BASE_URL}/subscriptions`,
     }).catch((err) => console.error('[webhook] Failed to send canceled email:', err));
   }
 

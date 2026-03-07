@@ -15,6 +15,7 @@
 import type Stripe from 'stripe';
 import {
   getSubscriptionByStripeId,
+  getSubscriptionPlanById,
   createSubscriptionEvent,
   updateSubscriptionStatus,
   updateSubscriptionPeriod,
@@ -22,6 +23,10 @@ import {
 import { getStripeForWorkers } from '@/lib/stripe';
 import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency } from '@/lib/types/subscription';
+import { BASE_URL, resolveLocalizedField } from '@/lib/seo/metadata';
+import { getDbAsync } from '@/lib/db';
+import { products } from '@/lib/db/schema/products';
+import { eq } from 'drizzle-orm';
 
 /**
  * Extract the Stripe subscription ID from an invoice's parent field.
@@ -53,6 +58,25 @@ async function getCustomerDetails(customerId: string): Promise<{ email: string; 
   } catch (error) {
     console.error('[webhook] Failed to retrieve customer details:', error);
     return { email: '', name: '' };
+  }
+}
+
+/**
+ * Resolve a human-readable product name from the products table.
+ * Falls back to 'Your Subscription' on any error.
+ */
+async function getProductName(productId: string): Promise<string> {
+  try {
+    const db = await getDbAsync();
+    const [product] = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+    return product ? resolveLocalizedField(product.name, 'Your Subscription') : 'Your Subscription';
+  } catch (error) {
+    console.error('[webhook] Failed to resolve product name:', error);
+    return 'Your Subscription';
   }
 }
 
@@ -111,14 +135,16 @@ export async function handleInvoicePaymentSucceeded(
   if (customerId) {
     const customer = await getCustomerDetails(customerId);
     if (customer.email) {
+      const plan = await getSubscriptionPlanById(d1Sub.plan_id);
+      const productName = plan ? await getProductName(plan.product_id) : 'Your Subscription';
       sendSubscriptionEmail('renewed', {
         customerEmail: customer.email,
         customerName: customer.name || 'Valued Customer',
-        productName: d1Sub.plan_id,
-        frequency: 'monthly' as SubscriptionFrequency,
+        productName,
+        frequency: (plan?.frequency || 'monthly') as SubscriptionFrequency,
         subscriptionId: d1Sub.id,
         amount: invoice.amount_paid,
-        manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+        manageUrl: `${BASE_URL}/subscriptions`,
       }).catch((err) => console.error('[webhook] Failed to send renewed email:', err));
     }
   }
@@ -180,15 +206,17 @@ export async function handleInvoicePaymentFailed(
   if (customerId) {
     const customer = await getCustomerDetails(customerId);
     if (customer.email) {
+      const plan = await getSubscriptionPlanById(d1Sub.plan_id);
+      const productName = plan ? await getProductName(plan.product_id) : 'Your Subscription';
       sendSubscriptionEmail('payment_failed', {
         customerEmail: customer.email,
         customerName: customer.name || 'Valued Customer',
-        productName: d1Sub.plan_id,
-        frequency: 'monthly' as SubscriptionFrequency,
+        productName,
+        frequency: (plan?.frequency || 'monthly') as SubscriptionFrequency,
         subscriptionId: d1Sub.id,
         failureReason,
         nextRetryDate: nextRetryDate ? new Date(nextRetryDate).toLocaleDateString() : undefined,
-        manageUrl: `https://beauteas.com/account/subscriptions/${d1Sub.id}`,
+        manageUrl: `${BASE_URL}/subscriptions`,
       }).catch((err) => console.error('[webhook] Failed to send payment_failed email:', err));
     }
   }
