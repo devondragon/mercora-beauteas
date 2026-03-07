@@ -56,6 +56,9 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings } from "@/lib/utils/settings";
+import { getDbAsync } from "@/lib/db";
+import { redirect_map } from "@/lib/db/schema/redirect-map";
+import { eq } from "drizzle-orm";
 
 /**
  * Custom middleware that combines Clerk authentication with maintenance mode checking
@@ -165,7 +168,32 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     // If settings check fails, continue normally to avoid breaking the site
     console.error('Error checking maintenance mode:', error);
   }
-  
+
+  // Check for Shopify URL redirects from migration data (D1 redirect_map).
+  // Only check paths that could be old Shopify URLs.
+  // next.config.ts handles structural pattern redirects (/products/:slug -> /product/:slug).
+  // The D1 redirect_map handles slug-level mappings where slugs changed between platforms.
+  try {
+    if (pathname.startsWith('/products/') || pathname.startsWith('/collections/') || pathname.startsWith('/pages/')) {
+      const db = await getDbAsync();
+      const [redirectRow] = await db
+        .select({ target_path: redirect_map.target_path, status_code: redirect_map.status_code })
+        .from(redirect_map)
+        .where(eq(redirect_map.source_path, pathname))
+        .limit(1);
+
+      if (redirectRow) {
+        return NextResponse.redirect(
+          new URL(redirectRow.target_path, req.url),
+          redirectRow.status_code ?? 301
+        );
+      }
+    }
+  } catch (error) {
+    // If redirect lookup fails, continue normally (next.config.ts structural redirects still work)
+    console.error('Error checking redirect map:', error);
+  }
+
   // Continue with normal Clerk authentication
   return NextResponse.next();
 });
