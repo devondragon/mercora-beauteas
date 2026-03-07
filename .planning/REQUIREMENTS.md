@@ -57,8 +57,8 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 - [x] **MIGR-05**: Historical orders imported as read-only records with preserved dates and status
 - [x] **MIGR-06**: Judge.me reviews imported to `product_reviews` with product rating recalculation
 - [x] **MIGR-07**: CMS pages imported from Shopify
-- [ ] **MIGR-08**: Redirect map generated from migrated data to complete SEO-07 redirects
-- [ ] **MIGR-09**: Post-migration validation with record count comparison per table and spot checks
+- [x] **MIGR-08**: Redirect map generated from migrated data to complete SEO-07 redirects
+- [x] **MIGR-09**: Post-migration validation with record count comparison per table and spot checks
 
 ## v2 Requirements
 
@@ -152,8 +152,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MIGR-05 | Phase 4 | Complete |
 | MIGR-06 | Phase 4 | Complete |
 | MIGR-07 | Phase 4 | Complete |
-| MIGR-08 | Phase 4 | Pending |
-| MIGR-09 | Phase 4 | Pending |
+| MIGR-08 | Phase 4 | Complete |
+| MIGR-09 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 38 total
