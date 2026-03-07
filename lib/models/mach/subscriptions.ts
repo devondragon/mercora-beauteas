@@ -311,20 +311,9 @@ export async function getAdminSubscriptionStats() {
   const pausedCount = statusCounts?.pausedCount ?? 0;
 
   // MRR: For each active subscription, join to plan for discount and product variant for price
-  const activeSubsWithPrices = await db
-    .select({
-      discountPercent: subscription_plans.discount_percent,
-      variantPrice: product_variants.price,
-    })
-    .from(customer_subscriptions)
-    .leftJoin(subscription_plans, eq(subscription_plans.id, customer_subscriptions.plan_id))
-    .leftJoin(product_variants, eq(product_variants.product_id, subscription_plans.product_id))
-    .where(eq(customer_subscriptions.status, 'active'));
-
   // Deduplicate by subscription (multiple variants per product)
   const seenSubs = new Set<string>();
   const mrrItems: Array<{ discountPercent: number | null; variantPrice: unknown }> = [];
-  // We need subscription id for dedup, so re-query with id
   const activeSubsForMrr = await db
     .select({
       subId: customer_subscriptions.id,

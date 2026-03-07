@@ -5,6 +5,33 @@ import {
   getSubscriptionEvents,
 } from "@/lib/models/mach/subscriptions";
 
+/**
+ * Transform subscription detail from the model layer (camelCase + nested plan object)
+ * to the flat snake_case shape expected by the UI SubscriptionDetail interface.
+ */
+function transformDetailForClient(sub: any) {
+  const { plan, productName, productSlug, customerPerson, variantPriceAmount, ...base } = sub;
+  const person = customerPerson as {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+  } | null;
+  return {
+    ...base,
+    plan_frequency: plan?.frequency ?? "monthly",
+    plan_discount_percent: plan?.discount_percent ?? 0,
+    product_name: productName ?? "Unknown Product",
+    product_slug: productSlug ?? "",
+    customer_name:
+      person?.full_name ||
+      [person?.first_name, person?.last_name].filter(Boolean).join(" ") ||
+      "Unknown",
+    customer_email: person?.email ?? "",
+    variant_price_amount: variantPriceAmount ?? 0,
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -34,7 +61,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: { subscription, events },
+      data: { subscription: transformDetailForClient(subscription), events },
     });
   } catch (error) {
     console.error("Failed to load subscription detail", error);
