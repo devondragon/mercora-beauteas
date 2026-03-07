@@ -42,11 +42,11 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 
 ### Subscription Admin
 
-- [ ] **SUBA-01**: Admin subscription dashboard showing active subscription count, MRR, and churn rate
-- [ ] **SUBA-02**: Admin filterable table of all subscriptions with status, customer, product, and frequency columns
-- [ ] **SUBA-03**: Admin subscription detail view with full event timeline
-- [ ] **SUBA-04**: Admin UI to manage subscription plans (which products have subscription options, frequencies, discount percentage)
-- [ ] **SUBA-05**: "Subscriptions" added to admin sidebar navigation
+- [x] **SUBA-01**: Admin subscription dashboard showing active subscription count, MRR, and churn rate
+- [x] **SUBA-02**: Admin filterable table of all subscriptions with status, customer, product, and frequency columns
+- [x] **SUBA-03**: Admin subscription detail view with full event timeline
+- [x] **SUBA-04**: Admin UI to manage subscription plans (which products have subscription options, frequencies, discount percentage)
+- [x] **SUBA-05**: "Subscriptions" added to admin sidebar navigation
 
 ### Data Migration
 
@@ -140,11 +140,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUBX-07 | Phase 3 | Complete |
 | SUBX-08 | Phase 3 | Complete |
 | SUBX-09 | Phase 3 | Complete |
-| SUBA-01 | Phase 5 | Pending |
-| SUBA-02 | Phase 5 | Pending |
-| SUBA-03 | Phase 5 | Pending |
-| SUBA-04 | Phase 5 | Pending |
-| SUBA-05 | Phase 5 | Pending |
+| SUBA-01 | Phase 5 | Complete |
+| SUBA-02 | Phase 5 | Complete |
+| SUBA-03 | Phase 5 | Complete |
+| SUBA-04 | Phase 5 | Complete |
+| SUBA-05 | Phase 5 | Complete |
 | MIGR-01 | Phase 4 | Complete |
 | MIGR-02 | Phase 4 | Complete |
 | MIGR-03 | Phase 4 | Complete |

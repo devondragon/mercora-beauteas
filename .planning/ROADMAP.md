@@ -121,4 +121,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Planning complete | - |
 | 4. Data Migration | 3/3 | Complete   | 2026-03-07 |
-| 5. Subscription Admin | 0/3 | Planning complete | - |
+| 5. Subscription Admin | 1/3 | In Progress|  |

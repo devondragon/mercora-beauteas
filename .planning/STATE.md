@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-07T01:45:48.100Z"
-last_activity: 2026-03-07 -- Completed 04-03-PLAN.md (Redirect Map, Validation, Orchestrator, Middleware)
+status: in_progress
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-07T02:06:22Z"
+last_activity: 2026-03-07 -- Completed 05-01-PLAN.md (Subscription Admin Data Layer)
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_plans: 15
+  completed_plans: 13
+  percent: 87
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Existing BeauTeas customers can continue buying and subscribing to teas without disruption after the Shopify migration, with no loss of search rankings or order history.
-**Current focus:** Phase 4: Data Migration (complete)
+**Current focus:** Phase 5: Subscription Admin (in progress)
 
 ## Current Position
 
-Phase: 4 of 5 (Data Migration)
-Plan: 3 of 3 in current phase (phase complete)
-Status: Phase 4 Complete
-Last activity: 2026-03-07 -- Completed 04-03-PLAN.md (Redirect Map, Validation, Orchestrator, Middleware)
+Phase: 5 of 5 (Subscription Admin)
+Plan: 1 of 3 in current phase (plan 1 complete)
+Status: Phase 5 In Progress
+Last activity: 2026-03-07 -- Completed 05-01-PLAN.md (Subscription Admin Data Layer)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 87%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 04 P01 | 6min | 2 tasks | 24 files |
 | Phase 04 P02 | 6min | 2 tasks | 18 files |
 | Phase 04 P03 | 5min | 3 tasks | 10 files |
+| Phase 05 P01 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,10 @@ Recent decisions affecting current work:
 - [Phase 04-03]: Redirect lookup wrapped in try/catch so failures never break the site
 - [Phase 04-03]: migrate-all.ts continues on per-entity failure, preserving ID map progress
 - [Phase 04-03]: All entity migrators export functions for orchestrator AND remain standalone-runnable
+- [Phase 05-01]: Used Drizzle leftJoin chaining for multi-table queries (not raw SQL) since codebase already uses this pattern
+- [Phase 05-01]: MRR computed in JS after fetching active subs with joined variant prices (JSON Money fields need JS parsing)
+- [Phase 05-01]: Subscription plans route uses upsert pattern: update existing plans by frequency, create new ones
+- [Phase 05-01]: Subscriptions nav item placed between Orders and Reviews in sidebar
 
 ### Pending Todos
 
@@ -118,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T01:45:48.096Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-subscription-admin/05-CONTEXT.md
+Last session: 2026-03-07T02:06:22Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-subscription-admin/05-02-PLAN.md
