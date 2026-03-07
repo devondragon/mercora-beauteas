@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Subscription Customer Experience** - Subscribe & Save UI, SetupIntent checkout, lifecycle management, and email notifications
 - [x] **Phase 4: Data Migration** - Shopify ETL pipeline for products, customers, orders, reviews, images, and redirect map generation (completed 2026-03-07)
 - [x] **Phase 5: Subscription Admin** - Admin dashboard with MRR metrics, subscription table, plan management, and event timeline (completed 2026-03-07)
+- [ ] **Phase 6: Pre-Launch Polish** - Fix email manage URL, product name resolution, and 308→301 redirect status codes
 
 ## Phase Details
 
@@ -106,6 +107,17 @@ Plans:
 - [x] 05-03-PLAN.md -- Product editor subscription plan configuration section
 - [ ] 05-04-PLAN.md -- Fix API-to-UI data contract mismatch (camelCase to snake_case response transformation)
 
+### Phase 6: Pre-Launch Polish
+**Goal**: Fix email content quality issues and redirect status codes identified by milestone audit before DNS cutover
+**Depends on**: Phase 2 (webhook handlers), Phase 1 (redirect config)
+**Requirements**: SUBI-08, SUBX-09, SEO-07 (integration quality fixes)
+**Gap Closure:** Closes INT-01, INT-02, FLOW-01 from v1.0 audit + 308→301 redirect fix
+**Success Criteria** (what must be TRUE):
+  1. Subscription lifecycle emails contain a working "Manage Subscription" link pointing to `/subscriptions`
+  2. Subscription lifecycle emails display human-readable product names (e.g., "Jasmine Green Tea") instead of internal IDs
+  3. Shopify URL redirects return 301 status codes (not 308)
+**Plans**: 0 plans (pending `/gsd:plan-phase 6`)
+
 ## Cross-Phase Dependencies
 
 - **MIGR-08 feeds SEO-07**: The redirect map generated in Phase 4 (MIGR-08) completes the Shopify URL redirects stubbed in Phase 1 (SEO-07). Phase 1 builds the redirect middleware; Phase 4 populates it with real data.
@@ -114,7 +126,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -122,4 +134,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Planning complete | - |
 | 4. Data Migration | 3/3 | Complete   | 2026-03-07 |
-| 5. Subscription Admin | 3/4 | Gap closure | - |
+| 5. Subscription Admin | 4/4 | Complete   | 2026-03-07 |
+| 6. Pre-Launch Polish | 0/0 | Pending    | - |
