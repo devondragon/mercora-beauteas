@@ -98,11 +98,12 @@ Plans:
   3. Admin can click into a subscription to see its full event timeline (created, renewals, pauses, cancellations)
   4. Admin can manage subscription plans -- configuring which products offer subscriptions, available frequencies, and discount percentages
   5. "Subscriptions" link appears in the admin sidebar navigation
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md -- Model layer extensions, admin API routes (list/detail/plans), and sidebar navigation
+- [ ] 05-02-PLAN.md -- Subscription dashboard page (stat cards + filterable table) and detail page (summary card + event timeline)
+- [ ] 05-03-PLAN.md -- Product editor subscription plan configuration section
 
 ## Cross-Phase Dependencies
 
@@ -120,4 +121,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Subscription Infrastructure | 0/3 | Planning complete | - |
 | 3. Subscription Customer Experience | 0/3 | Planning complete | - |
 | 4. Data Migration | 3/3 | Complete   | 2026-03-07 |
-| 5. Subscription Admin | 0/2 | Not started | - |
+| 5. Subscription Admin | 0/3 | Planning complete | - |
