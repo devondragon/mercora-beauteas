@@ -115,3 +115,6 @@ export * from "./subscription";
 
 // Webhook events dedup table (application-specific)
 export * from "./webhook-events";
+
+// Redirect map for Shopify URL migration (application-specific)
+export * from "./redirect-map";
