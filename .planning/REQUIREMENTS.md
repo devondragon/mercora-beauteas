@@ -53,10 +53,10 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 - [x] **MIGR-01**: Migration scripts in `scripts/shopify-migration/` with ETL architecture (extractors, transformers, loaders)
 - [x] **MIGR-02**: Products, variants, and product images migrated from Shopify to D1 and R2
 - [x] **MIGR-03**: Shopify collections mapped to Mercora categories
-- [ ] **MIGR-04**: Customer emails imported to Clerk with `skip_password_requirement`, password reset flow prepared
-- [ ] **MIGR-05**: Historical orders imported as read-only records with preserved dates and status
-- [ ] **MIGR-06**: Judge.me reviews imported to `product_reviews` with product rating recalculation
-- [ ] **MIGR-07**: CMS pages imported from Shopify
+- [x] **MIGR-04**: Customer emails imported to Clerk with `skip_password_requirement`, password reset flow prepared
+- [x] **MIGR-05**: Historical orders imported as read-only records with preserved dates and status
+- [x] **MIGR-06**: Judge.me reviews imported to `product_reviews` with product rating recalculation
+- [x] **MIGR-07**: CMS pages imported from Shopify
 - [ ] **MIGR-08**: Redirect map generated from migrated data to complete SEO-07 redirects
 - [ ] **MIGR-09**: Post-migration validation with record count comparison per table and spot checks
 
@@ -148,10 +148,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MIGR-01 | Phase 4 | Complete |
 | MIGR-02 | Phase 4 | Complete |
 | MIGR-03 | Phase 4 | Complete |
-| MIGR-04 | Phase 4 | Pending |
-| MIGR-05 | Phase 4 | Pending |
-| MIGR-06 | Phase 4 | Pending |
-| MIGR-07 | Phase 4 | Pending |
+| MIGR-04 | Phase 4 | Complete |
+| MIGR-05 | Phase 4 | Complete |
+| MIGR-06 | Phase 4 | Complete |
+| MIGR-07 | Phase 4 | Complete |
 | MIGR-08 | Phase 4 | Pending |
 | MIGR-09 | Phase 4 | Pending |
 

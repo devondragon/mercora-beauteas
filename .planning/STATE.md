@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-07T00:43:12.367Z"
-last_activity: 2026-03-07 -- Completed 04-01-PLAN.md (ETL Foundation + Category/Product Migration)
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-07T00:51:31Z"
+last_activity: 2026-03-07 -- Completed 04-02-PLAN.md (Customer, Order, Review, Page Migration)
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 4 of 5 (Data Migration)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-03-07 -- Completed 04-01-PLAN.md (ETL Foundation + Category/Product Migration)
+Last activity: 2026-03-07 -- Completed 04-02-PLAN.md (Customer, Order, Review, Page Migration)
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [████████░░] 83%
 | Phase 03 P03 | 3min | 2 tasks | 3 files |
 | Phase 03 P02 | 4min | 2 tasks | 3 files |
 | Phase 04 P01 | 6min | 2 tasks | 24 files |
+| Phase 04 P02 | 6min | 2 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 04]: Category names in JSON localization format {en: value} matching seed data convention
 - [Phase 04]: Descriptive IDs (prod_slug, variant_slug_sku, cat_slug) matching seed data convention
 - [Phase 04]: ETL pipeline with dual extraction paths (file-based and API) producing same intermediate format
+- [Phase 04-02]: Customer ID = Clerk user ID (the app uses Clerk user ID as customer ID, not a separate cust_ prefix)
+- [Phase 04-02]: IMPORTED synthetic value for order_id and customer_id on migrated reviews (NOT NULL constraint workaround)
+- [Phase 04-02]: Pages table uses integer Unix timestamps, not ISO 8601 strings
+- [Phase 04-02]: Order status mapping: fulfilled->delivered, partial->shipped, paid->processing, refunded->refunded, voided->cancelled
 
 ### Pending Todos
 
@@ -108,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T00:43:12.365Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-03-07T00:51:31Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
