@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-07T00:07:38.739Z"
-last_activity: 2026-03-06 -- Completed 03-03-PLAN.md (Subscription Management Page)
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-03-07T00:43:12.367Z"
+last_activity: 2026-03-07 -- Completed 04-01-PLAN.md (ETL Foundation + Category/Product Migration)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 89
+  total_plans: 12
+  completed_plans: 10
+  percent: 83
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Existing BeauTeas customers can continue buying and subscribing to teas without disruption after the Shopify migration, with no loss of search rankings or order history.
-**Current focus:** Phase 3: Subscription Customer Experience
+**Current focus:** Phase 4: Data Migration
 
 ## Current Position
 
-Phase: 3 of 5 (Subscription Customer Experience)
-Plan: 3 of 3 in current phase
+Phase: 4 of 5 (Data Migration)
+Plan: 1 of 3 in current phase
 Status: In Progress
-Last activity: 2026-03-06 -- Completed 03-03-PLAN.md (Subscription Management Page)
+Last activity: 2026-03-07 -- Completed 04-01-PLAN.md (ETL Foundation + Category/Product Migration)
 
-Progress: [█████████-] 89%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [█████████-] 89%
 | Phase 03 P01 | 4min | 2 tasks | 10 files |
 | Phase 03 P03 | 3min | 2 tasks | 3 files |
 | Phase 03 P02 | 4min | 2 tasks | 3 files |
+| Phase 04 P01 | 6min | 2 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,10 @@ Recent decisions affecting current work:
 - [Phase 03-03]: CustomerSubscription.cancel_at_period_end changed to boolean | null, created_at/updated_at to string | null to match Drizzle schema nullability
 - [Phase 03-02]: No middleware.ts changes needed -- existing catch-all matcher already covers /subscribe/* and /subscriptions/* routes
 - [Phase 03-02]: Two-phase client component: info/shipping collection then StripeProvider with PaymentElement after SetupIntent creation
+- [Phase 04]: Generic loadToD1<T> function signature for type-safe loader calls
+- [Phase 04]: Category names in JSON localization format {en: value} matching seed data convention
+- [Phase 04]: Descriptive IDs (prod_slug, variant_slug_sku, cat_slug) matching seed data convention
+- [Phase 04]: ETL pipeline with dual extraction paths (file-based and API) producing same intermediate format
 
 ### Pending Todos
 
@@ -103,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T00:07:38.737Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-data-migration/04-CONTEXT.md
+Last session: 2026-03-07T00:43:12.365Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None

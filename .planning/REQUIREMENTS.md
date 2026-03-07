@@ -50,9 +50,9 @@ Requirements for migration launch (DNS cutover). Each maps to roadmap phases.
 
 ### Data Migration
 
-- [ ] **MIGR-01**: Migration scripts in `scripts/shopify-migration/` with ETL architecture (extractors, transformers, loaders)
-- [ ] **MIGR-02**: Products, variants, and product images migrated from Shopify to D1 and R2
-- [ ] **MIGR-03**: Shopify collections mapped to Mercora categories
+- [x] **MIGR-01**: Migration scripts in `scripts/shopify-migration/` with ETL architecture (extractors, transformers, loaders)
+- [x] **MIGR-02**: Products, variants, and product images migrated from Shopify to D1 and R2
+- [x] **MIGR-03**: Shopify collections mapped to Mercora categories
 - [ ] **MIGR-04**: Customer emails imported to Clerk with `skip_password_requirement`, password reset flow prepared
 - [ ] **MIGR-05**: Historical orders imported as read-only records with preserved dates and status
 - [ ] **MIGR-06**: Judge.me reviews imported to `product_reviews` with product rating recalculation
@@ -145,9 +145,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUBA-03 | Phase 5 | Pending |
 | SUBA-04 | Phase 5 | Pending |
 | SUBA-05 | Phase 5 | Pending |
-| MIGR-01 | Phase 4 | Pending |
-| MIGR-02 | Phase 4 | Pending |
-| MIGR-03 | Phase 4 | Pending |
+| MIGR-01 | Phase 4 | Complete |
+| MIGR-02 | Phase 4 | Complete |
+| MIGR-03 | Phase 4 | Complete |
 | MIGR-04 | Phase 4 | Pending |
 | MIGR-05 | Phase 4 | Pending |
 | MIGR-06 | Phase 4 | Pending |
