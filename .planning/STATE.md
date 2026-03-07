@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 6 context gathered
-last_updated: "2026-03-07T03:29:57.759Z"
-last_activity: 2026-03-07 -- Completed 05-04-PLAN.md (API-to-UI Data Contract Fix)
+stopped_at: Completed 06-01-PLAN.md (Pre-Launch Email & Redirect Fixes)
+last_updated: "2026-03-07T03:46:50.075Z"
+last_activity: 2026-03-07 -- Completed 06-01-PLAN.md (Pre-Launch Email & Redirect Fixes)
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
+  completed_phases: 6
+  total_plans: 17
+  completed_plans: 17
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** Existing BeauTeas customers can continue buying and subscribing to teas without disruption after the Shopify migration, with no loss of search rankings or order history.
-**Current focus:** Phase 5: Subscription Admin (in progress)
+**Current focus:** Phase 6: Pre-Launch Polish (complete)
 
 ## Current Position
 
-Phase: 5 of 5 (Subscription Admin)
-Plan: 4 of 4 in current phase (plan 4 complete)
-Status: Phase 5 Complete
-Last activity: 2026-03-07 -- Completed 05-04-PLAN.md (API-to-UI Data Contract Fix)
+Phase: 6 of 6 (Pre-Launch Polish)
+Plan: 1 of 1 in current phase (plan 1 complete)
+Status: Phase 6 Complete
+Last activity: 2026-03-07 -- Completed 06-01-PLAN.md (Pre-Launch Email & Redirect Fixes)
 
 Progress: [██████████] 100%
 
@@ -65,6 +65,7 @@ Progress: [██████████] 100%
 | Phase 05 P02 | 2min | 2 tasks | 2 files |
 | Phase 05 P03 | 2min | 1 tasks | 1 files |
 | Phase 05 P04 | 1min | 2 tasks | 3 files |
+| Phase 06 P01 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Recent decisions affecting current work:
 - [Phase 05-03]: Typed fetch response as `any` to satisfy strict TypeScript -- API response shape validated at runtime
 - [Phase 05]: Transformation done in API routes (not model layer) to keep model reusable with different consumers
 - [Phase 05]: Destructuring pattern separates camelCase keys from base spread, preventing key duplication in response
+- [Phase 06]: Duplicated getProductName helper in both handler files for simplicity -- no shared util extraction needed for 2 call sites
+- [Phase 06]: All manageUrl values point to /subscriptions list page per user decision, not per-subscription URLs
 
 ### Pending Todos
 
@@ -130,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T03:29:57.756Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-pre-launch-polish/06-CONTEXT.md
+Last session: 2026-03-07T03:46:50.073Z
+Stopped at: Completed 06-01-PLAN.md (Pre-Launch Email & Redirect Fixes)
+Resume file: None
