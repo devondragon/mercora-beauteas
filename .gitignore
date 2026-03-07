@@ -44,3 +44,6 @@ next-env.d.ts
 .dev.vars*
 mercora.code-workspace
 linkedin-article.md
+
+# worktrees
+.worktrees
