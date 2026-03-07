@@ -9,9 +9,9 @@
  * No prior migration dependencies required (pages are standalone).
  */
 
-import { getConfig } from './lib/config.js';
-import { idMap, DEFAULT_ID_MAP_PATH } from './lib/id-map.js';
-import { logger } from './lib/logger.js';
+import { getConfig, type MigrationConfig } from './lib/config.js';
+import { IdMap, idMap, DEFAULT_ID_MAP_PATH } from './lib/id-map.js';
+import { MigrationLogger, logger } from './lib/logger.js';
 import { ShopifyClient } from './lib/shopify-api.js';
 import { extractPagesFromFile } from './extractors/file-based/pages.js';
 import { extractPagesFromApi } from './extractors/shopify-api/pages.js';
@@ -19,14 +19,17 @@ import { transformPages } from './transformers/pages.js';
 import { loadToD1 } from './loaders/d1-loader.js';
 import type { ExtractResult, ShopifyPage } from './lib/types.js';
 
-async function main(): Promise<void> {
-  logger.setEntity('pages');
-  logger.info('Starting page migration...');
-
-  const config = getConfig();
-
-  // Load existing ID map (for saving page mappings)
-  idMap.load(DEFAULT_ID_MAP_PATH);
+/**
+ * Run page migration with provided config, idMap, and logger.
+ * Importable by migrate-all.ts orchestrator.
+ */
+export async function migratePages(
+  config: MigrationConfig,
+  sharedIdMap: IdMap,
+  sharedLogger: MigrationLogger
+): Promise<void> {
+  sharedLogger.setEntity('pages');
+  sharedLogger.info('Starting page migration...');
 
   // --- EXTRACT ---
   let extracted: ExtractResult<ShopifyPage>;
@@ -45,7 +48,7 @@ async function main(): Promise<void> {
     extracted = extractPagesFromFile(config.dataDir);
   }
 
-  logger.info(
+  sharedLogger.info(
     `Extracted ${extracted.records.length} pages (source: ${extracted.source})`
   );
 
@@ -54,47 +57,60 @@ async function main(): Promise<void> {
 
   if (transformed.warnings.length > 0) {
     for (const warning of transformed.warnings) {
-      logger.warn(warning);
+      sharedLogger.warn(warning);
     }
   }
 
-  logger.info(
+  sharedLogger.info(
     `Transformed ${transformed.records.length} pages (${transformed.skipped.length} skipped)`
   );
 
   // --- LOAD TO D1 ---
   const loadResult = await loadToD1('pages', transformed.records, config);
 
-  logger.info(
+  sharedLogger.info(
     `Loaded ${loadResult.inserted} pages (${loadResult.errors.length} errors)`
   );
 
   // --- Register in ID map for redirect map generation ---
   for (const page of extracted.records) {
     if (page.handle) {
-      idMap.register('pages', page.handle, page.handle);
+      sharedIdMap.register('pages', page.handle, page.handle);
     }
   }
 
-  // --- Save Updated ID Map ---
-  idMap.save(DEFAULT_ID_MAP_PATH);
-  logger.info(`Updated ID map saved to ${DEFAULT_ID_MAP_PATH}`);
-
   // --- Report ---
-  logger.addToReport('pages', {
+  sharedLogger.addToReport('pages', {
     source: extracted.records.length,
     migrated: loadResult.inserted,
     skipped: transformed.skipped.length,
     errors: loadResult.errors.length,
   });
 
-  const report = logger.generateReport();
-  console.log('\n' + report);
-
-  logger.info('Page migration complete.');
+  sharedLogger.info('Page migration complete.');
 }
 
-main().catch((error) => {
-  logger.error('Page migration failed', error);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  const config = getConfig();
+
+  // Load existing ID map (for saving page mappings)
+  idMap.load(DEFAULT_ID_MAP_PATH);
+
+  await migratePages(config, idMap, logger);
+
+  // Save Updated ID Map (only in standalone mode)
+  idMap.save(DEFAULT_ID_MAP_PATH);
+  logger.info(`Updated ID map saved to ${DEFAULT_ID_MAP_PATH}`);
+
+  const report = logger.generateReport();
+  console.log('\n' + report);
+}
+
+// Run standalone when executed directly
+const isMain = process.argv[1]?.includes('migrate-pages');
+if (isMain) {
+  main().catch((error) => {
+    logger.error('Page migration failed', error);
+    process.exit(1);
+  });
+}

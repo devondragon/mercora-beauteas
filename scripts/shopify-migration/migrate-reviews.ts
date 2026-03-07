@@ -9,14 +9,13 @@
  * Requires: product migration to have run first (for product ID mappings).
  */
 
-import { getConfig } from './lib/config.js';
-import { idMap, DEFAULT_ID_MAP_PATH } from './lib/id-map.js';
-import { logger } from './lib/logger.js';
+import { getConfig, type MigrationConfig } from './lib/config.js';
+import { IdMap, idMap, DEFAULT_ID_MAP_PATH } from './lib/id-map.js';
+import { MigrationLogger, logger } from './lib/logger.js';
 import { extractReviewsFromFile } from './extractors/file-based/reviews.js';
 import { transformReviews } from './transformers/reviews.js';
 import { loadToD1 } from './loaders/d1-loader.js';
 import { executeQuery, executeSql } from './lib/wrangler-exec.js';
-import type { MigrationConfig } from './lib/config.js';
 
 /**
  * Recalculate product aggregate ratings after review import.
@@ -28,7 +27,8 @@ import type { MigrationConfig } from './lib/config.js';
  */
 async function recalculateProductRatings(
   productIds: string[],
-  config: MigrationConfig
+  config: MigrationConfig,
+  ratingLogger: MigrationLogger
 ): Promise<number> {
   let updatedCount = 0;
 
@@ -74,7 +74,7 @@ async function recalculateProductRatings(
       }
 
       if (totalCount === 0) {
-        logger.warn(`No published reviews found for product ${productId}`);
+        ratingLogger.warn(`No published reviews found for product ${productId}`);
         continue;
       }
 
@@ -92,45 +92,45 @@ async function recalculateProductRatings(
       executeSql(updateSql, config.d1DatabaseName, config.d1Env);
 
       updatedCount++;
-      logger.info(
+      ratingLogger.info(
         `Updated rating for ${productId}: avg=${average}, count=${totalCount}`
       );
     } catch (err) {
-      logger.error(`Failed to recalculate rating for ${productId}`, err);
+      ratingLogger.error(`Failed to recalculate rating for ${productId}`, err);
     }
   }
 
   return updatedCount;
 }
 
-async function main(): Promise<void> {
-  logger.setEntity('reviews');
-  logger.info('Starting review migration...');
-
-  const config = getConfig();
-
-  // Load existing ID map (from prior migrations)
-  idMap.load(DEFAULT_ID_MAP_PATH);
-  logger.info(
-    `Loaded ID map with ${idMap.count('products')} product, ${idMap.count('customers')} customer mappings`
-  );
+/**
+ * Run review migration with provided config, idMap, and logger.
+ * Importable by migrate-all.ts orchestrator.
+ */
+export async function migrateReviews(
+  config: MigrationConfig,
+  sharedIdMap: IdMap,
+  sharedLogger: MigrationLogger
+): Promise<void> {
+  sharedLogger.setEntity('reviews');
+  sharedLogger.info('Starting review migration...');
 
   // --- EXTRACT ---
   // Reviews are always file-based (Judge.me export)
   const extracted = extractReviewsFromFile(config.dataDir);
 
-  logger.info(`Extracted ${extracted.records.length} reviews (source: file)`);
+  sharedLogger.info(`Extracted ${extracted.records.length} reviews (source: file)`);
 
   // --- TRANSFORM ---
-  const transformed = transformReviews(extracted.records, idMap);
+  const transformed = transformReviews(extracted.records, sharedIdMap);
 
   if (transformed.warnings.length > 0) {
     for (const warning of transformed.warnings) {
-      logger.warn(warning);
+      sharedLogger.warn(warning);
     }
   }
 
-  logger.info(
+  sharedLogger.info(
     `Transformed ${transformed.records.length} reviews (${transformed.skipped.length} skipped)`
   );
 
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     config
   );
 
-  logger.info(
+  sharedLogger.info(
     `Loaded ${loadResult.inserted} reviews (${loadResult.errors.length} errors)`
   );
 
@@ -151,35 +151,51 @@ async function main(): Promise<void> {
     ...new Set(transformed.records.map((r) => r.product_id)),
   ];
 
-  logger.info(
+  sharedLogger.info(
     `Recalculating ratings for ${uniqueProductIds.length} products...`
   );
   const ratingsUpdated = await recalculateProductRatings(
     uniqueProductIds,
-    config
+    config,
+    sharedLogger
   );
-  logger.info(`Updated ratings for ${ratingsUpdated} products`);
-
-  // --- Save Updated ID Map ---
-  idMap.save(DEFAULT_ID_MAP_PATH);
-  logger.info(`Updated ID map saved to ${DEFAULT_ID_MAP_PATH}`);
+  sharedLogger.info(`Updated ratings for ${ratingsUpdated} products`);
 
   // --- Report ---
-  logger.addToReport('reviews', {
+  sharedLogger.addToReport('reviews', {
     source: extracted.records.length,
     migrated: loadResult.inserted,
     skipped: transformed.skipped.length,
     errors: loadResult.errors.length,
   });
 
-  const report = logger.generateReport();
-  console.log('\n' + report);
-  console.log(`\nProduct ratings updated: ${ratingsUpdated}`);
-
-  logger.info('Review migration complete.');
+  sharedLogger.info('Review migration complete.');
 }
 
-main().catch((error) => {
-  logger.error('Review migration failed', error);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  const config = getConfig();
+
+  // Load existing ID map (from prior migrations)
+  idMap.load(DEFAULT_ID_MAP_PATH);
+  logger.info(
+    `Loaded ID map with ${idMap.count('products')} product, ${idMap.count('customers')} customer mappings`
+  );
+
+  await migrateReviews(config, idMap, logger);
+
+  // Save Updated ID Map (only in standalone mode)
+  idMap.save(DEFAULT_ID_MAP_PATH);
+  logger.info(`Updated ID map saved to ${DEFAULT_ID_MAP_PATH}`);
+
+  const report = logger.generateReport();
+  console.log('\n' + report);
+}
+
+// Run standalone when executed directly
+const isMain = process.argv[1]?.includes('migrate-reviews');
+if (isMain) {
+  main().catch((error) => {
+    logger.error('Review migration failed', error);
+    process.exit(1);
+  });
+}
