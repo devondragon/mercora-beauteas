@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { getOrdersByUserId } from "@/lib/models/";
 import OrderCard from "@/components/OrderCard";
 
@@ -8,8 +9,8 @@ export const metadata = {
 
 export default async function OrdersPage() {
   const { userId } = await auth();
-  // Layout already gates auth, but userId needed for query
-  const orders = userId ? await getOrdersByUserId(userId) : [];
+  if (!userId) redirect("/sign-in");
+  const orders = await getOrdersByUserId(userId);
 
   return (
     <div>

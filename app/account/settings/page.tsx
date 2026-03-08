@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { getCustomer } from "@/lib/models/mach/customer";
 import AccountSettings from "@/components/account/AccountSettings";
 import { UserProfile } from "@clerk/nextjs";
@@ -9,7 +10,8 @@ export const metadata = {
 
 export default async function SettingsPage() {
   const { userId } = await auth();
-  const customer = userId ? await getCustomer(userId) : null;
+  if (!userId) redirect("/sign-in");
+  const customer = await getCustomer(userId);
 
   const settings = {
     first_name: customer?.person?.first_name || "",

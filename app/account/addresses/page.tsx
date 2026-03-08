@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { getCustomer } from "@/lib/models/mach/customer";
 import AddressManager from "@/components/account/AddressManager";
 import type { MACHCustomerAddress } from "@/lib/types/mach/Customer";
@@ -9,7 +10,8 @@ export const metadata = {
 
 export default async function AddressesPage() {
   const { userId } = await auth();
-  const customer = userId ? await getCustomer(userId) : null;
+  if (!userId) redirect("/sign-in");
+  const customer = await getCustomer(userId);
   const addresses: MACHCustomerAddress[] = customer?.addresses || [];
 
   return (
