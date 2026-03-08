@@ -1,6 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomer, updateCustomerAddress, removeCustomerAddress } from "@/lib/models/mach/customer";
+import type { MACHCustomerAddress } from "@/lib/types/mach/Customer";
+import type { MACHAddress } from "@/lib/types/mach/Address";
 
 export async function PUT(
   req: NextRequest,
@@ -12,20 +14,32 @@ export async function PUT(
   const { id } = await params;
 
   try {
-    const body = await req.json() as Record<string, any>;
-    const updates: any = {};
+    const body = await req.json() as Record<string, unknown>;
 
-    if (body.type) updates.type = body.type;
-    if (body.label !== undefined) updates.label = body.label;
-    if (body.is_default !== undefined) updates.is_default = body.is_default;
-    if (body.line1 || body.city || body.country) {
+    if (body.type !== undefined && body.type !== "shipping" && body.type !== "billing")
+      return NextResponse.json({ error: "type must be 'shipping' or 'billing'" }, { status: 400 });
+    if (body.country !== undefined && (typeof body.country !== "string" || body.country.length !== 2))
+      return NextResponse.json({ error: "country must be a 2-letter ISO code" }, { status: 400 });
+
+    const updates: Partial<MACHCustomerAddress> = {};
+
+    if (body.type) updates.type = body.type as MACHCustomerAddress["type"];
+    if (body.label !== undefined) updates.label = typeof body.label === "string" ? body.label : undefined;
+    if (body.is_default !== undefined) updates.is_default = Boolean(body.is_default);
+    if (body.line1 !== undefined || body.line2 !== undefined || body.city !== undefined ||
+        body.region !== undefined || body.postal_code !== undefined || body.country !== undefined) {
+      // Read existing address to merge — prevents partial updates from destroying fields
+      const customer = await getCustomer(userId);
+      const existingAddr = customer?.addresses?.find((a) => a.id === id);
+      const existingAddress: Partial<MACHAddress> = existingAddr?.address || {};
+
       updates.address = {
-        line1: body.line1,
-        line2: body.line2 || undefined,
-        city: body.city,
-        region: body.region || undefined,
-        postal_code: body.postal_code || undefined,
-        country: body.country,
+        line1: body.line1 !== undefined ? (body.line1 as string) : (typeof existingAddress.line1 === "string" ? existingAddress.line1 : ""),
+        line2: body.line2 !== undefined ? (typeof body.line2 === "string" ? body.line2 : undefined) : (typeof existingAddress.line2 === "string" ? existingAddress.line2 : undefined),
+        city: body.city !== undefined ? (body.city as string) : (typeof existingAddress.city === "string" ? existingAddress.city : ""),
+        region: body.region !== undefined ? (typeof body.region === "string" ? body.region : undefined) : (existingAddress.region as string | undefined),
+        postal_code: body.postal_code !== undefined ? (typeof body.postal_code === "string" ? body.postal_code : undefined) : (existingAddress.postal_code as string | undefined),
+        country: body.country !== undefined ? (body.country as string) : (typeof existingAddress.country === "string" ? existingAddress.country : ""),
       };
     }
 
@@ -34,8 +48,8 @@ export async function PUT(
       const customer = await getCustomer(userId);
       if (customer?.addresses) {
         for (const addr of customer.addresses) {
-          if (addr.id !== id && addr.is_default) {
-            await updateCustomerAddress(userId, addr.id!, { is_default: false });
+          if (addr.id !== id && addr.is_default && addr.id) {
+            await updateCustomerAddress(userId, addr.id, { is_default: false });
           }
         }
       }
