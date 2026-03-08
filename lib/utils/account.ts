@@ -11,7 +11,7 @@ export function formatDate(dateString?: string | null, showTime = false): string
     options.hour = "numeric";
     options.minute = "2-digit";
   }
-  return new Date(dateString).toLocaleDateString("en-US", options);
+  return new Date(dateString).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
 }
 
 export function formatAddress(address: MACHAddress | null | undefined): string {
@@ -42,6 +42,7 @@ export function formatAddressInline(addr: { address?: MACHAddress | null } | nul
     .join(", ");
 }
 
+/** Format monetary amount. Expects `amount` in minor units (cents). */
 export function formatMoney(money?: { amount: number; currency_code?: string } | null): string {
   if (!money) return "\u2014";
   const symbol = money.currency_code === "USD" || !money.currency_code ? "$" : money.currency_code + " ";

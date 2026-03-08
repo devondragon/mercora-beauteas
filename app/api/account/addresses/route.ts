@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
     if (!body.country || typeof body.country !== "string" || body.country.length !== 2)
       return NextResponse.json({ error: "country must be a 2-letter ISO code" }, { status: 400 });
 
+    const MAX_FIELD_LEN = 200;
+    for (const field of ["line1", "line2", "city", "region", "postal_code", "label"] as const) {
+      if (typeof body[field] === "string" && (body[field] as string).length > MAX_FIELD_LEN)
+        return NextResponse.json({ error: `${field} exceeds ${MAX_FIELD_LEN} characters` }, { status: 400 });
+    }
+
     // If new address is default, unset existing defaults first
     if (body.is_default === true) {
       const customer = await getCustomer(userId);

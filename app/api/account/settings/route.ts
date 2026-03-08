@@ -33,12 +33,19 @@ export async function PUT(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
 
+    const MAX_NAME_LEN = 100;
+    for (const field of ["first_name", "last_name"] as const) {
+      if (typeof body[field] === "string" && (body[field] as string).length > MAX_NAME_LEN)
+        return NextResponse.json({ error: `${field} exceeds ${MAX_NAME_LEN} characters` }, { status: 400 });
+    }
+
+    const customer = await getCustomer(userId);
+    if (!customer) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+
     // Update person data (name)
     if (body.first_name !== undefined || body.last_name !== undefined) {
-      const customer = await getCustomer(userId);
-      if (!customer) {
-        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
-      }
       const person = { ...(customer.person || {}) } as MACHPersonData;
       if (typeof body.first_name === "string") person.first_name = body.first_name;
       if (typeof body.last_name === "string") person.last_name = body.last_name;
@@ -48,11 +55,17 @@ export async function PUT(req: NextRequest) {
 
     // Update communication preferences (merge with existing to avoid dropping fields)
     if (body.communication_preferences) {
-      const existing = await getCustomer(userId);
-      if (!existing) {
-        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      const ALLOWED_COMM_KEYS = new Set([
+        "email", "sms", "push", "postal", "phone",
+        "preferred_channel", "preferred_time", "preferred_timezone", "language", "do_not_disturb",
+      ]);
+      const commPrefs = body.communication_preferences as Record<string, unknown>;
+      const invalidKeys = Object.keys(commPrefs).filter((k) => !ALLOWED_COMM_KEYS.has(k));
+      if (invalidKeys.length > 0) {
+        return NextResponse.json({ error: `Invalid communication preference keys: ${invalidKeys.join(", ")}` }, { status: 400 });
       }
-      const merged = { ...(existing.communication_preferences || {}), ...(body.communication_preferences as MACHCommunicationPreferences) };
+
+      const merged = { ...(customer.communication_preferences || {}), ...(commPrefs as MACHCommunicationPreferences) };
       await updateCommunicationPreferences(userId, merged);
     }
 

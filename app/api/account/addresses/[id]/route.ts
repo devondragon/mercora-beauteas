@@ -21,6 +21,15 @@ export async function PUT(
     if (body.country !== undefined && (typeof body.country !== "string" || body.country.length !== 2))
       return NextResponse.json({ error: "country must be a 2-letter ISO code" }, { status: 400 });
 
+    const MAX_FIELD_LEN = 200;
+    for (const field of ["line1", "line2", "city", "region", "postal_code", "label"] as const) {
+      if (typeof body[field] === "string" && (body[field] as string).length > MAX_FIELD_LEN)
+        return NextResponse.json({ error: `${field} exceeds ${MAX_FIELD_LEN} characters` }, { status: 400 });
+    }
+
+    const customer = await getCustomer(userId);
+    if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+
     const updates: Partial<MACHCustomerAddress> = {};
 
     if (body.type) updates.type = body.type as MACHCustomerAddress["type"];
@@ -29,8 +38,7 @@ export async function PUT(
     if (body.line1 !== undefined || body.line2 !== undefined || body.city !== undefined ||
         body.region !== undefined || body.postal_code !== undefined || body.country !== undefined) {
       // Read existing address to merge — prevents partial updates from destroying fields
-      const customer = await getCustomer(userId);
-      const existingAddr = customer?.addresses?.find((a) => a.id === id);
+      const existingAddr = customer.addresses?.find((a) => a.id === id);
       const existingAddress: Partial<MACHAddress> = existingAddr?.address || {};
 
       updates.address = {
@@ -44,13 +52,10 @@ export async function PUT(
     }
 
     // If setting as default, unset other defaults first
-    if (body.is_default) {
-      const customer = await getCustomer(userId);
-      if (customer?.addresses) {
-        for (const addr of customer.addresses) {
-          if (addr.id !== id && addr.is_default && addr.id) {
-            await updateCustomerAddress(userId, addr.id, { is_default: false });
-          }
+    if (body.is_default && customer.addresses) {
+      for (const addr of customer.addresses) {
+        if (addr.id !== id && addr.is_default && addr.id) {
+          await updateCustomerAddress(userId, addr.id, { is_default: false });
         }
       }
     }
@@ -58,7 +63,8 @@ export async function PUT(
     const updated = await updateCustomerAddress(userId, id, updates);
     if (!updated) return NextResponse.json({ error: "Address not found" }, { status: 404 });
 
-    return NextResponse.json({ success: true });
+    const updatedAddress = updated.addresses?.find((a) => a.id === id);
+    return NextResponse.json({ success: true, address: updatedAddress });
   } catch (error) {
     console.error("Error updating address:", error);
     return NextResponse.json({ error: "Failed to update address" }, { status: 500 });
