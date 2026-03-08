@@ -312,7 +312,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
 
       {/* Address cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {addresses.map((addr) => (
+        {addresses.filter((addr) => addr.id).map((addr) => (
           <div
             key={addr.id}
             className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 relative"
