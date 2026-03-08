@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getSubscriptionsByCustomer, getSubscriptionPlanById } from "@/lib/models/mach/subscriptions";
 import { getProduct } from "@/lib/models/mach/products";
 import type { SubscriptionPlan, CustomerSubscription } from "@/lib/types/subscription";
+import type { MACHMedia } from "@/lib/types/mach/Media";
 import SubscriptionsClient from "./SubscriptionsClient";
 
 export interface EnrichedSubscription extends CustomerSubscription {
@@ -9,7 +10,7 @@ export interface EnrichedSubscription extends CustomerSubscription {
   product: {
     name: string;
     slug: string;
-    image: any;
+    image: MACHMedia | undefined;
   } | null;
 }
 
