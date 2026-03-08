@@ -47,6 +47,7 @@ const emptyForm: AddressFormData = {
   is_default: false,
 };
 
+const inputClasses = "w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500";
 
 export default function AddressManager({ initialAddresses }: AddressManagerProps) {
   const router = useRouter();
@@ -200,7 +201,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   placeholder="e.g. Home, Work"
                   value={form.label}
                   onChange={(e) => setForm({ ...form, label: e.target.value })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 />
               </div>
               <div>
@@ -208,7 +209,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 <select
                   value={form.type}
                   onChange={(e) => setForm({ ...form, type: e.target.value as "shipping" | "billing" })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 >
                   <option value="shipping">Shipping</option>
                   <option value="billing">Billing</option>
@@ -222,7 +223,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 required
                 value={form.line1}
                 onChange={(e) => setForm({ ...form, line1: e.target.value })}
-                className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                className={inputClasses}
               />
             </div>
             <div>
@@ -231,7 +232,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 type="text"
                 value={form.line2}
                 onChange={(e) => setForm({ ...form, line2: e.target.value })}
-                className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                className={inputClasses}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -242,7 +243,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   required
                   value={form.city}
                   onChange={(e) => setForm({ ...form, city: e.target.value })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 />
               </div>
               <div>
@@ -251,7 +252,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   type="text"
                   value={form.region}
                   onChange={(e) => setForm({ ...form, region: e.target.value })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 />
               </div>
               <div>
@@ -260,7 +261,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   type="text"
                   value={form.postal_code}
                   onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 />
               </div>
             </div>
@@ -274,7 +275,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   placeholder="US"
                   value={form.country}
                   onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase() })}
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                  className={inputClasses}
                 />
               </div>
               <div className="flex items-end">
