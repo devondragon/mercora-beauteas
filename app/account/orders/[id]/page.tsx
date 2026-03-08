@@ -3,37 +3,12 @@ import { notFound } from "next/navigation";
 import { getOrderById } from "@/lib/models/mach/orders";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import type { OrderItem } from "@/lib/types/order";
+import { formatDate, formatAddress, formatMoney } from "@/lib/utils/account";
 
 export const metadata = {
   title: "Order Details - BeauTeas",
 };
-
-function formatDate(dateString?: string | null): string {
-  if (!dateString) return "—";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatMoney(money?: { amount: number; currency_code?: string } | null): string {
-  if (!money) return "$0.00";
-  return `$${(money.amount / 100).toFixed(2)}`;
-}
-
-function formatAddress(address: any): string {
-  if (!address) return "—";
-  const parts = [
-    address.line1,
-    address.line2,
-    [address.city, address.region, address.postal_code].filter(Boolean).join(", "),
-    address.country,
-  ].filter(Boolean);
-  return parts.join("\n");
-}
 
 const statusSteps = ["pending", "processing", "shipped", "delivered"];
 
@@ -80,6 +55,7 @@ export default async function OrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { userId } = await auth();
+  if (!userId) notFound(); // defence-in-depth: layout redirects, but guard here too
   const { id } = await params;
   const order = await getOrderById(id);
 
@@ -103,7 +79,7 @@ export default async function OrderDetailPage({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2">
         <h1 className="text-2xl font-bold">Order {order.id}</h1>
         <span className="text-sm text-gray-400">
-          Placed {formatDate(order.created_at)}
+          Placed {formatDate(order.created_at, true)}
         </span>
       </div>
 
@@ -117,7 +93,7 @@ export default async function OrderDetailPage({
       <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 mb-6">
         <h2 className="text-sm font-medium text-gray-400 mb-4">Items</h2>
         <div className="space-y-3">
-          {items.map((item: any, i: number) => (
+          {items.map((item: OrderItem, i: number) => (
             <div
               key={item.id || i}
               className="flex justify-between items-center py-2 border-b border-neutral-700 last:border-0"

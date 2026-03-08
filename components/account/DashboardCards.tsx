@@ -2,31 +2,13 @@ import Link from "next/link";
 import { Package, Repeat, MapPin, ArrowRight } from "lucide-react";
 import type { Order } from "@/lib/types/order";
 import type { MACHCustomerAddress } from "@/lib/types/mach/Customer";
+import { formatDate, formatAddressInline } from "@/lib/utils/account";
 
 interface DashboardCardsProps {
   recentOrders: Order[];
   activeSubscriptionCount: number;
   nextBillingDate: string | null;
   defaultAddress: MACHCustomerAddress | null;
-}
-
-function formatDate(dateString?: string | null): string {
-  if (!dateString) return "\u2014";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getDisplayAddress(addr: MACHCustomerAddress | null): string {
-  if (!addr?.address) return "No address saved";
-  const a = addr.address;
-  const line1 = typeof a.line1 === "string" ? a.line1 : "";
-  const city = typeof a.city === "string" ? a.city : "";
-  return [line1, [city, a.region, a.postal_code].filter(Boolean).join(", ")]
-    .filter(Boolean)
-    .join(", ");
 }
 
 const statusColor: Record<string, string> = {
@@ -106,7 +88,7 @@ export default function DashboardCards({
           <h2 className="font-semibold">Default Address</h2>
         </div>
         <p className="text-sm text-gray-300 mb-3">
-          {getDisplayAddress(defaultAddress)}
+          {formatAddressInline(defaultAddress)}
         </p>
         <Link
           href="/account/addresses"

@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import type { EnrichedSubscription } from "./page";
+import { formatDate, getMediaUrl } from "@/lib/utils/account";
 
 interface SubscriptionsClientProps {
   subscriptions: EnrichedSubscription[];
@@ -36,21 +37,6 @@ const actionSuccessMessages: Record<string, string> = {
   skip: "Next renewal skipped",
   cancel: "Subscription will be canceled at the end of the billing period",
 };
-
-function getMediaUrl(media: any): string {
-  if (!media) return "/placeholder.jpg";
-  if (typeof media === "string") return media;
-  return media.file?.url || "/placeholder.jpg";
-}
-
-function formatDate(dateString: string | null): string {
-  if (!dateString) return "---";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function getStatusBadge(sub: EnrichedSubscription) {
   if (sub.cancel_at_period_end) {
