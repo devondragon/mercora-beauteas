@@ -7,10 +7,14 @@ export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const customer = await getCustomer(userId);
-  if (!customer) return NextResponse.json({ addresses: [] });
-
-  return NextResponse.json({ addresses: customer.addresses || [] });
+  try {
+    const customer = await getCustomer(userId);
+    if (!customer) return NextResponse.json({ addresses: [] });
+    return NextResponse.json({ addresses: customer.addresses || [] });
+  } catch (error) {
+    console.error("Error fetching addresses:", error);
+    return NextResponse.json({ error: "Failed to load addresses" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
