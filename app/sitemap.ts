@@ -13,12 +13,22 @@ import { listProducts, listCategories, getPublishedPages } from "@/lib/models";
 
 const BASE_URL = "https://beauteas.com";
 
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [products, categories, pages] = await Promise.all([
-    listProducts({ status: ["active"] }),
-    listCategories({ status: "active" }),
-    getPublishedPages(),
-  ]);
+  let products: Awaited<ReturnType<typeof listProducts>> = [];
+  let categories: Awaited<ReturnType<typeof listCategories>> = [];
+  let pages: Awaited<ReturnType<typeof getPublishedPages>> = [];
+
+  try {
+    [products, categories, pages] = await Promise.all([
+      listProducts({ status: ["active"] }),
+      listCategories({ status: "active" }),
+      getPublishedPages(),
+    ]);
+  } catch {
+    // D1 binding not available at build time — return minimal sitemap
+  }
 
   const homepage: MetadataRoute.Sitemap[number] = {
     url: `${BASE_URL}/`,

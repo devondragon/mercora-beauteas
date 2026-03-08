@@ -670,11 +670,13 @@ export async function addCustomerAddress(customerId: string, address: MACHCustom
 export async function updateCustomerAddress(customerId: string, addressId: string, address: Partial<MACHCustomerAddress>): Promise<MACHCustomer | null> {
   const customer = await getCustomer(customerId);
   if (!customer || !customer.addresses) return null;
-  
-  const addresses = customer.addresses.map(addr => 
+
+  if (!customer.addresses.some(addr => addr.id === addressId)) return null;
+
+  const addresses = customer.addresses.map(addr =>
     addr.id === addressId ? { ...addr, ...address } : addr
   );
-  
+
   return updateCustomer(customerId, { addresses });
 }
 
@@ -684,9 +686,11 @@ export async function updateCustomerAddress(customerId: string, addressId: strin
 export async function removeCustomerAddress(customerId: string, addressId: string): Promise<MACHCustomer | null> {
   const customer = await getCustomer(customerId);
   if (!customer || !customer.addresses) return null;
-  
+
+  if (!customer.addresses.some(addr => addr.id === addressId)) return null;
+
   const addresses = customer.addresses.filter(addr => addr.id !== addressId);
-  
+
   return updateCustomer(customerId, { addresses });
 }
 

@@ -41,9 +41,6 @@ export default function SubscriptionToggle({
 }: SubscriptionToggleProps) {
   const router = useRouter();
 
-  // If no plans, render nothing -- product only supports one-time purchase
-  if (plans.length === 0) return null;
-
   const [purchaseMode, setPurchaseMode] = useState<"one-time" | "subscribe">(
     "one-time"
   );
@@ -67,6 +64,9 @@ export default function SubscriptionToggle({
       variantPriceInCents * (1 - selectedPlan.discount_percent / 100)
     );
   }, [variantPriceInCents, selectedPlan]);
+
+  // If no plans, render nothing -- product only supports one-time purchase
+  if (plans.length === 0) return null;
 
   const onSale =
     compareAtPriceInCents && compareAtPriceInCents > variantPriceInCents;

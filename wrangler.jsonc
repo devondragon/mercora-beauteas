@@ -39,21 +39,30 @@
     // === DEV ENVIRONMENT ===
     "dev": {
       "name": "beauteas-dev",
+      "ai": {
+        "binding": "AI"
+      },
+      "durable_objects": {
+        "bindings": []
+      },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "beauteas-db-dev",
-          "database_id": "REPLACE_WITH_DEV_DATABASE_ID"
+          "database_id": "f88149dc-32c3-4a04-9c02-95e25db6d735",
+          "preview_database_id": "0a037b06-421c-484e-8b17-140a5741c1ef"
         }
       ],
       "r2_buckets": [
         {
           "binding": "MEDIA",
-          "bucket_name": "beauteas-images-dev"
+          "bucket_name": "beauteas-images-dev",
+          "preview_bucket_name": "beauteas-images-dev-preview"
         },
         {
           "binding": "NEXT_INC_CACHE_R2_BUCKET",
-          "bucket_name": "beauteas-images-dev"
+          "bucket_name": "beauteas-images-dev",
+          "preview_bucket_name": "beauteas-images-dev-preview"
         }
       ],
       "vectorize": [
@@ -63,7 +72,7 @@
         }
       ],
       "vars": {
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bGVhcm5pbmctbGlnZXItMTAuY2xlcmsuYWNjb3VudHMuZGV2JA",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YnVzeS1zaHJpbXAtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA",
         "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Rwyc6LL7e1EcFUl2kqrcgWa8KDNzC9m4lc38wQQKiKVmekTxi3q6R6R2nohizFzRNNw9bHTeN8mripgZzgUYUDd00nlOhCWEs"
       }
     },

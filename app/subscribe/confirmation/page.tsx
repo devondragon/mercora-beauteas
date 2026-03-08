@@ -154,7 +154,7 @@ export default async function SubscribeConfirmationPage({
         {/* Action Links */}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Link
-            href="/subscriptions"
+            href="/account/subscriptions"
             className="flex-1 rounded-lg bg-orange-500 px-6 py-3 text-center font-semibold text-black transition hover:bg-orange-400"
           >
             Manage Subscriptions
@@ -183,7 +183,7 @@ function GenericSuccess() {
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link
-            href="/subscriptions"
+            href="/account/subscriptions"
             className="rounded-lg bg-orange-500 px-6 py-3 font-semibold text-black transition hover:bg-orange-400"
           >
             Manage Subscriptions

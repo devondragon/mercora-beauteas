@@ -53,7 +53,7 @@ export default function ClerkLogin() {
             <UserButton.Link
               label="View Order History"
               labelIcon={<Package />}
-              href="/orders"
+              href="/account/orders"
             />
             {!adminLoading && isAdmin && (
               <UserButton.Link
