@@ -12,7 +12,7 @@ export async function PUT(
   const { id } = await params;
 
   try {
-    const body = await req.json();
+    const body = await req.json() as Record<string, any>;
     const updates: any = {};
 
     if (body.type) updates.type = body.type;

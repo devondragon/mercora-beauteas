@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await req.json();
+    const body = await req.json() as Record<string, any>;
     const address: MACHCustomerAddress = {
       id: `addr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       type: body.type || "shipping",

@@ -25,17 +25,17 @@ export async function PUT(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await req.json();
+    const body = await req.json() as Record<string, any>;
 
     // Update person data (name)
     if (body.first_name !== undefined || body.last_name !== undefined) {
       const customer = await getCustomer(userId);
       if (customer) {
-        const person = { ...customer.person };
+        const person: Record<string, any> = { ...customer.person };
         if (body.first_name !== undefined) person.first_name = body.first_name;
         if (body.last_name !== undefined) person.last_name = body.last_name;
         person.full_name = [person.first_name, person.last_name].filter(Boolean).join(" ");
-        await updateCustomer(userId, { person });
+        await updateCustomer(userId, { person } as any);
       }
     }
 
