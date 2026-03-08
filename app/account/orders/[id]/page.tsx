@@ -15,6 +15,16 @@ const statusSteps = ["pending", "processing", "shipped", "delivered"];
 function StatusTimeline({ status }: { status: string }) {
   const currentIndex = statusSteps.indexOf(status);
   const isCanceled = status === "cancelled" || status === "refunded";
+  const isUnknown = !isCanceled && currentIndex === -1;
+
+  if (isUnknown) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="w-3 h-3 rounded-full bg-yellow-500" />
+        <span className="text-sm text-yellow-400 capitalize">{status.replace(/_/g, " ")}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2">
