@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3 } from "lucide-react";
+import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3, User } from "lucide-react";
 import AgentDrawer from "@/components/agent/AgentDrawer";
 import ClerkLogin from "@/components/login/ClerkLogin";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -402,6 +402,14 @@ export default function HeaderClient({
         <ClientOnly>
           <AgentDrawer />
         </ClientOnly>
+        <Link
+          href="/account"
+          prefetch={true}
+          className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
+        >
+          <User className="h-4 w-4" />
+          Account
+        </Link>
         <ClerkLogin />
         <CartDrawer />
       </div>
@@ -472,6 +480,15 @@ export default function HeaderClient({
                   <Search className="h-5 w-5" />
                   <span>Help & Search</span>
                 </button>
+                <Link
+                  href="/account"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
+                  prefetch={true}
+                >
+                  <User className="h-5 w-5" />
+                  <span>My Account</span>
+                </Link>
                 <div onClick={() => setIsMobileMenuOpen(false)}>
                   <ClerkLogin />
                 </div>

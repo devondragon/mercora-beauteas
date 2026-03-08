@@ -55,7 +55,7 @@ export default function OrderConfirmationModal({
               asChild
               className="flex-1 bg-black text-white hover:bg-orange-500 transition-colors"
             >
-              <Link href="/orders">View Order History</Link>
+              <Link href="/account/orders">View Order History</Link>
             </Button>
           )}
         </DialogFooter>
