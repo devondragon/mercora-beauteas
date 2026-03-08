@@ -40,10 +40,14 @@ export default function AccountSettings({ initialSettings }: AccountSettingsProp
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to save settings");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Failed to save settings");
+      }
       toast.success("Settings saved");
     } catch (error) {
-      toast.error("Failed to save settings");
+      console.error("Error saving settings:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }

@@ -17,6 +17,7 @@ import { MapPin, Plus, Pencil, Trash2, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import type { MACHCustomerAddress } from "@/lib/types/mach/Customer";
+import { formatAddress } from "@/lib/utils/account";
 
 interface AddressManagerProps {
   initialAddresses: MACHCustomerAddress[];
@@ -46,15 +47,6 @@ const emptyForm: AddressFormData = {
   is_default: false,
 };
 
-function getDisplayAddress(addr: MACHCustomerAddress): string {
-  const a = addr.address;
-  if (!a) return "—";
-  const line1 = typeof a.line1 === "string" ? a.line1 : "";
-  const city = typeof a.city === "string" ? a.city : "";
-  return [line1, a.line2, [city, a.region, a.postal_code].filter(Boolean).join(", "), a.country]
-    .filter(Boolean)
-    .join("\n");
-}
 
 export default function AddressManager({ initialAddresses }: AddressManagerProps) {
   const router = useRouter();
@@ -102,9 +94,21 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
         body: JSON.stringify(form),
       });
 
+      const data = await res.json().catch(() => ({})) as { error?: string; address?: MACHCustomerAddress };
       if (!res.ok) {
-        const data = await res.json() as { error?: string };
         throw new Error(data.error || "Failed to save address");
+      }
+
+      if (editingId) {
+        setAddresses((prev) =>
+          prev.map((a) =>
+            a.id === editingId
+              ? { ...a, ...form, address: { line1: form.line1, line2: form.line2 || undefined, city: form.city, region: form.region || undefined, postal_code: form.postal_code || undefined, country: form.country } }
+              : a
+          )
+        );
+      } else if (data.address) {
+        setAddresses((prev) => [...prev, data.address!]);
       }
 
       toast.success(editingId ? "Address updated" : "Address added");
@@ -120,11 +124,16 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
   async function handleDelete(id: string) {
     try {
       const res = await fetch(`/api/account/addresses/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete address");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Failed to delete address");
+      }
+      setAddresses((prev) => prev.filter((a) => a.id !== id));
       toast.success("Address removed");
       router.refresh();
     } catch (error) {
-      toast.error("Failed to delete address");
+      console.error("Error deleting address:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete address");
     }
   }
 
@@ -135,11 +144,18 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_default: true }),
       });
-      if (!res.ok) throw new Error("Failed to set default");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || "Failed to set default");
+      }
+      setAddresses((prev) =>
+        prev.map((a) => ({ ...a, is_default: a.id === id }))
+      );
       toast.success("Default address updated");
       router.refresh();
     } catch (error) {
-      toast.error("Failed to update default address");
+      console.error("Error setting default address:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update default address");
     }
   }
 
@@ -318,7 +334,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
               </div>
             </div>
             <p className="text-sm text-gray-300 whitespace-pre-line mb-4">
-              {getDisplayAddress(addr)}
+              {formatAddress(addr.address)}
             </p>
             <div className="flex gap-2">
               <Button
