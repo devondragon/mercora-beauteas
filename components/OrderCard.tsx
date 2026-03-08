@@ -119,9 +119,11 @@ export default function OrderCard({ order }: { order: Order }) {
   return (
     <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-4 shadow sm:p-6">
       <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Link href={`/account/orders/${order.id}`} className="truncate text-base font-bold text-orange-400 sm:text-lg hover:text-orange-300 transition-colors">
-          Order ID: <span className="text-white">{order.id}</span>
-        </Link>
+        <h3 className="truncate text-base font-bold sm:text-lg">
+          <Link href={`/account/orders/${order.id}`} className="text-orange-400 hover:text-orange-300 transition-colors">
+            Order ID: <span className="text-white">{order.id}</span>
+          </Link>
+        </h3>
         <span className={cn("self-start rounded-full px-2 py-1 text-xs sm:self-center", statusColor)}>
           {order.status}
         </span>
