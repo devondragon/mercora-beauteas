@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!plan.is_active) {
+      return NextResponse.json(
+        { error: 'Subscription plan is no longer available' },
+        { status: 400 }
+      );
+    }
+
     if (!plan.stripe_price_id) {
       return NextResponse.json(
         { error: 'Subscription plan has no Stripe price configured' },

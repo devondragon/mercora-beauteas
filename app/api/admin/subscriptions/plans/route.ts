@@ -5,9 +5,23 @@ import {
   createSubscriptionPlan,
   updateSubscriptionPlan,
 } from "@/lib/models/mach/subscriptions";
+import { getProduct } from "@/lib/models/mach/products";
+import { getStripeForWorkers } from "@/lib/stripe";
 
 const VALID_FREQUENCIES = ["biweekly", "monthly", "bimonthly"] as const;
 type Frequency = (typeof VALID_FREQUENCIES)[number];
+
+/** Map subscription frequency to Stripe recurring interval */
+function frequencyToStripeInterval(frequency: Frequency): { interval: "week" | "month"; interval_count: number } {
+  switch (frequency) {
+    case "biweekly":
+      return { interval: "week", interval_count: 2 };
+    case "monthly":
+      return { interval: "month", interval_count: 1 };
+    case "bimonthly":
+      return { interval: "month", interval_count: 2 };
+  }
+}
 
 export async function GET(request: NextRequest) {
   const auth = await checkAdminPermissions(request);
@@ -107,6 +121,26 @@ export async function POST(request: NextRequest) {
       existingPlans.map((p) => [p.frequency, p])
     );
 
+    // Look up product for Stripe Price creation (need name + base price)
+    const product = await getProduct(productId);
+    if (!product) {
+      return NextResponse.json(
+        { success: false, error: "Product not found" },
+        { status: 404 }
+      );
+    }
+
+    const defaultVariant = product.default_variant_id
+      ? product.variants?.find((v) => v.id === product.default_variant_id)
+      : product.variants?.[0];
+    const basePriceInCents = defaultVariant?.price?.amount ?? 0;
+
+    const stripe = getStripeForWorkers();
+    const productName =
+      typeof product.name === "object" && product.name !== null
+        ? (product.name as Record<string, string>).en ?? Object.values(product.name as Record<string, string>)[0] ?? "Product"
+        : String(product.name ?? "Product");
+
     // Upsert each plan
     for (const plan of plans) {
       const existing = existingByFrequency.get(plan.frequency);
@@ -116,10 +150,28 @@ export async function POST(request: NextRequest) {
           is_active: plan.is_active,
         });
       } else {
+        // Create a Stripe Price for the new plan
+        const discountedPriceCents = Math.round(
+          basePriceInCents * (1 - plan.discount_percent / 100)
+        );
+        const { interval, interval_count } = frequencyToStripeInterval(
+          plan.frequency as Frequency
+        );
+
+        const stripePrice = await stripe.prices.create({
+          currency: "usd",
+          unit_amount: discountedPriceCents,
+          recurring: { interval, interval_count },
+          product_data: {
+            name: `${productName} — ${plan.frequency} subscription`,
+          },
+        });
+
         await createSubscriptionPlan({
           product_id: productId,
           frequency: plan.frequency as typeof VALID_FREQUENCIES[number],
           discount_percent: plan.discount_percent,
+          stripe_price_id: stripePrice.id,
         });
       }
     }

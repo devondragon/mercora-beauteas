@@ -87,27 +87,9 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Shopify URL pattern redirects — maps old Shopify paths to Mercora equivalents.
-  // Phase 1 stubs: structural patterns only. Phase 4 (MIGR-08) adds slug-level mapping.
-  async redirects() {
-    return [
-      {
-        source: "/products/:slug",
-        destination: "/product/:slug",
-        statusCode: 301,
-      },
-      {
-        source: "/collections/:slug",
-        destination: "/category/:slug",
-        statusCode: 301,
-      },
-      {
-        source: "/pages/:slug",
-        destination: "/:slug",
-        statusCode: 301,
-      },
-    ];
-  },
+  // Shopify URL redirects are handled entirely in middleware.ts so that
+  // slug-level redirect_map lookups (from migration) take priority over
+  // structural pattern redirects. See middleware.ts for details.
 };
 
 export default nextConfig;

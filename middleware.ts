@@ -170,9 +170,8 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   }
 
   // Check for Shopify URL redirects from migration data (D1 redirect_map).
-  // Only check paths that could be old Shopify URLs.
-  // next.config.ts handles structural pattern redirects (/products/:slug -> /product/:slug).
-  // The D1 redirect_map handles slug-level mappings where slugs changed between platforms.
+  // Slug-level mappings (where handles changed) take priority, then structural
+  // pattern redirects (/products/:slug -> /product/:slug) apply as fallback.
   try {
     if (pathname.startsWith('/products/') || pathname.startsWith('/collections/') || pathname.startsWith('/pages/')) {
       const db = await getDbAsync();
@@ -188,9 +187,22 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
           redirectRow.status_code ?? 301
         );
       }
+
+      // No slug-level mapping found — apply structural pattern redirect as fallback
+      const slug = pathname.split('/').slice(2).join('/');
+      if (slug) {
+        let destination: string | null = null;
+        if (pathname.startsWith('/products/')) destination = `/product/${slug}`;
+        else if (pathname.startsWith('/collections/')) destination = `/category/${slug}`;
+        else if (pathname.startsWith('/pages/')) destination = `/${slug}`;
+
+        if (destination) {
+          return NextResponse.redirect(new URL(destination, req.url), 301);
+        }
+      }
     }
   } catch (error) {
-    // If redirect lookup fails, continue normally (next.config.ts structural redirects still work)
+    // If redirect lookup fails, continue normally
     console.error('Error checking redirect map:', error);
   }
 
