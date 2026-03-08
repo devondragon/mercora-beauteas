@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     const address: MACHCustomerAddress = {
-      id: `addr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      id: `addr_${crypto.randomUUID()}`,
       type: (body.type === "billing" ? "billing" : "shipping"),
       label: typeof body.label === "string" ? body.label : undefined,
       is_default: body.is_default === true,
