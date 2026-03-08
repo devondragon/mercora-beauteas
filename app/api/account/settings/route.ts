@@ -49,7 +49,10 @@ export async function PUT(req: NextRequest) {
     // Update communication preferences (merge with existing to avoid dropping fields)
     if (body.communication_preferences) {
       const existing = await getCustomer(userId);
-      const merged = { ...(existing?.communication_preferences || {}), ...(body.communication_preferences as MACHCommunicationPreferences) };
+      if (!existing) {
+        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      }
+      const merged = { ...(existing.communication_preferences || {}), ...(body.communication_preferences as MACHCommunicationPreferences) };
       await updateCommunicationPreferences(userId, merged);
     }
 

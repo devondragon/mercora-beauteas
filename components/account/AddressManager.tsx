@@ -102,11 +102,16 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
 
       if (editingId) {
         setAddresses((prev) =>
-          prev.map((a) =>
-            a.id === editingId
-              ? { ...a, ...form, address: { line1: form.line1, line2: form.line2 || undefined, city: form.city, region: form.region || undefined, postal_code: form.postal_code || undefined, country: form.country } }
-              : a
-          )
+          prev.map((a) => {
+            if (a.id === editingId) {
+              return { ...a, ...form, address: { line1: form.line1, line2: form.line2 || undefined, city: form.city, region: form.region || undefined, postal_code: form.postal_code || undefined, country: form.country } };
+            }
+            // Clear is_default on siblings when setting a new default
+            if (form.is_default && a.is_default) {
+              return { ...a, is_default: false };
+            }
+            return a;
+          })
         );
       } else if (data.address) {
         setAddresses((prev) => [...prev, data.address!]);

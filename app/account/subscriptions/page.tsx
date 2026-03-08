@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { getSubscriptionsByCustomer, getSubscriptionPlanById } from "@/lib/models/mach/subscriptions";
 import { getProduct } from "@/lib/models/mach/products";
 import type { SubscriptionPlan, CustomerSubscription } from "@/lib/types/subscription";
@@ -20,7 +21,8 @@ export const metadata = {
 
 export default async function SubscriptionsPage() {
   const { userId } = await auth();
-  const subscriptions = userId ? await getSubscriptionsByCustomer(userId) : [];
+  if (!userId) redirect("/sign-in");
+  const subscriptions = await getSubscriptionsByCustomer(userId);
 
   const enrichedSubscriptions: EnrichedSubscription[] = await Promise.all(
     subscriptions.map(async (sub) => {
