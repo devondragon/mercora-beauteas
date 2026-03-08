@@ -440,7 +440,7 @@ export async function getSubscriptionDetail(subscriptionId: string) {
  */
 export async function updateSubscriptionPlan(
   planId: string,
-  updates: { discount_percent?: number; is_active?: boolean }
+  updates: { discount_percent?: number; is_active?: boolean; stripe_price_id?: string }
 ) {
   const db = await getDbAsync();
   await db

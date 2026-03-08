@@ -151,10 +151,66 @@ export async function POST(request: NextRequest) {
     for (const plan of plans) {
       const existing = existingByFrequency.get(plan.frequency);
       if (existing) {
-        await updateSubscriptionPlan(existing.id, {
-          discount_percent: plan.discount_percent,
-          is_active: plan.is_active,
-        });
+        const discountChanged = existing.discount_percent !== plan.discount_percent;
+
+        if (discountChanged) {
+          // Stripe Prices are immutable — create a new one with the updated amount
+          const discountedPriceCents = Math.round(
+            basePriceInCents * (1 - plan.discount_percent / 100)
+          );
+          const { interval, interval_count } = frequencyToStripeInterval(
+            plan.frequency as Frequency
+          );
+          const idempotencyKey = `plan-${productId}-${plan.frequency}-${plan.discount_percent}`;
+
+          let newStripePrice;
+          try {
+            newStripePrice = await stripe.prices.create(
+              {
+                currency: "usd",
+                unit_amount: discountedPriceCents,
+                recurring: { interval, interval_count },
+                product_data: {
+                  name: `${productName} — ${plan.frequency} subscription`,
+                },
+              },
+              { idempotencyKey }
+            );
+          } catch (stripeError) {
+            console.error("Failed to create updated Stripe price for plan:", plan.frequency, stripeError);
+            throw stripeError;
+          }
+
+          // Archive the old Stripe Price
+          if (existing.stripe_price_id) {
+            try {
+              await stripe.prices.update(existing.stripe_price_id, { active: false });
+            } catch (archiveError) {
+              console.warn("Failed to archive old Stripe price:", existing.stripe_price_id, archiveError);
+            }
+          }
+
+          try {
+            await updateSubscriptionPlan(existing.id, {
+              discount_percent: plan.discount_percent,
+              is_active: plan.is_active,
+              stripe_price_id: newStripePrice.id,
+            });
+          } catch (dbError) {
+            console.error(
+              "CRITICAL: Stripe price created but D1 plan update failed. Orphaned Stripe price ID:",
+              newStripePrice.id,
+              "frequency:", plan.frequency,
+              dbError
+            );
+            throw dbError;
+          }
+        } else {
+          await updateSubscriptionPlan(existing.id, {
+            discount_percent: plan.discount_percent,
+            is_active: plan.is_active,
+          });
+        }
       } else {
         // Create a Stripe Price for the new plan
         const discountedPriceCents = Math.round(
@@ -163,17 +219,21 @@ export async function POST(request: NextRequest) {
         const { interval, interval_count } = frequencyToStripeInterval(
           plan.frequency as Frequency
         );
+        const idempotencyKey = `plan-${productId}-${plan.frequency}-${plan.discount_percent}`;
 
         let stripePrice;
         try {
-          stripePrice = await stripe.prices.create({
-            currency: "usd",
-            unit_amount: discountedPriceCents,
-            recurring: { interval, interval_count },
-            product_data: {
-              name: `${productName} — ${plan.frequency} subscription`,
+          stripePrice = await stripe.prices.create(
+            {
+              currency: "usd",
+              unit_amount: discountedPriceCents,
+              recurring: { interval, interval_count },
+              product_data: {
+                name: `${productName} — ${plan.frequency} subscription`,
+              },
             },
-          });
+            { idempotencyKey }
+          );
         } catch (stripeError) {
           console.error("Failed to create Stripe price for plan:", plan.frequency, stripeError);
           throw stripeError;
