@@ -18,15 +18,8 @@ export default async function AccountLayout({
   return (
     <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <div className="max-w-6xl mx-auto">
-        {/* Mobile nav (horizontal strip at top) */}
-        <div className="md:hidden">
-          <AccountSidebar />
-        </div>
-        {/* Desktop layout with sidebar */}
         <div className="md:flex md:gap-8">
-          <div className="hidden md:block">
-            <AccountSidebar />
-          </div>
+          <AccountSidebar />
           <div className="flex-1 min-w-0">{children}</div>
         </div>
       </div>

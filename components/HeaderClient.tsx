@@ -65,6 +65,7 @@ import CartDrawer from "@/components/cart/CartDrawer";
 import { CartHydrationGuard } from "@/components/cart/CartHydrationGuard";
 import ClientOnly from "@/components/ClientOnly";
 import { useBrand } from "@/lib/brand";
+import { useAuth } from "@clerk/nextjs";
 import type { MACHCategory } from '@/lib/types/mach';
 
 /**
@@ -132,6 +133,7 @@ export default function HeaderClient({
   categories,
 }: HeaderClientProps) {
   const { name: brandName } = useBrand();
+  const { isSignedIn } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -402,14 +404,15 @@ export default function HeaderClient({
         <ClientOnly>
           <AgentDrawer />
         </ClientOnly>
-        <Link
-          href="/account"
-          prefetch={true}
-          className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
-        >
-          <User className="h-4 w-4" />
-          Account
-        </Link>
+        {isSignedIn && (
+          <Link
+            href="/account"
+            className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
+          >
+            <User className="h-4 w-4" />
+            Account
+          </Link>
+        )}
         <ClerkLogin />
         <CartDrawer />
       </div>
@@ -480,15 +483,16 @@ export default function HeaderClient({
                   <Search className="h-5 w-5" />
                   <span>Help & Search</span>
                 </button>
-                <Link
-                  href="/account"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
-                  prefetch={true}
-                >
-                  <User className="h-5 w-5" />
-                  <span>My Account</span>
-                </Link>
+                {isSignedIn && (
+                  <Link
+                    href="/account"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
+                  >
+                    <User className="h-5 w-5" />
+                    <span>Account</span>
+                  </Link>
+                )}
                 <div onClick={() => setIsMobileMenuOpen(false)}>
                   <ClerkLogin />
                 </div>
