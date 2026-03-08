@@ -105,31 +105,31 @@ INSERT INTO pricing (id, product_id, list_price, sale_price, type, status, exter
 -- =====================================================
 
 -- Update store settings for BeauTeas
-DELETE FROM settings WHERE key IN ('store_name', 'store_tagline', 'store_description', 'social_instagram', 'social_facebook', 'social_pinterest', 'social_linkedin', 'currency', 'tax_enabled');
+DELETE FROM admin_settings WHERE key IN ('store_name', 'store_tagline', 'store_description', 'social_instagram', 'social_facebook', 'social_pinterest', 'social_linkedin', 'currency', 'tax_enabled');
 
-INSERT INTO settings (key, value, type, created_at, updated_at) VALUES
-('store_name', 'BeauTeas', 'string', datetime('now'), datetime('now')),
-('store_tagline', 'Build Your Beauty from Within', 'string', datetime('now'), datetime('now')),
-('store_description', 'Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.', 'string', datetime('now'), datetime('now')),
-('social_instagram', 'https://instagram.com/beauteas', 'string', datetime('now'), datetime('now')),
-('social_facebook', 'https://facebook.com/beauteas', 'string', datetime('now'), datetime('now')),
-('social_pinterest', 'https://pinterest.com/beauteas', 'string', datetime('now'), datetime('now')),
-('social_linkedin', 'https://linkedin.com/company/beauteas', 'string', datetime('now'), datetime('now')),
-('currency', 'USD', 'string', datetime('now'), datetime('now')),
-('tax_enabled', 'false', 'boolean', datetime('now'), datetime('now'));
+INSERT INTO admin_settings (key, value, category, data_type, created_at, updated_at) VALUES
+('store_name', 'BeauTeas', 'store', 'string', datetime('now'), datetime('now')),
+('store_tagline', 'Build Your Beauty from Within', 'store', 'string', datetime('now'), datetime('now')),
+('store_description', 'Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.', 'store', 'string', datetime('now'), datetime('now')),
+('social_instagram', 'https://instagram.com/beauteas', 'store', 'string', datetime('now'), datetime('now')),
+('social_facebook', 'https://facebook.com/beauteas', 'store', 'string', datetime('now'), datetime('now')),
+('social_pinterest', 'https://pinterest.com/beauteas', 'store', 'string', datetime('now'), datetime('now')),
+('social_linkedin', 'https://linkedin.com/company/beauteas', 'store', 'string', datetime('now'), datetime('now')),
+('currency', 'USD', 'store', 'string', datetime('now'), datetime('now')),
+('tax_enabled', 'false', 'store', 'boolean', datetime('now'), datetime('now'));
 
 -- =====================================================
 -- Promotional Banner
 -- =====================================================
 
 -- Add holiday sale promotional banner
-DELETE FROM settings WHERE key LIKE 'promo_%';
+DELETE FROM admin_settings WHERE key LIKE 'promo_%';
 
-INSERT INTO settings (key, value, type, created_at, updated_at) VALUES
-('promo_enabled', 'true', 'boolean', datetime('now'), datetime('now')),
-('promo_message', '🍵 Holiday Sale: 30% off all teas through December 31st! Use code GLOW30', 'string', datetime('now'), datetime('now')),
-('promo_link', '/sale', 'string', datetime('now'), datetime('now')),
-('promo_link_text', 'Shop Now', 'string', datetime('now'), datetime('now'));
+INSERT INTO admin_settings (key, value, category, data_type, created_at, updated_at) VALUES
+('promo_enabled', 'true', 'store', 'boolean', datetime('now'), datetime('now')),
+('promo_message', '🍵 Holiday Sale: 30% off all teas through December 31st! Use code GLOW30', 'store', 'string', datetime('now'), datetime('now')),
+('promo_link', '/sale', 'store', 'string', datetime('now'), datetime('now')),
+('promo_link_text', 'Shop Now', 'store', 'string', datetime('now'), datetime('now'));
 
 -- =====================================================
 -- Content Pages
