@@ -106,7 +106,7 @@ export const brand = {
       { label: "The Ritual", href: "/ritual" },
       { label: "Gift Guide", href: "/gifts" },
       { label: "Our Promise", href: "/our-promise" },
-      { label: "Subscriptions", href: "/subscriptions" },
+      { label: "Subscriptions", href: "/account/subscriptions" },
     ],
     column3: [
       { label: "How It Works", href: "/how-it-works" },
