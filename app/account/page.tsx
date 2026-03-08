@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { getOrdersByUserId } from "@/lib/models/";
 import { getSubscriptionsByCustomer } from "@/lib/models/mach/subscriptions";
 import { getCustomer, getCustomerDisplayName } from "@/lib/models/mach/customer";
@@ -10,13 +11,16 @@ export const metadata = {
 
 export default async function AccountDashboard() {
   const { userId } = await auth();
-  if (!userId) return null;
+  if (!userId) redirect("/sign-in");
 
   const [orders, subscriptions, customer] = await Promise.all([
     getOrdersByUserId(userId),
     getSubscriptionsByCustomer(userId),
     getCustomer(userId),
-  ]);
+  ]).catch((error) => {
+    console.error("Failed to load account dashboard data:", error);
+    throw error; // propagates to Next.js error boundary
+  });
 
   const displayName = customer ? getCustomerDisplayName(customer) : "there";
   const recentOrders = orders.slice(0, 3);
