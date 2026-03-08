@@ -46,9 +46,11 @@ export async function PUT(req: NextRequest) {
       await updateCustomer(userId, { person });
     }
 
-    // Update communication preferences
+    // Update communication preferences (merge with existing to avoid dropping fields)
     if (body.communication_preferences) {
-      await updateCommunicationPreferences(userId, body.communication_preferences as MACHCommunicationPreferences);
+      const existing = await getCustomer(userId);
+      const merged = { ...(existing?.communication_preferences || {}), ...(body.communication_preferences as MACHCommunicationPreferences) };
+      await updateCommunicationPreferences(userId, merged);
     }
 
     return NextResponse.json({ success: true });

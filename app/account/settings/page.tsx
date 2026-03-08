@@ -29,6 +29,7 @@ export default async function SettingsPage() {
         <h2 className="text-lg font-semibold mb-4">Security &amp; Authentication</h2>
         <div className="rounded-lg overflow-hidden">
           <UserProfile
+            routing="hash"
             appearance={{
               baseTheme: undefined,
               elements: {
