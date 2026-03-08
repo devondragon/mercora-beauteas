@@ -41,6 +41,8 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
+import type { SubscriptionPlan } from "@/lib/types/subscription";
+import SubscriptionToggle from "@/components/subscription/SubscriptionToggle";
 import {
   Select,
   SelectContent,
@@ -53,6 +55,7 @@ interface ProductDisplayProps {
   product: Product;
   reviews: Review[];
   reviewEligibility?: ProductReviewEligibility;
+  subscriptionPlans?: SubscriptionPlan[];
 }
 
 function getMediaUrl(media: any): string {
@@ -79,6 +82,7 @@ export default function ProductDisplay({
   product,
   reviews,
   reviewEligibility,
+  subscriptionPlans = [],
 }: ProductDisplayProps) {
   const allImages = useMemo(() => {
     try {
@@ -273,59 +277,108 @@ export default function ProductDisplay({
               </div>
             )}
 
-            {onSale ? (
-              <div>
-                <p className="text-base text-gray-500 line-through sm:text-lg">${(compareAt! / 100).toFixed(2)}</p>
-                <p className="text-lg font-bold text-green-400 sm:text-xl">${(price / 100).toFixed(2)}</p>
-                <p className="text-xs italic text-orange-400 sm:text-sm">Limited-time offer</p>
-              </div>
+            {subscriptionPlans.length > 0 ? (
+              <>
+                <SubscriptionToggle
+                  plans={subscriptionPlans}
+                  variantPriceInCents={price}
+                  compareAtPriceInCents={compareAt}
+                  productSlug={typeof product.slug === "string" ? product.slug : ""}
+                  available={available}
+                  onAddToCart={() => {
+                    const productName = typeof product.name === "string" ? product.name : "";
+                    const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
+                    const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
+
+                    useCartStore.getState().addItem({
+                      productId: product.id,
+                      variantId: selectedVariant?.id,
+                      name: fullName,
+                      price: price / 100,
+                      quantity: 1,
+                      primaryImageUrl: (() => {
+                        try {
+                          return (
+                            (product.primary_image as any)?.url ||
+                            (product.primary_image as any)?.file?.url ||
+                            "/placeholder.jpg"
+                          );
+                        } catch (error) {
+                          return "/placeholder.jpg";
+                        }
+                      })(),
+                    });
+
+                    toast("Added to Cart", {
+                      description: `${fullName} has been added to your cart.`,
+                      icon: "\uD83D\uDD25",
+                    });
+                  }}
+                />
+
+                {selectedVariant?.inventory && (
+                  <p className="text-xs text-gray-500">
+                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
+                  </p>
+                )}
+              </>
             ) : (
-              <p className="text-lg font-semibold text-white sm:text-xl">${(price / 100).toFixed(2)}</p>
-            )}
+              <>
+                {onSale ? (
+                  <div>
+                    <p className="text-base text-gray-500 line-through sm:text-lg">${(compareAt! / 100).toFixed(2)}</p>
+                    <p className="text-lg font-bold text-green-400 sm:text-xl">${(price / 100).toFixed(2)}</p>
+                    <p className="text-xs italic text-orange-400 sm:text-sm">Limited-time offer</p>
+                  </div>
+                ) : (
+                  <p className="text-lg font-semibold text-white sm:text-xl">${(price / 100).toFixed(2)}</p>
+                )}
 
-            {selectedVariant?.inventory && (
-              <p className="text-xs text-gray-500">
-                {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
-              </p>
-            )}
+                {selectedVariant?.inventory && (
+                  <p className="text-xs text-gray-500">
+                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
+                  </p>
+                )}
 
-            {available ? (
-              <button
-                className="w-full rounded bg-orange-500 px-6 py-3 font-bold text-black transition hover:bg-orange-400 sm:w-auto"
-                onClick={() => {
-                  const productName = typeof product.name === "string" ? product.name : "";
-                  const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
-                  const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
+                {available ? (
+                  <button
+                    className="w-full rounded bg-orange-500 px-6 py-3 font-bold text-black transition hover:bg-orange-400 sm:w-auto"
+                    onClick={() => {
+                      const productName = typeof product.name === "string" ? product.name : "";
+                      const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
+                      const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
 
-                  useCartStore.getState().addItem({
-                    productId: product.id,
-                    variantId: selectedVariant?.id,
-                    name: fullName,
-                    price: price / 100,
-                    quantity: 1,
-                    primaryImageUrl: (() => {
-                      try {
-                        return (
-                          (product.primary_image as any)?.url ||
-                          (product.primary_image as any)?.file?.url ||
-                          "/placeholder.jpg"
-                        );
-                      } catch (error) {
-                        return "/placeholder.jpg";
-                      }
-                    })(),
-                  });
+                      useCartStore.getState().addItem({
+                        productId: product.id,
+                        variantId: selectedVariant?.id,
+                        name: fullName,
+                        price: price / 100,
+                        quantity: 1,
+                        primaryImageUrl: (() => {
+                          try {
+                            return (
+                              (product.primary_image as any)?.url ||
+                              (product.primary_image as any)?.file?.url ||
+                              "/placeholder.jpg"
+                            );
+                          } catch (error) {
+                            return "/placeholder.jpg";
+                          }
+                        })(),
+                      });
 
-                  toast("Added to Cart", {
-                    description: `${fullName} has been added to your cart.`,
-                    icon: "🔥",
-                  });
-                }}
-              >
-                Add to Cart
-              </button>
-            ) : (
-              <p className="text-lg font-semibold text-orange-500 sm:text-xl">Coming soon</p>
+                      toast("Added to Cart", {
+                        description: `${fullName} has been added to your cart.`,
+                        icon: "\uD83D\uDD25",
+                      });
+                    }}
+                  >
+                    Add to Cart
+                  </button>
+                ) : (
+                  <p className="text-lg font-semibold text-orange-500 sm:text-xl">Coming soon</p>
+                )}
+              </>
             )}
           </div>
         </div>

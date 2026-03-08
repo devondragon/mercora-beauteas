@@ -16,3 +16,4 @@ export * from './pricing';
 export * from './products';
 export * from './product_types';
 export * from './promotions';
+export * from './subscriptions';

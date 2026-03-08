@@ -40,25 +40,84 @@
  * @returns JSX element with product page layout or 404 if not found
  */
 
+import type { Metadata } from "next";
 import { auth } from "@clerk/nextjs/server";
 import { getProductBySlug, getProductReviews, getProductReviewEligibility } from "@/lib/models";
+import { listSubscriptionPlans } from "@/lib/models/mach/subscriptions";
 import { notFound } from "next/navigation";
 import ProductDisplay from "./ProductDisplay";
+import {
+  BASE_URL,
+  SITE_NAME,
+  resolveLocalizedField,
+  resolveImageUrl,
+} from "@/lib/seo/metadata";
+import {
+  JsonLdScript,
+  buildProductJsonLd,
+  buildBreadcrumbJsonLd,
+} from "@/lib/seo/json-ld";
 
 export const revalidate = 0;
 
 /**
+ * Generate SEO metadata for a product page including Open Graph tags,
+ * Twitter cards, and canonical URL. Uses product SEO fields when
+ * available, falling back to product name and description.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await getProductBySlug(slug);
+  if (!product) return { title: "Product Not Found" };
+
+  const name = resolveLocalizedField(product.name);
+  const description = resolveLocalizedField(product.description);
+  const imageUrl = resolveImageUrl(product.primary_image);
+
+  return {
+    title: product.seo?.meta_title || name,
+    description: product.seo?.meta_description || description,
+    alternates: {
+      canonical: `/product/${slug}`,
+    },
+    openGraph: {
+      title: product.seo?.meta_title || name,
+      description: product.seo?.meta_description || description,
+      url: `${BASE_URL}/product/${slug}`,
+      siteName: SITE_NAME,
+      images: imageUrl ? [{ url: imageUrl, alt: name }] : [],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: product.seo?.meta_title || name,
+      description: product.seo?.meta_description || description,
+      images: imageUrl ? [imageUrl] : [],
+    },
+  };
+}
+
+/**
  * Product page component that displays detailed information for a specific product
- * 
+ *
  * @param params - URL parameters object containing the product slug
  * @returns Server-rendered product page or 404 if product not found
  */
-export default async function ProductPage({ params }: any) {
+export default async function ProductPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
   const { userId } = await auth();
-  const product = await getProductBySlug(params.slug);
+  const product = await getProductBySlug(slug);
   if (!product) return notFound();
 
-  const [reviews, reviewEligibility] = await Promise.all([
+  const [reviews, reviewEligibility, subscriptionPlans] = await Promise.all([
     getProductReviews({
       productId: product.id,
       status: ["published"],
@@ -68,12 +127,24 @@ export default async function ProductPage({ params }: any) {
       productId: product.id,
       customerId: userId,
     }),
+    listSubscriptionPlans(product.id),
+  ]);
+
+  // Build JSON-LD structured data for rich results
+  const productName = resolveLocalizedField(product.name);
+  const productUrl = `${BASE_URL}/product/${slug}`;
+  const productJsonLd = buildProductJsonLd(product, productUrl);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd([
+    { name: "Home", url: BASE_URL },
+    { name: productName },
   ]);
 
   return (
     <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+      <JsonLdScript data={productJsonLd} />
+      <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
-        <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} />
+        <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} subscriptionPlans={subscriptionPlans} />
       </div>
     </main>
   );

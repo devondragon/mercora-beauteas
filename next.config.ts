@@ -87,6 +87,9 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Shopify URL redirects are handled entirely in middleware.ts so that
+  // slug-level redirect_map lookups (from migration) take priority over
+  // structural pattern redirects. See middleware.ts for details.
 };
 
 export default nextConfig;

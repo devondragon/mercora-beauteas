@@ -1,74 +1,123 @@
 /**
  * === Stripe Webhooks Handler ===
  *
- * Handles Stripe webhook events for payment processing, tax calculation,
- * and order management. Ensures secure webhook verification and proper
- * event handling for all Stripe-related operations.
+ * Unified webhook endpoint for all Stripe events. Uses async signature
+ * verification (HMAC-SHA256 via SubtleCrypto) for Cloudflare Workers
+ * compatibility. Includes event dedup to handle Stripe retries safely.
  *
  * === Supported Events ===
- * - **payment_intent.succeeded**: Payment completed successfully
- * - **payment_intent.payment_failed**: Payment failed
- * - **invoice.payment_succeeded**: Subscription/recurring payment succeeded
- * - **customer.subscription.updated**: Subscription changes
- * - **checkout.session.completed**: Checkout session completed
+ * Subscription lifecycle:
+ * - customer.subscription.created
+ * - customer.subscription.updated (includes pause/resume detection)
+ * - customer.subscription.deleted
+ *
+ * Invoice events:
+ * - invoice.payment_succeeded (renewal tracking)
+ * - invoice.payment_failed (failure tracking + past_due status)
+ * - invoice.upcoming (audit trail, skip-next deferred to Phase 3)
+ *
+ * Payment events (legacy, preserved from existing implementation):
+ * - payment_intent.succeeded
+ * - payment_intent.payment_failed
+ * - checkout.session.completed
  *
  * === Security ===
- * - Webhook signature verification with Stripe secret
- * - Raw body validation for signature checking
- * - Idempotency handling for duplicate events
- *
- * === Error Handling ===
- * - Graceful handling of unknown events
- * - Comprehensive error logging
- * - Proper HTTP status codes
- *
- * === Usage ===
- * Configure this endpoint in your Stripe Dashboard webhook settings:
- * - URL: https://yourdomain.com/api/stripe/webhooks
- * - Events: Select the events you want to handle
+ * - Async webhook signature verification via verifyWebhookSignature (HMAC-SHA256)
+ * - Event ID dedup via processed_webhook_events table
+ * - HTTP 500 on processing failure triggers Stripe retry
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getStripe, getWebhookSecret } from '@/lib/stripe';
 import Stripe from 'stripe';
+import { verifyWebhookSignature, getWebhookSecret } from '@/lib/stripe';
+import {
+  isWebhookEventProcessed,
+  recordWebhookEvent,
+  cleanupOldWebhookEvents,
+} from '@/lib/models/mach/subscriptions';
+import {
+  handleSubscriptionCreated,
+  handleSubscriptionUpdated,
+  handleSubscriptionDeleted,
+} from './handlers/subscription-handlers';
+import {
+  handleInvoicePaymentSucceeded,
+  handleInvoicePaymentFailed,
+  handleInvoiceUpcoming,
+} from './handlers/invoice-handlers';
 
 /**
- * POST handler for Stripe webhook events
- * Verifies webhook signature and processes supported events
+ * POST handler for Stripe webhook events.
+ * Reads body once, verifies signature async, dedup checks, routes to handler.
  */
 export async function POST(req: NextRequest) {
+  // 1. Read body ONCE (Workers Request bodies are streams)
   const body = await req.text();
-  const signature = req.headers.get('stripe-signature');
 
+  // 2. Get signature header
+  const signature = req.headers.get('stripe-signature');
   if (!signature) {
-    console.error('Missing stripe-signature header');
+    console.error('[webhook] Missing stripe-signature header');
     return NextResponse.json(
       { error: 'Missing stripe-signature header' },
       { status: 400 }
     );
   }
 
+  // 3. Verify webhook signature (async, HMAC-SHA256)
   let event: Stripe.Event;
-
   try {
-    // Verify webhook signature for security
-    const stripe = getStripe();
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      getWebhookSecret()
-    );
+    event = await verifyWebhookSignature(body, signature, getWebhookSecret());
   } catch (error) {
-    console.error('Webhook signature verification failed:', error);
+    console.error('[webhook] Signature verification failed:', error);
     return NextResponse.json(
       { error: 'Webhook signature verification failed' },
       { status: 400 }
     );
   }
 
+  // 4. Dedup check
+  const isDuplicate = await isWebhookEventProcessed(event.id);
+  if (isDuplicate) {
+    console.log('[webhook] Duplicate event skipped:', event.id);
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+
+  // 5. Inline cleanup of old webhook events (fire-and-forget)
+  cleanupOldWebhookEvents().catch((err) =>
+    console.error('[webhook] Cleanup failed (non-blocking):', err)
+  );
+
+  // 6. Route to handler
   try {
-    // Handle different event types
     switch (event.type) {
+      // ─── Subscription events ───────────────────────────
+      case 'customer.subscription.created':
+        await handleSubscriptionCreated(event.data.object as Stripe.Subscription, event.id);
+        break;
+
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription, event.id);
+        break;
+
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription, event.id);
+        break;
+
+      // ─── Invoice events ────────────────────────────────
+      case 'invoice.payment_succeeded':
+        await handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice, event.id);
+        break;
+
+      case 'invoice.payment_failed':
+        await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice, event.id);
+        break;
+
+      case 'invoice.upcoming':
+        await handleInvoiceUpcoming(event.data.object as Stripe.Invoice, event.id);
+        break;
+
+      // ─── Legacy payment events (preserved) ─────────────
       case 'payment_intent.succeeded':
         await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
         break;
@@ -81,23 +130,27 @@ export async function POST(req: NextRequest) {
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
         break;
 
-      case 'invoice.payment_succeeded':
-        await handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
-        break;
-
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        console.log(`[webhook] Unhandled event type: ${event.type}`);
     }
 
+    // 7. Record successful processing in dedup table
+    await recordWebhookEvent(event.id, event.type);
+
+    // 8. Return success
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    // 9. Processing error: return 500 for Stripe retry
+    // Do NOT record in dedup table so retry will reprocess
+    console.error('[webhook] Processing error:', error);
     return NextResponse.json(
-      { error: 'Webhook processing failed' },
+      { error: 'Processing failed' },
       { status: 500 }
     );
   }
 }
+
+// ─── Legacy Handlers (preserved from existing implementation) ─────
 
 /**
  * Handle successful payment intent
@@ -105,9 +158,9 @@ export async function POST(req: NextRequest) {
  */
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   console.log('Payment succeeded:', paymentIntent.id);
-  
+
   const orderId = paymentIntent.metadata.orderId;
-  
+
   if (!orderId) {
     console.error('No orderId in payment intent metadata');
     return;
@@ -118,14 +171,14 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     try {
       const updateRes = await fetch(`${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/orders`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.STRIPE_WEBHOOK_SECRET || '', // Use webhook secret as internal API key
+          'X-API-Key': process.env.STRIPE_WEBHOOK_SECRET || '',
         },
         body: JSON.stringify({
           orderId,
-          status: 'processing', // Move to processing after successful payment
-          payment_status: 'paid', // Ensure payment status is updated
+          status: 'processing',
+          payment_status: 'paid',
           notes: `Payment completed via Stripe - Payment Intent: ${paymentIntent.id}`,
         }),
       });
@@ -136,13 +189,6 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     } catch (updateError) {
       console.error('Error updating order status:', updateError);
     }
-    
-    // You can add additional logic here:
-    // - Send confirmation emails
-    // - Update inventory
-    // - Trigger fulfillment process
-    // - Analytics tracking
-    
   } catch (error) {
     console.error('Error updating order after payment:', error);
   }
@@ -154,24 +200,16 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
  */
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   console.log('Payment failed:', paymentIntent.id);
-  
+
   const orderId = paymentIntent.metadata.orderId;
-  
+
   if (!orderId) {
     console.error('No orderId in payment intent metadata');
     return;
   }
 
   try {
-    // Update order status to failed
-    // TODO: Implement order status update
     console.log(`Updating order ${orderId} to failed status`);
-    
-    // You can add additional logic here:
-    // - Send failure notification emails
-    // - Restore inventory if needed
-    // - Log payment failure reasons
-    
   } catch (error) {
     console.error('Error handling payment failure:', error);
   }
@@ -183,45 +221,17 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   console.log('Checkout session completed:', session.id);
-  
+
   const orderId = session.metadata?.orderId;
-  
+
   if (!orderId) {
     console.error('No orderId in checkout session metadata');
     return;
   }
 
   try {
-    // Handle checkout completion
     console.log(`Processing completed checkout for order ${orderId}`);
-    
-    // You can add additional logic here:
-    // - Final order confirmation
-    // - Customer onboarding
-    // - Thank you emails
-    
   } catch (error) {
     console.error('Error handling checkout completion:', error);
-  }
-}
-
-/**
- * Handle successful invoice payment
- * For subscription or recurring payment scenarios
- */
-async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-  console.log('Invoice payment succeeded:', invoice.id);
-  
-  try {
-    // Handle subscription payment
-    console.log(`Processing invoice payment for customer ${invoice.customer}`);
-    
-    // You can add additional logic here:
-    // - Update subscription status
-    // - Send invoice receipts
-    // - Handle plan upgrades/downgrades
-    
-  } catch (error) {
-    console.error('Error handling invoice payment:', error);
   }
 }

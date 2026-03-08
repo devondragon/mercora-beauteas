@@ -7,7 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import CategoryPicker from "./CategoryPicker";
-import { X, Save, Package, Tag, DollarSign, Plus, Trash2, Search, ImageIcon, Star, Link, ExternalLink, Upload, Clock, FileText, Settings, Sparkles, Wand2, RefreshCw } from "lucide-react";
+import { X, Save, Package, Tag, DollarSign, Plus, Trash2, Search, ImageIcon, Star, Link, ExternalLink, Upload, Clock, FileText, Settings, Sparkles, Wand2, RefreshCw, Repeat, AlertTriangle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import Image from "next/image";
 import type { Product } from "@/lib/types";
 import { getImageDisplayPath, generateR2Filename } from "@/lib/utils/r2";
@@ -77,7 +79,23 @@ export default function ProductEditor({
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generatingDescription, setGeneratingDescription] = useState(false);
-  
+
+  // Subscription plan state
+  const [subscriptionEnabled, setSubscriptionEnabled] = useState(false);
+  const [subFrequencies, setSubFrequencies] = useState<{biweekly: boolean; monthly: boolean; bimonthly: boolean}>({
+    biweekly: false, monthly: false, bimonthly: false
+  });
+  const [subDiscount, setSubDiscount] = useState("10");
+  const [existingPlans, setExistingPlans] = useState<Array<{
+    id: string;
+    frequency: string;
+    discount_percent: number;
+    is_active: boolean;
+    activeSubscriberCount: number;
+  }>>([]);
+  const [hasActiveSubscribers, setHasActiveSubscribers] = useState(false);
+  const [savingSubscriptions, setSavingSubscriptions] = useState(false);
+
   // Current variant fields (based on selected variant)
   const [price, setPrice] = useState("");
   const [compareAtPrice, setCompareAtPrice] = useState("");
@@ -398,6 +416,29 @@ export default function ProductEditor({
     }
   }, [product, isNew]);
 
+  // Load existing subscription plans when editing a product
+  useEffect(() => {
+    if (product?.id) {
+      fetch(`/api/admin/subscriptions/plans?productId=${product.id}`)
+        .then(r => r.json())
+        .then((data: any) => {
+          if (data.success && data.plans?.length > 0) {
+            setSubscriptionEnabled(true);
+            // Use first plan's discount as the shared discount
+            setSubDiscount(data.plans[0].discount_percent.toString());
+            setSubFrequencies({
+              biweekly: data.plans.some((p: any) => p.frequency === 'biweekly' && p.is_active),
+              monthly: data.plans.some((p: any) => p.frequency === 'monthly' && p.is_active),
+              bimonthly: data.plans.some((p: any) => p.frequency === 'bimonthly' && p.is_active),
+            });
+            setExistingPlans(data.plans);
+            setHasActiveSubscribers(data.hasActiveSubscribers || false);
+          }
+        })
+        .catch(err => console.error('Failed to load subscription plans:', err));
+    }
+  }, [product?.id]);
+
   // Image upload functions
   const uploadImage = async (file: File, folder: 'products' | 'categories', filename: string) => {
     const formData = new FormData();
@@ -505,6 +546,50 @@ export default function ProductEditor({
       alert('Failed to generate description. Please try again.');
     } finally {
       setGeneratingDescription(false);
+    }
+  };
+
+  const saveSubscriptionPlans = async () => {
+    if (!product?.id) return;
+
+    const plans: Array<{ frequency: string; discount_percent: number; is_active: boolean }> = [];
+    const discount = Math.max(0, Math.min(100, parseInt(subDiscount) || 10));
+
+    if (subscriptionEnabled) {
+      // Add enabled frequencies
+      if (subFrequencies.biweekly) plans.push({ frequency: 'biweekly', discount_percent: discount, is_active: true });
+      if (subFrequencies.monthly) plans.push({ frequency: 'monthly', discount_percent: discount, is_active: true });
+      if (subFrequencies.bimonthly) plans.push({ frequency: 'bimonthly', discount_percent: discount, is_active: true });
+
+      // Mark unchecked frequencies as inactive (not deleted) if they previously existed
+      for (const existing of existingPlans) {
+        const isStillEnabled = plans.some(p => p.frequency === existing.frequency);
+        if (!isStillEnabled) {
+          plans.push({ frequency: existing.frequency, discount_percent: discount, is_active: false });
+        }
+      }
+    } else {
+      // Subscription disabled -- deactivate all existing plans
+      for (const existing of existingPlans) {
+        plans.push({ frequency: existing.frequency, discount_percent: existing.discount_percent, is_active: false });
+      }
+    }
+
+    if (plans.length === 0) return;
+
+    try {
+      setSavingSubscriptions(true);
+      const res = await fetch('/api/admin/subscriptions/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id, plans }),
+      });
+      if (!res.ok) throw new Error('Failed to save subscription plans');
+    } catch (err) {
+      console.error('Failed to save subscription plans:', err);
+      throw err; // Re-throw so handleSave can catch
+    } finally {
+      setSavingSubscriptions(false);
     }
   };
 
@@ -668,6 +753,12 @@ export default function ProductEditor({
       }
 
       await onSave(productData);
+
+      // Save subscription plans if product exists (not new)
+      if (product?.id) {
+        await saveSubscriptionPlans();
+      }
+
       onClose();
     } catch (error) {
       console.error("Error saving product:", error);
@@ -1316,6 +1407,93 @@ export default function ProductEditor({
                 Additional custom data fields and business-specific metadata for this product.
               </div>
             </div>
+          </div>
+
+          {/* ─── Subscription Configuration ─── */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-orange-400" />
+                <h3 className="text-lg font-semibold text-white">Subscriptions</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="subscription-toggle" className="text-sm text-gray-400">
+                  {subscriptionEnabled ? "Enabled" : "Disabled"}
+                </label>
+                <Switch
+                  id="subscription-toggle"
+                  checked={subscriptionEnabled}
+                  onCheckedChange={setSubscriptionEnabled}
+                />
+              </div>
+            </div>
+
+            {subscriptionEnabled && (
+              <div className="space-y-4">
+                {/* Warning for plans with active subscribers */}
+                {hasActiveSubscribers && (
+                  <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-yellow-300">
+                      This product has active subscribers. Discount changes apply to new subscribers only.
+                      Frequencies can be toggled but existing subscribers keep their current frequency.
+                    </p>
+                  </div>
+                )}
+
+                {/* Frequency options */}
+                <div>
+                  <label className="text-sm font-medium text-gray-300 mb-2 block">Available Frequencies</label>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'biweekly' as const, label: 'Every 2 Weeks' },
+                      { key: 'monthly' as const, label: 'Monthly' },
+                      { key: 'bimonthly' as const, label: 'Every 2 Months' },
+                    ].map(freq => {
+                      const existingPlan = existingPlans.find(p => p.frequency === freq.key);
+                      const hasSubscribers = existingPlan && existingPlan.activeSubscriberCount > 0;
+                      return (
+                        <div key={freq.key} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`freq-${freq.key}`}
+                            checked={subFrequencies[freq.key]}
+                            onCheckedChange={(checked) =>
+                              setSubFrequencies(prev => ({ ...prev, [freq.key]: !!checked }))
+                            }
+                          />
+                          <label htmlFor={`freq-${freq.key}`} className="text-sm text-gray-300">{freq.label}</label>
+                          {hasSubscribers && (
+                            <span className="text-xs text-gray-500">({existingPlan.activeSubscriberCount} active subscriber{existingPlan.activeSubscriberCount !== 1 ? 's' : ''})</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Discount percentage */}
+                <div>
+                  <label htmlFor="sub-discount" className="text-sm font-medium text-gray-300 mb-1 block">
+                    Discount Percentage
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="sub-discount"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={subDiscount}
+                      onChange={(e) => setSubDiscount(e.target.value)}
+                      className="w-24 bg-neutral-900 border-neutral-700 text-white"
+                    />
+                    <span className="text-sm text-gray-400">% off regular price</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Subscribers save this percentage on each delivery. Default is 10%.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Variant Selector */}
