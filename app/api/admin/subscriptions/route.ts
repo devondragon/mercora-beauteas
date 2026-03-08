@@ -9,7 +9,9 @@ import {
  * Transform a subscription item from the model layer (camelCase + nested objects)
  * to the flat snake_case shape expected by the UI Subscription interface.
  */
-function transformSubscriptionForClient(item: any) {
+type AdminSubscriptionItem = Awaited<ReturnType<typeof listSubscriptionsAdmin>>['items'][number];
+
+function transformSubscriptionForClient(item: AdminSubscriptionItem) {
   const {
     planFrequency,
     planDiscountPercent,
@@ -57,7 +59,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") ?? undefined;
 
     const limit = Number.isFinite(limitParam) ? Math.min(limitParam, 100) : 20;
-    const offset = Number.isFinite(offsetParam) ? offsetParam : 0;
+    const offset = Number.isFinite(offsetParam) ? Math.max(0, offsetParam) : 0;
 
     const [{ items, total }, stats] = await Promise.all([
       listSubscriptionsAdmin({ limit, offset, status, search }),

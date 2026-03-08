@@ -134,6 +134,12 @@ export async function POST(request: NextRequest) {
       ? product.variants?.find((v) => v.id === product.default_variant_id)
       : product.variants?.[0];
     const basePriceInCents = defaultVariant?.price?.amount ?? 0;
+    if (basePriceInCents <= 0) {
+      return NextResponse.json(
+        { success: false, error: "Product has no valid base price — cannot create Stripe price" },
+        { status: 400 }
+      );
+    }
 
     const stripe = getStripeForWorkers();
     const productName =
@@ -158,21 +164,37 @@ export async function POST(request: NextRequest) {
           plan.frequency as Frequency
         );
 
-        const stripePrice = await stripe.prices.create({
-          currency: "usd",
-          unit_amount: discountedPriceCents,
-          recurring: { interval, interval_count },
-          product_data: {
-            name: `${productName} — ${plan.frequency} subscription`,
-          },
-        });
+        let stripePrice;
+        try {
+          stripePrice = await stripe.prices.create({
+            currency: "usd",
+            unit_amount: discountedPriceCents,
+            recurring: { interval, interval_count },
+            product_data: {
+              name: `${productName} — ${plan.frequency} subscription`,
+            },
+          });
+        } catch (stripeError) {
+          console.error("Failed to create Stripe price for plan:", plan.frequency, stripeError);
+          throw stripeError;
+        }
 
-        await createSubscriptionPlan({
-          product_id: productId,
-          frequency: plan.frequency as typeof VALID_FREQUENCIES[number],
-          discount_percent: plan.discount_percent,
-          stripe_price_id: stripePrice.id,
-        });
+        try {
+          await createSubscriptionPlan({
+            product_id: productId,
+            frequency: plan.frequency as typeof VALID_FREQUENCIES[number],
+            discount_percent: plan.discount_percent,
+            stripe_price_id: stripePrice.id,
+          });
+        } catch (dbError) {
+          console.error(
+            "CRITICAL: Stripe price created but D1 plan insert failed. Orphaned Stripe price ID:",
+            stripePrice.id,
+            "frequency:", plan.frequency,
+            dbError
+          );
+          throw dbError;
+        }
       }
     }
 

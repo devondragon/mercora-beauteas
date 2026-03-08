@@ -137,6 +137,9 @@ export function transformCustomers(
 
     // Register in idMap for downstream use (orders, reviews)
     idMap.register('customers', shopifyId, mercoraId);
+    if (customer.email) {
+      idMap.register('customer_emails', customer.email.toLowerCase(), mercoraId);
+    }
   }
 
   return { records, skipped, warnings };

@@ -19,53 +19,10 @@ import {
   updateSubscriptionPeriod,
   createSubscriptionEvent,
 } from '@/lib/models/mach/subscriptions';
-import { getStripeForWorkers } from '@/lib/stripe';
 import { sendSubscriptionEmail } from '@/lib/utils/email';
-import type { SubscriptionFrequency } from '@/lib/types/subscription';
-import { BASE_URL, resolveLocalizedField } from '@/lib/seo/metadata';
-import { getDbAsync } from '@/lib/db';
-import { products } from '@/lib/db/schema/products';
-import { eq } from 'drizzle-orm';
-
-/**
- * Retrieve Stripe customer details for email sending.
- * Returns email and name, falling back to empty string if not available.
- */
-async function getCustomerDetails(customerId: string): Promise<{ email: string; name: string }> {
-  try {
-    const stripe = getStripeForWorkers();
-    const customer = await stripe.customers.retrieve(customerId);
-    if (customer.deleted) {
-      return { email: '', name: '' };
-    }
-    return {
-      email: customer.email || '',
-      name: customer.name || '',
-    };
-  } catch (error) {
-    console.error('[webhook] Failed to retrieve customer details:', error);
-    return { email: '', name: '' };
-  }
-}
-
-/**
- * Resolve a human-readable product name from the products table.
- * Falls back to 'Your Subscription' on any error.
- */
-async function getProductName(productId: string): Promise<string> {
-  try {
-    const db = await getDbAsync();
-    const [product] = await db
-      .select({ name: products.name })
-      .from(products)
-      .where(eq(products.id, productId))
-      .limit(1);
-    return product ? resolveLocalizedField(product.name, 'Your Subscription') : 'Your Subscription';
-  } catch (error) {
-    console.error('[webhook] Failed to resolve product name:', error);
-    return 'Your Subscription';
-  }
-}
+import type { SubscriptionFrequency, SubscriptionStatus } from '@/lib/types/subscription';
+import { BASE_URL } from '@/lib/seo/metadata';
+import { getCustomerDetails, getProductName } from './utils';
 
 /**
  * Handle customer.subscription.created
@@ -95,9 +52,16 @@ export async function handleSubscriptionCreated(
     return;
   }
 
-  // Derive customer_id from subscription metadata if available,
-  // otherwise use the stripe_customer_id as a fallback identifier
-  const customerId = subscription.metadata?.customer_id || stripeCustomerId;
+  // customer_id metadata is required — it maps the Stripe subscription to our internal customer
+  const customerId = subscription.metadata?.customer_id;
+  if (!customerId) {
+    console.error(
+      '[webhook] subscription.created: missing customer_id metadata on subscription',
+      stripeSubscriptionId,
+      '— cannot create D1 record without valid customer_id'
+    );
+    return;
+  }
 
   // In newer Stripe API versions, period dates live on subscription items
   const firstItem = subscription.items.data[0];
@@ -113,7 +77,7 @@ export async function handleSubscriptionCreated(
     plan_id: plan.id,
     stripe_subscription_id: stripeSubscriptionId,
     stripe_customer_id: stripeCustomerId,
-    status: subscription.status as 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing',
+    status: subscription.status as SubscriptionStatus,
     current_period_start: periodStart,
     current_period_end: periodEnd,
   });
@@ -223,7 +187,7 @@ export async function handleSubscriptionUpdated(
   // Detect cancel_at_period_end change
   else if (subscription.cancel_at_period_end && !d1Sub.cancel_at_period_end) {
     await updateSubscriptionStatus(d1Sub.id, {
-      status: d1Sub.status as 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing',
+      status: d1Sub.status as SubscriptionStatus,
       cancel_at_period_end: true,
     });
     await createSubscriptionEvent({
@@ -238,7 +202,7 @@ export async function handleSubscriptionUpdated(
   // Detect status change (e.g., past_due)
   else if (subscription.status !== d1Sub.status) {
     await updateSubscriptionStatus(d1Sub.id, {
-      status: subscription.status as 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing',
+      status: subscription.status as SubscriptionStatus,
     });
     await createSubscriptionEvent({
       subscription_id: d1Sub.id,
@@ -285,7 +249,9 @@ export async function handleSubscriptionDeleted(
 
   await updateSubscriptionStatus(d1Sub.id, {
     status: 'canceled',
-    canceled_at: new Date().toISOString(),
+    canceled_at: subscription.canceled_at
+      ? new Date(subscription.canceled_at * 1000).toISOString()
+      : new Date().toISOString(),
   });
 
   await createSubscriptionEvent({

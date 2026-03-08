@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS customer_subscriptions (
   plan_id TEXT NOT NULL REFERENCES subscription_plans(id),
   stripe_subscription_id TEXT NOT NULL UNIQUE,
   stripe_customer_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'canceled', 'past_due', 'incomplete', 'trialing')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'canceled', 'past_due', 'incomplete', 'incomplete_expired', 'trialing', 'unpaid')),
   current_period_start TEXT,
   current_period_end TEXT,
   cancel_at_period_end INTEGER DEFAULT 0,

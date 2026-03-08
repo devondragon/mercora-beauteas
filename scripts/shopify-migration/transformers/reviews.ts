@@ -53,7 +53,7 @@ function resolveProductId(
     const byHandle = idMap.resolve('products', review.product_handle);
     if (byHandle) return byHandle;
 
-    // Try with cat_ prefix (matching seed data convention for descriptive IDs)
+    // Try with prod_ prefix (matching seed data convention for descriptive IDs)
     const byDescriptive = idMap.resolve(
       'products',
       `prod_${review.product_handle.replace(/-/g, '_')}`

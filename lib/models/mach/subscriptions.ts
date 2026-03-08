@@ -15,6 +15,7 @@ import { processed_webhook_events } from '@/lib/db/schema/webhook-events';
 import { eq, and, desc, lt, sql, count, like, gte } from 'drizzle-orm';
 import { customers } from '@/lib/db/schema/customer';
 import { products, product_variants } from '@/lib/db/schema/products';
+import type { SubscriptionStatus } from '@/lib/types/subscription';
 
 // ─── Subscription Plans ───────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export async function createCustomerSubscription(data: {
   plan_id: string;
   stripe_subscription_id: string;
   stripe_customer_id: string;
-  status?: 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing';
+  status?: SubscriptionStatus;
   current_period_start?: string;
   current_period_end?: string;
 }) {
@@ -112,7 +113,7 @@ export async function createCustomerSubscription(data: {
 export async function updateSubscriptionStatus(
   subscriptionId: string,
   updates: {
-    status: 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing';
+    status: SubscriptionStatus;
     canceled_at?: string | null;
     pause_collection?: string | null;
     cancel_at_period_end?: boolean;
@@ -229,7 +230,7 @@ export async function listSubscriptionsAdmin(options: {
   // Build conditions
   const conditions = [];
   if (status && status !== 'all') {
-    conditions.push(eq(customer_subscriptions.status, status as 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing'));
+    conditions.push(eq(customer_subscriptions.status, status as SubscriptionStatus));
   }
   if (search) {
     conditions.push(like(customers.person, `%${search}%`));

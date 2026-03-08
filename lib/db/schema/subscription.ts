@@ -34,7 +34,7 @@ export const customer_subscriptions = sqliteTable(
     stripe_subscription_id: text('stripe_subscription_id').notNull().unique(),
     stripe_customer_id: text('stripe_customer_id').notNull(),
     status: text('status', {
-      enum: ['active', 'paused', 'canceled', 'past_due', 'incomplete', 'trialing']
+      enum: ['active', 'paused', 'canceled', 'past_due', 'incomplete', 'incomplete_expired', 'trialing', 'unpaid']
     }).notNull().default('active'),
     current_period_start: text('current_period_start'),
     current_period_end: text('current_period_end'),

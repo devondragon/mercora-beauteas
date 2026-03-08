@@ -1,5 +1,5 @@
 export type SubscriptionFrequency = 'biweekly' | 'monthly' | 'bimonthly';
-export type SubscriptionStatus = 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'trialing';
+export type SubscriptionStatus = 'active' | 'paused' | 'canceled' | 'past_due' | 'incomplete' | 'incomplete_expired' | 'trialing' | 'unpaid';
 export type SubscriptionEventType = 'created' | 'renewed' | 'payment_failed' | 'paused' | 'resumed' | 'skipped' | 'canceled' | 'updated';
 
 export interface SubscriptionPlan {

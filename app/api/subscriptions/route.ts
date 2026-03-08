@@ -49,7 +49,6 @@ export async function GET() {
 interface CreateSubscriptionBody {
   setupIntentId: string;
   planId: string;
-  shippingAddress?: Record<string, unknown>;
 }
 
 export async function POST(req: NextRequest) {
@@ -96,6 +95,14 @@ export async function POST(req: NextRequest) {
 
     // Retrieve the confirmed SetupIntent to get the payment method
     const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+
+    if (setupIntent.status !== 'succeeded') {
+      return NextResponse.json(
+        { error: `SetupIntent has not succeeded (status: ${setupIntent.status})` },
+        { status: 400 }
+      );
+    }
+
     const paymentMethodId =
       typeof setupIntent.payment_method === 'string'
         ? setupIntent.payment_method

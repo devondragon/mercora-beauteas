@@ -57,7 +57,6 @@ export function getConfig(): MigrationConfig {
   if (extractionMode === 'api') {
     const missing: string[] = [];
     if (!config.shopifyApiKey) missing.push('SHOPIFY_API_KEY');
-    if (!config.shopifyApiSecret) missing.push('SHOPIFY_API_SECRET');
     if (!config.shopifyStoreUrl) missing.push('SHOPIFY_STORE_URL');
 
     if (missing.length > 0) {
