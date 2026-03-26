@@ -52,6 +52,8 @@ import { Toaster } from "sonner";
 import { dark } from "@clerk/themes";
 import { Suspense } from "react";
 import WebVitals from "@/components/analytics/WebVitals";
+import { brand } from "@/lib/brand";
+import { BrandProvider } from "@/lib/brand";
 
 import {
   ClerkProvider,
@@ -77,17 +79,15 @@ const geistMono = Geist_Mono({
   fallback: ["ui-monospace", "SFMono-Regular"],
 });
 
-// SEO metadata for the application
+// SEO metadata for the application (driven by brand config)
 export const metadata: Metadata = {
-  title: "Mercora",
-  description: "Marketplace powered by open knowledge",
+  title: brand.name,
+  description: brand.description,
   other: {
-    // Suppress browser preload warnings
-    "resource-hints": "minimal",
     // MCP Server Discovery
     "mcp-server": "/api/mcp",
     "mcp-schema": "/api/mcp/schema",
-    "mcp-capabilities": "commerce,outdoor-gear,multi-agent,e-commerce",
+    "mcp-capabilities": brand.mcp.capabilities,
     "mcp-version": "1.0.0",
   },
 };
@@ -118,12 +118,12 @@ export default function RootLayout({
     >
       <html lang="en" suppressHydrationWarning>
         <head>
-          {/* MCP Server Discovery Meta Tags */}
+          {/* MCP Server Discovery Meta Tags (driven by brand config) */}
           <meta name="mcp-server" content="/api/mcp" />
           <meta name="mcp-schema" content="/api/mcp/schema" />
-          <meta name="mcp-capabilities" content="commerce,outdoor-gear,multi-agent,e-commerce" />
+          <meta name="mcp-capabilities" content={brand.mcp.capabilities} />
           <meta name="mcp-version" content="1.0.0" />
-          <meta name="mcp-description" content="Voltique MCP Server for multi-agent outdoor gear commerce" />
+          <meta name="mcp-description" content={brand.mcp.description} />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
 
           {/* Additional MCP Discovery */}
@@ -131,39 +131,41 @@ export default function RootLayout({
           <link rel="mcp-schema" href="/api/mcp/schema" type="application/json" />
         </head>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-black text-white flex flex-col min-h-screen`}
+          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-surface-dark text-text-primary flex flex-col min-h-screen`}
           suppressHydrationWarning
         >
-          {/* Promotional banner - shown above header when enabled */}
-          <Suspense fallback={null}>
-            <PromotionalBanner />
-          </Suspense>
+          <BrandProvider>
+            {/* Promotional banner - shown above header when enabled */}
+            <Suspense fallback={null}>
+              <PromotionalBanner />
+            </Suspense>
 
-          {/* Global navigation header with suspense boundary */}
-          <Suspense fallback={<div className="h-16 bg-neutral-900" />}>
-            <Header />
-          </Suspense>
+            {/* Global navigation header with suspense boundary */}
+            <Suspense fallback={<div className="h-16 bg-surface-light" />}>
+              <Header />
+            </Suspense>
 
-          {/* Main content area - grows to fill available space */}
-          <main className="flex-1" suppressHydrationWarning>
-            {children}
-          </main>
+            {/* Main content area - grows to fill available space */}
+            <main className="flex-1" suppressHydrationWarning>
+              {children}
+            </main>
 
-          {/* Global footer */}
-          <Footer />
+            {/* Global footer */}
+            <Footer />
 
-          {/* Global toast notification system */}
-          <Toaster
-            position="top-center"
-            toastOptions={{
-              className:
-                "bg-orange-500/80 text-black font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
-              duration: 3000,
-            }}
-          />
-          
-          {/* Core Web Vitals monitoring */}
-          <WebVitals />
+            {/* Global toast notification system */}
+            <Toaster
+              position="top-center"
+              toastOptions={{
+                className:
+                  "bg-primary-500/80 text-text-inverse font-semibold rounded-md mt-[60px] shadow-lg animate-in fade-in slide-in-from-top-5",
+                duration: 3000,
+              }}
+            />
+
+            {/* Core Web Vitals monitoring */}
+            <WebVitals />
+          </BrandProvider>
         </body>
       </html>
     </ClerkProvider>

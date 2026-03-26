@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import { brand } from "./lib/brand.config";
 
 const config: Config = {
   content: [
@@ -8,10 +9,36 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#000000",
-        foreground: "#ffffff",
-        border: "#2a2a2a",
-        ring: "#333333",
+        // === Semantic Colors (use these in components) ===
+        // These map to brand colors and enable easy theming
+
+        // Primary accent color (buttons, links, highlights)
+        primary: brand.colors.primary,
+
+        // Surface colors for backgrounds
+        surface: brand.colors.surface,
+
+        // Text colors
+        "text-primary": brand.colors.text.primary,
+        "text-secondary": brand.colors.text.secondary,
+        "text-muted": brand.colors.text.muted,
+        "text-inverse": brand.colors.text.inverse,
+
+        // Border colors
+        "border-default": brand.colors.border.DEFAULT,
+        "border-light": brand.colors.border.light,
+        "border-dark": brand.colors.border.dark,
+
+        // === Legacy mappings (for backwards compatibility) ===
+        background: brand.colors.surface.dark,
+        foreground: brand.colors.text.primary,
+        border: brand.colors.border.dark,
+        ring: brand.colors.border.DEFAULT,
+      },
+      fontFamily: {
+        sans: [brand.fonts.heading, "system-ui", "sans-serif"],
+        body: [brand.fonts.body, "system-ui", "sans-serif"],
+        mono: [brand.fonts.mono, "ui-monospace", "monospace"],
       },
     },
   },
