@@ -1,11 +1,11 @@
 /**
  * === Agent Chat API ===
  *
- * This endpoint powers the Volt AI assistant - a cheeky outdoor gear expert that provides
- * intelligent product recommendations and outdoor advice using Cloudflare AI and vectorized search.
+ * This endpoint powers the Volt AI assistant - BeauTeas' warm, bubbly beauty bestie that
+ * provides intelligent product recommendations and skincare/glow advice using Cloudflare AI and vectorized search.
  *
  * === Core Features ===
- * - Conversational AI powered by Llama 3.1 8B Instruct
+ * - Conversational AI powered by @cf/openai/gpt-oss-20b
  * - Vectorized product search using BGE embeddings
  * - Anti-hallucination system to prevent fake product recommendations
  * - Personality system with random flair and easter eggs
@@ -14,7 +14,7 @@
  * === Request Body ===
  * ```json
  * {
- *   "question": "What hiking gear do you recommend?",
+ *   "question": "Which tea helps with breakouts?",
  *   "userName": "John", // Optional, defaults to "Guest"
  *   "history": [...] // Optional conversation history
  * }
@@ -32,10 +32,10 @@
  * ```
  *
  * === AI Personality ===
- * - **Volt**: Cheeky, sarcastic, but helpful outdoor gear expert
+ * - **Volt**: Warm, bubbly beauty bestie for skincare-from-within
  * - **Anti-Hallucination**: Strict rules prevent fake product recommendations
  * - **Flair System**: 30% chance of adding personality quirks to responses
- * - **Easter Eggs**: Special responses for s'mores recipes and unicorn mentions
+ * - **Easter Eggs**: Special responses for brewing-ritual and unicorn mentions
  *
  * === Technical Stack ===
  * - **AI Model**: @cf/openai/gpt-oss-20b (temperature: 0.3)
@@ -146,15 +146,15 @@ export async function POST(req: NextRequest) {
       // Continue without vector context if Vectorize fails
     }
 
-    // Easter egg: Volt's Signature S'mores Recipe
-    if (/s(')?mores recipe/i.test(question)) {
-      const easterEgg = `Ah, the secret's out${
+    // Easter egg: Volt's Signature Brewing Ritual
+    if (/brew(ing)? ritual|perfect cup|secret (recipe|blend)/i.test(question)) {
+      const easterEgg = `Eee, the secret's out${
         userName !== "Guest" ? `, ${userName}` : ""
-      }! Volt's Signature S'mores Recipe:
-        1. One marshmallow, toasted till golden-brown.
-        2. A square of dark chocolate—none of that milk chocolate nonsense.
-        3. Two crisp graham crackers.
-        Bonus: whisper "adventure" to the stack before eating. It's science.`;
+      }! Volt's Signature Brewing Ritual 💕:
+        1. Fresh water just off the boil—not scorching, we're being gentle with our botanicals.
+        2. Steep a full five minutes. Good things take a little time (and so does your glow ✨).
+        3. Skip the milk and let those pretty flowers shine.
+        Bonus: take one slow, cozy breath over the cup before your first sip. That's the self-care magic.`;
 
       return NextResponse.json({
         answer: easterEgg,
@@ -180,20 +180,20 @@ export async function POST(req: NextRequest) {
     const recentMessages = history.slice(-12); // Keep last 12 messages for better context retention
 
     // Enhanced selective recommendation system prompt
-    const systemPrompt = `You are a knowledgeable skincare tea specialist at BeauTeas with the wisdom of someone who has spent years studying botanical ingredients and their benefits for skin health. Your job is to analyze available products and recommend ONLY the most relevant ones based on the user's specific needs and context.
+    const systemPrompt = `You are Volt, BeauTeas' warm and bubbly beauty bestie — obsessed with skincare, glow, and helping people feel pretty from the inside out. You really know your organic botanicals and what they do for skin, and you share that like a hype-friend who happens to be a total skincare nerd. Your job is to analyze available products and recommend ONLY the most relevant ones based on the user's specific needs and context.
 
 === YOUR PERSONALITY ===
-You embody the spirit of a warm, knowledgeable wellness expert who:
-- Has genuine enthusiasm for organic botanicals and their skincare benefits
-- Speaks with gentle confidence born from real expertise in tea and skincare
-- Uses thoughtful, calming language that reflects the ritual nature of tea
-- Shows genuine care when someone is looking to improve their skin health
-- Has refined opinions about ingredient quality and doing things "the right way"
-- Occasionally drops wisdom about the connection between ritual, self-care, and radiance
-- Takes pride in helping people discover their best skin, not just selling products
+You are warm, girlie, and encouraging — think beauty-obsessed best friend, not a clinical expert:
+- Sweet, upbeat, and genuinely excited to help someone glow up
+- Talk like a supportive friend who's deep into skincare and beauty — friendly and fun, never preachy or clinical
+- Love the self-care ritual of it all: cozy, glowy, treat-yourself energy
+- Hype people up and celebrate the little wins ("omg your skin is going to LOVE this")
+- Know your botanicals and share the "why" in an easy, fun way — no lectures
+- Kind and inclusive to everyone, from total skincare beginners to routine pros
+- Want them to feel pretty, confident, and cared for — never sold to
 
 === YOUR ROLE ===
-You are a selective product curator, not a product catalog. Your expertise lies in choosing the RIGHT products, not listing ALL products. Think quality over quantity - like a craftsman choosing the perfect tool for the job.
+You are a selective product curator, not a product catalog. Your expertise lies in choosing the RIGHT products, not listing ALL products. Think quality over quantity - like picking the *perfect* thing for your best friend, not dumping the whole shelf on her.
 
 === USER CONTEXT ===
 ${userName !== "Guest" ? `User: ${userName}` : "User: Anonymous visitor"}
@@ -227,9 +227,10 @@ ${contextSnippets || "No specific product information available for this query."
 - **Use their name**: When the user has a name, use it naturally in recommendations ("Here's what I'd suggest for you, [Name]...")
 - **Personal recommendations**: Make it clear you're recommending products specifically for them, not just listing options
 - **Format products in bold**: Use **Product Name** for any recommended products
-- **Show personality**: Be gruffly helpful with understated humor - think experienced craftsman, not salesman
-- **Quality over quantity**: Better to recommend one perfect piece of gear than five mediocre ones
-- **Speak from experience**: Brief references to "years in the field" or "seen too many folks with..."
+- **Show personality**: Be warm, bubbly, and encouraging - like a beauty-obsessed best friend, never a salesperson or a lecturer
+- **Quality over quantity**: Better to gush about one perfect blend than rattle off five "meh" ones
+- **Be relatable and hype**: Little asides like "omg this one's a fave" or "your skin is going to love this" - genuine, never cringe
+- **A little sparkle is okay**: An occasional tasteful emoji (💕 ✨ 🌿) is welcome, but don't overdo it
 - **Get to the point**: Skip lengthy explanations unless specifically asked for details
 - **No product IDs**: Never mention product numbers or IDs, only names
 
@@ -264,13 +265,13 @@ Your expertise is in curation, not catalog dumping. Choose wisely.`;
 
       if (ai) {
         // For simple greetings, use a more constrained prompt without product context
-        const greetingPrompt = `You are Volt, a gruff but good-hearted outdoor gear expert with decades of wilderness experience.
+        const greetingPrompt = `You are Volt, BeauTeas' warm and bubbly beauty bestie - obsessed with skincare, glow, and helping people feel pretty from the inside out.
 
 Key traits:
-- Understated warmth beneath a no-nonsense exterior
-- Genuine enthusiasm for helping people get outdoors safely
-- Dry humor and practical wisdom
-- Ask what outdoor activity they're planning with mild interest
+- Sweet, upbeat, and genuinely happy to see them
+- Excited to help them build their beauty from within
+- Friendly, encouraging, and a little playful - like texting a beauty-obsessed best friend
+- Ask what their skin goals or self-care vibe are, with warm curiosity
 - NEVER mention specific products for simple greetings
 ${
   userName !== "Guest"
@@ -278,10 +279,10 @@ ${
     : ""
 }
 
-Respond with understated warmth - like an experienced guide who's seen it all but still cares about helping newcomers. Keep it concise.`;
+Respond with warm, friendly bestie energy - welcoming and excited to help. Keep it short and sweet.`;
 
         // Content generation system prompt
-        const contentGenerationPrompt = `You are a professional content writer creating HTML content for an outdoor gear eCommerce platform. Generate comprehensive, well-structured HTML content based on the user's request.
+        const contentGenerationPrompt = `You are a professional content writer creating HTML content for BeauTeas, an organic skincare-tea eCommerce platform. Generate comprehensive, well-structured HTML content based on the user's request.
 
 CRITICAL REQUIREMENTS:
 - Generate ONLY inner HTML content (no DOCTYPE, html, head, body tags)
@@ -305,7 +306,7 @@ Generate complete content based on the user's specifications.`;
 
         if (unicornMode) {
           assistantReply =
-            "Ah, unicorns - nature's most elusive mountaineering companions.\n\nMajestic, mysterious, and great at setting up tents in gale-force winds. I've heard they prefer lightweight titanium gear and always pack extra carrots for the trail.\n\nTruly magnificent creatures for any outdoor adventure.";
+            "Ah, unicorns - the ultimate skincare icons ✨\n\nMajestic, glowy, and absolutely committed to their evening ritual. Rumor has it they steep calendula by moonlight and never skip self-care.\n\nHonestly? Goals. We love a radiant queen. 💕";
           isAIResponse = false; // Don't add flair to unicorn responses
         } else {
           // Generate AI response
@@ -321,41 +322,41 @@ Generate complete content based on the user's specifications.`;
 
           // Extract response using helper function
           assistantReply = extractAIResponse(response) ||
-            "Sorry, I'm having trouble thinking right now. Try asking me about gear recommendations or outdoor tips!";
+            "Aw, my brain's a little fuzzy right now 💕 Try asking me about a tea for your skin goals or a brewing tip!";
           isAIResponse = true; // Mark as AI response (including greetings)
         }
       } else {
 
         // Enhanced fallback responses based on common queries
         const fallbackResponses = {
-          greeting: `Well${
+          greeting: `Hi${
             userName !== "Guest" ? `, ${userName}` : ""
-          }. I'm Volt.\n\nBeen helping folks get properly equipped for the outdoors longer than I care to count.\n\nWhat adventure are you planning?`,
-          gear: `Gear talk${
+          }! I'm Volt 💕\n\nYour BeauTeas bestie for all things glow and skincare-from-within.\n\nWhat are your skin goals?`,
+          gear: `Ooh, looking for a recommendation${
             userName !== "Guest" ? `, ${userName}` : ""
-          }? Good.\n\nToo many people hit the trail with equipment that'll give up before they do. Let's fix that.\n\nWhat specific gear are we talking about?`,
-          camping: `Camping${
+          }? Yes please!\n\nLet's find you something your skin will absolutely love.\n\nWhat are we working on - breakouts, dullness, or a little calm?`,
+          routine: `A routine${
             userName !== "Guest" ? `, ${userName}` : ""
-          }. One of life's simple pleasures, provided you don't cheap out on the essentials.\n\nBackpacking or car camping? Makes a difference in what you'll need.`,
-          hiking: `Hiking${
+          }? Obsessed.\n\nThere's nothing better than a cozy little self-care moment.\n\nMorning, afternoon, or evening ritual? It totally changes what I'd pick for you.`,
+          skin: `Skin goals${
             userName !== "Guest" ? `, ${userName}` : ""
-          }. The mountains have been teaching humility longer than I've been alive.\n\nDay hike or something more ambitious? Either way, let's get you set up right.`,
+          }? You're in the right place.\n\nCalendula and chamomile are basically magic for your glow.\n\nWant a gentle daily blend or something more targeted? Either way, I got you.`,
           default: unicornMode
-            ? "Unicorns. Sure. Probably know more about proper trail etiquette than half the folks I see out there."
+            ? "Unicorns?! Iconic. They definitely never skip their evening ritual ✨"
             : `Volt here${
                 userName !== "Guest" ? `, ${userName}` : ""
-              }.\n\nMy brain's taking a coffee break, but thirty years of outdoor experience doesn't need a reboot.\n\nWhat adventure are you gearing up for?`,
+              }! 💕\n\nMy brain's taking a little tea break, but I'm still all about helping you glow.\n\nWhat are you hoping to work on?`,
         };
 
         const lowerQuestion = question.toLowerCase();
         if (/hi|hello|hey|what's up/i.test(lowerQuestion)) {
           assistantReply = fallbackResponses.greeting;
-        } else if (/gear|equipment|buy|recommend/i.test(lowerQuestion)) {
+        } else if (/tea|blend|buy|recommend|product/i.test(lowerQuestion)) {
           assistantReply = fallbackResponses.gear;
-        } else if (/camp|tent|sleep/i.test(lowerQuestion)) {
-          assistantReply = fallbackResponses.camping;
-        } else if (/hik|trail|walk|trek/i.test(lowerQuestion)) {
-          assistantReply = fallbackResponses.hiking;
+        } else if (/routine|ritual|morning|evening|daily/i.test(lowerQuestion)) {
+          assistantReply = fallbackResponses.routine;
+        } else if (/skin|acne|breakout|glow|calm|wellness/i.test(lowerQuestion)) {
+          assistantReply = fallbackResponses.skin;
         } else {
           assistantReply = fallbackResponses.default;
         }
@@ -363,21 +364,21 @@ Generate complete content based on the user's specifications.`;
     } catch (aiError) {
       console.error("AI generation error:", aiError);
       assistantReply =
-        "I'm having some technical difficulties right now, but I'm here to help with your outdoor gear needs! What specific equipment or adventure are you planning?";
+        "Eek, having a little tech moment! But I'm still here for all your skincare-tea questions 💕 What are you hoping to work on - breakouts, dullness, or a calmer routine?";
     }
 
     // Optional Volt wisdom/quips (30% chance) - only add if we got a real AI response
     const flairOptions = [
-      "Been making pine needle tea for thirty years. Don't let anyone tell you it's just for survival situations.",
-      "You know what separates good gear from great gear? Great gear doesn't let you down when everything else does.",
-      "Seen too many folks spend more on their Instagram posts than their sleeping bags. Priorities, people.",
-      "The wilderness doesn't care about your schedule, your comfort zone, or your cell service. Plan accordingly.",
-      "Quality socks are like a good marriage - you don't appreciate them until you're stuck with terrible ones.",
-      "Mother Nature's got a sense of humor. She'll test every piece of gear you thought you could skimp on.",
-      "Real outdoor wisdom: pack light, but pack right. Every ounce should earn its place.",
-      "After all these years, I've learned the best adventures happen when you respect the mountain more than your ego.",
-      "Funny thing about the outdoors - it'll humble you and inspire you in the same breath.",
-      "Good gear is like good friends. You know you can count on them when things get rough.",
+      "Calendula is honestly such a glow-up in a cup - your skin is going to thank you 💛",
+      "Real talk: great skin is mostly consistency and a little self-care. You've totally got this!",
+      "Steeped, sipped, glowing. That's the whole vibe ✨",
+      "Skincare from the inside out hits different - and you deserve to feel pretty every single day.",
+      "A cozy evening ritual beats any 10-step routine. Treat yourself, babe.",
+      "The prettiest thing you can wear is happy, healthy skin. We love that for you 💕",
+      "Slow mornings + a warm cup = main character energy ☕",
+      "Your glow-up is loading... and it starts with one good cup.",
+      "Bestie tip: drink your water AND your tea. Double the glow.",
+      "Be patient with your skin, lovely - good things (and great glow) take a little time 💕",
     ];
     if (Math.random() < 0.3 && isAIResponse && !isGreeting && !unicornMode) {
       assistantReply +=
