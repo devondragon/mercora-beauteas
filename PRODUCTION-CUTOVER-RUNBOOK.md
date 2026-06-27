@@ -143,7 +143,7 @@ npx tsx scripts/shopify-migration/migrate-all.ts                       # then fu
   npm run deploy:production       # clean + opennextjs build + deploy --env production
   ```
 - ☐ Add custom domain in Cloudflare (Workers → beauteas → Settings → Domains) — but **keep DNS pointed at Shopify** for now (use the `*.workers.dev` URL or a staging host for validation).
-- ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, **test checkout with a Stripe test card**, admin login (after §0.2), AI chat.
+- ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, admin login (after §0.2), AI chat. **Note:** This deploy uses live Stripe keys — test cards will be rejected. Either run a real low-value checkout + immediate refund, or temporarily swap to Stripe test keys for this smoke-test step only, then re-set the live key before DNS cutover.
 
 ---
 
@@ -166,7 +166,8 @@ npx tsx scripts/shopify-migration/migrate-all.ts                       # then fu
 - ☐ `--entity=validate` passes against production.
 - ☐ **Index AI search** on real catalog:
   ```bash
-  curl "https://beauteas.com/api/admin/vectorize?token=<ADMIN_VECTORIZE_TOKEN>"
+  curl -X POST "https://beauteas.com/api/admin/vectorize" \
+    -H "Authorization: Bearer <ADMIN_VECTORIZE_TOKEN>"
   # Expect ~30 products (+ knowledge articles) indexed
   ```
 - ☐ Confirm `redirect_map` populated:
@@ -235,7 +236,7 @@ Per the migration plan these are post-launch; the store operates without them:
 | Full migration | `D1_ENV=production D1_DATABASE_NAME=beauteas-db npx tsx scripts/shopify-migration/migrate-all.ts` |
 | Single entity | `… migrate-all.ts --entity=products` |
 | Validate | `… migrate-all.ts --entity=validate` |
-| Reindex AI | `curl "https://beauteas.com/api/admin/vectorize?token=…"` |
+| Reindex AI | `curl -X POST "https://beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
 | Deploy prod | `npm run deploy:production` |
 | Live logs | `wrangler tail --env production` |
 | Set secret | `wrangler secret put <NAME> --env production` |
