@@ -11,7 +11,7 @@
  * - **Expandable Categories**: Mobile menu with expand/collapse functionality
  * - **User Authentication**: Clerk integration for login/logout
  * - **Shopping Cart**: Quick access to cart with item count
- * - **AI Assistant**: Integrated Volt AI chat drawer
+ * - **AI Assistant**: Integrated Chai AI chat drawer
  * - **Interactive Elements**: Hover effects and smooth transitions
  *
  * === Category Navigation ===

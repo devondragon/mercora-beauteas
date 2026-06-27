@@ -188,13 +188,13 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                   className="border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Volt AI Assist
+                  Chai AI Assist
                 </Button>
               </div>
               <Textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="# Article Title\n\nYour content here...\n\nOr click 'Volt AI Assist' above for AI-powered content generation!"
+                placeholder="# Article Title\n\nYour content here...\n\nOr click 'Chai AI Assist' above for AI-powered content generation!"
                 rows={20}
                 className="bg-neutral-700 border-neutral-600 font-mono text-sm"
               />
@@ -209,13 +209,13 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                           <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-orange-500 rounded-lg flex items-center justify-center">
                             <Image
                               src="/volt.svg"
-                              alt="Volt AI"
+                              alt="Chai AI"
                               width={24}
                               height={24}
                             />
                           </div>
                           <div>
-                            <h3 className="text-lg font-semibold text-white">Volt AI Assistant</h3>
+                            <h3 className="text-lg font-semibold text-white">Chai AI Assistant</h3>
                             <p className="text-sm text-gray-400">Knowledge article generation</p>
                           </div>
                         </div>

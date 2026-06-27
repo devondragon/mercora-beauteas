@@ -250,9 +250,10 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 ## Known Branding Debt
 
-The repo was forked from a prior project (**Voltique** outdoor gear / **Mercora**). Leftover branding to clean up over time:
-- **Volt's persona/prompt** in `app/api/agent-chat/route.ts` still describes outdoor gear / hiking / camping — should be reworked for organic skincare teas.
-- "voltique"/"mercora" strings linger in some docs (`PRODUCTION-CUTOVER-RUNBOOK.md`, `docs/`), the `x-dev-admin: mercora-dev-bypass` header value, and assets (`data/r2/volt.svg`).
+The repo was forked from a prior project (**Voltique** outdoor gear / **Mercora**). The AI assistant has been renamed **Volt → Chai** and given a warm, girlie beauty-bestie voice across the chat UI + `app/api/agent-chat/route.ts`. Remaining leftover branding to clean up over time:
+- **Outdoor-gear copy still lingers outside the assistant**: MCP recommendation tools (`lib/mcp/tools/*` — keyword logic for tents/backpacks/hiking), transactional emails (`lib/utils/email.ts` — "your gear"), marketing copy (`app/page.tsx`, `components/HeaderClient.tsx`, `app/[slug]/PageRenderer.tsx`), and admin AI content-generation prompts (`app/admin/pages/PageManagement.tsx`, `app/api/admin/generate-product-description/route.ts`). These should be rebranded to organic skincare teas.
+- The chat **mascot asset** is still `data/r2/volt.svg` (referenced as `/volt.svg`); rename when the image itself is updated for Chai.
+- "voltique"/"mercora" strings linger in docs (`PRODUCTION-CUTOVER-RUNBOOK.md`, `docs/`, `.planning/`), seeded CMS content (`migrations/0003` "About Mercora" page — already applied to the DB), and the `x-dev-admin: mercora-dev-bypass` header value.
 - `package.json` name is still `mercora` (intentional — platform name).
 
 ---

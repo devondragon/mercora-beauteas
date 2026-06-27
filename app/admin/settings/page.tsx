@@ -7,7 +7,7 @@
  *
  * === Features ===
  * - **Store Configuration**: Basic store information, currency, and policies
- * - **AI Assistant Settings**: Volt personality, response style, and features
+ * - **AI Assistant Settings**: Chai personality, response style, and features
  * - **System Configuration**: Debug mode, maintenance, and performance settings
  * - **Vector Index Management**: Reindex products and knowledge base
  * - **Real-time Updates**: Live status indicators and save confirmations
@@ -15,7 +15,7 @@
  *
  * === Settings Categories ===
  * - **Store Settings**: Store name, contact info, currency, tax rates
- * - **AI Settings**: Volt personality mode, response length, personalization
+ * - **AI Settings**: Chai personality mode, response length, personalization
  * - **System Settings**: Debug mode, maintenance mode, analytics, notifications
  *
  * === AI Configuration Options ===

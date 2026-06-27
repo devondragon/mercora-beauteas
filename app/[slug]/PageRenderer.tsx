@@ -186,7 +186,7 @@ export default function PageRenderer({ page }: PageRendererProps) {
                     href="/agent"
                     className="bg-transparent border-2 border-orange-600 text-orange-400 hover:bg-orange-600 hover:text-white px-8 py-3 rounded-lg font-semibold transition-colors"
                   >
-                    Chat with Volt AI
+                    Chat with Chai AI
                   </Link>
                 </div>
               </div>

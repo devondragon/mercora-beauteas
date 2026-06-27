@@ -1,7 +1,7 @@
 /**
  * === Agent Chat API ===
  *
- * This endpoint powers the Volt AI assistant - BeauTeas' warm, bubbly beauty bestie that
+ * This endpoint powers the Chai AI assistant - BeauTeas' warm, bubbly beauty bestie that
  * provides intelligent product recommendations and skincare/glow advice using Cloudflare AI and vectorized search.
  *
  * === Core Features ===
@@ -32,7 +32,7 @@
  * ```
  *
  * === AI Personality ===
- * - **Volt**: Warm, bubbly beauty bestie for skincare-from-within
+ * - **Chai**: Warm, bubbly beauty bestie for skincare-from-within
  * - **Anti-Hallucination**: Strict rules prevent fake product recommendations
  * - **Flair System**: 30% chance of adding personality quirks to responses
  * - **Easter Eggs**: Special responses for brewing-ritual and unicorn mentions
@@ -61,7 +61,7 @@ import type { Product } from "@/lib/types";
 import { runAI, getCurrentEmbeddingModel, extractAIResponse } from "@/lib/ai/config";
 
 /**
- * Handles chat interactions with the Volt AI assistant
+ * Handles chat interactions with the Chai AI assistant
  * 
  * @param req - Next.js request object containing question, userName, and history
  * @returns JSON response with AI answer, recommended products, and updated history
@@ -146,11 +146,11 @@ export async function POST(req: NextRequest) {
       // Continue without vector context if Vectorize fails
     }
 
-    // Easter egg: Volt's Signature Brewing Ritual
+    // Easter egg: Chai's Signature Brewing Ritual
     if (/brew(ing)? ritual|perfect cup|secret (recipe|blend)/i.test(question)) {
       const easterEgg = `Eee, the secret's out${
         userName !== "Guest" ? `, ${userName}` : ""
-      }! Volt's Signature Brewing Ritual 💕:
+      }! Chai's Signature Brewing Ritual 💕:
         1. Fresh water just off the boil—not scorching, we're being gentle with our botanicals.
         2. Steep a full five minutes. Good things take a little time (and so does your glow ✨).
         3. Skip the milk and let those pretty flowers shine.
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
     const recentMessages = history.slice(-12); // Keep last 12 messages for better context retention
 
     // Enhanced selective recommendation system prompt
-    const systemPrompt = `You are Volt, BeauTeas' warm and bubbly beauty bestie — obsessed with skincare, glow, and helping people feel pretty from the inside out. You really know your organic botanicals and what they do for skin, and you share that like a hype-friend who happens to be a total skincare nerd. Your job is to analyze available products and recommend ONLY the most relevant ones based on the user's specific needs and context.
+    const systemPrompt = `You are Chai, BeauTeas' warm and bubbly beauty bestie — obsessed with skincare, glow, and helping people feel pretty from the inside out. You really know your organic botanicals and what they do for skin, and you share that like a hype-friend who happens to be a total skincare nerd. Your job is to analyze available products and recommend ONLY the most relevant ones based on the user's specific needs and context.
 
 === YOUR PERSONALITY ===
 You are warm, girlie, and encouraging — think beauty-obsessed best friend, not a clinical expert:
@@ -265,7 +265,7 @@ Your expertise is in curation, not catalog dumping. Choose wisely.`;
 
       if (ai) {
         // For simple greetings, use a more constrained prompt without product context
-        const greetingPrompt = `You are Volt, BeauTeas' warm and bubbly beauty bestie - obsessed with skincare, glow, and helping people feel pretty from the inside out.
+        const greetingPrompt = `You are Chai, BeauTeas' warm and bubbly beauty bestie - obsessed with skincare, glow, and helping people feel pretty from the inside out.
 
 Key traits:
 - Sweet, upbeat, and genuinely happy to see them
@@ -331,7 +331,7 @@ Generate complete content based on the user's specifications.`;
         const fallbackResponses = {
           greeting: `Hi${
             userName !== "Guest" ? `, ${userName}` : ""
-          }! I'm Volt 💕\n\nYour BeauTeas bestie for all things glow and skincare-from-within.\n\nWhat are your skin goals?`,
+          }! I'm Chai 💕\n\nYour BeauTeas bestie for all things glow and skincare-from-within.\n\nWhat are your skin goals?`,
           gear: `Ooh, looking for a recommendation${
             userName !== "Guest" ? `, ${userName}` : ""
           }? Yes please!\n\nLet's find you something your skin will absolutely love.\n\nWhat are we working on - breakouts, dullness, or a little calm?`,
@@ -343,7 +343,7 @@ Generate complete content based on the user's specifications.`;
           }? You're in the right place.\n\nCalendula and chamomile are basically magic for your glow.\n\nWant a gentle daily blend or something more targeted? Either way, I got you.`,
           default: unicornMode
             ? "Unicorns?! Iconic. They definitely never skip their evening ritual ✨"
-            : `Volt here${
+            : `Chai here${
                 userName !== "Guest" ? `, ${userName}` : ""
               }! 💕\n\nMy brain's taking a little tea break, but I'm still all about helping you glow.\n\nWhat are you hoping to work on?`,
         };
@@ -367,7 +367,7 @@ Generate complete content based on the user's specifications.`;
         "Eek, having a little tech moment! But I'm still here for all your skincare-tea questions 💕 What are you hoping to work on - breakouts, dullness, or a calmer routine?";
     }
 
-    // Optional Volt wisdom/quips (30% chance) - only add if we got a real AI response
+    // Optional Chai wisdom/quips (30% chance) - only add if we got a real AI response
     const flairOptions = [
       "Calendula is honestly such a glow-up in a cup - your skin is going to thank you 💛",
       "Real talk: great skin is mostly consistency and a little self-care. You've totally got this!",

@@ -7,7 +7,7 @@
  *
  * === Features ===
  * - **Personalized**: Considers user order history and preferences
- * - **AI-Enhanced**: Uses Volt AI for intelligent product matching
+ * - **AI-Enhanced**: Uses Chai AI for intelligent product matching
  * - **Context-Aware**: Considers product tags, use cases, and characteristics
  * - **Dynamic Layout**: Responsive grid that adapts to number of recommendations
  * - **Loading States**: Shows skeleton placeholders during API calls
@@ -262,7 +262,7 @@ export default function ProductRecommendations({
           <div className="flex-shrink-0 mr-4">
             <Image
               src="/volt.svg"
-              alt="Volt mascot"
+              alt="Chai mascot"
               width={60}
               height={60}
               className="z-10"
