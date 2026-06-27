@@ -87,7 +87,7 @@
         {
           "binding": "DB",
           "database_name": "beauteas-db",
-          "database_id": "REPLACE_WITH_PRD_DATABASE_ID"
+          "database_id": "5dbae836-ff0f-420c-9ac0-16088ceb60ee"
         }
       ],
       "r2_buckets": [
