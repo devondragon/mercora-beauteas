@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { isUserAdmin } from "../models/admin";
 import { getApiTokenByHash, updateApiTokenLastUsed } from "../models/auth";
 
@@ -49,6 +50,32 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
+/**
+ * Constant-time string comparison, so verifying a presented secret against
+ * ADMIN_VECTORIZE_TOKEN doesn't leak its bytes via response timing.
+ * Hashing both sides first reduces the comparison to fixed-length digests.
+ */
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const [ah, bh] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
+  let mismatch = 0;
+  for (let i = 0; i < ah.length; i++) {
+    mismatch |= ah.charCodeAt(i) ^ bh.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+/** Schedule fire-and-forget work so the Worker runtime doesn't cancel it after the response. */
+function runAfterResponse(work: Promise<unknown>): void {
+  const done = work.catch((e) =>
+    console.error("Failed to update token last-used:", e)
+  );
+  try {
+    getCloudflareContext().ctx.waitUntil(done);
+  } catch {
+    // No Worker context (e.g. local dev / tests): the promise still runs to completion.
+  }
+}
+
 /** Does the granted permission set satisfy a single required permission? Supports wildcards. */
 function grantsPermission(granted: string[], required: string): boolean {
   if (granted.includes("*") || granted.includes("admin:*")) return true;
@@ -72,7 +99,8 @@ function extractToken(request: NextRequest): string | undefined {
   if (header && header.toLowerCase().startsWith("bearer ")) {
     return header.slice(7).trim();
   }
-  return request.headers.get("x-api-key") || undefined;
+  const xApiKey = request.headers.get("x-api-key");
+  return xApiKey != null ? xApiKey.trim() : undefined;
 }
 
 /**
@@ -102,7 +130,7 @@ export async function authenticateRequest(
     if (presentedToken) {
       // Service shortcut: shared admin secret grants full admin (matches admin-middleware.ts).
       const serviceToken = process.env.ADMIN_VECTORIZE_TOKEN;
-      if (serviceToken && presentedToken === serviceToken) {
+      if (serviceToken && (await timingSafeEqual(presentedToken, serviceToken))) {
         const permissions = ["admin:*"];
         if (!hasAllPermissions(permissions, requiredPermissions)) {
           return deny(403, "Insufficient permissions");
@@ -137,10 +165,9 @@ export async function authenticateRequest(
         return deny(403, "Insufficient permissions");
       }
       if (updateLastUsed) {
-        // Fire-and-forget: don't fail the request if the bookkeeping write fails.
-        updateApiTokenLastUsed(token.id).catch((e) =>
-          console.error("Failed to update token last-used:", e)
-        );
+        // Fire-and-forget bookkeeping; scheduled via waitUntil so the Worker
+        // runtime doesn't cancel the write once the response is returned.
+        runAfterResponse(updateApiTokenLastUsed(token.id));
       }
       return {
         success: true,
@@ -189,7 +216,8 @@ export async function authenticateRequest(
 }
 
 /**
- * Convenience function for auth middleware - also disabled
+ * Convenience wrapper: returns the denial response on failure, or null when the
+ * request is authenticated and authorized (so callers can `return res ?? next`).
  */
 export async function requireAuth(
   request: NextRequest,

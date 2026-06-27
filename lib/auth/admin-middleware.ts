@@ -20,9 +20,10 @@ export async function checkAdminPermissions(request: NextRequest): Promise<Admin
       return { success: true, userId: "dev-admin", isDevMode: true };
     }
 
-    // Check for API token-based auth (for server-to-server calls)
+    // Check for API token-based auth (for server-to-server calls).
+    // Header-only — no ?token= query param so the secret doesn't land in logs/history/Referer.
     const authToken = request.headers.get("authorization")?.replace("Bearer ", "") ||
-                     request.nextUrl.searchParams.get("token");
+                     request.headers.get("x-api-key");
     
     if (authToken) {
       // Use admin vectorize token for server-to-server admin API calls
