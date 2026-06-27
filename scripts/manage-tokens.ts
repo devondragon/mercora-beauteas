@@ -50,7 +50,9 @@ function parseFlags(argv: string[]): Flags {
   for (const arg of argv) {
     if (arg.startsWith("--")) {
       const [key, ...rest] = arg.slice(2).split("=");
-      flags[key] = rest.length > 0 ? rest.join("=") : true;
+      const raw = rest.length > 0 ? rest.join("=") : true;
+      // Coerce literal "true"/"false" strings so --local=false doesn't become truthy.
+      flags[key] = raw === "true" ? true : raw === "false" ? false : raw;
     } else {
       (flags._ as string[]).push(arg);
     }
@@ -83,12 +85,7 @@ function sqlString(value: string): string {
 }
 
 /** Run `wrangler d1 execute` with a single SQL command. Returns parsed --json result. */
-function execD1(
-  sql: string,
-  dbName: string,
-  remoteArgs: string[],
-  capture: boolean
-): unknown {
+function execD1(sql: string, dbName: string, remoteArgs: string[]): unknown {
   const args = [
     "wrangler",
     "d1",
@@ -96,15 +93,14 @@ function execD1(
     dbName,
     ...remoteArgs,
     `--command=${sql}`,
+    "--json",
   ];
-  if (capture) args.push("--json");
 
   try {
     const out = execFileSync("npx", args, {
       encoding: "utf-8",
-      stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    if (!capture) return null;
     // wrangler --json prints `[{ results, success, meta }]` (sometimes a bare object).
     const parsed = JSON.parse(out);
     return Array.isArray(parsed) ? parsed[0] : parsed;
@@ -151,7 +147,12 @@ function resolvePermissions(flags: Flags): string[] {
 
 /** Compute an ISO expiry from `--expires=30d` or an ISO date string. */
 function resolveExpiry(flags: Flags): string | null {
-  if (typeof flags.expires !== "string") return null;
+  if (flags.expires === undefined) return null;
+  if (typeof flags.expires !== "string") {
+    // `--expires` with no value parses to boolean true; reject it rather than
+    // silently minting a never-expiring token.
+    throw new Error("--expires needs a value, e.g. --expires=90d or an ISO date.");
+  }
   const daysMatch = /^(\d+)d$/.exec(flags.expires.trim());
   if (daysMatch) {
     const ms = Date.now() + Number(daysMatch[1]) * 24 * 60 * 60 * 1000;
@@ -194,8 +195,7 @@ function cmdGenerate(flags: Flags): void {
     execD1(
       `SELECT id FROM api_tokens WHERE token_name = ${sqlString(name)};`,
       dbName,
-      remoteArgs,
-      true
+      remoteArgs
     )
   );
   if (existing.length > 0) {
@@ -213,7 +213,7 @@ function cmdGenerate(flags: Flags): void {
     `INSERT INTO api_tokens (token_name, token_hash, permissions, active, expires_at, created_at, updated_at) ` +
     `VALUES (${sqlString(name)}, ${sqlString(tokenHash)}, ${sqlString(permissionsJson)}, 1, ${expiresSql}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`;
 
-  execD1(insert, dbName, remoteArgs, true);
+  execD1(insert, dbName, remoteArgs);
 
   console.log("\n✅ API token created.");
   console.log(`   Target:      ${dbName} (${flags.local ? "local" : "remote"}, env=${env})`);
@@ -234,8 +234,7 @@ function cmdList(flags: Flags): void {
       `SELECT id, token_name, substr(token_hash, 1, 8) AS hash_prefix, permissions, active, expires_at, last_used_at, created_at ` +
         `FROM api_tokens ORDER BY created_at DESC;`,
       dbName,
-      remoteArgs,
-      true
+      remoteArgs
     )
   );
 
@@ -264,21 +263,31 @@ function cmdRevoke(flags: Flags): void {
     execD1(
       `SELECT active FROM api_tokens WHERE token_name = ${sqlString(name)};`,
       dbName,
-      remoteArgs,
-      true
+      remoteArgs
     )
   );
   if (existing.length === 0) {
     throw new Error(`No token named "${name}" found in ${dbName}.`);
   }
+  if (existing[0].active === 0 || existing[0].active === false) {
+    console.warn(`\n⚠️  Token "${name}" is already revoked in ${dbName}.\n`);
+    return;
+  }
 
   // Soft-revoke (active=0) rather than delete, to preserve the audit trail.
-  execD1(
+  const result = execD1(
     `UPDATE api_tokens SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE token_name = ${sqlString(name)};`,
     dbName,
-    remoteArgs,
-    true
+    remoteArgs
   );
+  if (
+    result &&
+    typeof result === "object" &&
+    "success" in result &&
+    !(result as { success: boolean }).success
+  ) {
+    throw new Error(`wrangler reported success=false for the UPDATE — token may still be active.`);
+  }
 
   console.log(`\n✅ Revoked token "${name}" in ${dbName} (${flags.local ? "local" : "remote"}, env=${env}).\n`);
 }
