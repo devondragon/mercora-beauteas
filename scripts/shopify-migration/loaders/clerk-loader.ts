@@ -5,7 +5,7 @@
  * Used for migrating Shopify customers to Clerk authentication.
  */
 
-import { createClerkClient } from '@clerk/clerk-sdk-node';
+import { createClerkClient } from '@clerk/backend';
 import { logger } from '../lib/logger.js';
 
 export interface ClerkUserInput {

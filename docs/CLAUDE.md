@@ -103,8 +103,8 @@ mercora/
 │   └── ui/                   # shadcn/ui components
 ├── lib/                      # Core logic
 │   ├── auth/                 # Authentication & authorization
-│   │   ├── admin-middleware.ts  # Admin auth (currently disabled for dev)
-│   │   └── unified-auth.ts   # Unified auth system (disabled for dev)
+│   │   ├── admin-middleware.ts  # Admin auth for /api/admin/* routes (Clerk + ADMIN_VECTORIZE_TOKEN)
+│   │   └── unified-auth.ts   # Unified auth for orders/refund APIs (fail-closed, header-only)
 │   ├── db/                   # Database & schema
 │   │   └── schema/           # Database schemas
 │   │       └── mcp.ts        # MCP-specific tables (agents, sessions, rate limits)
@@ -157,9 +157,9 @@ The admin dashboard is **fully implemented and functional** with comprehensive f
 - `/api/admin/vectorize` - Consolidated AI content indexing (products + knowledge)
 
 #### **Authentication Status**
-- **Current State**: Authentication is **temporarily DISABLED** for development
-- **Implementation**: Unified admin authentication system exists but bypassed
-- **Production Ready**: Full authentication system ready to be re-enabled
+- **Current State**: Authentication is **ENABLED** and fail-closed on order/refund APIs
+- **Implementation**: `unified-auth.ts` → `authenticateRequest()` — real validation, default deny
+- **Admin routes**: `/api/admin/*` use `admin-middleware.ts` (Clerk session or `ADMIN_VECTORIZE_TOKEN` header)
 
 ### Admin Features Implemented
 
@@ -190,32 +190,26 @@ The admin dashboard is **fully implemented and functional** with comprehensive f
 ## Authentication System
 
 ### Current Implementation
-The platform has a comprehensive authentication system that is currently disabled for development:
 
-#### **Admin Authentication**
-- **File**: `lib/auth/admin-middleware.ts`
-- **Status**: Disabled - returns `{ success: true, userId: "dev-admin" }`
-- **Original**: Token-based auth using `ADMIN_VECTORIZE_TOKEN` environment variable
-- **Future**: Role-based access with Clerk integration
-
-#### **Unified Authentication** 
+#### **Unified Authentication (`lib/auth/unified-auth.ts`)**
 - **File**: `lib/auth/unified-auth.ts`
-- **Status**: Disabled - bypasses all checks and returns admin permissions
-- **Original**: Comprehensive API token system with permissions and rate limiting
-- **Capabilities**: Multi-method authentication (Bearer token, API key, query parameter)
+- **Status**: **Active — fail-closed**
+- **Protects**: `app/api/orders/route.ts` (admin path) and `app/api/orders/refund/route.ts`
+- **Credential types**: (1) API token via `Authorization: Bearer` or `X-API-Key` header — matched by SHA-256 hash with AND-combined permission checks; (2) Clerk session for the browser admin UI — requires `isUserAdmin()` or Clerk metadata `role=admin`. Dev shortcut: any signed-in user is admin when `NODE_ENV=development`.
+- **Mint/revoke tokens**: `npm run token:generate|list|revoke` via `scripts/manage-tokens.ts`
+- **No query-param tokens**: secrets are header-only to avoid URL logging
 
-#### **Re-enabling Authentication**
-To re-enable authentication in production:
-1. Uncomment the authentication logic in both middleware files
-2. Configure proper admin roles in Clerk
-3. Set up API tokens for admin endpoints
-4. Remove the bypass logic that returns success without validation
+#### **Admin Middleware (`lib/auth/admin-middleware.ts`)**
+- **File**: `lib/auth/admin-middleware.ts`
+- **Status**: **Active**
+- **Protects**: All `/api/admin/*` routes (20 endpoints)
+- **Credential types**: Clerk session (any role in dev; `isUserAdmin()` check in prod) or `ADMIN_VECTORIZE_TOKEN` via `Authorization: Bearer` or `X-API-Key` header
+- **Dev bypass**: `x-dev-admin: mercora-dev-bypass` header accepted only when `NODE_ENV=development`
 
 ### Important Notes for Developers
-- **Development Mode**: All admin endpoints work without authentication
-- **API Calls**: No tokens required for `/api/admin/*` endpoints during development
-- **Production Ready**: Full authentication system exists and can be enabled quickly
-- **Security**: Never deploy to production with authentication disabled
+- **Development Mode**: In dev, any signed-in Clerk user or the dev-bypass header grants admin access
+- **API Calls**: Use `Authorization: Bearer <ADMIN_VECTORIZE_TOKEN>` (or `X-API-Key`) for server-to-server calls — never `?token=` query params
+- **Token management**: See `scripts/manage-tokens.ts` for minting scoped API tokens for webhooks/automation
 
 ## Database Schema (MACH Alliance Compliant)
 
