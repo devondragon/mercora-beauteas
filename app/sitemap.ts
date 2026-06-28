@@ -9,7 +9,7 @@
  */
 
 import type { MetadataRoute } from "next";
-import { listProducts, listCategories, getPublishedPages } from "@/lib/models";
+import { listProducts, listCategories, getPublishedPages, getPublishedBlogPosts } from "@/lib/models";
 
 const BASE_URL = "https://beauteas.com";
 
@@ -19,12 +19,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let products: Awaited<ReturnType<typeof listProducts>> = [];
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
   let pages: Awaited<ReturnType<typeof getPublishedPages>> = [];
+  let blogPosts: Awaited<ReturnType<typeof getPublishedBlogPosts>> = [];
 
   try {
-    [products, categories, pages] = await Promise.all([
+    [products, categories, pages, blogPosts] = await Promise.all([
       listProducts({ status: ["active"] }),
       listCategories({ status: "active" }),
       getPublishedPages(),
+      getPublishedBlogPosts(),
     ]);
   } catch {
     // D1 binding not available at build time — return minimal sitemap
@@ -64,5 +66,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [homepage, ...categoryUrls, ...productUrls, ...pageUrls];
+  const blogIndexUrl: MetadataRoute.Sitemap[number] = {
+    url: `${BASE_URL}/blog`,
+    lastModified: new Date(),
+    changeFrequency: "weekly" as const,
+    priority: 0.7,
+  };
+
+  const blogPostUrls: MetadataRoute.Sitemap = blogPosts.map((post) => ({
+    url: `${BASE_URL}/blog/${post.slug}`,
+    lastModified: new Date(post.updated_at * 1000),
+    changeFrequency: "monthly" as const,
+    priority: 0.6,
+  }));
+
+  return [homepage, ...categoryUrls, ...productUrls, blogIndexUrl, ...blogPostUrls, ...pageUrls];
 }

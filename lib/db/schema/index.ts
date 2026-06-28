@@ -118,3 +118,6 @@ export * from "./webhook-events";
 
 // Redirect map for Shopify URL migration (application-specific)
 export * from "./redirect-map";
+
+// Blog system schema (application-specific)
+export * from "./blog";
