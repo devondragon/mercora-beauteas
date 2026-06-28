@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "deploy:dev": "npm run clean && opennextjs-cloudflare build && opennextjs-cloudflare deploy --env dev",
+    "predeploy:production": "if [ ! -f wrangler.jsonc ]; then echo 'ERROR: wrangler.jsonc not found.' >&2; exit 1; fi; if grep -q 'REPLACE_WITH_' wrangler.jsonc; then echo 'ERROR: wrangler.jsonc contains REPLACE_WITH_ placeholder(s). Fill in live keys before deploying to production.' >&2; exit 1; fi",
     "deploy:production": "npm run clean && opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production",
     "clean": "rm -rf .open-next .next .wrangler/state .wrangler/public",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
