@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { uploadToR2, getContentTypeFromFilename } from "@/lib/utils/r2";
 
@@ -8,7 +9,7 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
  * POST /api/admin/upload
  *
  * General-purpose image upload used by the blog Novel editor.
- * Returns { ok: true, url: "/blog/{key}" } on success.
+ * Returns { ok: true, url: "https://beauteas-images.beauteas.com/blog/{key}" } on success.
  *
  * Images are stored in the MEDIA R2 bucket under blog/{timestamp}-{uuid}.ext
  * and served via the beauteas-images.beauteas.com CDN domain.
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
   const key = `blog/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
 
   try {
-    const env = process.env as unknown as { MEDIA: R2Bucket };
+    const { env } = await getCloudflareContext({ async: true });
     if (!env.MEDIA) {
       return NextResponse.json({ ok: false, error: "Storage not configured" }, { status: 500 });
     }
@@ -57,7 +58,9 @@ export async function POST(request: NextRequest) {
       customMetadata: { originalName: file.name, uploadType: "blog-editor" },
     });
 
-    return NextResponse.json({ ok: true, url: `/${key}` });
+    // Absolute CDN URL (matches IMAGE_CDN in lib/seo/metadata.ts). A relative
+    // "/blog/..." URL would be routed to the blog [slug] page and 404.
+    return NextResponse.json({ ok: true, url: `https://beauteas-images.beauteas.com/${key}` });
   } catch {
     return NextResponse.json({ ok: false, error: "Upload failed" }, { status: 500 });
   }

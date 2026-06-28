@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPublishedBlogPost } from "@/lib/models/blog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = await getPublishedBlogPost(slug);

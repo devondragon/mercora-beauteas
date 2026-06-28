@@ -1,22 +1,32 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 
 interface BlogTagFilterProps {
   tags: string[];
 }
 
 export function BlogTagFilter({ tags }: BlogTagFilterProps) {
-  const [active, setActive] = useState("all");
+  const searchParams = useSearchParams();
+  const initialTag = searchParams.get("tag") ?? "all";
+  const [active, setActive] = useState(initialTag);
 
   function filter(tag: string) {
     setActive(tag);
     const posts = document.querySelectorAll<HTMLElement>("[data-post-tags]");
     posts.forEach((el) => {
       if (tag === "all") { el.classList.remove("hidden"); return; }
-      const postTags = (el.dataset.postTags ?? "").split(",");
+      let postTags: string[] = [];
+      try { postTags = JSON.parse(el.dataset.postTags ?? "[]"); } catch { postTags = []; }
       el.classList.toggle("hidden", !postTags.includes(tag));
     });
   }
+
+  useEffect(() => {
+    if (initialTag !== "all") filter(initialTag);
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (tags.length === 0) return null;
 

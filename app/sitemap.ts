@@ -10,8 +10,7 @@
 
 import type { MetadataRoute } from "next";
 import { listProducts, listCategories, getPublishedPages, getPublishedBlogPosts } from "@/lib/models";
-
-const BASE_URL = "https://beauteas.com";
+import { BASE_URL } from "@/lib/seo/metadata";
 
 export const dynamic = "force-dynamic";
 

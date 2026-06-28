@@ -1,7 +1,6 @@
 "use client";
-import { useRef, useState, type DragEvent, type ChangeEvent } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
-import Image from "next/image";
 
 interface BlogImageUploadProps {
   imageUrl: string;

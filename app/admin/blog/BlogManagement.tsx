@@ -25,6 +25,7 @@ export function BlogManagement() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [stats, setStats] = useState({ total: 0, published: 0, draft: 0 });
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,7 +39,7 @@ export function BlogManagement() {
       if (postsData.success) setPosts(postsData.data);
       if (statsData.success) setStats(statsData.data);
     } catch {
-      /* ignore */
+      setError("Failed to load posts");
     } finally {
       setLoading(false);
     }
@@ -48,18 +49,20 @@ export function BlogManagement() {
 
   async function toggleStatus(post: BlogPostFull) {
     const newStatus = post.status === "published" ? "draft" : "published";
-    await fetch(`/api/admin/blog/${post.id}`, {
+    const res = await fetch(`/api/admin/blog/${post.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...post, status: newStatus }),
+      body: JSON.stringify({ status: newStatus }),
     });
-    load();
+    if (!res.ok) { setError("Failed to update status"); return; }
+    await load();
   }
 
   async function deletePost(post: BlogPostFull) {
     if (!window.confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
-    await fetch(`/api/admin/blog/${post.id}`, { method: "DELETE" });
-    load();
+    const res = await fetch(`/api/admin/blog/${post.id}`, { method: "DELETE" });
+    if (!res.ok) { setError("Failed to delete post"); return; }
+    await load();
   }
 
   const filtered = posts.filter((p) =>
@@ -69,6 +72,12 @@ export function BlogManagement() {
 
   return (
     <div>
+      {error && (
+        <div className="mb-4 flex items-center justify-between rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError("")} className="text-red-400 hover:text-red-200">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>

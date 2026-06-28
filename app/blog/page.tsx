@@ -45,7 +45,7 @@ export default async function BlogIndexPage() {
         ) : (
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3" id="posts-grid">
             {posts.map((post) => (
-              <article key={post.slug} data-post-tags={post.tags.join(",")}>
+              <article key={post.slug} data-post-tags={JSON.stringify(post.tags)}>
                 <Link
                   href={`/blog/${post.slug}`}
                   className="group flex h-full flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 transition hover:-translate-y-0.5 hover:border-amber-800/50 hover:shadow-lg"

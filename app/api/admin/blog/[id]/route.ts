@@ -9,7 +9,9 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (!auth.success) return NextResponse.json({ success: false, error: auth.error }, { status: 401 });
 
   const { id } = await params;
-  const post = await adminGetBlogPost(parseInt(id));
+  const postId = parseInt(id, 10);
+  if (isNaN(postId)) return NextResponse.json({ success: false, error: "Invalid id" }, { status: 400 });
+  const post = await adminGetBlogPost(postId);
   if (!post) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: post });
 }
@@ -19,8 +21,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
   if (!auth.success) return NextResponse.json({ success: false, error: auth.error }, { status: 401 });
 
   const { id } = await params;
+  const postId = parseInt(id, 10);
+  if (isNaN(postId)) return NextResponse.json({ success: false, error: "Invalid id" }, { status: 400 });
   const body = await request.json() as Record<string, unknown>;
-  const post = await adminUpdateBlogPost(parseInt(id), {
+  const post = await adminUpdateBlogPost(postId, {
     title: body.title as string | undefined,
     slug: body.slug as string | undefined,
     date: body.date as string | undefined,
@@ -45,7 +49,9 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   if (!auth.success) return NextResponse.json({ success: false, error: auth.error }, { status: 401 });
 
   const { id } = await params;
-  const deleted = await adminDeleteBlogPost(parseInt(id));
+  const postId = parseInt(id, 10);
+  if (isNaN(postId)) return NextResponse.json({ success: false, error: "Invalid id" }, { status: 400 });
+  const deleted = await adminDeleteBlogPost(postId);
   if (!deleted) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

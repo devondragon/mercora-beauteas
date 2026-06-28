@@ -209,7 +209,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
         ...metadata,
         tiptap_json: editor ? JSON.stringify(editor.getJSON()) : null,
         html: editor ? editor.getHTML() : "",
-        status: "draft" as const,
+        status: metadata.status,
       };
       const url = postId ? `/api/admin/blog/${postId}` : "/api/admin/blog";
       const method = postId ? "PUT" : "POST";
@@ -217,10 +217,9 @@ export function BlogEditor({ postId }: BlogEditorProps) {
       const data = await res.json() as { success: boolean; data?: any; error?: string };
       if (data.success) {
         setSlugLocked(true);
-        setMetadata((prev) => ({ ...prev, status: "draft" }));
-        flash("Draft saved");
+        flash("Saved");
         if (!postId && data.data?.id) {
-          window.history.replaceState({}, "", `/admin/blog/${data.data.id}/edit`);
+          window.location.href = `/admin/blog/${data.data.id}/edit`;
         }
       } else {
         flash(data.error ?? "Save failed");
@@ -303,7 +302,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
           <button type="button" onClick={handleSave} disabled={saving}
             className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-1.5 text-sm text-white hover:bg-neutral-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save Draft
+            Save
           </button>
           <button type="button" onClick={handlePublishToggle} disabled={saving}
             className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${

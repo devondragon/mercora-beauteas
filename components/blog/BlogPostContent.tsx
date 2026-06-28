@@ -14,7 +14,7 @@ export function BlogPostContent({ html }: BlogPostContentProps) {
       "table", "thead", "tbody", "tr", "th", "td",
       "hr", "mark", "span", "div",
     ],
-    ALLOWED_ATTR: ["href", "src", "alt", "class", "target", "rel", "width", "height", "style"],
+    ALLOWED_ATTR: ["href", "src", "alt", "class", "target", "rel", "width", "height"],
     // Prevent javascript: links and data: URIs in href/src
     ALLOW_DATA_ATTR: false,
     FORBID_ATTR: ["onerror", "onload", "onclick"],
