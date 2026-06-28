@@ -8,6 +8,7 @@ export * from './address';
 export * from './category';
 export * from './couponInstance';
 export * from './customer';
+export * from './giftCard';
 export * from './inventory';
 export * from './language';
 export * from './media';
