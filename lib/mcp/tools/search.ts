@@ -38,15 +38,10 @@ export async function searchProductsWithContext(
     const canFulfill = filteredProducts.length > 0 ? 1 : 0;
     const fulfillmentPercentage = (canFulfill / totalRequested) * 100;
 
-    // Generate recommendations for items we can't fulfill well
+    // Suggest broadening the search when we can't match the query to the catalog.
     const recommendations: string[] = [];
     if (fulfillmentPercentage < 80) {
-      if (request.query.toLowerCase().includes('ration') || request.query.toLowerCase().includes('food')) {
-        recommendations.push('Consider specialized outdoor food retailers for rations and meal planning');
-      }
-      if (request.query.toLowerCase().includes('ski') || request.query.toLowerCase().includes('snow')) {
-        recommendations.push('Check dedicated ski shops for cross-country skiing equipment');
-      }
+      recommendations.push('Try broader terms like "calendula", "green tea", or "herbal" to explore our organic skincare tea catalog.');
     }
 
     const processingTime = Date.now() - startTime;
