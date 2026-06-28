@@ -45,6 +45,8 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
+import { getOrderById } from '@/lib/models/mach/orders';
+import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 
 /**
  * POST handler for Stripe webhook events.
@@ -188,6 +190,33 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       }
     } catch (updateError) {
       console.error('Error updating order status:', updateError);
+    }
+
+    // Gift card fulfillment — issue purchased cards + redeem any applied card.
+    // Idempotent and keyed on the order, so it is safe even though the
+    // order-creation path runs the same step (whichever sees the order wins).
+    try {
+      const order = await getOrderById(orderId);
+      if (order) {
+        // amount_received comes from the signature-verified Stripe event, so it
+        // is a trusted basis for issuing/redeeming stored value.
+        const paidAmountCents = paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
+        const gc = await processGiftCardsForOrder(order, { paidAmountCents });
+        if (gc.issued || gc.redeemed) {
+          console.log(
+            `[webhook] Gift cards for ${orderId}: issued=${gc.issued} redeemed=${gc.redeemed} ($${(gc.redeemedAmount / 100).toFixed(2)})`
+          );
+        }
+        if (gc.errors.length) {
+          console.error('[webhook] Gift card fulfillment errors:', gc.errors);
+        }
+      } else {
+        // Order not created yet (client/webhook race). The order-creation path
+        // will run fulfillment when it persists the paid order.
+        console.log(`[webhook] Order ${orderId} not found yet; deferring gift card fulfillment`);
+      }
+    } catch (gcError) {
+      console.error('Error during gift card fulfillment:', gcError);
     }
   } catch (error) {
     console.error('Error updating order after payment:', error);

@@ -430,6 +430,118 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
   }
 }
 
+// ─── Gift Card Delivery Email ───────────────────────────────────
+
+export interface GiftCardEmailData {
+  recipientEmail: string;
+  recipientName?: string;
+  purchaserName?: string;
+  code: string;
+  amount: number; // cents
+  currency?: string;
+  giftMessage?: string;
+  redeemUrl?: string;
+}
+
+export async function sendGiftCardDeliveryEmail(
+  data: GiftCardEmailData
+): Promise<EmailResult> {
+  try {
+    const emailHtml = generateGiftCardDeliveryHTML(data);
+    const resendClient = getResendClient();
+
+    const { data: resendData, error } = await resendClient.emails.send({
+      from: 'BeauTeas<hello@beauteas.com>',
+      to: [data.recipientEmail],
+      subject: `You've received a BeauTeas gift card 🎁`,
+      html: emailHtml,
+    });
+
+    if (error) {
+      console.error('Gift card email sending error:', error);
+      return { success: false, error: error.message || 'Email sending failed' };
+    }
+
+    console.log('Gift card delivery email sent:', resendData?.id);
+    return { success: true, id: resendData?.id };
+  } catch (error) {
+    console.error('Gift card email sending failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
+  const recipient = data.recipientName?.trim() || 'there';
+  const fromLine = data.purchaserName?.trim()
+    ? `${data.purchaserName.trim()} has sent you a BeauTeas gift card.`
+    : `Someone special has sent you a BeauTeas gift card.`;
+  const amountDisplay = `$${(data.amount / 100).toFixed(2)}`;
+  const redeemUrl = data.redeemUrl || 'https://beauteas.com';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your BeauTeas Gift Card</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;">
+      <div style="background-color: #ffffff; margin: 0 auto; padding: 20px 0 48px; margin-bottom: 64px; max-width: 600px;">
+
+        <!-- Header -->
+        <div style="text-align: center; padding: 32px 0; border-bottom: 1px solid #e6ebf1;">
+          <h1 style="color: #c4a87c; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">BeauTeas</h1>
+          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Organic Skincare Teas</p>
+        </div>
+
+        <!-- Intro -->
+        <div style="padding: 24px 32px;">
+          <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">A little glow, just for you 🎁</h2>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${recipient},</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">${fromLine} Build your beauty from within — redeem it at checkout for any of our organic skincare teas.</p>
+        </div>
+
+        ${
+          data.giftMessage
+            ? `<div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 16px; margin: 0 32px 24px;">
+                 <p style="color: #555555; font-size: 15px; font-style: italic; line-height: 22px; margin: 0;">&ldquo;${data.giftMessage}&rdquo;</p>
+               </div>`
+            : ''
+        }
+
+        <!-- Gift Card -->
+        <div style="margin: 0 32px 24px; background: linear-gradient(135deg, #fdf8f6 0%, #f3e6dd 100%); border-radius: 12px; padding: 28px; text-align: center;">
+          <p style="color: #64748b; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px;">Gift Card Value</p>
+          <p style="color: #c4a87c; font-size: 40px; font-weight: bold; margin: 0 0 16px;">${amountDisplay}</p>
+          <p style="color: #64748b; font-size: 13px; margin: 0 0 6px;">Your code</p>
+          <p style="color: #1e293b; font-size: 22px; font-weight: bold; letter-spacing: 2px; margin: 0; font-family: 'Courier New', monospace;">${data.code}</p>
+        </div>
+
+        <!-- CTA -->
+        <div style="text-align: center; margin: 0 0 24px;">
+          <a href="${redeemUrl}" style="display: inline-block; background-color: #c4a87c; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+            Shop &amp; Redeem
+          </a>
+        </div>
+
+        <!-- How to redeem -->
+        <div style="padding: 0 32px 8px;">
+          <p style="color: #64748b; font-size: 14px; line-height: 20px; margin: 0;">To redeem, add your favorites to the cart and enter the code above in the gift card field at checkout. Any remaining balance stays on your card for next time.</p>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1; margin-top: 24px;">
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions? Reply to this email or contact our support team.</p>
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+        </div>
+
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // ─── Subscription Lifecycle Emails ──────────────────────────────
 
 const FREQUENCY_DISPLAY: Record<SubscriptionFrequency, string> = {

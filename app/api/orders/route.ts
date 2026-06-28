@@ -27,6 +27,8 @@ import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData } from "@/lib/utils/email";
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
+import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
+import { retrievePaymentIntent } from "@/lib/stripe";
 
 
 
@@ -149,12 +151,25 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Generate order ID
+    // Generate order ID — honor a client-provided id so it matches the id used
+    // in the Stripe payment-intent metadata (keeps the webhook able to find the
+    // order). Fall back to generating one for older clients.
     const now = Date.now();
     let baseId = userId ?? "guest";
     if (baseId.includes("@")) baseId = baseId.split("@")[0];
     const safeUserId = baseId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    const orderId = `WEB-${safeUserId}-${now}`;
+    const providedId = typeof (body as any).order_id === "string" ? (body as any).order_id : undefined;
+    // Constrain client-supplied ids to the known WEB-<user>-<ts> shape so a
+    // client can't inject arbitrary identifiers. Primary-key uniqueness stops
+    // collisions (a duplicate insert fails), and gift card fulfillment further
+    // verifies the id is bound to the matching Stripe PaymentIntent.
+    if (providedId && !/^WEB-[A-Z0-9]+-\d+$/.test(providedId)) {
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: ['order_id has an invalid format']
+      }, { status: 400 });
+    }
+    const orderId = providedId || `WEB-${safeUserId}-${now}`;
 
     const db = await getDbAsync();
     
@@ -260,7 +275,42 @@ export async function POST(request: NextRequest) {
     } catch (emailError) {
       console.error('Email preparation failed:', emailError);
     }
-    
+
+    // Gift card fulfillment (safety net for the client/webhook race).
+    // Security: we do NOT trust any client-supplied paid flag. We retrieve the
+    // PaymentIntent from Stripe and verify it actually succeeded and is bound to
+    // this order before issuing/redeeming any stored value. Idempotent +
+    // order-keyed, so running here and in the webhook is safe.
+    const hydratedOrder = hydrateOrder(newOrder);
+    if (orderInvolvesGiftCards(hydratedOrder)) {
+      try {
+        const paymentIntentId = (body.extensions as any)?.payment_intent_id;
+        if (!paymentIntentId || typeof paymentIntentId !== 'string') {
+          console.warn(`Gift card order ${orderId} has no payment_intent_id; deferring fulfillment to webhook`);
+        } else {
+          const pi = await retrievePaymentIntent(paymentIntentId);
+          const piOrderId = pi.metadata?.orderId;
+          if (pi.status !== 'succeeded') {
+            console.warn(`Gift card fulfillment skipped: PaymentIntent ${paymentIntentId} status=${pi.status}`);
+          } else if (piOrderId !== orderId) {
+            console.error(`Gift card fulfillment blocked: PaymentIntent ${paymentIntentId} bound to ${piOrderId}, not ${orderId}`);
+          } else {
+            const paidAmountCents = pi.amount_received ?? pi.amount ?? 0;
+            const gcResult = await processGiftCardsForOrder(hydratedOrder, { paidAmountCents });
+            if (gcResult.issued || gcResult.redeemed) {
+              console.log(
+                `Gift cards for ${orderId}: issued=${gcResult.issued} redeemed=${gcResult.redeemed}`
+              );
+            }
+            if (gcResult.errors.length) {
+              console.error('Gift card fulfillment errors:', gcResult.errors);
+            }
+          }
+        }
+      } catch (gcError) {
+        console.error('Gift card fulfillment failed:', gcError);
+      }
+    }
 
     const response = {
       data: hydrateOrder(newOrder),
