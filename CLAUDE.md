@@ -11,7 +11,7 @@ Essential context for Claude when working on **BeauTeas**, an AI-enhanced eComme
 **BeauTeas** (beauteas.com) is a USDA-certified **organic skincare tea shop** — "Build Your Beauty from Within." The current catalog is the **Clearly Calendula** collection (Morning / Afternoon / Evening blends formulated for skin health). It is migrating off **Shopify** onto the in-house **Mercora** platform.
 
 **Key features:**
-- **Volt** — AI shopping assistant with semantic (vector) search, personalization, and anti-hallucination safeguards
+- **Chai** — AI shopping assistant with semantic (vector) search, personalization, and anti-hallucination safeguards
 - Full eCommerce: catalog, cart, checkout, Stripe payments + **Stripe-backed subscriptions**
 - Comprehensive admin dashboard (products, orders, categories, CMS pages, reviews, subscriptions, AI analytics)
 - Clerk authentication with admin roles
@@ -138,7 +138,7 @@ npx wrangler d1 migrations list  beauteas-db-dev --remote --env dev            #
 
 ---
 
-## AI System (Volt)
+## AI System (Chai)
 
 ```
 User query → BGE embeddings → Vectorize search → context → text model → response + products
@@ -150,7 +150,7 @@ User query → BGE embeddings → Vectorize search → context → text model �
 - **System prompt / chat logic:** `app/api/agent-chat/route.ts` (Clerk-authenticated). Context-aware: user name, order history, geolocation, recent chat history.
 - **Indexing:** `app/api/admin/vectorize` rebuilds the index from the `products` table + knowledge markdown in R2, embedding both with BGE. Content source files live under `data/r2/products_md/` and `data/r2/knowledge_md/`.
 
-> ⚠️ **Branding debt:** Volt's prompt/comments still carry "outdoor gear expert / hiking / camping" language inherited from the source project (Voltique). This needs reworking for skincare-tea. See [Known Branding Debt](#known-branding-debt).
+> ⚠️ **Branding debt:** The assistant's prompt/comments here have been rebranded to **Chai** (skincare-tea voice), but outdoor-gear copy still lingers *outside* the assistant (MCP tools, emails, marketing copy). See [Known Branding Debt](#known-branding-debt).
 
 ---
 
@@ -179,7 +179,7 @@ Two layers; both **fail closed** (default deny). The prior P0 (unauthenticated o
 - **Orders/payments:** `GET/POST /api/orders`, `GET /api/orders/[id]`, `POST /api/orders/refund` (auth), `POST /api/payment-intent`
 - **Subscriptions:** `GET/POST /api/subscriptions`, `POST /api/subscriptions/[id]` (pause/resume/cancel — Clerk user)
 - **Webhooks:** `POST /api/webhooks/stripe` (payment_intent, subscription, invoice; dedup via `processed_webhook_events`)
-- **Agent:** `POST /api/agent-chat` (Volt)
+- **Agent:** `POST /api/agent-chat` (Chai)
 - **Admin (`/api/admin/*`):** `vectorize`, `analytics/*`, `categories`, `products`, `pages`, `reviews`, `subscriptions`, `knowledge`, `upload-image`, etc.
 - **MCP server:** `GET /api/mcp` (capabilities), `POST /api/mcp` (tool exec), `GET /api/mcp/schema`, plus `/api/mcp/tools/*` REST endpoints. Per-agent API keys + rate limits; persistent sessions with cart state.
 

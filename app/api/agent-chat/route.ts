@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Easter egg: Chai's Signature Brewing Ritual
-    if (/brew(ing)? ritual|perfect cup|secret (recipe|blend)/i.test(question)) {
+    if (/(secret|signature)\s+(brewing\s+)?(ritual|recipe|blend)/i.test(question)) {
       const easterEgg = `Eee, the secret's out${
         userName !== "Guest" ? `, ${userName}` : ""
       }! Chai's Signature Brewing Ritual 💕:
