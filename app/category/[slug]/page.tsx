@@ -30,7 +30,7 @@
  *
  * === Route ===
  * - Path: `/category/[slug]`
- * - Examples: `/category/camping`, `/category/tools`
+ * - Examples: `/category/green-tea`, `/category/skincare`
  *
  * @param params - URL parameters containing category slug
  * @returns JSX element with category page layout

@@ -237,7 +237,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                           <Textarea
                             value={aiPrompt}
                             onChange={(e) => setAiPrompt(e.target.value)}
-                            placeholder="Describe what this article should cover...\n\nFor example:\n- A guide on setting up camping gear\n- Safety tips for hiking\n- Product recommendations\n- Technical instructions\n- FAQ about outdoor activities"
+                            placeholder="Describe what this article should cover...\n\nFor example:\n- A guide to brewing our calendula tea blends\n- Skincare benefits of organic botanicals\n- Product recommendations\n- Daily tea ritual tips\n- FAQ about organic skincare teas"
                             rows={6}
                             className="bg-neutral-800 border-neutral-600 text-white"
                           />

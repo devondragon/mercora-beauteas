@@ -446,7 +446,7 @@ export default function HeaderClient({
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-700">
               <div>
                 <h2 className="text-xl font-bold text-white">Menu</h2>
-                <p className="text-sm text-gray-400">Browse our outdoor gear</p>
+                <p className="text-sm text-gray-400">Browse our organic skincare teas</p>
               </div>
               <div className="w-8 h-8 bg-primary-500/20 rounded-full flex items-center justify-center">
                 <Grid3X3 className="w-4 h-4 text-primary-400" />

@@ -143,7 +143,7 @@ INSERT INTO pages (title, slug, content, status, template, meta_description, sho
 (
     'Terms of Service',
     'terms-of-service',
-    '<h1>Terms of Service</h1><p><strong>Last Updated:</strong> ' || date('now') || '</p><h2>1. Acceptance of Terms</h2><p>By accessing and using this service, you accept and agree to be bound by the terms and provision of this agreement.</p><h2>2. Description of Service</h2><p>We provide an AI-powered eCommerce platform for outdoor gear and equipment.</p><h2>3. User Accounts</h2><p>You are responsible for maintaining the confidentiality of your account credentials.</p><h2>4. Contact Information</h2><p>For questions about these terms, please contact us.</p>',
+    '<h1>Terms of Service</h1><p><strong>Last Updated:</strong> ' || date('now') || '</p><h2>1. Acceptance of Terms</h2><p>By accessing and using this service, you accept and agree to be bound by the terms and provision of this agreement.</p><h2>2. Description of Service</h2><p>We provide an AI-powered eCommerce platform for organic skincare teas.</p><h2>3. User Accounts</h2><p>You are responsible for maintaining the confidentiality of your account credentials.</p><h2>4. Contact Information</h2><p>For questions about these terms, please contact us.</p>',
     'published',
     'legal',
     'Read our terms and conditions for using our eCommerce platform.',
@@ -153,10 +153,10 @@ INSERT INTO pages (title, slug, content, status, template, meta_description, sho
 (
     'About Us',
     'about',
-    '<h1>About Mercora</h1><h2>Our Story</h2><p>Mercora is an innovative AI-powered eCommerce platform specializing in outdoor gear and equipment. We combine cutting-edge artificial intelligence with a passion for outdoor adventures.</p><h2>Our Mission</h2><p>To revolutionize the outdoor gear shopping experience through intelligent recommendations, personalized service, and expert knowledge powered by AI.</p><h2>Why Choose Us</h2><ul><li><strong>AI-Powered Recommendations:</strong> Our intelligent assistant Volt helps you find the perfect gear</li><li><strong>Expert Knowledge:</strong> Comprehensive product information and outdoor expertise</li><li><strong>Quality Products:</strong> Carefully curated selection of premium outdoor equipment</li><li><strong>Fast Shipping:</strong> Quick delivery to get you outdoors faster</li></ul><h2>Contact Us</h2><p>Have questions? Our team is here to help you find the perfect outdoor gear for your next adventure.</p>',
+    '<h1>About BeauTeas</h1><h2>Our Story</h2><p>BeauTeas is an AI-powered eCommerce platform specializing in USDA-certified organic skincare teas. We combine cutting-edge artificial intelligence with a passion for natural beauty and wellness.</p><h2>Our Mission</h2><p>To help you build your beauty from within through intelligent recommendations, personalized service, and expert knowledge of organic botanicals powered by AI.</p><h2>Why Choose Us</h2><ul><li><strong>AI-Powered Recommendations:</strong> Our intelligent assistant Chai helps you find the perfect blend for your skin</li><li><strong>Expert Knowledge:</strong> Comprehensive product information and organic skincare expertise</li><li><strong>Quality Products:</strong> Carefully curated selection of USDA-certified organic tea blends</li><li><strong>Fast Shipping:</strong> Quick delivery to start your beauty ritual sooner</li></ul><h2>Contact Us</h2><p>Have questions? Our team is here to help you find the perfect tea blend for your beauty ritual.</p>',
     'published',
     'about',
-    'Learn about our mission to revolutionize outdoor gear shopping through AI.',
+    'Learn about our mission to help you build your beauty from within through organic skincare teas.',
     1,
     1
 );

@@ -173,7 +173,7 @@ export default function PageRenderer({ page }: PageRendererProps) {
                   Ready to Explore?
                 </h2>
                 <p className="text-xl text-gray-300 mb-8">
-                  Discover our AI-powered outdoor gear recommendations and start your next adventure.
+                  Discover our AI-powered tea recommendations and start building your beauty from within.
                 </p>
                 <div className="flex flex-wrap justify-center gap-4">
                   <Link
