@@ -1,6 +1,23 @@
-import { eq, desc, and, inArray, like, or, sql } from "drizzle-orm";
+import { eq, desc, and, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { blog_posts, blog_categories, type BlogPostSelect, type BlogCategorySelect } from "@/lib/db/schema/blog";
+
+const summaryColumns = {
+  id: blog_posts.id,
+  title: blog_posts.title,
+  slug: blog_posts.slug,
+  date: blog_posts.date,
+  author: blog_posts.author,
+  excerpt: blog_posts.excerpt,
+  tags: blog_posts.tags,
+  cover_image_url: blog_posts.cover_image_url,
+  cover_image_alt: blog_posts.cover_image_alt,
+  status: blog_posts.status,
+  reading_time: blog_posts.reading_time,
+  published_at: blog_posts.published_at,
+  created_at: blog_posts.created_at,
+  updated_at: blog_posts.updated_at,
+} as const;
 
 export type BlogPostStatus = "draft" | "published";
 
@@ -41,7 +58,14 @@ function parseTags(raw: string | null | undefined): string[] {
   }
 }
 
-function toSummary(row: BlogPostSelect): BlogPostSummary {
+function toSummary(
+  row: Pick<
+    BlogPostSelect,
+    | "id" | "title" | "slug" | "date" | "author" | "excerpt" | "tags"
+    | "cover_image_url" | "cover_image_alt" | "status" | "reading_time"
+    | "published_at" | "created_at" | "updated_at"
+  >
+): BlogPostSummary {
   return {
     id: row.id,
     title: row.title,
@@ -100,7 +124,7 @@ export function getRelatedPosts(
 export async function getPublishedBlogPosts(): Promise<BlogPostSummary[]> {
   const db = await getDbAsync();
   const rows = await db
-    .select()
+    .select(summaryColumns)
     .from(blog_posts)
     .where(eq(blog_posts.status, "published"))
     .orderBy(desc(blog_posts.date));
@@ -117,12 +141,6 @@ export async function getPublishedBlogPost(slug: string): Promise<BlogPostFull |
   return rows[0] ? toFull(rows[0]) : null;
 }
 
-export async function getAllBlogTags(): Promise<string[]> {
-  const posts = await getPublishedBlogPosts();
-  const all = posts.flatMap((p) => p.tags);
-  return [...new Set(all)].sort();
-}
-
 // ── Admin queries ────────────────────────────────────────────────────────────
 
 export async function adminListBlogPosts(opts: {
@@ -132,17 +150,17 @@ export async function adminListBlogPosts(opts: {
   offset?: number;
 } = {}): Promise<BlogPostFull[]> {
   const db = await getDbAsync();
-  let q = db.select().from(blog_posts) as any;
 
-  const conditions = [];
+  const conditions: SQL[] = [];
   if (opts.status) conditions.push(eq(blog_posts.status, opts.status));
   if (opts.search) {
     conditions.push(
-      or(like(blog_posts.title, `%${opts.search}%`), like(blog_posts.excerpt, `%${opts.search}%`))
+      or(like(blog_posts.title, `%${opts.search}%`), like(blog_posts.excerpt, `%${opts.search}%`))!
     );
   }
-  if (conditions.length > 0) q = q.where(and(...conditions));
 
+  let q = db.select().from(blog_posts).$dynamic();
+  if (conditions.length > 0) q = q.where(and(...conditions));
   q = q.orderBy(desc(blog_posts.updated_at));
   if (opts.limit) q = q.limit(opts.limit);
   if (opts.offset) q = q.offset(opts.offset);
@@ -225,11 +243,11 @@ export async function adminUpdateBlogPost(id: number, input: Partial<BlogPostInp
   const html = input.html ?? existing.html;
   const reading_time = calculateReadingTime(html);
 
+  // Set published_at the first time a post is published; preserve it thereafter
+  // (so unpublish → republish keeps the original publish date).
   let published_at = existing.published_at;
   if (input.status === "published" && !published_at) {
     published_at = now;
-  } else if (input.status === "draft") {
-    published_at = null;
   }
 
   const updated = await db

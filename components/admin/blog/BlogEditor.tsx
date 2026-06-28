@@ -48,8 +48,6 @@ function dispatchUploadError(msg: string) {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(IMAGE_UPLOAD_ERROR, { detail: msg }));
 }
 
-const sharedEditorRef = { current: null as any };
-
 const uploadFn = createImageUpload({
   onUpload: async (file: File): Promise<string> => {
     const form = new FormData();
@@ -70,6 +68,7 @@ const uploadFn = createImageUpload({
   },
   validateFn: (file: File) => {
     if (!file.type.startsWith("image/")) { dispatchUploadError("Only images allowed"); return false; }
+    if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) { dispatchUploadError("SVG files are not allowed"); return false; }
     if (file.size > 10 * 1024 * 1024) { dispatchUploadError("Max 10MB"); return false; }
     return true;
   },
@@ -341,12 +340,10 @@ export function BlogEditor({ postId }: BlogEditorProps) {
                 }}
                 onCreate={({ editor }) => {
                   editorRef.current = editor;
-                  sharedEditorRef.current = editor;
                   setTimeout(() => setEditorInstance(editor), 0);
                 }}
                 onUpdate={({ editor }) => {
                   editorRef.current = editor;
-                  sharedEditorRef.current = editor;
                   setEditorInstance(editor);
                   setContent(editor.getJSON());
                 }}

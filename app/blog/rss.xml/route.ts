@@ -26,8 +26,8 @@ export async function GET() {
       return `
     <item>
       <title>${escapeXml(post.title)}</title>
-      <link>${url}</link>
-      <guid isPermaLink="true">${url}</guid>
+      <link>${escapeXml(url)}</link>
+      <guid isPermaLink="true">${escapeXml(url)}</guid>
       <pubDate>${pubDate}</pubDate>
       <author>${escapeXml(post.author)}</author>
       <description>${escapeXml(post.excerpt ?? "")}</description>
@@ -40,10 +40,10 @@ export async function GET() {
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${escapeXml(SITE_NAME)} — Beauty Journal</title>
-    <link>${BASE_URL}/blog</link>
+    <link>${escapeXml(`${BASE_URL}/blog`)}</link>
     <description>Tea wisdom, skincare insights, and wellness rituals for your beauty from within journey.</description>
     <language>en-us</language>
-    <atom:link href="${BASE_URL}/blog/rss.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="${escapeXml(`${BASE_URL}/blog/rss.xml`)}" rel="self" type="application/rss+xml" />
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
     ${items}
   </channel>

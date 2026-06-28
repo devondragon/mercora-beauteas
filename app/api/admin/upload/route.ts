@@ -35,6 +35,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Only image files are allowed" }, { status: 400 });
   }
 
+  if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
+    return NextResponse.json({ ok: false, error: "SVG files are not allowed" }, { status: 400 });
+  }
+
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ ok: false, error: "Image must be under 10MB" }, { status: 413 });
   }

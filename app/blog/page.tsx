@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getPublishedBlogPosts, getAllBlogTags } from "@/lib/models/blog";
+import { getPublishedBlogPosts } from "@/lib/models/blog";
 import { BlogTagFilter } from "@/components/blog/BlogTagFilter";
 import { SITE_NAME, BASE_URL } from "@/lib/seo/metadata";
 
@@ -24,7 +24,8 @@ function formatDate(date: string): string {
 }
 
 export default async function BlogIndexPage() {
-  const [posts, tags] = await Promise.all([getPublishedBlogPosts(), getAllBlogTags()]);
+  const posts = await getPublishedBlogPosts();
+  const tags = [...new Set(posts.flatMap((p) => p.tags))].sort();
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">

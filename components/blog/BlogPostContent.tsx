@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useRef } from "react";
 import DOMPurify from "isomorphic-dompurify";
 
 interface BlogPostContentProps {
