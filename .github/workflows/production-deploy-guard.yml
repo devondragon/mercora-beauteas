@@ -23,6 +23,8 @@ jobs:
   deploy:
     name: Deploy
     needs: pre-deploy-check
+    if: github.ref == 'refs/heads/main'
+    environment: production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
