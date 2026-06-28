@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const BASE_URL = "https://beauteas.com";
+import { BASE_URL } from "@/lib/seo/metadata";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -8,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: [
         "/",
-        "/category/",
+        "/category/*",
         "/product/",
         "/about",
         "/philosophy",
@@ -33,6 +32,8 @@ export default function robots(): MetadataRoute.Robots {
         "/_next/",
         "/.well-known/",
         "/data/",
+        "*.csv",
+        "*.json",
       ],
       crawlDelay: 1,
     },
