@@ -10,14 +10,14 @@
  * - **R2 Storage Integration**: Efficient cloud storage for knowledge articles
  * - **Automatic Vectorization**: AI-powered indexing for semantic search
  * - **Suspense Loading**: Progressive loading with fallback states
- * - **Vector Search Integration**: Knowledge articles become searchable by Volt AI
+ * - **Vector Search Integration**: Knowledge articles become searchable by Chai AI
  *
  * === Knowledge Base Features ===
  * (Via KnowledgeManagement component)
  * - Article creation, editing, and deletion
  * - Markdown support for rich content formatting
  * - Automatic AI vectorization upon save
- * - Integration with Volt AI for customer support
+ * - Integration with Chai AI for customer support
  * - R2 cloud storage for scalable content management
  *
  * === Technical Implementation ===

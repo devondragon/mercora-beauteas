@@ -1,7 +1,7 @@
 /**
  * === Chat Store ===
  *
- * Zustand store for managing conversation state with the Volt AI assistant.
+ * Zustand store for managing conversation state with the Chai AI assistant.
  * Provides persistent storage for chat history, product recommendations,
  * and conversation context across browser sessions.
  *

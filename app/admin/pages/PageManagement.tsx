@@ -433,9 +433,9 @@ Generate complete content now:`;
           .replace(/<body[^>]*>/gi, '')
           .replace(/<\/body>/gi, '')
           .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/Camping rule #\d+:.*?-- Volt/gi, '') // Remove Volt's personality additions
+          .replace(/Camping rule #\d+:.*?-- Chai/gi, '') // Remove Chai's personality additions
           .replace(/\n\s*They're.*?\.\s*/gi, '') // Remove personality continuations
-          .replace(/-- Volt.*$/gim, '') // Remove any Volt signatures
+          .replace(/-- Chai.*$/gim, '') // Remove any Chai signatures
           .replace(/\*winks\*/gi, '') // Remove personality actions
           .replace(/\*.*?\*/gi, '') // Remove any action text in asterisks
           .trim();
@@ -857,7 +857,7 @@ function CreateEditPageForm({
             ) : (
               <>
                 <Bot className="w-3 h-3 mr-1" />
-                Generate with Volt AI
+                Generate with Chai AI
               </>
             )}
           </Button>
@@ -867,7 +867,7 @@ function CreateEditPageForm({
           value={formData.content || ""}
           onChange={(e) => onChange('content', e.target.value)}
           className="bg-neutral-700 border-neutral-600 text-white min-h-[200px]"
-          placeholder="Enter page content (HTML supported) or use Volt AI to generate content"
+          placeholder="Enter page content (HTML supported) or use Chai AI to generate content"
         />
       </div>
 
