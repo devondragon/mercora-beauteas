@@ -178,6 +178,14 @@ export const useCartStore = create<CartState>()(
        */
       addItem: (item) => {
         const items = get().items;
+
+        // Gift cards are never merged — each card has distinct recipient details
+        // and must generate its own card code. Always add as a new line.
+        if (item.giftCard) {
+          set({ items: [...items, item] });
+          return;
+        }
+
         const existing = items.find((i) => i.variantId === item.variantId);
 
         if (existing) {

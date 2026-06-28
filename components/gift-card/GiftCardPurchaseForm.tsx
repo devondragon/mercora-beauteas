@@ -35,15 +35,12 @@ export default function GiftCardPurchaseForm() {
     setError(null);
 
     const denom = DENOMINATIONS.find((d) => d.amount === amount)!;
-    // Unique variantId so each gift card is its own cart line (cards aren't merged).
-    const uniqueSuffix =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
     addItem({
       productId: "gift-card",
-      variantId: `${denom.variantId}::${uniqueSuffix}`,
+      // Use the stable seeded variant id so order/admin/analytics can join on it.
+      // Non-merging is handled in the cart store (gift cards are never merged).
+      variantId: denom.variantId,
       name: `BeauTeas Gift Card - $${denom.amount}`,
       price: denom.amount,
       quantity: 1,

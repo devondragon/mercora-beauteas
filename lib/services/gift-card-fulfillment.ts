@@ -17,6 +17,7 @@
 import type { Order } from '@/lib/types/order';
 import {
   createGiftCard,
+  getGiftCardByCode,
   getGiftCardsByOrderId,
   redeemGiftCard,
   markGiftCardDelivered,
@@ -87,11 +88,15 @@ export function orderInvolvesGiftCards(order: Order): boolean {
  * plus any server-redeemed gift card tender, actually covers the order's goods.
  * This is what stops a tampered client from issuing gift cards worth more than
  * was paid, or redeeming against an unpaid/underpaid order.
+ *
+ * Security: the gift card tender is resolved from the DB (actual card balance),
+ * NOT from the client-supplied `order.extensions.gift_card.amount`. A tampered
+ * client can't overstate the tender to make the sufficiency check a no-op.
  */
-function verifyPaymentSufficient(
+async function verifyPaymentSufficient(
   order: Order,
   paidAmountCents: number
-): { ok: boolean; reason?: string } {
+): Promise<{ ok: boolean; reason?: string }> {
   // Reject any tampered gift-card line up front, so a desynced unit/total price
   // can't slip past the goods/charge accounting below.
   for (let i = 0; i < (order.items || []).length; i++) {
@@ -108,15 +113,30 @@ function verifyPaymentSufficient(
     0
   );
   const declaredTotalCents = order.total_amount?.amount ?? goodsCents;
-  const giftCardCents = (order.extensions || {}).gift_card?.amount ?? 0;
 
   // The declared order total must not understate the actual line items.
   if (declaredTotalCents + AMOUNT_TOLERANCE_CENTS < goodsCents) {
     return { ok: false, reason: 'order total is below the sum of line items' };
   }
 
+  // Resolve the gift card tender from the DB — never from the client payload.
+  // A tampered client could overstate extensions.gift_card.amount to inflate
+  // the tender and reduce expectedChargeCents to near-zero.
+  let serverGiftCardCents = 0;
+  const ext = (order.extensions || {}) as Record<string, any>;
+  const appliedGiftCard = ext.gift_card as { code?: string; amount?: number } | undefined;
+  if (appliedGiftCard?.code) {
+    const card = await getGiftCardByCode(appliedGiftCard.code);
+    if (card && card.status === 'active') {
+      // The server-side tender is min(what the client requested, actual balance, order total).
+      // This is what can realistically reduce the charge — no more.
+      const clientRequested = appliedGiftCard.amount ?? 0;
+      serverGiftCardCents = Math.min(clientRequested, card.balance, declaredTotalCents);
+    }
+  }
+
   // Cash that should have been charged after the gift card tender.
-  const expectedChargeCents = Math.max(0, declaredTotalCents - giftCardCents);
+  const expectedChargeCents = Math.max(0, declaredTotalCents - serverGiftCardCents);
   if (paidAmountCents + AMOUNT_TOLERANCE_CENTS < expectedChargeCents) {
     return {
       ok: false,
@@ -297,7 +317,7 @@ export async function processGiftCardsForOrder(
     return result;
   }
 
-  const verification = verifyPaymentSufficient(order, opts.paidAmountCents);
+  const verification = await verifyPaymentSufficient(order, opts.paidAmountCents);
   if (!verification.ok) {
     result.errors.push(`Payment verification failed: ${verification.reason}`);
     return result;

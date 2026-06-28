@@ -56,43 +56,58 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<GiftCa
   const db = await getDbAsync();
   const currency = input.currency ?? 'USD';
 
+  // Retry up to 5 times on a code-collision UNIQUE constraint only. Any other
+  // error (including a failed ledger insert) propagates immediately — we never
+  // silently swallow errors that could leave a card without its opening entry.
+  // The card + ledger inserts are wrapped in a transaction so they are atomic:
+  // if the ledger insert fails, the card row is rolled back too.
   let lastError: unknown;
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateGiftCardCode();
     try {
-      const [card] = await db
-        .insert(gift_cards)
-        .values({
-          code,
-          initial_balance: input.amount,
-          balance: input.amount,
-          currency,
-          status: 'active',
-          purchaser_customer_id: input.purchaserCustomerId ?? null,
-          purchaser_email: input.purchaserEmail ?? null,
-          recipient_email: input.recipientEmail ?? null,
-          recipient_name: input.recipientName ?? null,
-          gift_message: input.giftMessage ?? null,
-          order_id: input.orderId ?? null,
-          order_line_id: input.orderLineId ?? null,
-          expires_at: input.expiresAt ?? null,
-        })
-        .returning();
+      const card = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(gift_cards)
+          .values({
+            code,
+            initial_balance: input.amount,
+            balance: input.amount,
+            currency,
+            status: 'active',
+            purchaser_customer_id: input.purchaserCustomerId ?? null,
+            purchaser_email: input.purchaserEmail ?? null,
+            recipient_email: input.recipientEmail ?? null,
+            recipient_name: input.recipientName ?? null,
+            gift_message: input.giftMessage ?? null,
+            order_id: input.orderId ?? null,
+            order_line_id: input.orderLineId ?? null,
+            expires_at: input.expiresAt ?? null,
+          })
+          .returning();
 
-      await db.insert(gift_card_transactions).values({
-        gift_card_id: card.id,
-        type: 'issue',
-        amount: input.amount,
-        balance_after: input.amount,
-        order_id: input.orderId ?? null,
-        customer_id: input.purchaserCustomerId ?? null,
-        note: 'Gift card issued',
+        await tx.insert(gift_card_transactions).values({
+          gift_card_id: row.id,
+          type: 'issue',
+          amount: input.amount,
+          balance_after: input.amount,
+          order_id: input.orderId ?? null,
+          customer_id: input.purchaserCustomerId ?? null,
+          note: 'Gift card issued',
+        });
+
+        return row;
       });
 
       return card;
     } catch (err) {
-      lastError = err;
-      // Unique-constraint collision on `code` → retry with a fresh code.
+      // Only retry on a UNIQUE constraint collision on the `code` column.
+      // All other errors are real failures — let them propagate.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('UNIQUE') || msg.includes('unique')) {
+        lastError = err;
+        continue;
+      }
+      throw err;
     }
   }
   throw new Error(
