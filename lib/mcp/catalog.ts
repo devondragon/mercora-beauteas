@@ -35,8 +35,13 @@ const FALLBACK_CATEGORIES = ['Skincare Teas', 'Black Tea', 'Green Tea', 'Herbal 
 const FALLBACK_SPECIALTIES = ['Organic skincare teas', 'Calendula wellness blends'];
 
 function variantPrice(product: Product): number[] {
+  // Variant prices are stored in minor units (cents); capabilities are
+  // reported in dollars to match the rest of the storefront.
   return (product.variants || [])
-    .map((v) => (typeof v.price === 'number' ? v.price : v.price?.amount ?? 0))
+    .map((v) => {
+      const minorUnits = typeof v.price === 'number' ? v.price : v.price?.amount ?? 0;
+      return minorUnits / 100;
+    })
     .filter((amount) => amount > 0);
 }
 

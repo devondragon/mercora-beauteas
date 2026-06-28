@@ -1,4 +1,4 @@
-import { searchProducts, getProductBySlug, getProductsByCategory, getActiveProducts } from '../../models/mach/products';
+import { searchProducts, getProductBySlug, getProductsByCategory, listProducts } from '../../models/mach/products';
 import { listCategories, getCategoryDisplayName } from '../../models/mach/category';
 import { RecommendRequest, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
@@ -146,7 +146,9 @@ async function getGeneralRecommendations(userContext: any): Promise<Product[]> {
     if (matches.length > 0) return matches;
   }
 
-  return getActiveProducts();
+  // listProducts loads variants (unlike getActiveProducts), so downstream
+  // budget filtering and cost recommendations have prices to work with.
+  return listProducts({ status: ['active'] });
 }
 
 function sortRecommendations(products: Product[], userContext: any): Product[] {
