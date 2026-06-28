@@ -64,7 +64,7 @@ export async function placeOrder(
         recommendations: {
           cost_optimization: [
             `Order total $${total} exceeds budget $${userContext.budget}`,
-            'Consider removing items or choosing base models'
+            'Consider removing items or choosing our sample-size blends'
           ]
         },
         metadata: {
@@ -176,7 +176,7 @@ export async function getOrderStatus(
       orderId,
       status: 'confirmed',
       total: 299.99,
-      tracking_number: `VT${Date.now()}`,
+      tracking_number: `BT${Date.now()}`,
       estimated_delivery: '3-5 business days'
     };
 
@@ -268,19 +268,16 @@ function formatAddressForDB(address: Address): string {
 
 function generatePostOrderRecommendations(cart: CartItem[]): string[] {
   const recommendations: string[] = [];
-  
-  const hasTent = cart.some(item => item.name.toLowerCase().includes('tent'));
-  const hasBackpack = cart.some(item => item.name.toLowerCase().includes('pack'));
-  
-  if (hasTent) {
-    recommendations.push('Consider tent footprint for ground protection');
-    recommendations.push('Add camping furniture for comfort');
+
+  if (cart.length === 0) return recommendations;
+
+  const distinctProducts = new Set(cart.map(item => item.productId)).size;
+  if (distinctProducts === 1) {
+    recommendations.push('Build your daily ritual: add our Morning, Afternoon, and Evening blends for full-day skin support.');
   }
-  
-  if (hasBackpack) {
-    recommendations.push('Rain cover recommended for pack protection');
-    recommendations.push('Hydration system for longer hikes');
-  }
-  
+
+  // Subscriptions are a first-class BeauTeas feature — encourage recurring delivery.
+  recommendations.push('Subscribe & save: set up a recurring delivery so you never run out of your blend.');
+
   return recommendations;
 }

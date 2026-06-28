@@ -72,7 +72,7 @@ Write descriptions that would make customers excited to incorporate these teas i
 
 Product Details: ${prompt}
 
-Please create a compelling product description for this outdoor gear item.`;
+Please create a compelling product description for this organic skincare tea.`;
 
     // Generate content using Cloudflare AI
     const response = await runAI(ai, 'MARKETING', {

@@ -147,7 +147,7 @@ export default function OrderCard({ order }: { order: Order }) {
       <div className="mt-4 flex flex-col gap-2">
         {!reviewable && (
           <p className="text-xs text-amber-300">
-            Delivery pending – we’ll invite you to review items once your gear arrives.
+            Delivery pending – we’ll invite you to review items once your teas arrive.
           </p>
         )}
         {reviewError && <p className="text-xs text-red-400">{reviewError}</p>}

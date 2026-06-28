@@ -1086,7 +1086,7 @@ export default function ProductEditor({
                 <Input
                   value={seoKeywords}
                   onChange={(e) => setSeoKeywords(e.target.value)}
-                  placeholder="tactical gear, backpack, military, outdoor"
+                  placeholder="calendula, organic tea, skincare, herbal blend"
                   className="bg-neutral-700 border-neutral-600"
                 />
                 <div className="text-xs text-gray-400 mt-1">
@@ -1334,7 +1334,7 @@ export default function ProductEditor({
                 <Input
                   value={relatedProducts}
                   onChange={(e) => setRelatedProducts(e.target.value)}
-                  placeholder="PROD-001, PROD-002, TACTICAL-PACK-XL"
+                  placeholder="PROD-001, PROD-002, CALENDULA-EVENING-30"
                   className="bg-neutral-700 border-neutral-600"
                 />
                 <div className="text-xs text-gray-400 mt-1">

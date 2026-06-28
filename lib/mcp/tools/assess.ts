@@ -2,6 +2,7 @@ import { searchProducts } from '../../models/mach/products';
 import { listCategories } from '../../models/mach/category';
 import { AssessRequest, AssessResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
+import { ritualBundleSuggestions } from '../catalog';
 
 export async function assessFulfillmentCapability(
   request: AssessRequest,
@@ -135,9 +136,9 @@ function calculateConfidence(item: string, products: any[], isOurSpecialty: bool
   // Boost for our specialties
   if (isOurSpecialty) confidence += 0.3;
   
-  // Reduce confidence for items we typically don't carry
-  const nonOutdoorItems = ['ration', 'food', 'ski', 'snow', 'electronic', 'book'];
-  if (nonOutdoorItems.some(non => item.includes(non))) {
+  // Reduce confidence for items outside our organic skincare-tea catalog.
+  const outOfCatalogItems = ['coffee', 'supplement', 'vitamin', 'makeup', 'cosmetic', 'cream', 'serum', 'lotion', 'perfume', 'alcohol'];
+  if (outOfCatalogItems.some(non => item.includes(non))) {
     confidence -= 0.3;
   }
   
@@ -158,38 +159,18 @@ function calculateDeliveryEstimate(location?: string, timeline?: string): string
 }
 
 function generateAlternativeSiteRecommendations(cannotFulfill: string[]): string[] {
-  const suggestions: string[] = [];
-  
-  cannotFulfill.forEach(item => {
-    const itemLower = item.toLowerCase();
-    
-    if (itemLower.includes('food') || itemLower.includes('ration') || itemLower.includes('meal')) {
-      suggestions.push('Mountain House or Backpacker\'s Pantry for freeze-dried meals');
-    }
-    
-    if (itemLower.includes('ski') || itemLower.includes('snow')) {
-      suggestions.push('Backcountry.com or REI for specialized snow sports equipment');
-    }
-    
-    if (itemLower.includes('electronic') || itemLower.includes('gps')) {
-      suggestions.push('Garmin or outdoor electronics specialists');
-    }
-  });
-  
-  return [...new Set(suggestions)]; // Remove duplicates
+  // We don't refer to outside retailers; just note when requests fall outside
+  // our organic skincare-tea catalog so the agent can set expectations.
+  if (cannotFulfill.length === 0) return [];
+
+  return ['Some requested items are outside our catalog — BeauTeas specialises in USDA-certified organic calendula tea blends.'];
 }
 
 function generateBundlingOpportunities(results: Array<{item: string, products: any[]}>): string[] {
-  const opportunities: string[] = [];
-  
-  const hasSheltier = results.some(r => r.item.toLowerCase().includes('tent') || r.item.toLowerCase().includes('shelter'));
-  const hasSleep = results.some(r => r.item.toLowerCase().includes('sleep') || r.item.toLowerCase().includes('bag'));
-  
-  if (hasSheltier && hasSleep) {
-    opportunities.push('Camping comfort bundle: tent + sleeping system discount available');
-  }
-  
-  return opportunities;
+  // Suggest building/completing the daily ritual based on how many requested
+  // items we can match to products in the catalog.
+  const fulfillable = results.filter(r => r.products.length > 0).length;
+  return ritualBundleSuggestions(fulfillable);
 }
 
 function generateCostOptimizations(results: Array<{item: string, products: any[]}>, budget?: number): string[] {
@@ -214,7 +195,10 @@ function calculateSatisfaction(results: Array<{confidence: number}>, userContext
   
   // Boost satisfaction if we match user preferences
   let satisfactionBoost = 0;
-  if (userContext.activities?.includes('camping')) satisfactionBoost += 10;
+  const interests: string[] = userContext.activities || [];
+  if (interests.some((interest: string) => ['skincare', 'wellness', 'tea', 'beauty', 'self-care'].includes(interest.toLowerCase()))) {
+    satisfactionBoost += 10;
+  }
   if (userContext.experienceLevel === 'expert') satisfactionBoost += 5;
   
   return Math.min(100, (avgConfidence * 80) + satisfactionBoost);

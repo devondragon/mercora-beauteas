@@ -147,7 +147,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Order Confirmed!</h2>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${orderData.customerName},</p>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order! Your gear is being prepared and will be shipped soon.</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order! Your teas are being prepared and will be shipped soon.</p>
           
           <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 8px;">Order #${orderData.orderNumber}</p>
@@ -232,7 +232,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
     case 'processing':
       statusMessage = "Your order is being processed";
       statusColor = "#3b82f6";
-      statusContent = `<p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">We're preparing your gear for shipment. You'll receive another email with tracking information once your order ships.</p>`;
+      statusContent = `<p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">We're preparing your teas for shipment. You'll receive another email with tracking information once your order ships.</p>`;
       break;
 
     case 'shipped':
@@ -259,7 +259,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
       statusMessage = "Your order has been delivered!";
       statusColor = "#059669";
       statusContent = `
-        <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been successfully delivered. We hope you love your new gear!</p>
+        <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been successfully delivered. We hope you love your new teas!</p>
         <p style="color: #64748b; font-size: 14px; line-height: 20px; margin: 0 0 16px;">If you have any issues with your order, please don't hesitate to contact our support team.</p>
       `;
       break;

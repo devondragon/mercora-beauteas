@@ -10,7 +10,7 @@
  * - **Featured Products**: Curated selection of top products (3 items)
  * - **Call-to-Action**: Direct link to featured category for exploration
  * - **Responsive Design**: Mobile-first layout with desktop enhancements
- * - **Brand Voice**: Adventure-focused messaging with technical emphasis
+ * - **Brand Voice**: Warm, wellness-focused messaging centered on skin health
  * - **Visual Hierarchy**: Strategic typography and spacing for impact
  *
  * === Layout Structure ===

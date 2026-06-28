@@ -210,36 +210,15 @@ function calculateOvernightShipping(weight: number): number {
   return Math.round(baseCost * 100) / 100;
 }
 
-function checkShippingRestrictions(address: any, cart: CartItem[]): string[] {
+function checkShippingRestrictions(address: any, _cart: CartItem[]): string[] {
   const restrictions: string[] = [];
-  
-  // Check for hazardous materials (fuel canisters, etc.)
-  const hasHazmat = cart.some(item => 
-    item.name.toLowerCase().includes('fuel') || 
-    item.name.toLowerCase().includes('canister') ||
-    item.name.toLowerCase().includes('stove fuel')
-  );
-  
-  if (hasHazmat) {
-    restrictions.push('Fuel canisters require ground shipping only - expedited/overnight not available');
-  }
-  
-  // International shipping restrictions
+
+  // Organic tea blends carry no hazmat restrictions. International orders may
+  // still need customs documentation for food/botanical products.
   if (address.country && address.country !== 'US') {
-    restrictions.push('International shipping may require additional customs documentation');
-    
-    // Specific restricted items for international
-    const hasElectronics = cart.some(item => 
-      item.name.toLowerCase().includes('headlamp') ||
-      item.name.toLowerCase().includes('lantern') ||
-      item.name.toLowerCase().includes('gps')
-    );
-    
-    if (hasElectronics) {
-      restrictions.push('Electronics may require additional customs declarations');
-    }
+    restrictions.push('International shipping may require additional customs documentation for food and botanical products');
   }
-  
+
   return restrictions;
 }
 

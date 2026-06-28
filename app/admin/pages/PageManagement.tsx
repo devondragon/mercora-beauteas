@@ -386,7 +386,7 @@ export default function PageManagement() {
       
       const prompt = `CRITICAL: Generate complete, untruncated HTML content. Do NOT stop mid-sentence or mid-tag.
 
-You are generating HTML content for a page titled "${formData.title}" (${templateDescription}) for Mercora outdoor gear eCommerce.
+You are generating HTML content for a page titled "${formData.title}" (${templateDescription}) for BeauTeas, an organic skincare tea eCommerce store.
 
 STRICT REQUIREMENTS:
 - Generate ONLY inner HTML content (NO DOCTYPE, html, head, body tags)
@@ -433,7 +433,6 @@ Generate complete content now:`;
           .replace(/<body[^>]*>/gi, '')
           .replace(/<\/body>/gi, '')
           .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/Camping rule #\d+:.*?-- Chai/gi, '') // Remove Chai's personality additions
           .replace(/\n\s*They're.*?\.\s*/gi, '') // Remove personality continuations
           .replace(/-- Chai.*$/gim, '') // Remove any Chai signatures
           .replace(/\*winks\*/gi, '') // Remove personality actions

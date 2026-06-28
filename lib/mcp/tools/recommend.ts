@@ -1,6 +1,8 @@
-import { searchProducts, getProductBySlug } from '../../models/mach/products';
+import { searchProducts, getProductBySlug, getProductsByCategory, listProducts } from '../../models/mach/products';
+import { listCategories, getCategoryDisplayName } from '../../models/mach/category';
 import { RecommendRequest, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
+import { distinctCategoryCount, ritualBundleSuggestions } from '../catalog';
 import { Product } from '../../types';
 
 export async function getRecommendations(
@@ -49,7 +51,7 @@ export async function getRecommendations(
     recommendations = recommendations.slice(0, 10);
     
     // Generate cross-site recommendations
-    const alternativeSites = generateCrossSiteRecommendations(context, userContext);
+    const alternativeSites = generateCrossSiteRecommendations();
     const bundlingOpportunities = generateBundlingRecommendations(recommendations);
     const costOptimizations = generateCostRecommendations(recommendations, context.budget || userContext.budget);
     
@@ -99,51 +101,54 @@ export async function getRecommendations(
 
 async function getUseCaseRecommendations(useCase: string, userContext: any): Promise<Product[]> {
   const useCaseLower = useCase.toLowerCase();
-  
-  if (useCaseLower.includes('camping') || useCaseLower.includes('camp')) {
-    return await searchProducts('camping tent sleeping bag');
+
+  // Prefer a matching catalog category (e.g. "green tea", "skincare", "herbal").
+  const categories = await listCategories();
+  const matched = categories.find((cat) => {
+    const name = getCategoryDisplayName(cat).toLowerCase();
+    return name.length > 0 && (useCaseLower.includes(name) || name.includes(useCaseLower));
+  });
+  if (matched) {
+    const byCategory = await getProductsByCategory(matched.id);
+    if (byCategory.length > 0) return byCategory;
   }
-  
-  if (useCaseLower.includes('hiking') || useCaseLower.includes('trail')) {
-    return await searchProducts('hiking backpack boots');
-  }
-  
-  if (useCaseLower.includes('backpack')) {
-    return await searchProducts('backpacking ultralight');
-  }
-  
-  // Default to general outdoor gear
-  return await searchProducts('outdoor adventure gear');
+
+  // Fall back to a name search, then to the general catalog.
+  const byName = await searchProducts(useCase);
+  if (byName.length > 0) return byName;
+
+  return getGeneralRecommendations(userContext);
 }
 
 async function getActivityRecommendations(activity: string, userContext: any): Promise<Product[]> {
-  // Map activities to product searches
-  const activityMap: Record<string, string> = {
-    'weekend_camping': 'car camping tent sleeping bag',
-    'backpacking': 'ultralight backpacking gear',
-    'day_hiking': 'day pack hiking boots',
-    'mountaineering': 'alpine climbing gear',
-    'winter_camping': 'winter tent sleeping system'
-  };
-  
-  const searchQuery = activityMap[activity] || activity;
-  return await searchProducts(searchQuery);
+  // Activities are free-form hints from the agent context; resolve them against
+  // the live catalog the same way as a use case rather than a hardcoded map.
+  return getUseCaseRecommendations(activity, userContext);
 }
 
 async function getRelatedProductRecommendations(product: Product, userContext: any): Promise<Product[]> {
-  const category = (product as any).category_name || 'outdoor gear';
-  return await searchProducts(category);
+  // Recommend other products from the same catalog categories as this product.
+  const categoryIds = Array.isArray(product.categories) ? product.categories : [];
+  for (const categoryId of categoryIds) {
+    const related = await getProductsByCategory(categoryId);
+    const filtered = related.filter((p) => String(p.id) !== String(product.id));
+    if (filtered.length > 0) return filtered;
+  }
+
+  return getGeneralRecommendations(userContext);
 }
 
 async function getGeneralRecommendations(userContext: any): Promise<Product[]> {
-  // Base recommendations on user activities or default to popular items
+  // Base recommendations on a stated interest if it matches the catalog,
+  // otherwise fall back to the full active catalog.
   if (userContext.activities?.length > 0) {
-    const activity = userContext.activities[0];
-    return await searchProducts(activity);
+    const matches = await searchProducts(userContext.activities[0]);
+    if (matches.length > 0) return matches;
   }
-  
-  // Default to popular outdoor essentials
-  return await searchProducts('popular outdoor gear essentials');
+
+  // listProducts loads variants (unlike getActiveProducts), so downstream
+  // budget filtering and cost recommendations have prices to work with.
+  return listProducts({ status: ['active'] });
 }
 
 function sortRecommendations(products: Product[], userContext: any): Product[] {
@@ -186,42 +191,16 @@ function sortRecommendations(products: Product[], userContext: any): Product[] {
   });
 }
 
-function generateCrossSiteRecommendations(context: any, userContext: any): string[] {
-  const suggestions: string[] = [];
-  
-  if (context.useCase?.toLowerCase().includes('food') || context.userActivity?.includes('meal')) {
-    suggestions.push('Mountain House for freeze-dried meals and rations');
-    suggestions.push('REI for comprehensive outdoor food selection');
-  }
-  
-  if (context.useCase?.toLowerCase().includes('ski') || context.userActivity?.includes('winter')) {
-    suggestions.push('Backcountry.com for specialized winter sports equipment');
-    suggestions.push('Local ski shops for cross-country skiing gear');
-  }
-  
-  if (userContext.experienceLevel === 'expert') {
-    suggestions.push('Specialist manufacturers for high-end technical gear');
-  }
-  
-  return suggestions;
+function generateCrossSiteRecommendations(): string[] {
+  // BeauTeas is a first-party store focused on its own organic tea catalog;
+  // we don't refer agents to outside retailers.
+  return [];
 }
 
 function generateBundlingRecommendations(products: Product[]): string[] {
-  const recommendations: string[] = [];
-  
-  const hasTent = products.some(p => (typeof p.name === 'string' ? p.name : String(p.name || '')).toLowerCase().includes('tent'));
-  const hasSleeping = products.some(p => (typeof p.name === 'string' ? p.name : String(p.name || '')).toLowerCase().includes('sleeping') || (typeof p.name === 'string' ? p.name : String(p.name || '')).toLowerCase().includes('bag'));
-  const hasBackpack = products.some(p => (typeof p.name === 'string' ? p.name : String(p.name || '')).toLowerCase().includes('pack') || (typeof p.name === 'string' ? p.name : String(p.name || '')).toLowerCase().includes('backpack'));
-  
-  if (hasTent && hasSleeping) {
-    recommendations.push('Complete shelter system: tent + sleeping setup bundle available');
-  }
-  
-  if (hasBackpack && hasSleeping) {
-    recommendations.push('Backpacking essentials: pack + sleeping system combo deals');
-  }
-  
-  return recommendations;
+  // Suggest building/completing the daily ritual based on how many distinct
+  // catalog categories the recommended products span.
+  return ritualBundleSuggestions(distinctCategoryCount(products));
 }
 
 function generateCostRecommendations(products: Product[], budget?: number): string[] {
@@ -231,11 +210,11 @@ function generateCostRecommendations(products: Product[], budget?: number): stri
   const totalCost = products.reduce((sum, p) => sum + (typeof p.variants?.[0]?.price === 'number' ? p.variants[0].price : (p.variants?.[0]?.price as any)?.amount || 0), 0);
   
   if (totalCost > budget * 1.2) {
-    recommendations.push('Consider base models to stay within budget');
-    recommendations.push('Look for seasonal sales on similar items');
+    recommendations.push('Choose sample-size blends to stay within budget');
+    recommendations.push('Look for current tea bundle offers');
   } else if (totalCost < budget * 0.8) {
-    recommendations.push('Budget allows for premium upgrades');
-    recommendations.push('Consider adding complementary gear within budget');
+    recommendations.push('Budget allows for premium blends or a gift set');
+    recommendations.push('Consider adding complementary blends within budget');
   }
   
   return recommendations;

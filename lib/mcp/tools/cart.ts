@@ -2,6 +2,7 @@ import { getSession, updateSessionCart, getSessionCart } from '../session';
 import { getProductBySlug } from '../../models/mach/products';
 import { CartRequest, CartResponse, MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
+import { ritualBundleSuggestions } from '../catalog';
 
 export async function addToCart(
   request: CartRequest & { sessionId: string },
@@ -382,21 +383,10 @@ export async function getCartEstimate(
 }
 
 function generateCartBundlingOpportunities(cart: CartItem[]): string[] {
-  const opportunities: string[] = [];
-  
-  const hasTent = cart.some(item => item.name.toLowerCase().includes('tent'));
-  const hasSleeping = cart.some(item => item.name.toLowerCase().includes('sleeping') || item.name.toLowerCase().includes('bag'));
-  const hasBackpack = cart.some(item => item.name.toLowerCase().includes('pack'));
-  
-  if (hasTent && hasSleeping) {
-    opportunities.push('Complete camping system: add camp stove for full setup');
-  }
-  
-  if (hasBackpack && !hasSleeping) {
-    opportunities.push('Backpacking essential missing: consider adding sleeping system');
-  }
-  
-  return opportunities;
+  // Suggest building/completing the daily ritual based on how many distinct
+  // products are already in the cart.
+  const distinctProducts = new Set(cart.map(item => item.productId)).size;
+  return ritualBundleSuggestions(distinctProducts);
 }
 
 function generateCartOptimizations(cart: CartItem[], budget?: number): string[] {
@@ -407,10 +397,10 @@ function generateCartOptimizations(cart: CartItem[], budget?: number): string[] 
   
   if (total > budget) {
     optimizations.push(`Cart total $${total} exceeds budget $${budget}`);
-    optimizations.push('Consider reducing quantities or choosing base models');
+    optimizations.push('Consider reducing quantities or choosing our sample-size blends');
   } else if (total < budget * 0.9) {
-    optimizations.push(`Budget allows for $${budget - total} in additional gear`);
-    optimizations.push('Consider premium upgrades within remaining budget');
+    optimizations.push(`Budget allows for $${budget - total} in additional blends`);
+    optimizations.push('Consider adding a premium blend or gift set within remaining budget');
   }
   
   return optimizations;

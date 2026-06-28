@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../lib/mcp/auth';
 import { CapabilitiesResponse, MCPToolResponse } from '../../../lib/mcp/types';
+import { getCatalogCapabilities } from '../../../lib/mcp/catalog';
 import { createHttpErrorResponse } from '../../../lib/mcp/error-handler';
 
 export async function GET(request: NextRequest) {
@@ -12,17 +13,9 @@ export async function GET(request: NextRequest) {
       return createHttpErrorResponse(auth.error?.message || 'Authentication failed', 401);
     }
 
-    // Simple capabilities response for now
-    const capabilities: CapabilitiesResponse = {
-      categories: ['Tents & Shelters', 'Sleeping Systems', 'Backpacks', 'Lighting', 'Cooking & Stoves'],
-      price_ranges: {
-        'Tents & Shelters': { min: 89, max: 899 },
-        'Sleeping Systems': { min: 79, max: 549 },
-        'Backpacks': { min: 89, max: 449 }
-      },
-      shipping_regions: ['Continental US', 'Alaska & Hawaii', 'Canada'],
-      specialties: ['Ultralight backpacking gear', 'Car camping essentials', 'Hiking equipment']
-    };
+    // Capabilities are derived from the live catalog (categories, price ranges,
+    // and specialties) rather than a hardcoded product taxonomy.
+    const capabilities: CapabilitiesResponse = await getCatalogCapabilities();
 
     const response: MCPToolResponse<CapabilitiesResponse> = {
       success: true,
