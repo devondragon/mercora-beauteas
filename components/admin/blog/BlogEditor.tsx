@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import {
   EditorRoot,
   EditorContent,
@@ -292,9 +293,9 @@ export function BlogEditor({ postId }: BlogEditorProps) {
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-4 py-2">
         <div className="flex items-center gap-2">
-          <a href="/admin/blog" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-white">
+          <Link href="/admin/blog" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Blog
-          </a>
+          </Link>
           <span className="text-sm text-neutral-500">{metadata.slug || "new post"}</span>
         </div>
         <div className="flex items-center gap-2">

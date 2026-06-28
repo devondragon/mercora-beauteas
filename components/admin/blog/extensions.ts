@@ -36,7 +36,6 @@ const UploadImages = Extension.create({
   },
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const extensions: any[] = [
   StarterKit.configure({
     horizontalRule: false,
