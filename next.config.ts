@@ -94,6 +94,8 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// added by create cloudflare to enable calling `getCloudflareContext()` in `next dev`
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+// Only start the Cloudflare dev proxy during `next dev` — it requires Cloudflare
+// credentials and will fail in CI / `next build` / `next lint` contexts.
+if (process.env.NODE_ENV === "development") {
+  import("@opennextjs/cloudflare").then(m => m.initOpenNextCloudflareForDev());
+}
