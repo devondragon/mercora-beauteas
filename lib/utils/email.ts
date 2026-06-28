@@ -470,13 +470,28 @@ export async function sendGiftCardDeliveryEmail(
   }
 }
 
+// Escape user-controlled values before embedding them in email HTML.
+function escapeHtml(value = ''): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
-  const recipient = data.recipientName?.trim() || 'there';
-  const fromLine = data.purchaserName?.trim()
-    ? `${data.purchaserName.trim()} has sent you a BeauTeas gift card.`
+  const recipient = escapeHtml(data.recipientName?.trim() || 'there');
+  const purchaser = data.purchaserName?.trim() ? escapeHtml(data.purchaserName.trim()) : '';
+  const fromLine = purchaser
+    ? `${purchaser} has sent you a BeauTeas gift card.`
     : `Someone special has sent you a BeauTeas gift card.`;
+  const giftMessage = data.giftMessage ? escapeHtml(data.giftMessage) : '';
+  const code = escapeHtml(data.code);
   const amountDisplay = `$${(data.amount / 100).toFixed(2)}`;
-  const redeemUrl = data.redeemUrl || 'https://beauteas.com';
+  // Only allow an absolute https URL; otherwise fall back to the brand origin.
+  const redeemUrl =
+    data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : 'https://beauteas.com';
 
   return `
     <!DOCTYPE html>
@@ -503,9 +518,9 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
         </div>
 
         ${
-          data.giftMessage
+          giftMessage
             ? `<div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 16px; margin: 0 32px 24px;">
-                 <p style="color: #555555; font-size: 15px; font-style: italic; line-height: 22px; margin: 0;">&ldquo;${data.giftMessage}&rdquo;</p>
+                 <p style="color: #555555; font-size: 15px; font-style: italic; line-height: 22px; margin: 0;">&ldquo;${giftMessage}&rdquo;</p>
                </div>`
             : ''
         }
@@ -515,7 +530,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
           <p style="color: #64748b; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px;">Gift Card Value</p>
           <p style="color: #c4a87c; font-size: 40px; font-weight: bold; margin: 0 0 16px;">${amountDisplay}</p>
           <p style="color: #64748b; font-size: 13px; margin: 0 0 6px;">Your code</p>
-          <p style="color: #1e293b; font-size: 22px; font-weight: bold; letter-spacing: 2px; margin: 0; font-family: 'Courier New', monospace;">${data.code}</p>
+          <p style="color: #1e293b; font-size: 22px; font-weight: bold; letter-spacing: 2px; margin: 0; font-family: 'Courier New', monospace;">${code}</p>
         </div>
 
         <!-- CTA -->

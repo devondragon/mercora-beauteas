@@ -37,9 +37,41 @@ export interface GiftCardFulfillmentResult {
 // Allow a few cents of slack for cent/dollar rounding across the checkout math.
 const AMOUNT_TOLERANCE_CENTS = 5;
 
+// Canonical gift-card denominations (cents). The face value of an issued card
+// MUST be one of these — never a client-supplied price — so a tampered order
+// can't mint an arbitrarily large card.
+export const GIFT_CARD_DENOMINATIONS_CENTS = new Set([2500, 5000, 10000]);
+
+/** Strip control characters and clamp length for stored/emailed free text. */
+function sanitizeText(value: string | undefined | null, maxLen: number): string | undefined {
+  if (!value) return undefined;
+  // eslint-disable-next-line no-control-regex
+  const cleaned = value.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, maxLen);
+  return cleaned || undefined;
+}
+
 /** Is this order line a gift card that needs a card issued? */
 function isGiftCardLine(item: any): boolean {
   return Boolean(item?.gift_card) || item?.product_id === GIFT_CARD_PRODUCT_ID;
+}
+
+/**
+ * Validate a gift-card line against server-side truth: the unit price must be a
+ * known denomination and total_price must equal unit_price * quantity (so the
+ * two client fields can't be desynced to bypass the payment-sufficiency check).
+ */
+function validateGiftCardLine(item: any, index: number): { ok: boolean; reason?: string } {
+  const unitAmount = item.unit_price?.amount ?? 0;
+  const quantity = Math.max(1, item.quantity || 1);
+  const lineTotal = item.total_price?.amount ?? 0;
+
+  if (!GIFT_CARD_DENOMINATIONS_CENTS.has(unitAmount)) {
+    return { ok: false, reason: `gift card line ${index} has invalid denomination ${unitAmount}` };
+  }
+  if (lineTotal !== unitAmount * quantity) {
+    return { ok: false, reason: `gift card line ${index} unit/total price mismatch` };
+  }
+  return { ok: true };
 }
 
 /** Does this order buy or redeem any gift card (i.e. is fulfillment relevant)? */
@@ -60,6 +92,17 @@ function verifyPaymentSufficient(
   order: Order,
   paidAmountCents: number
 ): { ok: boolean; reason?: string } {
+  // Reject any tampered gift-card line up front, so a desynced unit/total price
+  // can't slip past the goods/charge accounting below.
+  for (let i = 0; i < (order.items || []).length; i++) {
+    const item = order.items[i];
+    if (!isGiftCardLine(item)) continue;
+    const lineCheck = validateGiftCardLine(item, i);
+    if (!lineCheck.ok) {
+      return { ok: false, reason: lineCheck.reason };
+    }
+  }
+
   const goodsCents = (order.items || []).reduce(
     (sum, item) => sum + (item.total_price?.amount ?? 0),
     0
@@ -122,17 +165,24 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
     const item = order.items[i];
     if (!isGiftCardLine(item)) continue;
 
-    const unitAmount = item.unit_price?.amount ?? 0;
-    if (unitAmount <= 0) {
-      errors.push(`Gift card line ${i} has no unit price`);
+    // Defense-in-depth: only issue cards for valid, server-known denominations.
+    const lineCheck = validateGiftCardLine(item, i);
+    if (!lineCheck.ok) {
+      errors.push(lineCheck.reason!);
       continue;
     }
+    const unitAmount = item.unit_price!.amount;
 
     const recipientEmail = item.gift_card?.recipientEmail || purchaserEmail;
     if (!recipientEmail) {
       errors.push(`Gift card line ${i} has no recipient email`);
       continue;
     }
+
+    // Sanitize free-text fields server-side (don't trust client length limits):
+    // strip control chars and clamp to a sane length before storing/emailing.
+    const recipientName = sanitizeText(item.gift_card?.recipientName, 120);
+    const giftMessage = sanitizeText(item.gift_card?.message, 500);
 
     const quantity = Math.max(1, item.quantity || 1);
     for (let unit = 0; unit < quantity; unit++) {
@@ -146,8 +196,8 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
           purchaserCustomerId: order.customer_id ?? null,
           purchaserEmail: purchaserEmail ?? null,
           recipientEmail,
-          recipientName: item.gift_card?.recipientName ?? null,
-          giftMessage: item.gift_card?.message ?? null,
+          recipientName: recipientName ?? null,
+          giftMessage: giftMessage ?? null,
           orderId,
           orderLineId,
         });
@@ -155,12 +205,12 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
 
         const emailResult = await sendGiftCardDeliveryEmail({
           recipientEmail,
-          recipientName: item.gift_card?.recipientName,
+          recipientName: recipientName ?? undefined,
           purchaserName,
           code: card.code,
           amount: card.balance,
           currency: card.currency,
-          giftMessage: item.gift_card?.message,
+          giftMessage: giftMessage ?? undefined,
           redeemUrl: BASE_URL,
         });
         if (emailResult.success) {
