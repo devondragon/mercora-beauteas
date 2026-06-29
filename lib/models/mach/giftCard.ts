@@ -265,6 +265,15 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     if (!current || current.status === 'disabled') {
       return { success: false, applied: 0, remaining: 0, error: 'Gift card is not redeemable' };
     }
+    // Expiry is enforced on the write path too, not just in
+    // validateGiftCardForRedemption — a caller that skips validation (e.g. the
+    // Stripe webhook path) must never be able to redeem an expired card.
+    if (
+      current.status === 'expired' ||
+      (current.expires_at && new Date(current.expires_at).getTime() < Date.now())
+    ) {
+      return { success: false, applied: 0, remaining: current.balance, error: 'Gift card has expired' };
+    }
     if (current.balance <= 0) {
       return { success: false, applied: 0, remaining: 0, error: 'Gift card has no remaining balance' };
     }
