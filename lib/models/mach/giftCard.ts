@@ -12,6 +12,7 @@ import { gift_cards, gift_card_transactions } from '@/lib/db/schema/gift-card';
 import type { GiftCardRow } from '@/lib/db/schema/gift-card';
 import { eq, and, gte, desc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 
 // Unambiguous alphabet (no 0/O/1/I) for human-readable codes.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -59,16 +60,22 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<GiftCa
   // Retry up to 5 times on a code-collision UNIQUE constraint only. Any other
   // error (including a failed ledger insert) propagates immediately — we never
   // silently swallow errors that could leave a card without its opening entry.
-  // The card + ledger inserts are wrapped in a transaction so they are atomic:
-  // if the ledger insert fails, the card row is rolled back too.
+  // The card + ledger inserts are run via db.batch(), which D1 executes as a
+  // single atomic transaction: if the ledger insert fails the card insert is
+  // rolled back too. (D1 does not support interactive BEGIN/COMMIT, so
+  // db.transaction() is not usable here.) We pre-generate the card id so the
+  // ledger row can reference it within the same batch.
   let lastError: unknown;
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateGiftCardCode();
+    const cardId = `GC-${nanoid(10).toUpperCase()}`;
+    const txId = `GCT-${nanoid(10).toUpperCase()}`;
     try {
-      const card = await db.transaction(async (tx) => {
-        const [row] = await tx
+      const [cardRows] = await db.batch([
+        db
           .insert(gift_cards)
           .values({
+            id: cardId,
             code,
             initial_balance: input.amount,
             balance: input.amount,
@@ -83,22 +90,20 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<GiftCa
             order_line_id: input.orderLineId ?? null,
             expires_at: input.expiresAt ?? null,
           })
-          .returning();
-
-        await tx.insert(gift_card_transactions).values({
-          gift_card_id: row.id,
+          .returning(),
+        db.insert(gift_card_transactions).values({
+          id: txId,
+          gift_card_id: cardId,
           type: 'issue',
           amount: input.amount,
           balance_after: input.amount,
           order_id: input.orderId ?? null,
           customer_id: input.purchaserCustomerId ?? null,
           note: 'Gift card issued',
-        });
+        }),
+      ]);
 
-        return row;
-      });
-
-      return card;
+      return cardRows[0];
     } catch (err) {
       // Only retry on a UNIQUE constraint collision on the `code` column.
       // All other errors are real failures — let them propagate.
@@ -267,48 +272,57 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     const applied = Math.min(requested, current.balance);
     const newBalance = current.balance - applied;
 
-    // The balance decrement and its ledger entry must be atomic: wrapping them
-    // in a transaction means a failed (or duplicate, see below) ledger insert
-    // rolls back the decrement, so the card can never be silently drained
-    // without a matching audit row. The DB-level unique index on
-    // (gift_card_id, order_id) for redeem entries makes a concurrent second
-    // redemption against the same order fail here (and roll back) instead of
-    // double-charging the card.
+    const noteText = orderId ? `Redeemed against order ${orderId}` : 'Redeemed';
+    const txId = `GCT-${nanoid(10).toUpperCase()}`;
+
+    // The decrement and its ledger entry must be atomic. D1 has no interactive
+    // BEGIN/COMMIT transactions, so we use db.batch(), which D1 runs as a single
+    // atomic transaction. Both statements share the SAME optimistic guard
+    // (id = current.id AND balance = current.balance AND status = 'active'):
+    //  - the ledger INSERT ... SELECT only inserts when the guard holds,
+    //  - the UPDATE only decrements when the guard holds,
+    // so the audit row and the decrement always commit or skip together — the
+    // card can never be drained without a matching ledger row. The INSERT runs
+    // first, so the unique index on (gift_card_id, order_id) for redeem entries
+    // rejects a concurrent second redemption against the same order (the whole
+    // batch fails and rolls back) instead of double-charging the card. If a
+    // concurrent redeem moved the balance, the guard no longer holds, neither
+    // statement runs, the UPDATE returns no rows, and we re-read and retry.
     let updatedRows: typeof gift_cards.$inferSelect[];
     try {
-      updatedRows = await db.transaction(async (tx) => {
-        const updated = await tx
+      const guard = and(
+        eq(gift_cards.id, current.id),
+        eq(gift_cards.balance, current.balance), // optimistic guard
+        eq(gift_cards.status, 'active')
+      );
+      const batchResult = await db.batch([
+        db.insert(gift_card_transactions).select(
+          db
+            .select({
+              id: sql<string>`${txId}`.as('id'),
+              gift_card_id: sql<string>`${current.id}`.as('gift_card_id'),
+              type: sql<string>`'redeem'`.as('type'),
+              amount: sql<number>`${-applied}`.as('amount'),
+              balance_after: sql<number>`${newBalance}`.as('balance_after'),
+              order_id: sql<string | null>`${orderId}`.as('order_id'),
+              customer_id: sql<string | null>`${customerId}`.as('customer_id'),
+              note: sql<string>`${noteText}`.as('note'),
+              created_at: sql<string>`CURRENT_TIMESTAMP`.as('created_at'),
+            })
+            .from(gift_cards)
+            .where(guard)
+        ),
+        db
           .update(gift_cards)
           .set({
             balance: newBalance,
             status: newBalance <= 0 ? 'redeemed' : 'active',
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
-          .where(
-            and(
-              eq(gift_cards.id, current.id),
-              eq(gift_cards.balance, current.balance), // optimistic guard
-              eq(gift_cards.status, 'active')
-            )
-          )
-          .returning();
-
-        if (updated.length === 0) {
-          return updated; // lost the race — re-read and retry once
-        }
-
-        await tx.insert(gift_card_transactions).values({
-          gift_card_id: current.id,
-          type: 'redeem',
-          amount: -applied,
-          balance_after: newBalance,
-          order_id: orderId,
-          customer_id: customerId,
-          note: orderId ? `Redeemed against order ${orderId}` : 'Redeemed',
-        });
-
-        return updated;
-      });
+          .where(guard)
+          .returning(),
+      ]);
+      updatedRows = batchResult[1];
     } catch (err) {
       // A concurrent call already inserted the redeem ledger row for this order
       // (unique constraint). Treat as idempotently already-applied.
