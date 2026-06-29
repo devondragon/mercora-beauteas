@@ -61,6 +61,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Stripe rejects charges below its $0.50 minimum. Enforce it server-side
+    // (the checkout UI also guards this, but a direct API call must not slip a
+    // sub-minimum amount through to Stripe and surface as an opaque 500).
+    if (amount < 0.5) {
+      return NextResponse.json(
+        { error: 'Amount must be at least $0.50' },
+        { status: 400 }
+      );
+    }
+
     if (!shippingAddress) {
       return NextResponse.json(
         { error: 'Shipping address is required' },

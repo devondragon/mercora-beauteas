@@ -453,7 +453,7 @@ export async function sendGiftCardDeliveryEmail(
     const { data: resendData, error } = await resendClient.emails.send({
       from: 'BeauTeas<hello@beauteas.com>',
       to: [data.recipientEmail],
-      subject: `You've received a BeauTeas gift card 🎁`,
+      subject: `You've received a BeauTeas gift card`,
       html: emailHtml,
     });
 

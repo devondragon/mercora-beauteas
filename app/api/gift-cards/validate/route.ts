@@ -30,7 +30,15 @@ export async function POST(req: NextRequest) {
     const result = await validateGiftCardForRedemption(code);
 
     if (!result.valid) {
-      return NextResponse.json({ valid: false, error: result.reason });
+      // Collapse all failure reasons (not-found / empty / disabled / expired)
+      // into one generic message so this public, unauthenticated endpoint can't
+      // be used to enumerate which codes exist or probe a card's state. The real
+      // reason is still logged server-side for support.
+      console.log(`[gift-card] validation rejected: ${result.reason}`);
+      return NextResponse.json({
+        valid: false,
+        error: 'This gift card is invalid or unavailable.',
+      });
     }
 
     return NextResponse.json({
