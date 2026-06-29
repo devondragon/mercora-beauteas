@@ -204,6 +204,17 @@ curl -sIL https://beauteas-dev.justblackmagic.workers.dev/products/<handle>     
 - **Categories**: 6 loaded, ~5 browsable (`Home page`/frontpage collection isn't shown as a nav category).
   Product→category links come from collects: Clearly Calendula → 5 teas, Drinkware → 3, Gift Cards → 1.
 - **Images**: uploaded to R2 under `products/<handle>.jpg`. Requires the R2_* vars.
+  Served to the storefront via the image host: **prod** uses the Cloudflare Images
+  CDN (`NEXT_PUBLIC_IMAGE_CDN=https://beauteas-images.beauteas.com`, set in
+  `wrangler.jsonc` production vars); **dev** leaves it unset and serves the same
+  R2 objects same-origin through the `/media/[...key]` route (`app/media`). The
+  custom `image-loader.ts` picks the host. If product images 404, check the CDN
+  var / that the `/media` route resolves (`curl .../media/products/<handle>.jpg`).
+- **Descriptions**: Shopify `body_html` is flattened to clean text by
+  `scripts/shopify-migration/lib/html-to-text.ts` (used in the product **and**
+  category transformers) — hidden `display:none` blocks and `data-sheets-*` paste
+  junk are dropped. The storefront renders descriptions as text, so raw HTML would
+  otherwise show as literal tags.
 
 > **App-side gotcha (not ETL):** the homepage (`app/page.tsx`) and any code calling
 > `getProductsByCategory("…")` reference category **IDs**. After import these are

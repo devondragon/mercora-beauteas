@@ -18,6 +18,7 @@ import type {
 } from '../lib/types.js';
 import type { IdMap } from '../lib/id-map.js';
 import { logger } from '../lib/logger.js';
+import { htmlToText } from '../lib/html-to-text.js';
 
 export interface ProductTransformOutput {
   product: MercoraProductInsert;
@@ -235,7 +236,7 @@ export function transformProducts(
       id: productId,
       name: shopifyProduct.title,
       description: shopifyProduct.body_html
-        ? JSON.stringify({ en: shopifyProduct.body_html })
+        ? JSON.stringify({ en: htmlToText(shopifyProduct.body_html) })
         : null,
       type: shopifyProduct.product_type || null,
       status,

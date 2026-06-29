@@ -12,6 +12,7 @@ import type {
 } from '../lib/types.js';
 import type { IdMap } from '../lib/id-map.js';
 import { logger } from '../lib/logger.js';
+import { htmlToText } from '../lib/html-to-text.js';
 
 /**
  * Slugify a handle for use as a category ID
@@ -70,7 +71,7 @@ export function transformCategories(
       // CRITICAL: Localized JSON format for name, description, slug
       name: JSON.stringify({ en: collection.title }),
       description: collection.body_html
-        ? JSON.stringify({ en: collection.body_html })
+        ? JSON.stringify({ en: htmlToText(collection.body_html) })
         : null,
       slug: collection.handle,
       status: collection.published_at ? 'active' : 'inactive',
