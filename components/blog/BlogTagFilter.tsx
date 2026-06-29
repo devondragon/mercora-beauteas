@@ -31,13 +31,14 @@ export function BlogTagFilter({ tags }: BlogTagFilterProps) {
   if (tags.length === 0) return null;
 
   return (
-    <div className="mb-10 flex flex-wrap justify-center gap-2">
+    <div role="group" aria-label="Filter posts by tag" className="mb-10 flex flex-wrap justify-center gap-2">
       {["all", ...tags].map((tag) => (
         <button
           key={tag}
           type="button"
+          aria-pressed={active === tag}
           onClick={() => filter(tag)}
-          className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ${
+          className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
             active === tag
               ? "bg-amber-600 text-white"
               : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
