@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getPublishedBlogPosts } from "@/lib/models/blog";
 import { BlogTagFilter } from "@/components/blog/BlogTagFilter";
 import { SITE_NAME, BASE_URL } from "@/lib/seo/metadata";
+import { formatDate } from "@/lib/utils/date";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +17,6 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
   },
 };
-
-function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric", month: "long", day: "numeric",
-  });
-}
 
 export default async function BlogIndexPage() {
   const posts = await getPublishedBlogPosts();

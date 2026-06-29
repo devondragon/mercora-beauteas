@@ -5,6 +5,14 @@ import { uploadToR2, getContentTypeFromFilename } from "@/lib/utils/r2";
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
+const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+};
+
 /**
  * POST /api/admin/upload
  *
@@ -32,19 +40,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Missing file field" }, { status: 400 });
   }
 
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ ok: false, error: "Only image files are allowed" }, { status: 400 });
-  }
-
-  if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
-    return NextResponse.json({ ok: false, error: "SVG files are not allowed" }, { status: 400 });
+  const ext = EXT_BY_MIME[file.type];
+  if (!ext) {
+    return NextResponse.json({ ok: false, error: "Unsupported image type (allowed: JPEG, PNG, WebP, GIF, AVIF)" }, { status: 400 });
   }
 
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ ok: false, error: "Image must be under 10MB" }, { status: 413 });
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
   const key = `blog/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
 
   try {

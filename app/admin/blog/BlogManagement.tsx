@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Edit3, Trash2, Eye, EyeOff, Search, Loader2, FileText, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import type { BlogPostFull } from "@/lib/models/blog";
+import type { BlogPostSummary } from "@/lib/models/blog";
 
 function formatDate(ts: string | number): string {
   const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
@@ -21,7 +21,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function BlogManagement() {
-  const [posts, setPosts] = useState<BlogPostFull[]>([]);
+  const [posts, setPosts] = useState<BlogPostSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [stats, setStats] = useState({ total: 0, published: 0, draft: 0 });
@@ -34,7 +34,7 @@ export function BlogManagement() {
         fetch("/api/admin/blog"),
         fetch("/api/admin/blog?stats=true"),
       ]);
-      const postsData = await postsRes.json() as { success: boolean; data: BlogPostFull[] };
+      const postsData = await postsRes.json() as { success: boolean; data: BlogPostSummary[] };
       const statsData = await statsRes.json() as { success: boolean; data: typeof stats };
       if (postsData.success) setPosts(postsData.data);
       if (statsData.success) setStats(statsData.data);
@@ -47,7 +47,7 @@ export function BlogManagement() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function toggleStatus(post: BlogPostFull) {
+  async function toggleStatus(post: BlogPostSummary) {
     const newStatus = post.status === "published" ? "draft" : "published";
     const res = await fetch(`/api/admin/blog/${post.id}`, {
       method: "PUT",
@@ -58,7 +58,7 @@ export function BlogManagement() {
     await load();
   }
 
-  async function deletePost(post: BlogPostFull) {
+  async function deletePost(post: BlogPostSummary) {
     if (!window.confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
     const res = await fetch(`/api/admin/blog/${post.id}`, { method: "DELETE" });
     if (!res.ok) { setError("Failed to delete post"); return; }

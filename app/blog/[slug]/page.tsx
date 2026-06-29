@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BlogPostContent } from "@/components/blog/BlogPostContent";
 import { getPublishedBlogPost, getPublishedBlogPosts, getRelatedPosts } from "@/lib/models/blog";
 import { SITE_NAME, BASE_URL } from "@/lib/seo/metadata";
+import { formatDate } from "@/lib/utils/date";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       ...(imageUrl && { images: [imageUrl] }),
     },
   };
-}
-
-function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric", month: "long", day: "numeric",
-  });
 }
 
 export default async function BlogPostPage({ params }: PageProps) {

@@ -12,11 +12,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: stats });
   }
 
+  const rawLimit = searchParams.get("limit");
+  const rawOffset = searchParams.get("offset");
+  const limit = rawLimit !== null ? parseInt(rawLimit, 10) : undefined;
+  const offset = rawOffset !== null ? parseInt(rawOffset, 10) : undefined;
+  if (limit !== undefined && !Number.isFinite(limit)) {
+    return NextResponse.json({ success: false, error: "Invalid limit" }, { status: 400 });
+  }
+  if (offset !== undefined && !Number.isFinite(offset)) {
+    return NextResponse.json({ success: false, error: "Invalid offset" }, { status: 400 });
+  }
+
   const posts = await adminListBlogPosts({
     status: searchParams.get("status") as "draft" | "published" | undefined,
     search: searchParams.get("search") ?? undefined,
-    limit: searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : undefined,
-    offset: searchParams.get("offset") ? parseInt(searchParams.get("offset")!) : undefined,
+    limit,
+    offset,
   });
   return NextResponse.json({ success: true, data: posts });
 }

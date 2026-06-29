@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { eq, desc, and, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { blog_posts, blog_categories, type BlogPostSelect, type BlogCategorySelect } from "@/lib/db/schema/blog";
@@ -131,7 +132,7 @@ export async function getPublishedBlogPosts(): Promise<BlogPostSummary[]> {
   return rows.map(toSummary);
 }
 
-export async function getPublishedBlogPost(slug: string): Promise<BlogPostFull | null> {
+export const getPublishedBlogPost = cache(async (slug: string): Promise<BlogPostFull | null> => {
   const db = await getDbAsync();
   const rows = await db
     .select()
@@ -139,7 +140,7 @@ export async function getPublishedBlogPost(slug: string): Promise<BlogPostFull |
     .where(and(eq(blog_posts.slug, slug), eq(blog_posts.status, "published")))
     .limit(1);
   return rows[0] ? toFull(rows[0]) : null;
-}
+});
 
 // ── Admin queries ────────────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export async function adminListBlogPosts(opts: {
   search?: string;
   limit?: number;
   offset?: number;
-} = {}): Promise<BlogPostFull[]> {
+} = {}): Promise<BlogPostSummary[]> {
   const db = await getDbAsync();
 
   const conditions: SQL[] = [];
@@ -159,14 +160,14 @@ export async function adminListBlogPosts(opts: {
     );
   }
 
-  let q = db.select().from(blog_posts).$dynamic();
+  let q = db.select(summaryColumns).from(blog_posts).$dynamic();
   if (conditions.length > 0) q = q.where(and(...conditions));
   q = q.orderBy(desc(blog_posts.updated_at));
   if (opts.limit) q = q.limit(opts.limit);
   if (opts.offset) q = q.offset(opts.offset);
 
   const rows = await q;
-  return rows.map(toFull);
+  return rows.map(toSummary);
 }
 
 export async function adminGetBlogPost(id: number): Promise<BlogPostFull | null> {

@@ -6,6 +6,20 @@ interface BlogPostContentProps {
 }
 
 export function BlogPostContent({ html }: BlogPostContentProps) {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    // Enforce noopener/noreferrer on target=_blank links (reverse tabnabbing)
+    if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+    // Restrict image sources to the CDN or relative paths (block tracking pixels)
+    if (node.tagName === "IMG") {
+      const src = node.getAttribute("src") ?? "";
+      if (!src.startsWith("https://beauteas-images.beauteas.com/") && !src.startsWith("/")) {
+        node.removeAttribute("src");
+      }
+    }
+  });
+
   const clean = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
       "p", "br", "strong", "em", "u", "s", "code", "pre", "blockquote",
@@ -19,6 +33,8 @@ export function BlogPostContent({ html }: BlogPostContentProps) {
     ALLOW_DATA_ATTR: false,
     FORBID_ATTR: ["onerror", "onload", "onclick"],
   });
+
+  DOMPurify.removeHook("afterSanitizeAttributes");
 
   return (
     <div
