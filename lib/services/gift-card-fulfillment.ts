@@ -51,9 +51,16 @@ function sanitizeText(value: string | undefined | null, maxLen: number): string 
   return cleaned || undefined;
 }
 
-/** Is this order line a gift card that needs a card issued? */
+/**
+ * Is this order line a gift card that needs a card issued?
+ *
+ * Keyed ONLY on the server-known product id — never on the presence of a
+ * client-supplied `gift_card` field. Otherwise a tampered order could attach a
+ * `gift_card` blob to a regular (already-paid-for) product priced at a
+ * denomination and mint a free stored-value card alongside the physical goods.
+ */
 function isGiftCardLine(item: any): boolean {
-  return Boolean(item?.gift_card) || item?.product_id === GIFT_CARD_PRODUCT_ID;
+  return item?.product_id === GIFT_CARD_PRODUCT_ID;
 }
 
 /**
@@ -268,10 +275,19 @@ async function redeemAppliedGiftCard(
     return { redeemed: 0, redeemedAmount: 0, errors: ['Order has no id'] };
   }
 
+  // Cap the redemption at the order total: a gift card can never be drained for
+  // more than the order is worth, even if the client requests its full balance.
+  // (verifyPaymentSufficient already caps the tender for the payment check; this
+  // applies the same cap to the actual balance deduction.)
+  const orderTotalCents = order.total_amount?.amount ?? 0;
+  const requestedAmount = orderTotalCents > 0
+    ? Math.min(applied.amount, orderTotalCents)
+    : applied.amount;
+
   try {
     const result = await redeemGiftCard({
       code: normalizeCode(applied.code),
-      amount: applied.amount,
+      amount: requestedAmount,
       orderId: order.id,
       customerId: order.customer_id ?? null,
     });
