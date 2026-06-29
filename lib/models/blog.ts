@@ -2,6 +2,7 @@ import { cache } from "react";
 import { eq, desc, and, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { blog_posts, blog_categories, type BlogPostSelect, type BlogCategorySelect } from "@/lib/db/schema/blog";
+import { sanitizeBlogHtmlServer } from "@/lib/utils/sanitize-html-server";
 
 const summaryColumns = {
   id: blog_posts.id,
@@ -203,7 +204,7 @@ export interface BlogPostInput {
 
 export async function adminCreateBlogPost(input: BlogPostInput): Promise<BlogPostFull> {
   const db = await getDbAsync();
-  const html = input.html ?? "";
+  const html = sanitizeBlogHtmlServer(input.html ?? "");
   const reading_time = calculateReadingTime(html);
   const now = Math.floor(Date.now() / 1000);
   const published_at = input.status === "published" ? now : null;
@@ -241,7 +242,7 @@ export async function adminUpdateBlogPost(id: number, input: Partial<BlogPostInp
   const existing = await adminGetBlogPost(id);
   if (!existing) return null;
 
-  const html = input.html ?? existing.html;
+  const html = sanitizeBlogHtmlServer(input.html ?? existing.html);
   const reading_time = calculateReadingTime(html);
 
   // Set published_at the first time a post is published; preserve it thereafter
