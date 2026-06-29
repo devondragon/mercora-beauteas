@@ -15,7 +15,14 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { env, applyD1Migrations } from 'cloudflare:test';
 import { drizzle } from 'drizzle-orm/d1';
+import { eq } from 'drizzle-orm';
 import { gift_cards, gift_card_transactions } from '@/lib/db/schema/gift-card';
+// The REAL production migration, imported as a raw string. Reading it directly —
+// instead of re-declaring the DDL inline — means the test schema can never
+// silently drift from what production applies (every column, CHECK, and index,
+// including the idx_gift_cards_order_line / idx_gift_card_tx_redeem_order UNIQUE
+// guards, comes from one source of truth). BMC-125 review follow-up.
+import migration0010 from '@/migrations/0010_add_gift_cards.sql?raw';
 
 // Must be hoisted before any import that calls getDbAsync / getCloudflareContext.
 vi.mock('@opennextjs/cloudflare', async () => {
@@ -25,6 +32,13 @@ vi.mock('@opennextjs/cloudflare', async () => {
   };
 });
 
+// Controllable nanoid. The model builds gift-card / transaction IDs from
+// nanoid(); mocking it lets the rollback test force a deterministic primary-key
+// collision. The default impl (set in beforeEach) returns unique values so every
+// other test behaves exactly as it would with the real (random) nanoid.
+const nanoidMock = vi.hoisted(() => vi.fn());
+vi.mock('nanoid', () => ({ nanoid: nanoidMock }));
+
 import {
   createGiftCard,
   redeemGiftCard,
@@ -33,59 +47,22 @@ import {
 } from '@/lib/models/mach/giftCard';
 
 // ─── Schema bootstrap ────────────────────────────────────────────────────────
-// Only the gift_cards + gift_card_transactions tables are needed.  We skip the
-// full 0010_add_gift_cards.sql seed (products/variants) since the model never
-// touches those tables.
-const GIFT_CARD_DDL = `
-CREATE TABLE IF NOT EXISTS gift_cards (
-  id TEXT PRIMARY KEY,
-  code TEXT NOT NULL UNIQUE,
-  initial_balance INTEGER NOT NULL,
-  balance INTEGER NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'USD',
-  status TEXT NOT NULL DEFAULT 'active'
-    CHECK (status IN ('active', 'redeemed', 'disabled', 'expired')),
-  purchaser_customer_id TEXT,
-  purchaser_email TEXT,
-  recipient_email TEXT,
-  recipient_name TEXT,
-  gift_message TEXT,
-  order_id TEXT,
-  order_line_id TEXT,
-  expires_at TEXT,
-  delivered_at TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS gift_card_transactions (
-  id TEXT PRIMARY KEY,
-  gift_card_id TEXT NOT NULL REFERENCES gift_cards(id),
-  type TEXT NOT NULL CHECK (type IN ('issue', 'redeem', 'refund', 'adjust')),
-  amount INTEGER NOT NULL,
-  balance_after INTEGER NOT NULL,
-  order_id TEXT,
-  customer_id TEXT,
-  note TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code);
-
--- Idempotency guard: one redeem ledger entry per (card, order).
--- A UNIQUE violation rolls back the whole batch, preventing double-deductions.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_card_tx_redeem_order
-  ON gift_card_transactions(gift_card_id, order_id)
-  WHERE type = 'redeem' AND order_id IS NOT NULL;
-`;
+// Apply 0010 minus its product/variant seed INSERTs — those tables don't exist
+// in this isolated gift-card test DB, and the model never touches them. The
+// CREATE TABLE / CREATE INDEX statements have no external dependencies.
+function migrationStatements(sql: string): string[] {
+  return sql
+    .replace(/--[^\n]*/g, '') // strip SQL line comments first — they can contain ';'
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .filter((s) => !/^INSERT\b/i.test(s)); // drop seed rows (products/variants)
+}
 
 beforeAll(async () => {
-  // The runtime D1Migration shape requires queries: string[] (individual statements),
-  // not sql: string. Split on semicolons so applyD1Migrations can prepare() each one.
-  const queries = GIFT_CARD_DDL.split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  await applyD1Migrations(env.DB, [{ name: '0010_gift_card_schema', queries }]);
+  await applyD1Migrations(env.DB, [
+    { name: '0010_add_gift_cards', queries: migrationStatements(migration0010) },
+  ]);
 });
 
 beforeEach(async () => {
@@ -93,6 +70,11 @@ beforeEach(async () => {
   const db = drizzle(env.DB);
   await db.delete(gift_card_transactions);
   await db.delete(gift_cards);
+
+  // Default nanoid: unique-per-call within a test, deterministic across runs.
+  // Individual tests may override (e.g. to force a collision).
+  let seq = 0;
+  nanoidMock.mockImplementation(() => `N${(seq++).toString().padStart(9, '0')}`);
 });
 
 // ─── 1. createGiftCard atomicity ─────────────────────────────────────────────
@@ -111,6 +93,37 @@ describe('createGiftCard', () => {
     expect(issueTx.amount).toBe(5000);
     expect(issueTx.balance_after).toBe(5000);
     expect(issueTx.gift_card_id).toBe(card.id);
+  });
+
+  it('rolls back the card row when the ledger insert fails (batch atomicity)', async () => {
+    const db = drizzle(env.DB);
+
+    // A valid card so the pre-seeded colliding ledger row satisfies its FK.
+    const seedCard = await createGiftCard({ amount: 1000 });
+
+    // Pin nanoid to a constant so every createGiftCard attempt builds the SAME
+    // transaction id, then pre-seed a row that already owns it. The card insert
+    // and the ledger insert run in one db.batch(); the ledger insert hits the
+    // duplicate primary key, so D1 must roll the WHOLE batch back — the card row
+    // included. (createGiftCard retries on UNIQUE up to 5 times; with a constant
+    // id every attempt collides, so it ultimately throws.)
+    nanoidMock.mockImplementation(() => 'DUP00001');
+    await db.insert(gift_card_transactions).values({
+      id: 'GCT-DUP00001',
+      gift_card_id: seedCard.id,
+      type: 'adjust',
+      amount: 0,
+      balance_after: 1000,
+    });
+
+    const cardsBefore = await db.select().from(gift_cards);
+    await expect(createGiftCard({ amount: 5000 })).rejects.toThrow(/after retries/i);
+
+    // If the batch were non-atomic, the card insert from the first attempt would
+    // survive the ledger failure. It must not: GC-DUP00001 should be absent.
+    const cardsAfter = await db.select().from(gift_cards);
+    expect(cardsAfter).toHaveLength(cardsBefore.length);
+    expect(cardsAfter.find((c) => c.id === 'GC-DUP00001')).toBeUndefined();
   });
 });
 
@@ -222,22 +235,29 @@ describe('redeemGiftCard — idempotency', () => {
   });
 });
 
-// ─── 5. Concurrent guard: unique-index prevents double-deduction ──────────────
+// ─── 5. Concurrent guard: CAS guard prevents double-deduction ────────────────
 describe('redeemGiftCard — concurrent guard', () => {
   it('two concurrent redeems for the same (card, order) produce exactly one ledger row', async () => {
     const card = await createGiftCard({ amount: 5000 });
 
-    // Both fire concurrently. In miniflare's event loop they interleave at await
-    // points. The CAS guard (balance = current.balance) ensures the second batch
-    // no-ops if the first already committed. When the balance hits 0, the retried
-    // call correctly returns "no remaining balance" rather than double-deducting.
+    // Both fire concurrently. miniflare runs a single JS event loop and D1
+    // serializes the two batches, so in THIS environment it is the optimistic
+    // CAS guard (balance = current.balance), not the UNIQUE index, that stops
+    // the double-deduction: the first batch commits (balance 5000→0); the second
+    // batch's guard no longer holds, so it no-ops, re-reads balance 0, and
+    // returns "no remaining balance". The UNIQUE redeem index is the defence for
+    // a true multi-process race (two batches with overlapping read snapshots),
+    // which miniflare can't reproduce — it is exercised directly below.
     const [r1, r2] = await Promise.all([
       redeemGiftCard({ code: card.code, amount: 5000, orderId: 'ORDER-RACE-1' }),
       redeemGiftCard({ code: card.code, amount: 5000, orderId: 'ORDER-RACE-1' }),
     ]);
 
-    // At least one call must succeed
-    expect(r1.success || r2.success).toBe(true);
+    // Exactly one call succeeds; the other reports a clean, non-applying failure
+    // (never a second deduction).
+    expect(r1.success).not.toBe(r2.success);
+    const loser = r1.success ? r2 : r1;
+    expect(loser.applied).toBe(0);
 
     // The critical invariant: exactly one redeem ledger row (no double-deduction)
     const txs = await getGiftCardTransactions(card.id);
@@ -267,5 +287,131 @@ describe('redeemGiftCard — concurrent guard', () => {
     const fresh = await getGiftCardById(card.id);
     // Total deducted: 2000 + 2000 = 4000; remaining 1000
     expect(fresh?.balance).toBe(1000);
+  });
+});
+
+// ─── 6. Redemption guards: invalid / disabled / expired ──────────────────────
+describe('redeemGiftCard — rejects non-redeemable cards', () => {
+  it('returns "not found" for an unknown code without writing a ledger row', async () => {
+    const result = await redeemGiftCard({
+      code: 'BEAU-0000-0000-0000',
+      amount: 1000,
+      orderId: 'ORDER-NOPE',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.applied).toBe(0);
+    expect(result.error).toMatch(/not found/i);
+  });
+
+  it('refuses to redeem a disabled card and leaves the balance untouched', async () => {
+    const card = await createGiftCard({ amount: 5000 });
+    const db = drizzle(env.DB);
+    await db
+      .update(gift_cards)
+      .set({ status: 'disabled' })
+      .where(eq(gift_cards.id, card.id));
+
+    const result = await redeemGiftCard({
+      code: card.code,
+      amount: 2000,
+      orderId: 'ORDER-DISABLED',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.applied).toBe(0);
+
+    const fresh = await getGiftCardById(card.id);
+    expect(fresh?.balance).toBe(5000);
+    const redeemTxs = (await getGiftCardTransactions(card.id)).filter((t) => t.type === 'redeem');
+    expect(redeemTxs).toHaveLength(0);
+  });
+
+  it('refuses to redeem an expired card and leaves the balance untouched', async () => {
+    const card = await createGiftCard({ amount: 5000 });
+    const db = drizzle(env.DB);
+    // Past expiry, but status still 'active' — this is the case the read-only
+    // validator catches but the write path previously did not (BMC-125 bug fix).
+    await db
+      .update(gift_cards)
+      .set({ expires_at: '2000-01-01T00:00:00.000Z' })
+      .where(eq(gift_cards.id, card.id));
+
+    const result = await redeemGiftCard({
+      code: card.code,
+      amount: 2000,
+      orderId: 'ORDER-EXPIRED',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.applied).toBe(0);
+    expect(result.error).toMatch(/expired/i);
+
+    const fresh = await getGiftCardById(card.id);
+    expect(fresh?.balance).toBe(5000);
+    const redeemTxs = (await getGiftCardTransactions(card.id)).filter((t) => t.type === 'redeem');
+    expect(redeemTxs).toHaveLength(0);
+  });
+});
+
+// ─── 7. Schema-level guard: UNIQUE redeem index ──────────────────────────────
+// The concurrent test above is resolved by the CAS guard under miniflare's
+// serialized writes, so the UNIQUE index it relies on is never actually hit
+// there. Exercise that index directly so a regression dropping it (or its
+// partial WHERE clause) is caught.
+describe('idx_gift_card_tx_redeem_order (schema guard)', () => {
+  it('rejects a second redeem ledger row for the same (card, order)', async () => {
+    const db = drizzle(env.DB);
+    const card = await createGiftCard({ amount: 5000 });
+
+    await db.insert(gift_card_transactions).values({
+      id: 'GCT-DIRECT-1',
+      gift_card_id: card.id,
+      type: 'redeem',
+      amount: -1000,
+      balance_after: 4000,
+      order_id: 'ORDER-DIRECT',
+    });
+
+    // drizzle-d1 wraps the SQLITE_CONSTRAINT as "Failed query: …", so assert the
+    // insert is rejected and that exactly one redeem row survives — proof the
+    // partial UNIQUE index rejected the duplicate.
+    await expect(
+      db.insert(gift_card_transactions).values({
+        id: 'GCT-DIRECT-2',
+        gift_card_id: card.id,
+        type: 'redeem',
+        amount: -1000,
+        balance_after: 3000,
+        order_id: 'ORDER-DIRECT',
+      })
+    ).rejects.toThrow();
+
+    const redeemTxs = (await getGiftCardTransactions(card.id)).filter((t) => t.type === 'redeem');
+    expect(redeemTxs).toHaveLength(1);
+  });
+
+  it('allows two redeem rows for the same card under different orders', async () => {
+    const db = drizzle(env.DB);
+    const card = await createGiftCard({ amount: 5000 });
+
+    await db.insert(gift_card_transactions).values({
+      id: 'GCT-DIFF-1',
+      gift_card_id: card.id,
+      type: 'redeem',
+      amount: -1000,
+      balance_after: 4000,
+      order_id: 'ORDER-DIFF-A',
+    });
+    await expect(
+      db.insert(gift_card_transactions).values({
+        id: 'GCT-DIFF-2',
+        gift_card_id: card.id,
+        type: 'redeem',
+        amount: -1000,
+        balance_after: 3000,
+        order_id: 'ORDER-DIFF-B',
+      })
+    ).resolves.toBeDefined();
   });
 });
