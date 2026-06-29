@@ -33,6 +33,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createPaymentIntent, formatAmountForStripe } from '@/lib/stripe';
+import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
 import type { Address } from '@/lib/types';
 
 interface PaymentIntentRequest {
@@ -41,6 +42,10 @@ interface PaymentIntentRequest {
   shippingAddress: Address;
   orderId: string;
   description?: string;
+  // Present when a gift card is applied as tender. The server re-verifies the
+  // card's CURRENT balance before charging so a stale client-side balance can't
+  // under-collect the amount due.
+  giftCard?: { code: string; appliedCents: number };
 }
 
 export async function POST(req: NextRequest) {
@@ -51,6 +56,7 @@ export async function POST(req: NextRequest) {
       shippingAddress,
       orderId,
       description,
+      giftCard,
     }: PaymentIntentRequest = await req.json();
 
     // Validate required fields
@@ -83,6 +89,27 @@ export async function POST(req: NextRequest) {
         { error: 'Order ID is required' },
         { status: 400 }
       );
+    }
+
+    // If a gift card is applied as tender, re-verify its CURRENT balance here.
+    // The client derives `amount` from a balance it fetched earlier; if the card
+    // was partially redeemed in the meantime, that amount would under-collect.
+    // Reject (don't silently charge the stale, too-low amount) so the shopper
+    // re-applies the card at its current balance.
+    if (giftCard?.code) {
+      const appliedCents = Math.round(giftCard.appliedCents);
+      const check = await validateGiftCardForRedemption(giftCard.code);
+      const currentBalanceCents = check.valid ? check.balance ?? 0 : 0;
+      if (!check.valid || appliedCents > currentBalanceCents) {
+        return NextResponse.json(
+          {
+            error:
+              'Your gift card balance changed. Please re-apply your gift card to continue.',
+            code: 'gift_card_balance_changed',
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // Create Payment Intent
