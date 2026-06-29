@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Lint, Typecheck, Build
+    name: Lint, Typecheck, Test, Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -28,6 +28,13 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      # Unit tests only — they cover pure modules and need no secrets or
+      # Cloudflare bindings. E2E (npm run test:e2e) is intentionally NOT run
+      # here: Playwright needs a running dev server (local D1/R2 bindings) and
+      # test Clerk/Stripe keys. Run it locally or in a dedicated workflow.
+      - name: Test
+        run: npm run test
 
       - name: Build
         run: npm run build
