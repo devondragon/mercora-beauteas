@@ -6,5 +6,8 @@ export function formatDate(date: string): string {
     year: "numeric",
     month: "long",
     day: "numeric",
+    // Date-only strings (YYYY-MM-DD) parse as UTC midnight; render in UTC so
+    // viewers behind UTC don't see the previous day (off-by-one).
+    timeZone: "UTC",
   });
 }
