@@ -17,6 +17,34 @@ import { nanoid } from 'nanoid';
 // Unambiguous alphabet (no 0/O/1/I) for human-readable codes.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// How many times redeemGiftCard re-reads and retries when the optimistic CAS
+// guard loses a race. Two was too few under real multi-process fan-out (N
+// concurrent redeems can bump a caller off its snapshot more than once); a
+// handful of retries makes a lost race recover instead of failing spuriously.
+const MAX_REDEEM_ATTEMPTS = 5;
+
+/**
+ * True when an error (or any error in its `cause` chain) is a SQLite UNIQUE
+ * constraint violation. Drizzle's D1 driver wraps the underlying error as
+ * `"Failed query: …"` and tucks the original `SQLITE_CONSTRAINT_*` text into
+ * `cause`, so matching only the top-level message can miss it. We walk the
+ * chain and match the constraint text wherever it surfaces.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current && !seen.has(current); depth++) {
+    seen.add(current);
+    const message =
+      current instanceof Error ? current.message : typeof current === 'string' ? current : '';
+    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)|\bunique\b/i.test(message)) {
+      return true;
+    }
+    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
+}
+
 /**
  * Generate a formatted gift card code, e.g. `BEAU-7K3M-9PQR-T4WX`.
  */
@@ -105,10 +133,9 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<GiftCa
 
       return cardRows[0];
     } catch (err) {
-      // Only retry on a UNIQUE constraint collision on the `code` column.
-      // All other errors are real failures — let them propagate.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('UNIQUE') || msg.includes('unique')) {
+      // Only retry on a UNIQUE constraint collision (a regenerated code/id fixes
+      // it). All other errors are real failures — let them propagate.
+      if (isUniqueViolation(err)) {
         lastError = err;
         continue;
       }
@@ -260,10 +287,22 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
 
   // Attempt the guarded decrement, retrying once if a concurrent redeem moved
   // the balance out from under us.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < MAX_REDEEM_ATTEMPTS; attempt++) {
     const current = attempt === 0 ? card : await getGiftCardById(card.id);
-    if (!current || current.status === 'disabled') {
+    if (!current) {
       return { success: false, applied: 0, remaining: 0, error: 'Gift card is not redeemable' };
+    }
+    if (current.status === 'disabled') {
+      return { success: false, applied: 0, remaining: current.balance, error: 'Gift card is not redeemable' };
+    }
+    // Expiry is enforced on the write path too, not just in
+    // validateGiftCardForRedemption — a caller that skips validation (e.g. the
+    // Stripe webhook path) must never be able to redeem an expired card.
+    if (
+      current.status === 'expired' ||
+      (current.expires_at && new Date(current.expires_at).getTime() < Date.now())
+    ) {
+      return { success: false, applied: 0, remaining: current.balance, error: 'Gift card has expired' };
     }
     if (current.balance <= 0) {
       return { success: false, applied: 0, remaining: 0, error: 'Gift card has no remaining balance' };
@@ -326,8 +365,7 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     } catch (err) {
       // A concurrent call already inserted the redeem ledger row for this order
       // (unique constraint). Treat as idempotently already-applied.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (orderId && (msg.includes('UNIQUE') || msg.includes('unique'))) {
+      if (orderId && isUniqueViolation(err)) {
         const [existing] = await db
           .select()
           .from(gift_card_transactions)
@@ -340,9 +378,22 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
           )
           .limit(1);
         const fresh = await getGiftCardById(card.id);
+        // The UNIQUE index only fires when a redeem row for this order exists, so
+        // `existing` should always be found. If it somehow isn't, do NOT report
+        // success with applied: 0 (a caller would credit nothing while told the
+        // redemption worked) — surface a retryable conflict instead.
+        if (!existing) {
+          return {
+            success: false,
+            applied: 0,
+            remaining: fresh?.balance ?? card.balance,
+            giftCardId: card.id,
+            error: 'Concurrent redemption conflict, please retry',
+          };
+        }
         return {
           success: true,
-          applied: existing ? Math.abs(existing.amount) : 0,
+          applied: Math.abs(existing.amount),
           remaining: fresh?.balance ?? card.balance,
           giftCardId: card.id,
           alreadyRedeemed: true,
@@ -352,7 +403,7 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     }
 
     if (updatedRows.length === 0) {
-      continue; // lost the race — re-read and retry once
+      continue; // lost the race — re-read and retry
     }
 
     return {
@@ -363,10 +414,14 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     };
   }
 
+  // Retries exhausted under sustained contention. Report the card's real
+  // remaining balance (not a hardcoded 0) so the caller can surface an accurate
+  // state and the user can retry against a card that still has funds.
+  const latest = await getGiftCardById(card.id);
   return {
     success: false,
     applied: 0,
-    remaining: 0,
+    remaining: latest?.balance ?? card.balance,
     error: 'Could not redeem gift card, please try again',
   };
 }
