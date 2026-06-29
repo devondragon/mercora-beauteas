@@ -26,6 +26,7 @@ import { MetadataSidebar, type BlogPostMetadata } from "./MetadataSidebar";
 import { EditorFormatToolbar } from "./EditorFormatToolbar";
 import { EditorFooter } from "./EditorFooter";
 import { promptForLink } from "./editorLinks";
+import { sanitizeBlogHtml } from "@/lib/utils/sanitize-html";
 
 function generateSlug(title: string): string {
   return title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -208,7 +209,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
       const body = {
         ...metadata,
         tiptap_json: editor ? JSON.stringify(editor.getJSON()) : null,
-        html: editor ? editor.getHTML() : "",
+        html: editor ? sanitizeBlogHtml(editor.getHTML()) : "",
         status: metadata.status,
       };
       const url = postId ? `/api/admin/blog/${postId}` : "/api/admin/blog";
@@ -240,7 +241,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
       const body = {
         ...metadata,
         tiptap_json: editor ? JSON.stringify(editor.getJSON()) : null,
-        html: editor ? editor.getHTML() : "",
+        html: editor ? sanitizeBlogHtml(editor.getHTML()) : "",
         status: action,
       };
       const res = await fetch(`/api/admin/blog/${postId}`, {

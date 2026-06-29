@@ -2,6 +2,7 @@ import { cache } from "react";
 import { eq, desc, and, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { blog_posts, blog_categories, type BlogPostSelect, type BlogCategorySelect } from "@/lib/db/schema/blog";
+import { sanitizeBlogHtmlServer } from "@/lib/utils/sanitize-html-server";
 
 const summaryColumns = {
   id: blog_posts.id,
@@ -203,7 +204,7 @@ export interface BlogPostInput {
 
 export async function adminCreateBlogPost(input: BlogPostInput): Promise<BlogPostFull> {
   const db = await getDbAsync();
-  const html = input.html ?? "";
+  const html = sanitizeBlogHtmlServer(input.html ?? "");
   const reading_time = calculateReadingTime(html);
   const now = Math.floor(Date.now() / 1000);
   const published_at = input.status === "published" ? now : null;
@@ -241,8 +242,11 @@ export async function adminUpdateBlogPost(id: number, input: Partial<BlogPostInp
   const existing = await adminGetBlogPost(id);
   if (!existing) return null;
 
-  const html = input.html ?? existing.html;
-  const reading_time = calculateReadingTime(html);
+  // Only sanitize + recompute reading_time when the body is actually changing;
+  // metadata-only updates (status toggle, tag edit) skip the htmlparser2 pass and
+  // leave the stored html/reading_time untouched.
+  const html = input.html !== undefined ? sanitizeBlogHtmlServer(input.html) : undefined;
+  const reading_time = html !== undefined ? calculateReadingTime(html) : undefined;
 
   // Set published_at the first time a post is published; preserve it thereafter
   // (so unpublish → republish keeps the original publish date).
@@ -264,8 +268,7 @@ export async function adminUpdateBlogPost(id: number, input: Partial<BlogPostInp
       ...(input.cover_image_alt !== undefined && { cover_image_alt: input.cover_image_alt }),
       ...(input.status !== undefined && { status: input.status }),
       ...(input.tiptap_json !== undefined && { tiptap_json: input.tiptap_json }),
-      ...(input.html !== undefined && { html }),
-      reading_time,
+      ...(html !== undefined && { html, reading_time }),
       ...(input.category_id !== undefined && { category_id: input.category_id }),
       ...(input.meta_title !== undefined && { meta_title: input.meta_title }),
       ...(input.meta_description !== undefined && { meta_description: input.meta_description }),
