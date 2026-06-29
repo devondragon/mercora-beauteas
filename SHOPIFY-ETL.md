@@ -1,0 +1,232 @@
+# Shopify → Mercora ETL
+
+How to populate a BeauTeas/Mercora environment (D1 + R2) with catalog and content
+data extracted from the live Shopify store. This is the **"Run the Shopify ETL"**
+step of the [Production Cutover Runbook](PRODUCTION-CUTOVER-RUNBOOK.md).
+
+> **First validated against dev:** 2026-06-29 — 9 Shopify products + 1 seeded gift
+> card, 19 variants, 6 categories, 10 CMS pages, 42 images → R2. Zero errors.
+> The prod run has **not** been executed yet.
+
+---
+
+## What it does
+
+The ETL (`scripts/shopify-migration/`) extracts structured data from Shopify
+(Admin REST API **or** exported files), transforms it to the Mercora/MACH schema,
+and loads it into Cloudflare **D1** (via `wrangler d1 execute`) and **R2** (product
+images). It is **not** a scraper — it reads Shopify's structured endpoints/exports.
+
+```
+Shopify (Admin API or file export)
+   → extract  (extractors/shopify-api/ | extractors/file-based/)
+   → transform (transformers/  → Mercora/MACH records)
+   → load      (loaders/d1-loader.ts → D1,  loaders/r2-loader.ts → R2,
+                loaders/clerk-loader.ts → Clerk for customers)
+```
+
+The orchestrator is `scripts/shopify-migration/migrate-all.ts`. A per-entity
+ID map is persisted to disk between steps (used by `redirects`).
+
+---
+
+## Entities (dependency order)
+
+Run via `migrate-all.ts` (full pipeline) or `--entity=<name>` (single step).
+
+| Entity | Source → target | Notes / deps |
+|---|---|---|
+| `schema` | applies `migrations/0008_add_redirect_map.sql` | Skip if migrations already applied (will error "table exists"; harmless, caught per-entity). |
+| `categories` | Shopify custom + smart collections → `categories` | — |
+| `products` | products / variants / images → `products`, `product_variants` (+ images → R2) | Prices stored **inline on variants** (`price` JSON col). |
+| `customers` | Shopify customers → Clerk + D1 | Needs `CLERK_SECRET_KEY` + `read_customers`. |
+| `orders` | Shopify orders → D1 | Requires `customers`, `products` first; `read_orders`. |
+| `reviews` | Judge.me reviews → D1 | Requires `products`. |
+| `pages` | Shopify CMS pages → `pages` | `read_content`. |
+| `redirects` | generate `redirect_map` from accumulated ID map | Run **after** products/pages so the ID map is populated. |
+| `validate` | post-migration validation (row counts etc.) | — |
+
+For a storefront-only fill (what dev needed to stop 404ing), only
+`categories`, `products`, `pages` are required.
+
+---
+
+## Prerequisites
+
+1. **Migrations applied** to the target DB (all 11 → ~39 tables). The ETL loads
+   into existing tables; it does not create the full schema.
+2. **Shopify Admin API access token** — Shopify admin → Settings → Apps →
+   *Develop apps* → custom app → **Admin API access token** (`shpat_…`).
+   The client sends it as `X-Shopify-Access-Token`.
+   Required read scopes by entity: `read_products`, `read_content` (pages),
+   `read_customers`, `read_orders`. (Storefront-only run needs just
+   `read_products` + `read_content`.)
+3. **R2 API credentials** (optional) — only needed to localize product images
+   into R2. Omit and image upload is skipped gracefully (text/pricing still load).
+
+---
+
+## Configuration (`.env.local`)
+
+> ⚠️ The ETL reads `process.env` directly and does **not** auto-load `.env.local`.
+> Run `tsx` with `--env-file=.env.local` (tsx ≥ 4.20). Never pass secrets as CLI args.
+
+```bash
+EXTRACTION_MODE=api                              # 'api' (live store) or 'file' (exports)
+SHOPIFY_STORE_URL=https://<store>.myshopify.com
+SHOPIFY_API_KEY=shpat_xxxxxxxx                   # Admin API ACCESS TOKEN (not key/secret)
+# SHOPIFY_API_VERSION=2025-01                     # optional, default 2025-01
+
+# Customer migration only:
+# CLERK_SECRET_KEY=sk_...
+
+# Image upload to R2 (optional):
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=beauteas-images-dev               # default; use beauteas-images for prod
+
+# Load target (see "D1 target" below):
+# D1_DATABASE_NAME=beauteas-db-dev               # default beauteas-db-dev
+# D1_ENV=dev                                      # default dev
+# D1_REMOTE=true                                  # REQUIRED for remote DB (see gotcha)
+# D1_PREVIEW=true                                 # adds --preview (preview_database_id)
+```
+
+`file` mode instead reads `DATA_DIR` (default `scripts/shopify-migration/data/`)
+expecting `products.json`/`.csv`, `pages.json`, etc.
+
+---
+
+## ⚠️ Critical gotcha: D1 writes go to LOCAL by default
+
+`wrangler d1 execute` targets the **local** `.wrangler/state` DB unless `--remote`
+is passed. Migrations were applied `--remote`, so a default ETL run fails with
+`no such table: <table>`.
+
+`lib/wrangler-exec.ts` honors two env flags (added 2026-06-29):
+
+- `D1_REMOTE=true` → adds `--remote` (the deployed environment's database).
+- `D1_PREVIEW=true` → adds `--preview` (the env's `preview_database_id`).
+
+**Always set `D1_REMOTE=true`** when populating a deployed environment.
+
+### D1 target — which DB does the deployed Worker read?
+
+The deployed Worker (`wrangler deploy --env <env>`) reads the env's main
+`database_id`, **not** `preview_database_id` (preview is only for `wrangler dev`):
+
+| Env | `database_name` | main `database_id` (deployed Worker reads this) |
+|---|---|---|
+| dev | `beauteas-db-dev` | `f88149dc-32c3-4a04-9c02-95e25db6d735` |
+| prod | `beauteas-db` | `5dbae836-ff0f-420c-9ac0-16088ceb60ee` |
+
+So load with `D1_REMOTE=true` and **without** `--preview` to populate what the
+deployed site serves. (`wrangler.jsonc` dev preview id is `0a037b06-…`; only set
+`D1_PREVIEW=true` if you specifically want to feed `wrangler dev`/preview.)
+
+---
+
+## Running it
+
+### Dev (storefront fill, validated path)
+
+```bash
+D1_REMOTE=true npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts --entity=categories
+D1_REMOTE=true npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts --entity=products
+D1_REMOTE=true npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts --entity=pages
+```
+
+Running per-entity keeps required Shopify scopes minimal and skips
+customers/orders/reviews. For the full pipeline (needs all scopes + Clerk):
+
+```bash
+D1_REMOTE=true npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts
+```
+
+### Prod (cutover)
+
+Rehearse against dev first. Then, with **prod live keys/secrets** and prod R2
+bucket in `.env.local`:
+
+```bash
+D1_REMOTE=true D1_DATABASE_NAME=beauteas-db D1_ENV=production R2_BUCKET_NAME=beauteas-images \
+  npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts
+```
+
+> Loads run `DELETE` then `INSERT` per table (idempotent) — re-running a step
+> replaces that entity's rows. The orchestrator continues past a failed entity
+> and reports per-entity status; a run report is written to
+> `scripts/shopify-migration/output/migration-report.txt`.
+
+---
+
+## Verification
+
+```bash
+# Row counts (remote)
+npx wrangler d1 execute beauteas-db-dev --remote --env dev --command \
+  "SELECT 'products' t, COUNT(*) n FROM products
+   UNION ALL SELECT 'product_variants', COUNT(*) FROM product_variants
+   UNION ALL SELECT 'categories', COUNT(*) FROM categories
+   UNION ALL SELECT 'pages', COUNT(*) FROM pages"
+
+# Deployed Worker serves it
+curl -s https://beauteas-dev.justblackmagic.workers.dev/api/products    # 10 products
+curl -s https://beauteas-dev.justblackmagic.workers.dev/api/categories  # 5 browsable
+
+# Storefront pages
+curl -s -o /dev/null -w '%{http_code}\n' https://beauteas-dev.justblackmagic.workers.dev/shop          # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://beauteas-dev.justblackmagic.workers.dev/about-us      # 200
+curl -sIL https://beauteas-dev.justblackmagic.workers.dev/products/<handle>                            # 301 → /product/<handle> → 200
+```
+
+### Expected / known-good observations (dev, 2026-06-29)
+
+- **10 products** = 9 from Shopify + 1 gift-card product seeded by
+  `migrations/0010_add_gift_cards.sql`. (Two gift-card entries appear: the Shopify
+  "A Gift of Beauty" product and the seeded stored-value gift card — dedupe later if undesired.)
+- **`pricing` table is empty by design** — prices live inline on each variant
+  (`price` JSON: `{"amount":2999,"currency":"USD"}`). The storefront reads variant price.
+- **Product URLs 301-redirect** `/products/<handle>` → `/product/<handle>` — that's the
+  Shopify redirect map (cutover SEO), not an error. Final status 200.
+- **Categories**: 6 loaded, ~5 browsable (`Home page`/frontpage collection isn't shown as a nav category).
+- **Images**: uploaded to R2 under `products/<handle>.jpg`. Requires the R2_* vars.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `no such table: <table>` | Loader ran against **local** D1. Set `D1_REMOTE=true`. |
+| Data loads but deployed site still 404s | Wrote to preview DB, or wrong `D1_ENV`/`D1_DATABASE_NAME`. Deployed Worker reads main `database_id` (no `--preview`). |
+| `API extraction mode requires: SHOPIFY_API_KEY, SHOPIFY_STORE_URL` | Missing creds, or `.env.local` not loaded — use `--env-file=.env.local`. |
+| `Shopify API error: 401/403` | Token wrong, or app missing the scope for that entity (`read_products`/`read_content`/`read_customers`/`read_orders`). |
+| Images skipped ("R2 credentials not configured") | Set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (+ `R2_BUCKET_NAME`). Non-fatal. |
+| `command not found` running multi-line `for` loops in shell | Run curl/wrangler/node as separate statements (loop interacts badly with the rtk shell hook). |
+| Shopify deprecation notice on `/products.json` | REST still served at `2025-01`; fine for cutover. |
+
+---
+
+## File map
+
+```
+scripts/shopify-migration/
+  migrate-all.ts            # orchestrator (--entity=, --help)
+  migrate-*.ts              # per-entity entrypoints (importable by migrate-all)
+  lib/
+    config.ts               # reads process.env → MigrationConfig; validates api-mode vars
+    shopify-api.ts          # ShopifyClient (X-Shopify-Access-Token, cursor pagination)
+    wrangler-exec.ts        # executeSql/executeQuery; D1_REMOTE / D1_PREVIEW flags
+    id-map.ts, logger.ts, types.ts
+  extractors/shopify-api/   # live API extractors (products, collections, customers, orders, pages)
+  extractors/file-based/    # export-file extractors (json/csv)
+  transformers/             # Shopify → Mercora/MACH record shaping (+ redirects.ts)
+  loaders/                  # d1-loader.ts, r2-loader.ts, clerk-loader.ts
+  validators/validate.ts    # post-migration validation
+  output/                   # migration-report.txt
+```
+
+Related: [PRODUCTION-CUTOVER-RUNBOOK.md](PRODUCTION-CUTOVER-RUNBOOK.md) ·
+[MIGRATION-PLAN.md](MIGRATION-PLAN.md) · [CLAUDE.md](CLAUDE.md) (Database & Migrations).

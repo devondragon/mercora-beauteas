@@ -9,6 +9,21 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
 
 /**
+ * Build the location flags for a `wrangler d1 execute` invocation.
+ *
+ * By default wrangler targets the *local* (.wrangler/state) D1, which is empty
+ * unless migrations were applied with `--local`. For migrations against the
+ * deployed environment's database, set D1_REMOTE=true. To target the env's
+ * preview_database_id (used by `wrangler dev`), additionally set D1_PREVIEW=true.
+ */
+function locationFlags(): string[] {
+  const flags: string[] = [];
+  if (process.env.D1_REMOTE === 'true') flags.push('--remote');
+  if (process.env.D1_PREVIEW === 'true') flags.push('--preview');
+  return flags;
+}
+
+/**
  * Execute SQL via wrangler d1 execute --file
  */
 export function executeSql(sql: string, dbName: string, env: string = 'dev'): void {
@@ -18,7 +33,7 @@ export function executeSql(sql: string, dbName: string, env: string = 'dev'): vo
   try {
     execFileSync(
       'npx',
-      ['wrangler', 'd1', 'execute', dbName, '--env', env, `--file=${tmpFile}`],
+      ['wrangler', 'd1', 'execute', dbName, '--env', env, ...locationFlags(), `--file=${tmpFile}`],
       { stdio: 'inherit' }
     );
   } finally {
@@ -36,7 +51,7 @@ export function executeSql(sql: string, dbName: string, env: string = 'dev'): vo
 export function executeQuery(query: string, dbName: string, env: string = 'dev'): string {
   const result = execFileSync(
     'npx',
-    ['wrangler', 'd1', 'execute', dbName, '--env', env, `--command=${query}`],
+    ['wrangler', 'd1', 'execute', dbName, '--env', env, ...locationFlags(), `--command=${query}`],
     { encoding: 'utf-8' }
   );
   return result;

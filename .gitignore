@@ -49,3 +49,7 @@ linkedin-article.md
 
 # worktrees
 .worktrees
+
+# Shopify ETL run artifacts (keep the dir, ignore generated output)
+/scripts/shopify-migration/output/*
+!/scripts/shopify-migration/output/.gitkeep

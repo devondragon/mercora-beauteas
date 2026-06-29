@@ -246,7 +246,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 - Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`).
 - Seed `admin_users` with production Clerk IDs.
 - Configure Stripe live: subscription prices/coupons + webhook endpoint.
-- **Run the Shopify ETL** (`scripts/shopify-migration/migrate-all.ts`, supports `--entity=<name>`) — rehearse against dev, then run against prod. Never executed against real data yet.
+- **Run the Shopify ETL** (`scripts/shopify-migration/migrate-all.ts`, supports `--entity=<name>`) — rehearse against dev, then run against prod. See **[`SHOPIFY-ETL.md`](SHOPIFY-ETL.md)** for full steps/gotchas (notably: set `D1_REMOTE=true` or it writes to the local D1). ✅ Validated against dev 2026-06-29 (catalog + pages + images). **Prod run still pending.**
 - Deploy prod build, smoke test, **DNS switch** + Clerk/Stripe domain config, then post-cutover verification (orders, subscriptions, redirects, auth).
 
 **Shipped since original plan (no longer deferred):** gift cards (BMC-72/125 — schema live, redeem path tested against real D1), blog tables (BMC-121), and an automated test framework (BMC-69 — Vitest unit + `@cloudflare/vitest-pool-workers` integration + Playwright E2E).
@@ -284,6 +284,6 @@ npx wrangler tail --env dev   # live logs
 ---
 
 ## Reference Docs
-- `PRODUCTION-CUTOVER-RUNBOOK.md` — go-live runbook · `MIGRATION-PLAN.md` — original scope
+- `PRODUCTION-CUTOVER-RUNBOOK.md` — go-live runbook · `MIGRATION-PLAN.md` — original scope · `SHOPIFY-ETL.md` — Shopify→Mercora ETL steps & gotchas
 - `docs/` — architecture, AI pipeline, Stripe, API structure, MCP spec
 - `wrangler.jsonc` — Cloudflare config · `lib/brand.config.ts` / `lib/seo/metadata.ts` — brand/SEO
