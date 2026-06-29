@@ -320,6 +320,7 @@ describe('redeemGiftCard — rejects non-redeemable cards', () => {
 
     expect(result.success).toBe(false);
     expect(result.applied).toBe(0);
+    expect(result.remaining).toBe(5000); // reports the real balance, not a hardcoded 0
 
     const fresh = await getGiftCardById(card.id);
     expect(fresh?.balance).toBe(5000);
@@ -345,6 +346,7 @@ describe('redeemGiftCard — rejects non-redeemable cards', () => {
 
     expect(result.success).toBe(false);
     expect(result.applied).toBe(0);
+    expect(result.remaining).toBe(5000); // real balance preserved in the result
     expect(result.error).toMatch(/expired/i);
 
     const fresh = await getGiftCardById(card.id);
