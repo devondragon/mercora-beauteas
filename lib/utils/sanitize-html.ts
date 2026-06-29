@@ -17,7 +17,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "IMG") {
     const src = node.getAttribute("src") ?? "";
     const allowed =
-      src.startsWith("https://beauteas-images.beauteas.com/") ||
+      src.startsWith("https://img.beauteas.com/") ||
       (src.startsWith("/") && !src.startsWith("//"));
     if (!allowed) {
       node.removeAttribute("src");

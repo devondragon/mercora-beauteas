@@ -105,7 +105,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
     
     // Use Cloudflare Image service for optimized delivery in emails
     // Set width to 100px for email images and quality to 80 for good balance
-    return `https://beauteas-images.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
+    return `https://img.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
   };
 
   const itemsHTML = orderData.items.map(item => {
@@ -220,7 +220,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
     
     // Use Cloudflare Image service for optimized delivery in emails
     // Set width to 100px for email images and quality to 80 for good balance
-    return `https://beauteas-images.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
+    return `https://img.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
   };
 
   // Generate status-specific content

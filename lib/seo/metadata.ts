@@ -22,7 +22,7 @@ export const BASE_URL = "https://beauteas.com";
 export const SITE_NAME = "BeauTeas";
 
 /** R2 image CDN base URL for relative image paths */
-const IMAGE_CDN = "https://beauteas-images.beauteas.com";
+const IMAGE_CDN = "https://img.beauteas.com";
 
 /**
  * Extracts a plain string from a field that may be a string, a localized

@@ -17,10 +17,10 @@ const EXT_BY_MIME: Record<string, string> = {
  * POST /api/admin/upload
  *
  * General-purpose image upload used by the blog Novel editor.
- * Returns { ok: true, url: "https://beauteas-images.beauteas.com/blog/{key}" } on success.
+ * Returns { ok: true, url: "https://img.beauteas.com/blog/{key}" } on success.
  *
  * Images are stored in the MEDIA R2 bucket under blog/{timestamp}-{uuid}.ext
- * and served via the beauteas-images.beauteas.com CDN domain.
+ * and served via the img.beauteas.com CDN domain.
  */
 export async function POST(request: NextRequest) {
   const auth = await checkAdminPermissions(request);
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Absolute CDN URL (matches IMAGE_CDN in lib/seo/metadata.ts). A relative
     // "/blog/..." URL would be routed to the blog [slug] page and 404.
-    return NextResponse.json({ ok: true, url: `https://beauteas-images.beauteas.com/${key}` });
+    return NextResponse.json({ ok: true, url: `https://img.beauteas.com/${key}` });
   } catch {
     return NextResponse.json({ ok: false, error: "Upload failed" }, { status: 500 });
   }

@@ -48,7 +48,7 @@ describe('resolveLocalizedField', () => {
 });
 
 describe('resolveImageUrl', () => {
-  const CDN = 'https://beauteas-images.beauteas.com';
+  const CDN = 'https://img.beauteas.com';
 
   it('prefixes relative paths with the R2 CDN URL', () => {
     expect(resolveImageUrl('products/image.jpg')).toBe(`${CDN}/products/image.jpg`);

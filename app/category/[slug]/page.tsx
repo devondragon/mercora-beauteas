@@ -141,7 +141,7 @@ export default async function CategoryPage({
       
       // Construct full R2 URL for relative paths
       if (imageUrl && !imageUrl.startsWith('http')) {
-        return `https://beauteas-images.beauteas.com/${imageUrl}`;
+        return `https://img.beauteas.com/${imageUrl}`;
       }
       return imageUrl;
     }

@@ -109,7 +109,7 @@
       "vars": {
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY",
         "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY",
-        "NEXT_PUBLIC_IMAGE_CDN": "https://beauteas-images.beauteas.com"
+        "NEXT_PUBLIC_IMAGE_CDN": "https://img.beauteas.com"
       }
     }
   }

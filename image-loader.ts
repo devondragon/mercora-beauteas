@@ -44,13 +44,13 @@
 import type { ImageLoaderProps } from "next/image";
 
 // Image host for R2-backed media. Set per environment via wrangler vars:
-//   prod → "https://beauteas-images.beauteas.com" (Cloudflare Images CDN)
+//   prod → "https://img.beauteas.com" (Cloudflare Images CDN)
 //   dev  → unset → images are served same-origin via the /media R2 route
 const IMAGE_CDN = process.env.NEXT_PUBLIC_IMAGE_CDN;
 
 // The prod CDN host, recognized even when hardcoded into a stored src so we can
 // re-route it to the active host (e.g. the /media route in dev).
-const LEGACY_CDN = "https://beauteas-images.beauteas.com";
+const LEGACY_CDN = "https://img.beauteas.com";
 
 /**
  * Reduce an image src to its bare R2 object key (e.g. "products/x.jpg").

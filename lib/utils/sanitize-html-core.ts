@@ -44,7 +44,7 @@ export function sanitizeBlogHtmlServer(html: string): string {
         // protocol-relative URLs (//evil.com) — they start with "/" but resolve
         // to an external origin.
         const allowed =
-          src.startsWith("https://beauteas-images.beauteas.com/") ||
+          src.startsWith("https://img.beauteas.com/") ||
           (src.startsWith("/") && !src.startsWith("//"));
         if (!allowed) {
           const { src: _omit, ...rest } = attribs;
