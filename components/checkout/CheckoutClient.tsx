@@ -51,6 +51,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     shippingAddress,
     shippingOption,
     taxAmount,
+    appliedGiftCard,
     setShippingAddress,
     setShippingOption,
     setTaxAmount,
@@ -181,18 +182,38 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
       // Calculate total amount (subtotal + shipping + tax)
       const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const totalAmount = subtotal + (selectedShippingOption.cost || 0) + (taxAmount || 0);
+      const totalBeforeGiftCard = subtotal + (selectedShippingOption.cost || 0) + (taxAmount || 0);
+
+      // Apply gift card as a payment tender to reduce the amount charged
+      const giftCardApplied = appliedGiftCard
+        ? Math.min(appliedGiftCard.balance, totalBeforeGiftCard)
+        : 0;
+      const amountDue = Math.max(0, totalBeforeGiftCard - giftCardApplied);
+
+      // First cut: gift cards that fully cover the order aren't supported yet
+      // (a $0 Stripe charge needs a separate zero-payment flow). Leave a payable
+      // remainder above Stripe's $0.50 minimum.
+      if (giftCardApplied > 0 && amountDue < 0.5) {
+        throw new Error(
+          'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet — please reduce the gift card or add another item.'
+        );
+      }
 
       // Create payment intent
       const res = await fetch('/api/payment-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: totalAmount,
+          amount: amountDue,
           taxAmount: taxAmount || 0,
           shippingAddress,
           orderId: newOrderId,
           description: `${items.length} item(s) - ${items.map(i => i.name).join(', ')}`,
+          // Let the server re-verify the gift card's live balance before
+          // charging, so a stale client-side balance can't under-collect.
+          ...(giftCardApplied > 0 && appliedGiftCard
+            ? { giftCard: { code: appliedGiftCard.code, appliedCents: Math.round(giftCardApplied * 100) } }
+            : {}),
         }),
       });
 
@@ -213,11 +234,19 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   // Handle successful payment
   const handlePaymentSuccess = async (paymentIntentId: string) => {
     try {
+      // Gift card tender applied to this order (recompute against final totals)
+      const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const totalBeforeGiftCard = subtotal + (shippingOption?.cost || 0) + (taxAmount || 0);
+      const giftCardApplied = appliedGiftCard
+        ? Math.min(appliedGiftCard.balance, totalBeforeGiftCard)
+        : 0;
+
       // Submit order with payment intent ID to unified orders endpoint
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          order_id: orderId, // keep order id consistent with payment-intent metadata
           items: items.map(item => ({
             product_id: item.productId,
             variant_id: item.variantId,
@@ -232,9 +261,11 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
               currency: 'USD'
             },
             product_name: item.name, // This now includes variant info like "Vivid Mission Pack - Regular"
+            // Carry gift-card recipient details through to fulfillment
+            ...(item.giftCard ? { gift_card: item.giftCard } : {}),
           })),
           total_amount: {
-            amount: Math.round((items.reduce((sum, item) => sum + item.price * item.quantity, 0) + (shippingOption?.cost || 0) + (taxAmount || 0)) * 100), // Convert to cents
+            amount: Math.round((subtotal + (shippingOption?.cost || 0) + (taxAmount || 0)) * 100), // Order value (cents)
             currency: 'USD'
           },
           currency_code: 'USD',
@@ -247,7 +278,16 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             payment_intent_id: paymentIntentId,
             shipping_cost: shippingOption?.cost || 0,
             tax_amount: Math.round((taxAmount || 0) * 100), // Convert to cents
-            subtotal: Math.round(items.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100), // Convert to cents
+            subtotal: Math.round(subtotal * 100), // Convert to cents
+            // Gift card redeemed against this order (server enforces the balance)
+            ...(giftCardApplied > 0 && appliedGiftCard
+              ? {
+                  gift_card: {
+                    code: appliedGiftCard.code,
+                    amount: Math.round(giftCardApplied * 100), // cents
+                  },
+                }
+              : {}),
           }
         }),
       });
@@ -257,8 +297,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
         throw new Error(err.error || 'Failed to create order');
       }
 
-      const orderResponse = await res.json();
-      console.log('Order created successfully:', orderResponse);
+      await res.json();
 
       // Clear cart immediately after successful order creation
       clearCart();

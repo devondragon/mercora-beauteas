@@ -57,6 +57,16 @@ export interface AppliedDiscount {
 }
 
 /**
+ * A gift card applied as a payment tender at checkout.
+ * `balance` is the full remaining balance (dollars, from the server); the amount
+ * actually applied is computed dynamically against the order total.
+ */
+export interface AppliedGiftCard {
+  code: string;
+  balance: number; // dollars, full remaining balance
+}
+
+/**
  * Cart store state interface defining all cart-related state and actions
  */
 interface CartState {
@@ -69,6 +79,10 @@ interface CartState {
   appliedDiscounts: AppliedDiscount[];
   /** Total discount amount across all types */
   totalDiscount: number;
+
+  // === Gift Card ===
+  /** Gift card applied as a payment tender, if any */
+  appliedGiftCard?: AppliedGiftCard;
 
   // === Checkout Information ===
   /** Customer shipping address */
@@ -103,13 +117,25 @@ interface CartState {
   clearDiscounts: () => void;
   /** Update shipping discount amounts when shipping option changes */
   updateShippingDiscounts: () => void;
-  /** Calculate order totals with discounts applied */
+
+  // === Gift Card Actions ===
+  /** Apply a gift card as a payment tender */
+  applyGiftCard: (giftCard: AppliedGiftCard) => void;
+  /** Remove the applied gift card */
+  removeGiftCard: () => void;
+
+  /** Calculate order totals with discounts and gift card applied */
   calculateTotals: () => {
     subtotal: number;
     cartDiscount: number;
     shippingCost: number;
     shippingDiscount: number;
     tax: number;
+    /** Amount of the gift card applied against this order (dollars) */
+    giftCardApplied: number;
+    /** Order value before gift card tender (goods - discounts + shipping + tax) */
+    totalBeforeGiftCard: number;
+    /** Amount the customer still pays after the gift card */
     total: number;
   };
 
@@ -139,6 +165,7 @@ export const useCartStore = create<CartState>()(
       items: [],
       appliedDiscounts: [],
       totalDiscount: 0,
+      appliedGiftCard: undefined,
       shippingAddress: undefined,
       billingAddress: undefined,
       shippingOption: undefined,
@@ -151,6 +178,14 @@ export const useCartStore = create<CartState>()(
        */
       addItem: (item) => {
         const items = get().items;
+
+        // Gift cards are never merged — each card has distinct recipient details
+        // and must generate its own card code. Always add as a new line.
+        if (item.giftCard) {
+          set({ items: [...items, item] });
+          return;
+        }
+
         const existing = items.find((i) => i.variantId === item.variantId);
 
         if (existing) {
@@ -211,6 +246,7 @@ export const useCartStore = create<CartState>()(
           items: [],
           appliedDiscounts: [],
           totalDiscount: 0,
+          appliedGiftCard: undefined,
           shippingAddress: undefined,
           billingAddress: undefined,
           shippingOption: undefined,
@@ -302,36 +338,56 @@ export const useCartStore = create<CartState>()(
         });
       },
 
+      // === Gift Card Actions ===
+
       /**
-       * Calculate order totals with discounts applied
+       * Apply a gift card as a payment tender (replaces any existing one)
+       */
+      applyGiftCard: (giftCard) => set({ appliedGiftCard: giftCard }),
+
+      /**
+       * Remove the applied gift card
+       */
+      removeGiftCard: () => set({ appliedGiftCard: undefined }),
+
+      /**
+       * Calculate order totals with discounts and gift card applied
        * Returns breakdown of all pricing components
        */
       calculateTotals: () => {
         const state = get();
         const subtotal = state.items.reduce((total, item) => total + (item.price * item.quantity), 0);
         const shippingCost = state.shippingOption?.cost || 0;
-        
+
         // Separate cart and shipping discounts
         const cartDiscounts = state.appliedDiscounts.filter(d => d.type === 'cart');
         const shippingDiscounts = state.appliedDiscounts.filter(d => d.type === 'shipping');
-        
+
         const cartDiscountAmount = cartDiscounts.reduce((sum, d) => sum + d.amount, 0);
         const shippingDiscountAmount = shippingDiscounts.reduce((sum, d) => sum + d.amount, 0);
-        
+
         // Apply discounts with minimums of 0
         const discountedSubtotal = Math.max(0, subtotal - cartDiscountAmount);
         const discountedShipping = Math.max(0, shippingCost - shippingDiscountAmount);
-        
+
         // Calculate tax on discounted amounts
         const tax = state.taxAmount || 0;
-        const total = discountedSubtotal + discountedShipping + tax;
-        
+        const totalBeforeGiftCard = discountedSubtotal + discountedShipping + tax;
+
+        // Gift card is a tender applied against the order total (never below 0)
+        const giftCardApplied = state.appliedGiftCard
+          ? Math.min(state.appliedGiftCard.balance, totalBeforeGiftCard)
+          : 0;
+        const total = Math.max(0, totalBeforeGiftCard - giftCardApplied);
+
         return {
           subtotal,
           cartDiscount: cartDiscountAmount,
           shippingCost,
           shippingDiscount: shippingDiscountAmount,
           tax,
+          giftCardApplied,
+          totalBeforeGiftCard,
           total,
         };
       },

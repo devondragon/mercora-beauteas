@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3, User } from "lucide-react";
+import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3, User, Gift } from "lucide-react";
 import AgentDrawer from "@/components/agent/AgentDrawer";
 import ClerkLogin from "@/components/login/ClerkLogin";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -400,6 +400,15 @@ export default function HeaderClient({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <Link
+          href="/gift-cards"
+          prefetch={true}
+          className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
+        >
+          <Gift className="h-4 w-4" />
+          Gift Cards
+        </Link>
+
 
         <ClientOnly>
           <AgentDrawer />
@@ -467,6 +476,16 @@ export default function HeaderClient({
               <div>
                 <SimpleMobileCategoryList categories={categories} onCategorySelect={() => setIsMobileMenuOpen(false)} />
               </div>
+
+              <Link
+                href="/gift-cards"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
+                prefetch={true}
+              >
+                <Gift className="h-5 w-5" />
+                <span>Gift Cards</span>
+              </Link>
 
               <div className="border-t border-neutral-700 pt-6 space-y-3">
                 <button 

@@ -241,6 +241,10 @@ export class CloudflareStripe {
     return await this.request('POST', '/tax/calculations', params);
   }
 
+  async retrievePaymentIntent(id: string) {
+    return await this.request('GET', `/payment_intents/${encodeURIComponent(id)}`);
+  }
+
   webhooks = {
     /** @deprecated Use verifyWebhookSignature() instead -- this does NOT verify signatures */
     constructEvent: (payload: string, signature: string, secret: string) => {
@@ -305,6 +309,21 @@ export const createPaymentIntent = async (params: {
     // Use the regular Stripe SDK
     return await client.paymentIntents.create(params) as { id: string; client_secret: string | null; [key: string]: any };
   }
+};
+
+/**
+ * Retrieve a Payment Intent using the appropriate Stripe client.
+ * Used to verify payment server-side (status / amount / order binding) rather
+ * than trusting client-supplied flags.
+ */
+export const retrievePaymentIntent = async (
+  id: string
+): Promise<{ id: string; status: string; amount_received?: number; amount?: number; metadata?: Record<string, string>; [key: string]: any }> => {
+  const client = getStripeClient();
+  if (client instanceof CloudflareStripe) {
+    return (await client.retrievePaymentIntent(id)) as any;
+  }
+  return (await client.paymentIntents.retrieve(id)) as any;
 };
 
 /**

@@ -113,6 +113,9 @@ export * from "./reviews";
 // Subscription schema (application-specific)
 export * from "./subscription";
 
+// Gift card schema (application-specific)
+export * from "./gift-card";
+
 // Webhook events dedup table (application-specific)
 export * from "./webhook-events";
 

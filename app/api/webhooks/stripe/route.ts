@@ -45,6 +45,8 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
+import { getOrderById } from '@/lib/models/mach/orders';
+import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 
 /**
  * POST handler for Stripe webhook events.
@@ -156,6 +158,14 @@ export async function POST(req: NextRequest) {
  * Handle successful payment intent
  * Updates order status and triggers post-payment actions
  */
+/**
+ * Thrown when an event can't be fully processed yet but SHOULD be retried by
+ * Stripe (e.g. the order row hasn't been persisted by the order-creation path
+ * yet). It is propagated out of the handler so the POST route returns 500 and
+ * does NOT record the event as processed, letting Stripe redeliver with backoff.
+ */
+class WebhookRetryableError extends Error {}
+
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   console.log('Payment succeeded:', paymentIntent.id);
 
@@ -189,7 +199,49 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     } catch (updateError) {
       console.error('Error updating order status:', updateError);
     }
+
+    // Gift card fulfillment — issue purchased cards + redeem any applied card.
+    // Idempotent and keyed on the order, so it is safe even though the
+    // order-creation path runs the same step (whichever sees the order wins).
+    // The order must be persisted before we can fulfill. The order-creation
+    // path (POST /api/orders) is the primary fulfiller; if the webhook wins the
+    // race, the order may not exist yet.
+    const order = await getOrderById(orderId);
+    if (!order) {
+      // Don't silently drop fulfillment. Throw a retryable error so the webhook
+      // returns 500 and is NOT recorded as processed — Stripe redelivers with
+      // backoff, by which point the order should exist. Fulfillment is
+      // idempotent and order-keyed, so a later retry (or the order-creation
+      // path winning) is safe and never double-issues/double-redeems.
+      throw new WebhookRetryableError(
+        `[webhook] Order ${orderId} not found yet; deferring gift card fulfillment to a Stripe retry`
+      );
+    }
+    try {
+      // amount_received comes from the signature-verified Stripe event, so it
+      // is a trusted basis for issuing/redeeming stored value. Use ONLY the
+      // captured amount (never the authorized pi.amount); fail closed at 0.
+      const paidAmountCents = paymentIntent.amount_received ?? 0;
+      const gc = await processGiftCardsForOrder(order, { paidAmountCents });
+      if (gc.issued || gc.redeemed) {
+        console.log(
+          `[webhook] Gift cards for ${orderId}: issued=${gc.issued} redeemed=${gc.redeemed} ($${(gc.redeemedAmount / 100).toFixed(2)})`
+        );
+      }
+      if (gc.errors.length) {
+        console.error('[webhook] Gift card fulfillment errors:', gc.errors);
+      }
+    } catch (gcError) {
+      console.error('Error during gift card fulfillment:', gcError);
+    }
   } catch (error) {
+    // Retryable errors (e.g. order-not-yet-persisted) must propagate so the
+    // POST route returns 500 and Stripe retries; everything else stays logged
+    // and swallowed as before.
+    if (error instanceof WebhookRetryableError) {
+      console.warn(error.message);
+      throw error;
+    }
     console.error('Error updating order after payment:', error);
   }
 }

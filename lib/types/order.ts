@@ -20,6 +20,15 @@ export interface OrderItem {
   product_name: string;
   variant_options?: VariantOption[];
   created_at?: string;
+  // Present on gift-card line items: who the purchased card should be emailed to.
+  gift_card?: GiftCardLineMeta;
+}
+
+// Recipient details captured when a gift card product is purchased.
+export interface GiftCardLineMeta {
+  recipientEmail: string;
+  recipientName?: string;
+  message?: string;
 }
 
 // Order status enumeration

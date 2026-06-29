@@ -2,6 +2,7 @@ import type { ShippingOption } from "@/lib/types/shipping";
 import type { CartItem } from "@/lib/types/cartitem";
 import OrderItemCard from "./OrderItemCard";
 import DiscountCodeInput from "./DiscountCodeInput";
+import GiftCardInput from "./GiftCardInput";
 import { useCartStore } from "@/lib/stores/cart-store";
 
 interface Props {
@@ -17,22 +18,28 @@ export default function OrderSummary({
   taxAmount,
   showDiscountInput = false,
 }: Props) {
-  const { appliedDiscounts } = useCartStore();
-  
+  const { appliedDiscounts, appliedGiftCard } = useCartStore();
+
   // Calculate totals from cart store if discounts are applied, otherwise use simple calculation
   const subtotal = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const shippingCost = shippingOption?.cost || 0;
-  
+
   // Calculate discounts
   const cartDiscounts = appliedDiscounts.filter(d => d.type === 'cart');
   const shippingDiscounts = appliedDiscounts.filter(d => d.type === 'shipping');
-  
+
   const cartDiscountAmount = cartDiscounts.reduce((sum, d) => sum + d.amount, 0);
   const shippingDiscountAmount = shippingDiscounts.reduce((sum, d) => sum + d.amount, 0);
-  
+
   const discountedSubtotal = Math.max(0, subtotal - cartDiscountAmount);
   const discountedShipping = Math.max(0, shippingCost - shippingDiscountAmount);
-  const total = discountedSubtotal + discountedShipping + taxAmount;
+  const totalBeforeGiftCard = discountedSubtotal + discountedShipping + taxAmount;
+
+  // Gift card applied as a payment tender against the order total
+  const giftCardApplied = appliedGiftCard
+    ? Math.min(appliedGiftCard.balance, totalBeforeGiftCard)
+    : 0;
+  const total = Math.max(0, totalBeforeGiftCard - giftCardApplied);
 
   return (
     <div className="bg-white text-black p-6 rounded-xl">
@@ -48,6 +55,8 @@ export default function OrderSummary({
         <>
           <hr className="my-4" />
           <DiscountCodeInput />
+          <hr className="my-4" />
+          <GiftCardInput />
         </>
       )}
 
@@ -84,10 +93,18 @@ export default function OrderSummary({
         <span>${taxAmount.toFixed(2)}</span>
       </div>
 
+      {/* Gift card tender */}
+      {giftCardApplied > 0 && appliedGiftCard && (
+        <div className="flex justify-between text-sm text-amber-600">
+          <span>Gift Card ({appliedGiftCard.code})</span>
+          <span>-${giftCardApplied.toFixed(2)}</span>
+        </div>
+      )}
+
       <hr className="my-2" />
 
       <div className="flex justify-between font-semibold">
-        <span>Total</span>
+        <span>{giftCardApplied > 0 ? "Total Due" : "Total"}</span>
         <span>${total.toFixed(2)}</span>
       </div>
     </div>
