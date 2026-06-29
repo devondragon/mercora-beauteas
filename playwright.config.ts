@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// NOTE: E2E is intentionally NOT wired into the CI workflow (.github/workflows/ci.yml)
+// yet — it needs a running dev server with local Cloudflare bindings plus test
+// Clerk/Stripe keys. The `process.env.CI` branches below are for when it is added.
+// When wiring E2E into CI, do NOT upload `test-results/` traces as artifacts: on
+// retry they capture Clerk session cookies and Stripe tokens. Traces are disabled
+// under CI for that reason (see `trace` below).
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
@@ -11,7 +17,8 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'html',
   use: {
     baseURL: 'http://localhost:3000',
-    trace: 'on-first-retry',
+    // Off in CI to avoid capturing session cookies / auth tokens in trace zips.
+    trace: process.env.CI ? 'off' : 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   projects: [
