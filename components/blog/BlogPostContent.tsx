@@ -2,9 +2,11 @@ interface BlogPostContentProps {
   html: string;
 }
 
-// HTML is sanitized at write-time by BlogEditor (browser-side DOMPurify) before
-// being stored. Cloudflare Workers lack `document`, so sanitization cannot run
-// server-side; sanitizing on save is the viable alternative.
+// HTML is sanitized at write-time, so it is safe to render directly here as a
+// server component (the body is in the SSR output, which is what BMC-122 fixes).
+// Two layers gate every write: browser-side DOMPurify in BlogEditor (first-pass
+// UX) and server-side sanitize-html in the model layer (authoritative gate,
+// Workers-compatible). No client-side re-sanitization is needed.
 export function BlogPostContent({ html }: BlogPostContentProps) {
   return (
     <div
