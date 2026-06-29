@@ -267,35 +267,79 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
     const applied = Math.min(requested, current.balance);
     const newBalance = current.balance - applied;
 
-    const updated = await db
-      .update(gift_cards)
-      .set({
-        balance: newBalance,
-        status: newBalance <= 0 ? 'redeemed' : 'active',
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
-      .where(
-        and(
-          eq(gift_cards.id, current.id),
-          eq(gift_cards.balance, current.balance), // optimistic guard
-          eq(gift_cards.status, 'active')
-        )
-      )
-      .returning();
+    // The balance decrement and its ledger entry must be atomic: wrapping them
+    // in a transaction means a failed (or duplicate, see below) ledger insert
+    // rolls back the decrement, so the card can never be silently drained
+    // without a matching audit row. The DB-level unique index on
+    // (gift_card_id, order_id) for redeem entries makes a concurrent second
+    // redemption against the same order fail here (and roll back) instead of
+    // double-charging the card.
+    let updatedRows: typeof gift_cards.$inferSelect[];
+    try {
+      updatedRows = await db.transaction(async (tx) => {
+        const updated = await tx
+          .update(gift_cards)
+          .set({
+            balance: newBalance,
+            status: newBalance <= 0 ? 'redeemed' : 'active',
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(
+            and(
+              eq(gift_cards.id, current.id),
+              eq(gift_cards.balance, current.balance), // optimistic guard
+              eq(gift_cards.status, 'active')
+            )
+          )
+          .returning();
 
-    if (updated.length === 0) {
-      continue; // lost the race — re-read and retry once
+        if (updated.length === 0) {
+          return updated; // lost the race — re-read and retry once
+        }
+
+        await tx.insert(gift_card_transactions).values({
+          gift_card_id: current.id,
+          type: 'redeem',
+          amount: -applied,
+          balance_after: newBalance,
+          order_id: orderId,
+          customer_id: customerId,
+          note: orderId ? `Redeemed against order ${orderId}` : 'Redeemed',
+        });
+
+        return updated;
+      });
+    } catch (err) {
+      // A concurrent call already inserted the redeem ledger row for this order
+      // (unique constraint). Treat as idempotently already-applied.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (orderId && (msg.includes('UNIQUE') || msg.includes('unique'))) {
+        const [existing] = await db
+          .select()
+          .from(gift_card_transactions)
+          .where(
+            and(
+              eq(gift_card_transactions.gift_card_id, card.id),
+              eq(gift_card_transactions.order_id, orderId),
+              eq(gift_card_transactions.type, 'redeem')
+            )
+          )
+          .limit(1);
+        const fresh = await getGiftCardById(card.id);
+        return {
+          success: true,
+          applied: existing ? Math.abs(existing.amount) : 0,
+          remaining: fresh?.balance ?? card.balance,
+          giftCardId: card.id,
+          alreadyRedeemed: true,
+        };
+      }
+      throw err;
     }
 
-    await db.insert(gift_card_transactions).values({
-      gift_card_id: current.id,
-      type: 'redeem',
-      amount: -applied,
-      balance_after: newBalance,
-      order_id: orderId,
-      customer_id: customerId,
-      note: orderId ? `Redeemed against order ${orderId}` : 'Redeemed',
-    });
+    if (updatedRows.length === 0) {
+      continue; // lost the race — re-read and retry once
+    }
 
     return {
       success: true,

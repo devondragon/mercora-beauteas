@@ -47,6 +47,19 @@ CREATE INDEX IF NOT EXISTS idx_gift_cards_recipient ON gift_cards(recipient_emai
 CREATE INDEX IF NOT EXISTS idx_gift_card_tx_card ON gift_card_transactions(gift_card_id);
 CREATE INDEX IF NOT EXISTS idx_gift_card_tx_order ON gift_card_transactions(order_id);
 
+-- Concurrency guards (the webhook and order-creation paths can both run
+-- fulfillment for the same order at the same time):
+--   * one card per (order, line) so a raced double-issue can't email two cards
+--   * one redeem ledger entry per (card, order) so a raced double-redeem can't
+--     drain the card twice (the model wraps the decrement + this insert in a
+--     transaction, so a violation rolls the decrement back as well).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_cards_order_line
+  ON gift_cards(order_id, order_line_id)
+  WHERE order_id IS NOT NULL AND order_line_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gift_card_tx_redeem_order
+  ON gift_card_transactions(gift_card_id, order_id)
+  WHERE type = 'redeem' AND order_id IS NOT NULL;
+
 -- ─── Seed: gift-card product type + digital product with denominations ───
 -- Product type (attribute_definitions is NOT NULL; gift cards carry a denomination).
 INSERT OR IGNORE INTO product_types (id, name, attribute_definitions, status, description, created_at, updated_at)
