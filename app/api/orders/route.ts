@@ -169,6 +169,14 @@ export async function POST(request: NextRequest) {
         details: ['order_id has an invalid format']
       }, { status: 400 });
     }
+    // Bind the client-supplied id to this caller's own user segment so a user
+    // can't create orders inside another user's id namespace.
+    if (providedId && !providedId.startsWith(`WEB-${safeUserId}-`)) {
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: ['order_id does not match the authenticated user']
+      }, { status: 400 });
+    }
     const orderId = providedId || `WEB-${safeUserId}-${now}`;
 
     const db = await getDbAsync();
@@ -295,7 +303,10 @@ export async function POST(request: NextRequest) {
           } else if (piOrderId !== orderId) {
             console.error(`Gift card fulfillment blocked: PaymentIntent ${paymentIntentId} bound to ${piOrderId}, not ${orderId}`);
           } else {
-            const paidAmountCents = pi.amount_received ?? pi.amount ?? 0;
+            // Use ONLY the captured amount. pi.amount is the authorized amount
+            // (can exceed what was captured in partial-capture flows), so we
+            // must never accept it as proof of full payment — fail closed at 0.
+            const paidAmountCents = pi.amount_received ?? 0;
             const gcResult = await processGiftCardsForOrder(hydratedOrder, { paidAmountCents });
             if (gcResult.issued || gcResult.redeemed) {
               console.log(
@@ -313,7 +324,7 @@ export async function POST(request: NextRequest) {
     }
 
     const response = {
-      data: hydrateOrder(newOrder),
+      data: hydratedOrder,
       meta: {
         schema: "mach:order"
       }

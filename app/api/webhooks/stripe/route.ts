@@ -199,8 +199,9 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       const order = await getOrderById(orderId);
       if (order) {
         // amount_received comes from the signature-verified Stripe event, so it
-        // is a trusted basis for issuing/redeeming stored value.
-        const paidAmountCents = paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
+        // is a trusted basis for issuing/redeeming stored value. Use ONLY the
+        // captured amount (never the authorized pi.amount); fail closed at 0.
+        const paidAmountCents = paymentIntent.amount_received ?? 0;
         const gc = await processGiftCardsForOrder(order, { paidAmountCents });
         if (gc.issued || gc.redeemed) {
           console.log(
@@ -212,8 +213,11 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
         }
       } else {
         // Order not created yet (client/webhook race). The order-creation path
-        // will run fulfillment when it persists the paid order.
-        console.log(`[webhook] Order ${orderId} not found yet; deferring gift card fulfillment`);
+        // (POST /api/orders) runs the same fulfillment once it persists the
+        // paid order, so this is normally covered. Logged at warn level so a
+        // case where BOTH paths miss (e.g. the order is never persisted) is
+        // visible in monitoring rather than silently dropped.
+        console.warn(`[webhook] Order ${orderId} not found yet; deferring gift card fulfillment to the order-creation path`);
       }
     } catch (gcError) {
       console.error('Error during gift card fulfillment:', gcError);
