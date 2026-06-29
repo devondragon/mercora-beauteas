@@ -7,7 +7,9 @@ import type { BlogPostSummary } from "@/lib/models/blog";
 function formatDate(ts: string | number): string {
   const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
   if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // Render in UTC so date-only strings (YYYY-MM-DD) don't shift a day back for
+  // viewers behind UTC (off-by-one).
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 function StatusBadge({ status }: { status: string }) {
