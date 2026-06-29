@@ -345,8 +345,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
                 }}
                 onUpdate={({ editor }) => {
                   editorRef.current = editor;
-                  setEditorInstance(editor);
-                  setContent(editor.getJSON());
+                  // No setEditorInstance/setContent — toolbar/footer subscribe directly; saves use editorRef.
                 }}
               >
                 <EditorCommand className="z-50 w-72 rounded-lg border border-neutral-700 bg-neutral-800 p-1 shadow-xl">
