@@ -46,7 +46,7 @@ import { getProductsByCategory } from "@/lib/models/mach/products";
  */
 export default async function HomePage() {
   // Fetch only 3 featured products with optimized query
-  const featuredProducts = (await getProductsByCategory("cat_1")).slice(0, 3);
+  const featuredProducts = (await getProductsByCategory("cat_clearly_calendula")).slice(0, 3);
 
   return (
     <main className="bg-neutral-900 text-white px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
@@ -59,7 +59,7 @@ export default async function HomePage() {
           Organic skincare teas crafted to reveal your most radiant skin.
           Pure botanicals. Transformative ritual. BeauTeas.
         </p>
-        <Link href="/category/featured" className="inline-block">
+        <Link href="/category/clearly-calendula" className="inline-block">
           <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-[#c4a87c] text-[#c4a87c] hover:bg-[#c4a87c] hover:text-black transition rounded">
             Discover Our Teas
           </button>

@@ -8,6 +8,7 @@
 import type {
   ShopifyProduct,
   ShopifyCollection,
+  ShopifyCollect,
   ShopifyCustomer,
   ShopifyOrder,
   ShopifyPage,
@@ -115,6 +116,14 @@ export class ShopifyClient {
     ]);
 
     return [...custom, ...smart];
+  }
+
+  /**
+   * Fetch all collects (product ↔ custom-collection membership links).
+   * Note: smart collections are rule-based and are NOT represented in collects.
+   */
+  async fetchCollects(): Promise<ShopifyCollect[]> {
+    return this.paginate<ShopifyCollect>('/collects.json', 'collects', 250);
   }
 
   /**

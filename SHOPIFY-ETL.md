@@ -37,8 +37,8 @@ Run via `migrate-all.ts` (full pipeline) or `--entity=<name>` (single step).
 | Entity | Source → target | Notes / deps |
 |---|---|---|
 | `schema` | applies `migrations/0008_add_redirect_map.sql` | Skip if migrations already applied (will error "table exists"; harmless, caught per-entity). |
-| `categories` | Shopify custom + smart collections → `categories` | — |
-| `products` | products / variants / images → `products`, `product_variants` (+ images → R2) | Prices stored **inline on variants** (`price` JSON col). |
+| `categories` | Shopify custom + smart collections → `categories` | Registers each collection in the ID map by numeric id **and** handle. |
+| `products` | products / variants / images → `products`, `product_variants` (+ images → R2) | Prices stored **inline on variants** (`price` JSON col). Category membership is read from Shopify **collects** (`fetchCollects()`) and written to `products.categories` — requires the `categories` step to have run first (populates the ID map). Smart-collection membership is rule-based and **not** in collects. |
 | `customers` | Shopify customers → Clerk + D1 | Needs `CLERK_SECRET_KEY` + `read_customers`. |
 | `orders` | Shopify orders → D1 | Requires `customers`, `products` first; `read_orders`. |
 | `reviews` | Judge.me reviews → D1 | Requires `products`. |
@@ -154,10 +154,21 @@ D1_REMOTE=true D1_DATABASE_NAME=beauteas-db D1_ENV=production R2_BUCKET_NAME=bea
   npx tsx --env-file=.env.local scripts/shopify-migration/migrate-all.ts
 ```
 
-> Loads run `DELETE` then `INSERT` per table (idempotent) — re-running a step
-> replaces that entity's rows. The orchestrator continues past a failed entity
+> Loads run `DELETE … WHERE id LIKE '<prefix>%'` then `INSERT` per table
+> (`prod_`/`variant_`/`cat_`). The orchestrator continues past a failed entity
 > and reports per-entity status; a run report is written to
 > `scripts/shopify-migration/output/migration-report.txt`.
+>
+> ⚠️ **Re-running `products` against an already-populated DB fails** with
+> `FOREIGN KEY constraint failed`: the products step deletes `prod_%` rows while
+> `variant_%` rows still reference them. A fresh (empty) target is fine — the
+> deletes match nothing. To re-run against populated tables, clear children first
+> in FK-safe order:
+> ```bash
+> npx wrangler d1 execute <db> --remote --env <env> --command \
+>   "DELETE FROM product_variants WHERE id LIKE 'variant_%'; DELETE FROM products WHERE id LIKE 'prod_%';"
+> ```
+> (Seeded `gift-card*` product/variants don't match the ETL prefixes, so they're preserved.)
 
 ---
 
@@ -191,7 +202,14 @@ curl -sIL https://beauteas-dev.justblackmagic.workers.dev/products/<handle>     
 - **Product URLs 301-redirect** `/products/<handle>` → `/product/<handle>` — that's the
   Shopify redirect map (cutover SEO), not an error. Final status 200.
 - **Categories**: 6 loaded, ~5 browsable (`Home page`/frontpage collection isn't shown as a nav category).
+  Product→category links come from collects: Clearly Calendula → 5 teas, Drinkware → 3, Gift Cards → 1.
 - **Images**: uploaded to R2 under `products/<handle>.jpg`. Requires the R2_* vars.
+
+> **App-side gotcha (not ETL):** the homepage (`app/page.tsx`) and any code calling
+> `getProductsByCategory("…")` reference category **IDs**. After import these are
+> `cat_<collection-handle>` (e.g. `cat_clearly_calendula`), not the old seed `cat_1`.
+> Empty category pages usually mean either `products.categories` is unpopulated
+> (re-run `products` after `categories`) or app code points at a stale category ID.
 
 ---
 
@@ -201,6 +219,8 @@ curl -sIL https://beauteas-dev.justblackmagic.workers.dev/products/<handle>     
 |---|---|
 | `no such table: <table>` | Loader ran against **local** D1. Set `D1_REMOTE=true`. |
 | Data loads but deployed site still 404s | Wrote to preview DB, or wrong `D1_ENV`/`D1_DATABASE_NAME`. Deployed Worker reads main `database_id` (no `--preview`). |
+| `FOREIGN KEY constraint failed` re-running `products` | Re-run against a populated DB — clear `product_variants` then `products` first (see "Re-running" note above). Fresh runs are unaffected. |
+| Category pages empty but products exist | `products.categories` null (run `categories` before `products`), or app code references a stale category ID. |
 | `API extraction mode requires: SHOPIFY_API_KEY, SHOPIFY_STORE_URL` | Missing creds, or `.env.local` not loaded — use `--env-file=.env.local`. |
 | `Shopify API error: 401/403` | Token wrong, or app missing the scope for that entity (`read_products`/`read_content`/`read_customers`/`read_orders`). |
 | Images skipped ("R2 credentials not configured") | Set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (+ `R2_BUCKET_NAME`). Non-fatal. |

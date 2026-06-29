@@ -34,6 +34,8 @@ export async function migrateProducts(
 
   // --- EXTRACT ---
   let extracted: ExtractResult<ShopifyProduct>;
+  // Shopify product ID → Mercora category IDs, derived from collects (api mode).
+  let categoriesByProduct: Map<string, string[]> | undefined;
 
   if (config.extractionMode === 'api') {
     if (!config.shopifyStoreUrl || !config.shopifyApiKey) {
@@ -45,6 +47,32 @@ export async function migrateProducts(
       config.shopifyApiVersion
     );
     extracted = await extractProductsFromApi(client);
+
+    // Fetch collection membership (collects) and resolve to category IDs via
+    // the idMap populated by the prior category migration.
+    const collects = await client.fetchCollects();
+    categoriesByProduct = new Map<string, string[]>();
+    let unresolved = 0;
+    for (const collect of collects) {
+      const categoryId = sharedIdMap.resolve(
+        'categories',
+        String(collect.collection_id)
+      );
+      if (!categoryId) {
+        unresolved++;
+        continue;
+      }
+      const key = String(collect.product_id);
+      const list = categoriesByProduct.get(key) ?? [];
+      if (!list.includes(categoryId)) list.push(categoryId);
+      categoriesByProduct.set(key, list);
+    }
+    sharedLogger.info(
+      `Resolved ${collects.length} collects → categories for ${categoriesByProduct.size} products` +
+        (unresolved > 0
+          ? ` (${unresolved} collects skipped: collection not in idMap — run categories migration first)`
+          : '')
+    );
   } else {
     extracted = extractProductsFromFile(config.dataDir);
   }
@@ -54,7 +82,11 @@ export async function migrateProducts(
   );
 
   // --- TRANSFORM ---
-  const transformed = transformProducts(extracted.records, sharedIdMap);
+  const transformed = transformProducts(
+    extracted.records,
+    sharedIdMap,
+    categoriesByProduct
+  );
 
   if (transformed.warnings.length > 0) {
     for (const warning of transformed.warnings) {

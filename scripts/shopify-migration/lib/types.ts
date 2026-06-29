@@ -120,6 +120,19 @@ export interface ShopifyCollection {
   products_count?: number;
 }
 
+/**
+ * Shopify "collect" — the join between a product and a (custom) collection.
+ * Smart collections use rules instead of collects, so their membership is not
+ * represented here.
+ */
+export interface ShopifyCollect {
+  id: number | string;
+  collection_id: number | string;
+  product_id: number | string;
+  position?: number;
+  sort_value?: string;
+}
+
 export interface ShopifyCustomerAddress {
   address1?: string;
   address2?: string;

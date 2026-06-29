@@ -76,7 +76,13 @@ function skuSuffix(variant: { sku?: string; option1?: string | null; position?: 
  */
 export function transformProducts(
   products: ShopifyProduct[],
-  idMap: IdMap
+  idMap: IdMap,
+  /**
+   * Optional map of Shopify product ID → Mercora category IDs, derived from
+   * Shopify collects (collection membership). When omitted (e.g. file mode
+   * without collects), products are left uncategorized.
+   */
+  categoriesByProduct?: Map<string, string[]>
 ): TransformResult<ShopifyProduct, ProductTransformOutput> {
   const records: ProductTransformOutput[] = [];
   const skipped: Array<{ record: ShopifyProduct; reason: string }> = [];
@@ -139,10 +145,9 @@ export function transformProducts(
       : [];
 
     // --- Transform Categories ---
-    // Resolve Shopify collection handles to Mercora category IDs via idMap
-    const categories: string[] = [];
-    // Categories are typically assigned separately in Shopify;
-    // we'll rely on the ID map being populated by prior category migration
+    // Resolve via the product→category map derived from Shopify collects
+    // (built in migrate-products from fetchCollects() + the category idMap).
+    const categories: string[] = categoriesByProduct?.get(String(shopifyProduct.id)) ?? [];
 
     // --- SEO ---
     let seo: string | null = null;
