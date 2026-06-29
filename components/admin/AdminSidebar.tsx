@@ -41,7 +41,8 @@ import {
   ClipboardList,
   FileEdit,
   MessageSquare,
-  Repeat
+  Repeat,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -94,6 +95,12 @@ const navItems: NavItem[] = [
     href: "/admin/promotions",
     icon: Percent,
     description: "Discounts and campaigns"
+  },
+  {
+    label: "Blog",
+    href: "/admin/blog",
+    icon: BookOpen,
+    description: "Blog posts and articles"
   },
   {
     label: "Pages",
