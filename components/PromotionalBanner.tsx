@@ -66,23 +66,23 @@ export default async function PromotionalBanner() {
     // Define styling for different banner types
     const bannerStyles = {
       info: {
-        bg: 'bg-blue-600',
-        text: 'text-white',
+        bg: 'bg-state-info-bg',
+        text: 'text-state-info',
         icon: AlertCircle,
       },
       success: {
-        bg: 'bg-green-600',
-        text: 'text-white',
+        bg: 'bg-state-success-bg',
+        text: 'text-state-success',
         icon: CheckCircle,
       },
       warning: {
-        bg: 'bg-yellow-600',
-        text: 'text-black',
+        bg: 'bg-state-warning-bg',
+        text: 'text-state-warning',
         icon: AlertTriangle,
       },
       error: {
-        bg: 'bg-red-600',
-        text: 'text-white',
+        bg: 'bg-state-error-bg',
+        text: 'text-state-error',
         icon: XCircle,
       },
     };

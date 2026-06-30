@@ -78,8 +78,8 @@ export const brand = {
       success: { DEFAULT: "#4f7a5b", bg: "#eef4ee" }, // sage — in-stock, savings, success
       error: { DEFAULT: "#b3534b", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
       sale: "#99544a",       // terracotta (= primary-700) — sale price emphasis
-      warning: "#b08d5e",    // honey (= secondary-500) — low stock / caution
-      info: "#555555",       // neutral informational (= text-secondary)
+      warning: { DEFAULT: "#b08d5e", bg: "#f6efe2" }, // honey — low stock / caution
+      info: { DEFAULT: "#555555", bg: "#f0ede8" },    // neutral informational
     },
   },
 
