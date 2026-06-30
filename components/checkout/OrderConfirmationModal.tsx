@@ -28,7 +28,7 @@ export default function OrderConfirmationModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md p-8 space-y-6 text-center rounded-xl shadow-lg bg-white">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-state-success">
+          <DialogTitle className="text-2xl font-bold text-primary-600">
             Thank you for your order!
           </DialogTitle>
           <DialogDescription>

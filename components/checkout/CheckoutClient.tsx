@@ -371,7 +371,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
                   Edit
                 </button>
               </div>
-              <div className="text-sm text-text-secondary space-y-1">
+              <div className="text-sm text-text-muted space-y-1">
                 <p>{typeof shippingAddress.recipient === 'string' ? shippingAddress.recipient : 'Customer'}</p>
                 <p>{typeof shippingAddress.line1 === 'string' ? shippingAddress.line1 : ''}</p>
                 {shippingAddress.line2 && <p>{typeof shippingAddress.line2 === 'string' ? shippingAddress.line2 : ''}</p>}
@@ -407,7 +407,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
                   Edit
                 </button>
               </div>
-              <div className="text-sm text-text-secondary">
+              <div className="text-sm text-text-muted">
                 <p>{shippingOption.label}</p>
                 <p className="text-text-muted">${shippingOption.cost?.toFixed(2) || '0.00'} - {shippingOption.estimatedDays ? `${shippingOption.estimatedDays} business days` : 'Standard delivery'}</p>
               </div>
