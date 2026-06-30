@@ -62,6 +62,25 @@ export const brand = {
       light: "#f3dcd4",       // Lighter border
       dark: "#d4b8ad",        // Darker border
     },
+    // Secondary accent (honey/gold) — formalizes the legacy #c4a87c accent
+    secondary: {
+      50: "#faf6ef",
+      100: "#f3e9d6",
+      200: "#e8d4ad",
+      300: "#d8c08f",
+      400: "#c4a87c",   // main — replaces all hardcoded #c4a87c
+      500: "#b08d5e",
+      600: "#94733f",
+      700: "#7a5e34",
+    },
+    // Functional/state colors, muted to sit on warm cream
+    state: {
+      success: { DEFAULT: "#4f7a5b", bg: "#eef4ee" }, // sage — in-stock, savings, success
+      error: { DEFAULT: "#b3534b", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
+      sale: "#99544a",       // terracotta (= primary-700) — sale price emphasis
+      warning: "#b08d5e",    // honey (= secondary-500) — low stock / caution
+      info: "#555555",       // neutral informational (= text-secondary)
+    },
   },
 
   // === Typography ===
