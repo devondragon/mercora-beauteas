@@ -317,7 +317,7 @@ export default function SubscribeCheckoutClient({
 
           {/* Error */}
           {setupError && (
-            <div className="rounded-lg border border-state-error-bg bg-state-error-bg p-3 text-sm text-state-error">
+            <div className="rounded-lg border border-state-error bg-state-error-bg p-3 text-sm text-state-error">
               {setupError}
             </div>
           )}
@@ -456,7 +456,7 @@ function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps)
         </div>
 
         {errorMessage && (
-          <div className="rounded-lg border border-state-error-bg bg-state-error-bg p-3 text-sm text-state-error">
+          <div className="rounded-lg border border-state-error bg-state-error-bg p-3 text-sm text-state-error">
             {errorMessage}
           </div>
         )}

@@ -154,7 +154,7 @@ export default function PaymentForm({
 
           {/* Error display */}
           {errorMessage && (
-            <div className="text-state-error text-sm font-medium p-3 bg-state-error-bg rounded-lg border border-state-error-bg">
+            <div className="text-state-error text-sm font-medium p-3 bg-state-error-bg rounded-lg border border-state-error">
               {errorMessage}
             </div>
           )}

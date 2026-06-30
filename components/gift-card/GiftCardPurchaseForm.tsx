@@ -128,7 +128,7 @@ export default function GiftCardPurchaseForm() {
       </div>
 
       {error && (
-        <div className="text-sm text-state-error bg-state-error-bg border border-state-error-bg rounded-md px-3 py-2">
+        <div className="text-sm text-state-error bg-state-error-bg border border-state-error rounded-md px-3 py-2">
           {error}
         </div>
       )}

@@ -338,7 +338,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       <ProgressBar step={currentStep === 'shipping' ? 0 : currentStep === 'payment' ? 2 : 3} />
 
       {error && (
-        <div className="bg-state-error-bg border border-state-error-bg text-state-error px-4 py-3 rounded-lg">
+        <div className="bg-state-error-bg border border-state-error text-state-error px-4 py-3 rounded-lg">
           {error}
         </div>
       )}

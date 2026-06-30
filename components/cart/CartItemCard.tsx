@@ -61,7 +61,7 @@ export default function CartItemCard({ item }: CartItemCardProps) {
           <Button
             variant="outline"
             size="sm"
-            className="text-state-error mt-2 border border-state-error-bg bg-state-error-bg hover:bg-primary-500 hover:text-text-inverse text-sm h-12 touch-manipulation"
+            className="text-state-error mt-2 border border-state-error bg-state-error-bg hover:bg-primary-500 hover:text-text-inverse text-sm h-12 touch-manipulation"
             onClick={() => removeItem(item.variantId)}
           >
             Remove
