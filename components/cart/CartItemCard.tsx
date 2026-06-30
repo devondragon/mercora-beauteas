@@ -17,7 +17,7 @@ export default function CartItemCard({ item }: CartItemCardProps) {
   const isCheckoutPage = pathname.startsWith("/checkout");
 
   return (
-    <div className="flex gap-3 sm:gap-4 border p-3 rounded shadow-sm">
+    <div className="flex gap-3 sm:gap-4 border border-border-default p-3 rounded shadow-sm">
       {item.primaryImageUrl && (
         <Image
           src={item.primaryImageUrl}
@@ -35,7 +35,7 @@ export default function CartItemCard({ item }: CartItemCardProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 w-10 p-0 text-base touch-manipulation bg-neutral-100 text-black border border-gray-300 hover:bg-neutral-200"
+              className="h-10 w-10 p-0 text-base touch-manipulation bg-surface-light text-text-primary border border-border-default hover:bg-surface"
               onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
             >
               -
@@ -46,14 +46,14 @@ export default function CartItemCard({ item }: CartItemCardProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 w-10 p-0 text-base touch-manipulation bg-neutral-100 text-black border border-gray-300 hover:bg-neutral-200"
+              className="h-10 w-10 p-0 text-base touch-manipulation bg-surface-light text-text-primary border border-border-default hover:bg-surface"
               onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
             >
               +
             </Button>
           )}
         </div>
-        <p className="text-xs sm:text-sm text-gray-500 mt-1">
+        <p className="text-xs sm:text-sm text-text-muted mt-1">
           ${item.price.toFixed(2)} × {item.quantity} : $
           {(item.price * item.quantity).toFixed(2)}
         </p>
@@ -61,7 +61,7 @@ export default function CartItemCard({ item }: CartItemCardProps) {
           <Button
             variant="outline"
             size="sm"
-            className="text-red-600 mt-2 border border-red-200 bg-red-50 hover:bg-orange-500 hover:text-white text-sm h-12 touch-manipulation"
+            className="text-state-error mt-2 border border-state-error-bg bg-state-error-bg hover:bg-primary-500 hover:text-text-inverse text-sm h-12 touch-manipulation"
             onClick={() => removeItem(item.variantId)}
           >
             Remove

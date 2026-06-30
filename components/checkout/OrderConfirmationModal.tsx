@@ -28,7 +28,7 @@ export default function OrderConfirmationModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md p-8 space-y-6 text-center rounded-xl shadow-lg bg-white">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-orange-500">
+          <DialogTitle className="text-2xl font-bold text-state-success">
             Thank you for your order!
           </DialogTitle>
           <DialogDescription>
@@ -37,8 +37,8 @@ export default function OrderConfirmationModal({
         </DialogHeader>
 
         <div className="space-y-2">
-          <p className="text-sm text-gray-400">Your order ID is:</p>
-          <pre className="text-sm font-mono text-blue-300 p-2 bg-zinc-800 rounded break-words whitespace-pre-wrap">
+          <p className="text-sm text-text-secondary">Your order ID is:</p>
+          <pre className="text-sm font-mono text-primary-700 p-2 bg-surface-light rounded break-words whitespace-pre-wrap">
             {orderId}
           </pre>
         </div>
@@ -46,14 +46,14 @@ export default function OrderConfirmationModal({
         <DialogFooter className="flex flex-col gap-4 pt-4">
           <Button
             asChild
-            className="flex-1 bg-black text-white hover:bg-orange-500 transition-colors"
+            className="flex-1 bg-primary-500 text-text-inverse hover:bg-primary-600 transition-colors"
           >
             <Link href="/">Continue Shopping</Link>
           </Button>
           {userId && (
             <Button
               asChild
-              className="flex-1 bg-black text-white hover:bg-orange-500 transition-colors"
+              className="flex-1 bg-primary-500 text-text-inverse hover:bg-primary-600 transition-colors"
             >
               <Link href="/account/orders">View Order History</Link>
             </Button>

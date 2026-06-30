@@ -78,20 +78,20 @@ export default function CartDrawer() {
       <SheetTrigger asChild>
         <Button
           variant="ghost"
-          className="text-white hover:bg-white hover:text-orange-500 relative"
+          className="text-text-primary hover:bg-white hover:text-primary-600 relative"
         >
           <ShoppingCart className="mr-2 h-4 w-4" />
           Cart ({itemCount})
           {itemCount > 0 && (
-            <span className="absolute -top-2 -right-2 bg-orange-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
+            <span className="absolute -top-2 -right-2 bg-primary-500 text-text-inverse rounded-full w-5 h-5 flex items-center justify-center text-xs">
               {itemCount}
             </span>
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent 
+      <SheetContent
         side="right"
-        className="bg-[#fdfdfb] text-black  transition-all ease-in-out px-3 w-full sm:w-[400px] !max-w-[400px] !duration-[600ms] data-[state=closed]:!duration-[600ms] data-[state=open]:!duration-[600ms] flex flex-col h-full border-neutral-800"
+        className="bg-white text-text-primary  transition-all ease-in-out px-3 w-full sm:w-[400px] !max-w-[400px] !duration-[600ms] data-[state=closed]:!duration-[600ms] data-[state=open]:!duration-[600ms] flex flex-col h-full border-border-default"
       >
         {/* Accessibility components */}
         <VisuallyHidden>
@@ -107,7 +107,7 @@ export default function CartDrawer() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 rounded-full bg-gray-100 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+              className="h-8 w-8 p-0 rounded-full bg-surface-light hover:bg-surface hover:text-text-primary transition-colors"
             >
               <X className="h-4 w-4" />
               <span className="sr-only">Close cart</span>
@@ -122,7 +122,7 @@ export default function CartDrawer() {
           </h2>
           
           {itemCount === 0 ? (
-            <div className="text-gray-400 text-center py-8">
+            <div className="text-text-secondary text-center py-8">
               Your cart is empty
             </div>
           ) : (
@@ -130,15 +130,15 @@ export default function CartDrawer() {
               {items.map((item) => (
                 <CartItemCard key={item.variantId} item={item} />
               ))}
-              
-              <div className="border-t border-gray-700 pt-4">
+
+              <div className="border-t border-border-default pt-4">
                 <div className="flex justify-between items-center text-lg font-bold">
                   <span>Total: ${total.toFixed(2)}</span>
                 </div>
-                
+
                 <Button
                   asChild
-                  className="w-full bg-orange-500 hover:bg-orange-600 mt-4"
+                  className="w-full bg-primary-500 hover:bg-primary-600 mt-4"
                 >
                   <Link href="/checkout" onClick={() => setIsOpen(false)}>
                     Proceed to Checkout
