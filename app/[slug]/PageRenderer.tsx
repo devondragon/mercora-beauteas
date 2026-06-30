@@ -67,19 +67,19 @@ export default function PageRenderer({ page }: PageRendererProps) {
       case 'legal':
         return {
           container: 'max-w-4xl',
-          content: 'prose prose-invert prose-orange max-w-none prose-headings:text-white prose-p:text-gray-300 prose-li:text-gray-300 prose-a:text-orange-400 prose-strong:text-white',
-          header: 'border-b border-neutral-700 pb-6 mb-8'
+          content: 'prose max-w-none prose-headings:text-text-primary prose-p:text-text-secondary prose-li:text-text-secondary prose-a:text-primary-600 prose-strong:text-text-primary',
+          header: 'border-b border-border-default pb-6 mb-8'
         };
       case 'about':
         return {
           container: 'max-w-6xl',
-          content: 'prose prose-invert prose-orange max-w-none prose-headings:text-white prose-p:text-gray-300 prose-li:text-gray-300 prose-a:text-orange-400 prose-strong:text-white',
-          header: 'text-center pb-8 mb-12 border-b border-neutral-700'
+          content: 'prose max-w-none prose-headings:text-text-primary prose-p:text-text-secondary prose-li:text-text-secondary prose-a:text-primary-600 prose-strong:text-text-primary',
+          header: 'text-center pb-8 mb-12 border-b border-border-default'
         };
       default:
         return {
           container: 'max-w-4xl',
-          content: 'prose prose-invert prose-orange max-w-none prose-headings:text-white prose-p:text-gray-300 prose-li:text-gray-300 prose-a:text-orange-400 prose-strong:text-white',
+          content: 'prose max-w-none prose-headings:text-text-primary prose-p:text-text-secondary prose-li:text-text-secondary prose-a:text-primary-600 prose-strong:text-text-primary',
           header: 'pb-6 mb-8'
         };
     }
@@ -90,26 +90,25 @@ export default function PageRenderer({ page }: PageRendererProps) {
   return (
     <>
       {/* Background Pattern - only for this page content area */}
-      <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_80%,rgba(255,165,0,0.1),transparent_50%),radial-gradient(circle_at_80%_20%,rgba(255,165,0,0.05),transparent_50%)] pointer-events-none -z-10" />
-      <div className="fixed inset-0 bg-[linear-gradient(to_bottom,transparent_0%,rgba(0,0,0,0.8)_100%)] pointer-events-none -z-10" />
-      
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_30%_80%,rgba(207,133,119,0.1),transparent_50%),radial-gradient(circle_at_80%_20%,rgba(207,133,119,0.05),transparent_50%)] pointer-events-none -z-10" />
+
       {/* Page Content */}
       <div className="container mx-auto px-4 py-12 relative">
           <div className={`mx-auto ${templateClasses.container}`}>
             {/* Page Header */}
             <div className={templateClasses.header}>
-              <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+              <h1 className="text-4xl md:text-5xl font-bold text-text-primary mb-4">
                 {page.title}
               </h1>
-              
+
               {page.excerpt && (
-                <p className="text-xl text-gray-400 mb-6">
+                <p className="text-xl text-text-secondary mb-6">
                   {page.excerpt}
                 </p>
               )}
 
               {/* Page Meta Information */}
-              <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500">
+              <div className="flex flex-wrap items-center gap-6 text-sm text-text-muted">
                 {page.published_at && formatDate(page.published_at) && (
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
@@ -141,23 +140,23 @@ export default function PageRenderer({ page }: PageRendererProps) {
 
             {/* Page Footer */}
             {(page.template || 'default') === 'legal' && (
-              <div className="mt-12 pt-8 border-t border-neutral-700">
-                <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-6">
-                  <h3 className="text-lg font-semibold text-white mb-2">Need Help?</h3>
-                  <p className="text-gray-400 mb-4">
+              <div className="mt-12 pt-8 border-t border-border-default">
+                <div className="bg-white border border-border-default rounded-lg p-6">
+                  <h3 className="text-lg font-semibold text-text-primary mb-2">Need Help?</h3>
+                  <p className="text-text-secondary mb-4">
                     If you have any questions about this document or our policies,
                     please don&rsquo;t hesitate to contact us.
                   </p>
                   <div className="flex flex-wrap gap-4">
                     <a
                       href="mailto:hello@beauteas.com"
-                      className="text-primary-400 hover:text-primary-300 transition-colors"
+                      className="text-primary-600 hover:text-primary-700 transition-colors"
                     >
                       Contact Support
                     </a>
                     <Link
                       href="/about"
-                      className="text-orange-400 hover:text-orange-300 transition-colors"
+                      className="text-primary-600 hover:text-primary-700 transition-colors"
                     >
                       About Us
                     </Link>
@@ -170,25 +169,25 @@ export default function PageRenderer({ page }: PageRendererProps) {
 
         {/* Related Pages or CTA Section (for about page) */}
         {(page.template || 'default') === 'about' && (
-          <div className="bg-gradient-to-r from-orange-900/20 to-orange-800/20 py-16 mt-16">
+          <div className="bg-gradient-to-r from-primary-100 to-secondary-100 py-16 mt-16">
             <div className="container mx-auto px-4">
               <div className="max-w-4xl mx-auto text-center">
-                <h2 className="text-3xl font-bold text-white mb-6">
+                <h2 className="text-3xl font-bold text-text-primary mb-6">
                   Ready to Explore?
                 </h2>
-                <p className="text-xl text-gray-300 mb-8">
+                <p className="text-xl text-text-secondary mb-8">
                   Discover our AI-powered tea recommendations and start building your beauty from within.
                 </p>
                 <div className="flex flex-wrap justify-center gap-4">
                   <Link
                     href="/products"
-                    className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
+                    className="bg-primary-500 hover:bg-primary-600 text-text-inverse px-8 py-3 rounded-lg font-semibold transition-colors"
                   >
                     Shop Products
                   </Link>
                   <Link
                     href="/agent"
-                    className="bg-transparent border-2 border-orange-600 text-orange-400 hover:bg-orange-600 hover:text-white px-8 py-3 rounded-lg font-semibold transition-colors"
+                    className="bg-transparent border-2 border-primary-500 text-primary-600 hover:bg-primary-500 hover:text-text-inverse px-8 py-3 rounded-lg font-semibold transition-colors"
                   >
                     Chat with Chai AI
                   </Link>

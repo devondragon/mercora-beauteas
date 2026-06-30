@@ -85,7 +85,7 @@ export default async function BlogPostPage({ params }: PageProps) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd).replace(/</g, "\\u003c") }}
       />
 
-      <div className="min-h-screen bg-neutral-950 text-white">
+      <div className="min-h-screen">
         {/* Hero */}
         {post.cover_image_url && (
           <div className="relative h-64 md:h-96">
@@ -95,7 +95,7 @@ export default async function BlogPostPage({ params }: PageProps) {
               className="h-full w-full object-cover"
               loading="eager"
             />
-            <div className="absolute inset-0 bg-neutral-950/50" />
+            <div className="absolute inset-0 bg-black/40" />
           </div>
         )}
 
@@ -108,17 +108,17 @@ export default async function BlogPostPage({ params }: PageProps) {
                   <Link
                     key={tag}
                     href={`/blog?tag=${encodeURIComponent(tag)}`}
-                    className="rounded-full bg-amber-900/30 px-3 py-1 text-xs font-medium text-amber-400 hover:bg-amber-900/50"
+                    className="rounded-full bg-primary-100 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-200"
                   >
                     {tag}
                   </Link>
                 ))}
               </div>
             )}
-            <h1 className="text-3xl font-bold leading-tight text-white md:text-4xl lg:text-5xl">
+            <h1 className="text-3xl font-bold leading-tight text-text-primary md:text-4xl lg:text-5xl">
               {post.title}
             </h1>
-            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-400">
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-text-secondary">
               <span>{post.author}</span>
               <span className="hidden sm:inline">·</span>
               <time dateTime={post.date}>{formatDate(post.date)}</time>
@@ -132,25 +132,25 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         {/* Related posts */}
         {related.length > 0 && (
-          <section className="border-t border-neutral-800 bg-neutral-900/50 py-12">
+          <section className="border-t border-border-default bg-surface-light/50 py-12">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-              <h2 className="mb-8 text-xl font-semibold text-white">Related Posts</h2>
+              <h2 className="mb-8 text-xl font-semibold text-text-primary">Related Posts</h2>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {related.map((rel) => (
                   <Link
                     key={rel.slug}
                     href={`/blog/${rel.slug}`}
-                    className="group rounded-xl border border-neutral-700 bg-neutral-900 p-5 transition hover:border-amber-800/50"
+                    className="group rounded-xl border border-border-default bg-white p-5 transition hover:border-secondary-400"
                   >
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {rel.tags.slice(0, 2).map((tag) => (
-                        <span key={tag} className="rounded-full bg-amber-900/20 px-2 py-0.5 text-xs text-amber-400">
+                        <span key={tag} className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-700">
                           {tag}
                         </span>
                       ))}
                     </div>
-                    <h3 className="font-medium text-white group-hover:text-amber-400">{rel.title}</h3>
-                    <p className="mt-1 text-xs text-neutral-500">{formatDate(rel.date)} · {rel.reading_time} min</p>
+                    <h3 className="font-medium text-text-primary group-hover:text-primary-600">{rel.title}</h3>
+                    <p className="mt-1 text-xs text-text-muted">{formatDate(rel.date)} · {rel.reading_time} min</p>
                   </Link>
                 ))}
               </div>
@@ -160,7 +160,7 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         {/* Back to blog */}
         <div className="py-8 text-center">
-          <Link href="/blog" className="text-sm text-amber-400 hover:text-amber-300">
+          <Link href="/blog" className="text-sm text-primary-600 hover:text-primary-700">
             ← Back to Beauty Journal
           </Link>
         </div>

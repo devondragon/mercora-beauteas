@@ -18,17 +18,17 @@ export const metadata: Metadata = {
 
 export default function GiftCardsPage() {
   return (
-    <main className="min-h-screen bg-neutral-900 px-4 py-12 text-white sm:px-6 lg:px-12">
+    <main className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 text-center">
-          <h1 className="mb-3 text-3xl font-bold sm:text-4xl">BeauTeas Gift Cards</h1>
-          <p className="text-neutral-300">
+          <h1 className="mb-3 text-3xl font-bold sm:text-4xl text-text-primary">BeauTeas Gift Cards</h1>
+          <p className="text-text-secondary">
             Give the gift of glow. Delivered straight to their inbox, redeemable on
             any of our organic skincare teas.
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 text-gray-900 shadow-lg sm:p-8">
+        <div className="rounded-2xl bg-white border border-border-default p-6 text-text-primary shadow-lg sm:p-8">
           <GiftCardPurchaseForm />
         </div>
       </div>

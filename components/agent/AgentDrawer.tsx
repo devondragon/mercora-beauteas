@@ -214,8 +214,8 @@ export default function AgentDrawer({
     }}>
       <SheetTrigger asChild>
         {variant === "mobile" ? (
-          <button 
-            className="flex items-center space-x-3 text-white hover:text-orange-500 py-3 px-4 rounded-lg hover:bg-neutral-800 cursor-pointer w-full text-left bg-transparent border-none"
+          <button
+            className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter cursor-pointer w-full text-left bg-transparent border-none"
             type="button"
           >
             <Search className="h-5 w-5" />
@@ -224,7 +224,7 @@ export default function AgentDrawer({
         ) : (
           <Button
             variant="ghost"
-            className="text-white hover:bg-white hover:text-orange-500"
+            className="text-text-primary hover:bg-text-primary hover:text-primary-500"
             data-testid="agent-drawer-trigger"
           >
             <Search className="mr-2 h-4 w-4" />
@@ -234,7 +234,7 @@ export default function AgentDrawer({
       </SheetTrigger>
       <SheetContent
         side="right"
-        className="bg-[#fdfdfb] text-black transition-all ease-in-out px-3 w-full sm:w-[400px] lg:!w-[800px] !max-w-[800px] !duration-[600ms] data-[state=closed]:!duration-[600ms] data-[state=open]:!duration-[600ms] flex flex-col h-full"
+        className="bg-white text-text-primary transition-all ease-in-out px-3 w-full sm:w-[400px] lg:!w-[800px] !max-w-[800px] !duration-[600ms] data-[state=closed]:!duration-[600ms] data-[state=open]:!duration-[600ms] flex flex-col h-full"
       >
         {/* Accessibility components */}
         <VisuallyHidden>
@@ -250,7 +250,7 @@ export default function AgentDrawer({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 rounded-full bg-gray-100 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+              className="h-8 w-8 p-0 rounded-full bg-surface-light hover:bg-surface hover:text-text-primary transition-colors"
             >
               <X className="h-4 w-4" />
               <span className="sr-only">Close chat</span>
@@ -271,12 +271,12 @@ export default function AgentDrawer({
 
         {/* Chat container - fixed height */}
         <div className="flex-shrink-0">
-          <div 
+          <div
             ref={chatContainerRef}
-            className="border rounded-md p-3 h-60 sm:h-80 overflow-y-auto text-sm space-y-3 bg-gray-100"
+            className="border rounded-md p-3 h-60 sm:h-80 overflow-y-auto text-sm space-y-3 bg-surface"
           >
             {messages.length === 0 && !isLoading ? (
-              <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 space-y-3">
+              <div className="flex flex-col items-center justify-center h-full text-center text-text-muted space-y-3">
                 <div className="h-12 w-12 flex items-center justify-center">
                   <Image
                     src="/volt.svg"        // use PNG for crisp CF-resized avatars
@@ -287,12 +287,12 @@ export default function AgentDrawer({
                   />
                 </div>
                 <div className="space-y-2">
-                  <p className="font-semibold text-gray-700">Hi! I&rsquo;m Chai, your beauty bestie 💕</p>
+                  <p className="font-semibold text-text-primary">Hi! I&rsquo;m Chai, your beauty bestie 💕</p>
                   <p className="text-xs leading-relaxed max-w-xs">
                     Ask me about your skin goals, our teas, or anything glow-related.
                     I&rsquo;m here to help you find your perfect blend!
                   </p>
-                  <p className="text-xs text-gray-600 italic">
+                  <p className="text-xs text-text-muted italic">
                     Try: &ldquo;which tea helps with breakouts?&rdquo; or &ldquo;Tell me your secret brewing ritual&rdquo;
                   </p>
                 </div>
@@ -301,7 +301,7 @@ export default function AgentDrawer({
               messages.map((msg, i) =>
                 msg.role === "user" ? (
                   <div key={i} className="flex justify-end">
-                    <div className="bg-blue-500 text-right text-white px-3 py-2 rounded-lg max-w-[75%]">
+                    <div className="bg-primary-100 text-right text-text-primary px-3 py-2 rounded-lg max-w-[75%]">
                       <p>
                         <strong>You:</strong> {msg.content}
                       </p>
@@ -317,7 +317,7 @@ export default function AgentDrawer({
                         height={20}
                       />
                     </div>
-                    <div className="bg-white text-gray-800 px-3 py-2 rounded-lg max-w-[75%] shadow-sm border">
+                    <div className="bg-surface-light text-text-primary px-3 py-2 rounded-lg max-w-[75%] shadow-sm border">
                       <p>
                         <strong>Chai:</strong> {msg.content}
                       </p>
@@ -328,11 +328,11 @@ export default function AgentDrawer({
             )}
             {isLoading && (
               <div className="flex items-start space-x-2">
-                <div className="h-6 w-6 flex items-center justify-center bg-orange-500 rounded-full text-white text-xs font-bold">
+                <div className="h-6 w-6 flex items-center justify-center bg-primary-500 rounded-full text-text-inverse text-xs font-bold">
                   C
                 </div>
-                <div className="bg-white text-gray-800 px-3 py-2 rounded-lg shadow-sm border">
-                  <p className="text-gray-500">
+                <div className="bg-surface-light text-text-primary px-3 py-2 rounded-lg shadow-sm border">
+                  <p className="text-text-muted">
                     <strong>Chai:</strong> Thinking...
                   </p>
                 </div>
@@ -344,7 +344,7 @@ export default function AgentDrawer({
         </div>
 
         {/* AI Disclaimer */}
-        <div className="flex-shrink-0 text-xs text-gray-500 text-center px-2 py-1">
+        <div className="flex-shrink-0 text-xs text-text-muted text-center px-2 py-1">
           AI-generated responses may contain inaccuracies. Verify product details before purchase.
         </div>
 
@@ -355,7 +355,7 @@ export default function AgentDrawer({
               ref={inputRef}
               type="text"
               placeholder={isLoading ? "Waiting for response..." : "Type your question..."}
-              className="w-full border rounded pl-3 pr-10 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full border rounded pl-3 pr-10 py-2 disabled:bg-surface-light disabled:cursor-not-allowed"
               value={input}
               disabled={isLoading}
               onChange={(e) => setInput(e.target.value)}
@@ -372,7 +372,7 @@ export default function AgentDrawer({
             <button
               onClick={handleSubmit}
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-orange-400 hover:text-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-primary-500 hover:text-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -383,10 +383,10 @@ export default function AgentDrawer({
         <hr className="my-4 flex-shrink-0" />
 
         {/* Products area - scrollable */}
-        <div className="flex-1 overflow-y-auto text-sm text-gray-600">
+        <div className="flex-1 overflow-y-auto text-sm text-text-secondary">
           {products.length > 0 ? (
             <div className="space-y-2">
-              <h3 className="font-semibold text-base text-black sticky top-0 bg-[#fdfdfb] pb-2">
+              <h3 className="font-semibold text-base text-text-primary sticky top-0 bg-white pb-2">
                 Recommended Products ({products.length})
               </h3>
               <div className="space-y-2 pb-4">
@@ -396,10 +396,10 @@ export default function AgentDrawer({
               </div>
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-400">
+            <div className="text-center py-8 text-text-muted">
               <div className="space-y-2">
                 <div className="text-2xl">🍵</div>
-                <p className="font-medium text-gray-700">Product recommendations will appear here</p>
+                <p className="font-medium text-text-primary">Product recommendations will appear here</p>
                 <p className="text-xs">Ask Chai about your skin goals and I&rsquo;ll show you the perfect blends!</p>
               </div>
             </div>
