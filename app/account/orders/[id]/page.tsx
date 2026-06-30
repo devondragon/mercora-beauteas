@@ -20,8 +20,8 @@ function StatusTimeline({ status }: { status: string }) {
   if (isUnknown) {
     return (
       <div className="flex items-center gap-2">
-        <div className="w-3 h-3 rounded-full bg-yellow-500" />
-        <span className="text-sm text-yellow-400 capitalize">{status.replace(/_/g, " ")}</span>
+        <div className="w-3 h-3 rounded-full bg-state-warning" />
+        <span className="text-sm text-state-warning capitalize">{status.replace(/_/g, " ")}</span>
       </div>
     );
   }
@@ -33,15 +33,15 @@ function StatusTimeline({ status }: { status: string }) {
           <div
             className={`w-3 h-3 rounded-full ${
               isCanceled
-                ? "bg-red-500"
+                ? "bg-state-error"
                 : i <= currentIndex
-                  ? "bg-orange-500"
-                  : "bg-neutral-600"
+                  ? "bg-primary-500"
+                  : "bg-border-default"
             }`}
           />
           <span
             className={`text-xs capitalize ${
-              i <= currentIndex ? "text-white" : "text-neutral-500"
+              i <= currentIndex ? "text-text-primary" : "text-text-muted"
             }`}
           >
             {step}
@@ -49,7 +49,7 @@ function StatusTimeline({ status }: { status: string }) {
           {i < statusSteps.length - 1 && (
             <div
               className={`w-8 h-0.5 ${
-                i < currentIndex ? "bg-orange-500" : "bg-neutral-600"
+                i < currentIndex ? "bg-primary-500" : "bg-border-default"
               }`}
             />
           )}
@@ -80,7 +80,7 @@ export default async function OrderDetailPage({
     <div>
       <Link
         href="/account/orders"
-        className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-6 transition-colors"
+        className="inline-flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary mb-6 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to orders
@@ -88,59 +88,59 @@ export default async function OrderDetailPage({
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2">
         <h1 className="text-2xl font-bold">Order {order.id}</h1>
-        <span className="text-sm text-gray-400">
+        <span className="text-sm text-text-secondary">
           Placed {formatDate(order.created_at, true)}
         </span>
       </div>
 
       {/* Status timeline */}
-      <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 mb-6">
-        <h2 className="text-sm font-medium text-gray-400 mb-3">Status</h2>
+      <div className="bg-white border border-border-default rounded-lg p-5 mb-6">
+        <h2 className="text-sm font-medium text-text-secondary mb-3">Status</h2>
         <StatusTimeline status={order.status} />
       </div>
 
       {/* Order items */}
-      <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 mb-6">
-        <h2 className="text-sm font-medium text-gray-400 mb-4">Items</h2>
+      <div className="bg-white border border-border-default rounded-lg p-5 mb-6">
+        <h2 className="text-sm font-medium text-text-secondary mb-4">Items</h2>
         <div className="space-y-3">
           {items.map((item: OrderItem, i: number) => (
             <div
               key={item.id || i}
-              className="flex justify-between items-center py-2 border-b border-neutral-700 last:border-0"
+              className="flex justify-between items-center py-2 border-b border-border-default last:border-0"
             >
               <div>
-                <p className="text-white font-medium">{item.product_name}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-text-primary font-medium">{item.product_name}</p>
+                <p className="text-xs text-text-secondary">
                   {item.sku && `SKU: ${item.sku} · `}Qty: {item.quantity}
                 </p>
               </div>
-              <p className="text-white">
+              <p className="text-text-primary">
                 {formatMoney(item.unit_price || item.total_price)}
               </p>
             </div>
           ))}
         </div>
-        <div className="mt-4 pt-3 border-t border-neutral-700 flex justify-between font-semibold">
+        <div className="mt-4 pt-3 border-t border-border-default flex justify-between font-semibold">
           <span>Total</span>
-          <span className="text-green-400">{formatMoney(order.total_amount)}</span>
+          <span className="text-state-success">{formatMoney(order.total_amount)}</span>
         </div>
       </div>
 
       {/* Shipping & Billing */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5">
-          <h2 className="text-sm font-medium text-gray-400 mb-2">
+        <div className="bg-white border border-border-default rounded-lg p-5">
+          <h2 className="text-sm font-medium text-text-secondary mb-2">
             Shipping Address
           </h2>
-          <p className="text-white text-sm whitespace-pre-line">
+          <p className="text-text-primary text-sm whitespace-pre-line">
             {formatAddress(order.shipping_address)}
           </p>
         </div>
-        <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5">
-          <h2 className="text-sm font-medium text-gray-400 mb-2">
+        <div className="bg-white border border-border-default rounded-lg p-5">
+          <h2 className="text-sm font-medium text-text-secondary mb-2">
             Payment
           </h2>
-          <p className="text-white text-sm">
+          <p className="text-text-primary text-sm">
             {order.payment_method || "Card"} · {order.payment_status}
           </p>
         </div>

@@ -16,7 +16,7 @@ export default async function AccountLayout({
   if (!userId) redirect("/sign-in");
 
   return (
-    <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <main className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <div className="max-w-6xl mx-auto">
         <div className="md:flex md:gap-8">
           <AccountSidebar />

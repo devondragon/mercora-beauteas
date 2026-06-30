@@ -16,7 +16,7 @@ export default async function OrdersPage() {
     <div>
       <h1 className="text-2xl sm:text-3xl font-bold mb-6">Order History</h1>
       {orders.length === 0 ? (
-        <p className="text-gray-400">You haven&rsquo;t placed any orders yet.</p>
+        <p className="text-text-secondary">You haven&rsquo;t placed any orders yet.</p>
       ) : (
         <div className="space-y-4 sm:space-y-6">
           {orders.map((order) => (

@@ -35,7 +35,7 @@ export default async function SettingsPage() {
               elements: {
                 rootBox: "w-full",
                 cardBox: "w-full shadow-none",
-                card: "bg-neutral-800 border border-neutral-700 shadow-none",
+                card: "bg-white border border-border-default shadow-none",
               },
             }}
           />

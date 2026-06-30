@@ -56,32 +56,32 @@ export default function AccountSettings({ initialSettings }: AccountSettingsProp
   return (
     <div className="space-y-8">
       {/* Profile */}
-      <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5">
+      <div className="bg-white border border-border-default rounded-lg p-5">
         <h2 className="text-lg font-semibold mb-4">Profile</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">First Name</label>
+            <label className="block text-sm text-text-secondary mb-1">First Name</label>
             <input
               type="text"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+              className="w-full bg-white border border-border-default rounded-md px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-primary-500"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Last Name</label>
+            <label className="block text-sm text-text-secondary mb-1">Last Name</label>
             <input
               type="text"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              className="w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+              className="w-full bg-white border border-border-default rounded-md px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-primary-500"
             />
           </div>
         </div>
       </div>
 
       {/* Communication Preferences */}
-      <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5">
+      <div className="bg-white border border-border-default rounded-lg p-5">
         <h2 className="text-lg font-semibold mb-4">Communication Preferences</h2>
         <div className="space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
@@ -89,11 +89,11 @@ export default function AccountSettings({ initialSettings }: AccountSettingsProp
               type="checkbox"
               checked={emailMarketing}
               onChange={(e) => setEmailMarketing(e.target.checked)}
-              className="rounded border-neutral-600"
+              className="rounded border-border-default"
             />
             <div>
-              <p className="text-sm text-white">Email Marketing</p>
-              <p className="text-xs text-gray-400">Receive promotions, new products, and special offers</p>
+              <p className="text-sm text-text-primary">Email Marketing</p>
+              <p className="text-xs text-text-secondary">Receive promotions, new products, and special offers</p>
             </div>
           </label>
           <label className="flex items-center gap-3 cursor-pointer">
@@ -101,11 +101,11 @@ export default function AccountSettings({ initialSettings }: AccountSettingsProp
               type="checkbox"
               checked={smsMarketing}
               onChange={(e) => setSmsMarketing(e.target.checked)}
-              className="rounded border-neutral-600"
+              className="rounded border-border-default"
             />
             <div>
-              <p className="text-sm text-white">SMS Notifications</p>
-              <p className="text-xs text-gray-400">Receive order updates and delivery notifications via text</p>
+              <p className="text-sm text-text-primary">SMS Notifications</p>
+              <p className="text-xs text-text-secondary">Receive order updates and delivery notifications via text</p>
             </div>
           </label>
         </div>
@@ -114,7 +114,7 @@ export default function AccountSettings({ initialSettings }: AccountSettingsProp
       <Button
         onClick={handleSave}
         disabled={saving}
-        className="bg-orange-500 hover:bg-orange-600 text-white"
+        className="bg-primary-500 hover:bg-primary-600 text-text-inverse"
       >
         {saving ? "Saving..." : "Save Changes"}
       </Button>
