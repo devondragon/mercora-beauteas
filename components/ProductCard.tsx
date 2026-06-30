@@ -148,7 +148,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
             />
         </div>
         <div className="p-4 sm:p-4 space-y-3">
-          <h3 className="text-lg sm:text-xl font-semibold line-clamp-2 leading-snug">
+          <h3 className="text-white text-lg sm:text-xl font-semibold line-clamp-2 leading-snug">
             {name}
           </h3>
           <p className="text-gray-400 text-sm sm:text-sm line-clamp-2 leading-relaxed">

@@ -48,12 +48,16 @@ export default function PageRenderer({ page }: PageRendererProps) {
     }
   }, [page.custom_js]);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  // Format date for display. Dates are stored as Unix timestamps (seconds) in D1,
+  // so multiply by 1000 to convert to milliseconds before constructing a Date.
+  const formatDate = (dateValue: string | number): string | null => {
+    const ms = typeof dateValue === 'number' ? dateValue * 1000 : Number(dateValue) * 1000;
+    const date = new Date(ms);
+    if (isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
   };
 
@@ -106,17 +110,17 @@ export default function PageRenderer({ page }: PageRendererProps) {
 
               {/* Page Meta Information */}
               <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500">
-                {page.published_at && (
+                {page.published_at && formatDate(page.published_at) && (
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    <span>Published {formatDate(page.published_at.toString())}</span>
+                    <span>Published {formatDate(page.published_at)}</span>
                   </div>
                 )}
-                
-                {page.updated_at && page.updated_at !== page.created_at && (
+
+                {page.updated_at && page.updated_at !== page.created_at && formatDate(page.updated_at) && (
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    <span>Updated {formatDate(page.updated_at.toString())}</span>
+                    <span>Updated {formatDate(page.updated_at)}</span>
                   </div>
                 )}
 
