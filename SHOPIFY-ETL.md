@@ -170,6 +170,29 @@ D1_REMOTE=true D1_DATABASE_NAME=beauteas-db D1_ENV=production R2_BUCKET_NAME=bea
 > ```
 > (Seeded `gift-card*` product/variants don't match the ETL prefixes, so they're preserved.)
 
+### Chai search index (Vectorize) + knowledge base
+
+The ETL loads D1/R2 but does **not** build the Vectorize index. Rebuild it after
+the catalog is loaded so Chai searches the real products + knowledge base:
+
+1. **Knowledge articles** live in `data/r2/knowledge_md/*.md` and must be uploaded
+   to the env's R2 bucket under the `knowledge_md/` prefix (the vectorize route
+   reads `MEDIA.list({ prefix: "knowledge_md/" })`). Both dev (`beauteas-images-dev`)
+   and prod (`beauteas-images`) buckets are already seeded (2026-06-30). To update:
+   ```bash
+   npx wrangler r2 object put "<bucket>/knowledge_md/<file>.md" --file="data/r2/knowledge_md/<file>.md" --content-type="text/markdown" --remote
+   ```
+2. **Rebuild the index** by calling the deployed Worker (it reads products from D1
+   + knowledge from R2, clears the old vectors, and re-embeds with BGE):
+   ```bash
+   curl -H "Authorization: Bearer $ADMIN_VECTORIZE_TOKEN" https://<worker-host>/api/admin/vectorize
+   ```
+   Auth needs the `ADMIN_VECTORIZE_TOKEN` **secret** set on that Worker
+   (`wrangler secret put ADMIN_VECTORIZE_TOKEN --env <env>`). The `x-dev-admin`
+   bypass does **not** work on deployed Workers (they run `NODE_ENV=production`).
+   Prod must have the catalog loaded + Worker live with live keys + the token set
+   before this will produce a useful index.
+
 ---
 
 ## Verification
