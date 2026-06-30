@@ -15,7 +15,7 @@ function formatDate(ts: string | number): string {
 function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-      status === "published" ? "bg-green-900/40 text-green-400" : "bg-yellow-900/40 text-yellow-400"
+      status === "published" ? "bg-state-success-bg text-state-success" : "bg-state-warning-bg text-state-warning"
     }`}>
       {status}
     </span>
@@ -75,22 +75,22 @@ export function BlogManagement() {
   return (
     <div>
       {error && (
-        <div className="mb-4 flex items-center justify-between rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+        <div className="mb-4 flex items-center justify-between rounded border border-state-error bg-state-error-bg px-4 py-2 text-sm text-state-error">
           <span>{error}</span>
-          <button type="button" onClick={() => setError("")} className="text-red-400 hover:text-red-200">✕</button>
+          <button type="button" onClick={() => setError("")} className="text-state-error hover:opacity-75">✕</button>
         </div>
       )}
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Blog</h1>
-          <p className="mt-0.5 text-sm text-neutral-400">
+          <h1 className="text-2xl font-bold text-text-primary">Blog</h1>
+          <p className="mt-0.5 text-sm text-text-secondary">
             {stats.total} total · {stats.published} published · {stats.draft} drafts
           </p>
         </div>
         <Link
           href="/admin/blog/new"
-          className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
+          className="flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
         >
           <Plus className="h-4 w-4" /> New Post
         </Link>
@@ -98,31 +98,31 @@ export function BlogManagement() {
 
       {/* Search */}
       <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
         <input
           type="text"
           placeholder="Search posts..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-neutral-700 bg-neutral-900 py-2 pl-9 pr-4 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          className="w-full rounded-lg border admin-input py-2 pl-9 pr-4 text-sm placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary-500"
         />
       </div>
 
       {/* Table */}
       {loading ? (
         <div className="flex h-40 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
+          <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex h-40 flex-col items-center justify-center gap-2 text-neutral-500">
+        <div className="flex h-40 flex-col items-center justify-center gap-2 text-text-muted">
           <FileText className="h-8 w-8" />
           <p>{search ? "No posts match your search" : "No blog posts yet"}</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-neutral-800">
+        <div className="admin-card overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-900">
-              <tr className="text-left text-xs font-medium uppercase tracking-wide text-neutral-400">
+            <thead className="bg-surface-light">
+              <tr className="text-left text-xs font-medium uppercase tracking-wide text-text-secondary">
                 <th className="px-4 py-3">Title</th>
                 <th className="hidden px-4 py-3 md:table-cell">Date</th>
                 <th className="hidden px-4 py-3 sm:table-cell">Status</th>
@@ -130,16 +130,16 @@ export function BlogManagement() {
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-800 bg-neutral-950">
+            <tbody className="divide-y divide-border-default bg-white">
               {filtered.map((post) => (
-                <tr key={post.id} className="hover:bg-neutral-900/50">
+                <tr key={post.id} className="hover:bg-surface-light">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-white">{post.title}</div>
+                    <div className="font-medium text-text-primary">{post.title}</div>
                     {post.excerpt && (
-                      <div className="mt-0.5 line-clamp-1 text-xs text-neutral-500">{post.excerpt}</div>
+                      <div className="mt-0.5 line-clamp-1 text-xs text-text-muted">{post.excerpt}</div>
                     )}
                   </td>
-                  <td className="hidden px-4 py-3 text-neutral-400 md:table-cell">
+                  <td className="hidden px-4 py-3 text-text-secondary md:table-cell">
                     {formatDate(post.date)}
                   </td>
                   <td className="hidden px-4 py-3 sm:table-cell">
@@ -148,7 +148,7 @@ export function BlogManagement() {
                   <td className="hidden px-4 py-3 lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {post.tags.slice(0, 3).map((tag) => (
-                        <span key={tag} className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">
+                        <span key={tag} className="rounded-full bg-surface-light px-2 py-0.5 text-xs text-text-secondary">
                           {tag}
                         </span>
                       ))}
@@ -161,7 +161,7 @@ export function BlogManagement() {
                           href={`/blog/${post.slug}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                          className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary"
                           title="View live"
                         >
                           <ExternalLink className="h-4 w-4" />
@@ -170,14 +170,14 @@ export function BlogManagement() {
                       <button
                         type="button"
                         onClick={() => toggleStatus(post)}
-                        className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                        className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary"
                         title={post.status === "published" ? "Unpublish" : "Publish"}
                       >
                         {post.status === "published" ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                       <Link
                         href={`/admin/blog/${post.id}/edit`}
-                        className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                        className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary"
                         title="Edit"
                       >
                         <Edit3 className="h-4 w-4" />
@@ -185,7 +185,7 @@ export function BlogManagement() {
                       <button
                         type="button"
                         onClick={() => deletePost(post)}
-                        className="rounded p-1.5 text-neutral-400 hover:bg-red-900/30 hover:text-red-400"
+                        className="rounded p-1.5 text-text-secondary hover:bg-state-error-bg hover:text-state-error"
                         title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />

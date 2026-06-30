@@ -73,23 +73,23 @@ interface SubscriptionEvent {
 // ---------- Constants ----------
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
-  active: "bg-green-500 text-white",
-  paused: "bg-yellow-500 text-white",
-  canceled: "bg-red-500 text-white",
-  past_due: "bg-blue-500 text-white",
-  incomplete: "bg-gray-500 text-white",
-  trialing: "bg-purple-500 text-white",
+  active: "bg-state-success-bg text-state-success",
+  paused: "bg-state-warning-bg text-state-warning",
+  canceled: "bg-state-error-bg text-state-error",
+  past_due: "bg-state-error-bg text-state-error",
+  incomplete: "bg-state-warning-bg text-state-warning",
+  trialing: "bg-state-info-bg text-state-info",
 };
 
 const EVENT_DOT_COLORS: Record<string, { bg: string; dot: string }> = {
-  created: { bg: "bg-green-500/20", dot: "bg-green-400" },
-  renewed: { bg: "bg-green-500/20", dot: "bg-green-400" },
-  paused: { bg: "bg-yellow-500/20", dot: "bg-yellow-400" },
-  skipped: { bg: "bg-yellow-500/20", dot: "bg-yellow-400" },
-  resumed: { bg: "bg-blue-500/20", dot: "bg-blue-400" },
-  canceled: { bg: "bg-red-500/20", dot: "bg-red-400" },
-  payment_failed: { bg: "bg-red-500/20", dot: "bg-red-400" },
-  updated: { bg: "bg-blue-500/20", dot: "bg-blue-400" },
+  created: { bg: "bg-state-success-bg", dot: "bg-state-success" },
+  renewed: { bg: "bg-state-success-bg", dot: "bg-state-success" },
+  paused: { bg: "bg-state-warning-bg", dot: "bg-state-warning" },
+  skipped: { bg: "bg-state-warning-bg", dot: "bg-state-warning" },
+  resumed: { bg: "bg-state-info-bg", dot: "bg-state-info" },
+  canceled: { bg: "bg-state-error-bg", dot: "bg-state-error" },
+  payment_failed: { bg: "bg-state-error-bg", dot: "bg-state-error" },
+  updated: { bg: "bg-state-info-bg", dot: "bg-state-info" },
 };
 
 const EVENT_DESCRIPTIONS: Record<string, string> = {
@@ -185,8 +185,8 @@ export default function AdminSubscriptionDetailPage() {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-12">
-          <RefreshCw className="w-8 h-8 text-orange-400 animate-spin mb-4" />
-          <p className="text-gray-400">Loading subscription details...</p>
+          <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mb-4" />
+          <p className="text-text-secondary">Loading subscription details...</p>
         </div>
       </div>
     );
@@ -198,12 +198,9 @@ export default function AdminSubscriptionDetailPage() {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-12">
-          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
-          <p className="text-red-400 mb-4">{error}</p>
-          <Button
-            onClick={fetchDetail}
-            className="bg-orange-600 hover:bg-orange-700"
-          >
+          <AlertCircle className="w-12 h-12 text-state-error mb-4" />
+          <p className="text-state-error mb-4">{error}</p>
+          <Button onClick={fetchDetail}>
             Retry
           </Button>
         </div>
@@ -217,11 +214,11 @@ export default function AdminSubscriptionDetailPage() {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-12">
-          <AlertCircle className="w-12 h-12 text-gray-600 mb-4" />
-          <h3 className="text-lg font-medium text-gray-400 mb-4">Subscription not found</h3>
+          <AlertCircle className="w-12 h-12 text-text-muted mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary mb-4">Subscription not found</h3>
           <Button
             onClick={() => router.push("/admin/subscriptions")}
-            className="bg-neutral-700 hover:bg-neutral-600 text-white"
+            variant="outline"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Subscriptions
@@ -233,7 +230,7 @@ export default function AdminSubscriptionDetailPage() {
 
   // ---------- Main render ----------
 
-  const statusColorClass = STATUS_BADGE_COLORS[subscription.status] || "bg-gray-500 text-white";
+  const statusColorClass = STATUS_BADGE_COLORS[subscription.status] || "bg-state-info-bg text-state-info";
 
   return (
     <div className="p-6 space-y-6">
@@ -241,41 +238,41 @@ export default function AdminSubscriptionDetailPage() {
       <Button
         onClick={() => router.push("/admin/subscriptions")}
         variant="ghost"
-        className="text-gray-400 hover:text-white -ml-2"
+        className="text-text-secondary hover:text-text-primary -ml-2"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />
         Back to Subscriptions
       </Button>
 
       {/* Summary Card */}
-      <Card className="bg-neutral-800 border-neutral-700 p-6">
+      <Card className="admin-card p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column - Subscription Info */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-white mb-4">Subscription Info</h2>
+            <h2 className="text-lg font-semibold text-text-primary mb-4">Subscription Info</h2>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Status</p>
+              <p className="text-sm text-text-secondary mb-1">Status</p>
               <Badge className={`${statusColorClass} text-xs`}>
                 {capitalize(subscription.status.replace("_", " "))}
               </Badge>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Subscription ID</p>
-              <p className="text-xs text-gray-500 font-mono">{subscription.id}</p>
+              <p className="text-sm text-text-secondary mb-1">Subscription ID</p>
+              <p className="text-xs text-text-muted font-mono">{subscription.id}</p>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Stripe Subscription ID</p>
-              <p className="text-xs text-gray-500 font-mono">
+              <p className="text-sm text-text-secondary mb-1">Stripe Subscription ID</p>
+              <p className="text-xs text-text-muted font-mono">
                 {subscription.stripe_subscription_id}
               </p>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Created</p>
-              <p className="text-sm text-white">
+              <p className="text-sm text-text-secondary mb-1">Created</p>
+              <p className="text-sm text-text-primary">
                 {subscription.created_at
                   ? new Date(subscription.created_at).toLocaleDateString()
                   : "N/A"}
@@ -285,27 +282,27 @@ export default function AdminSubscriptionDetailPage() {
 
           {/* Right Column - Details */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-white mb-4">Details</h2>
+            <h2 className="text-lg font-semibold text-text-primary mb-4">Details</h2>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Customer</p>
-              <p className="text-sm text-white">{subscription.customer_name || "Unknown"}</p>
-              <p className="text-xs text-gray-500">{subscription.customer_email || "--"}</p>
+              <p className="text-sm text-text-secondary mb-1">Customer</p>
+              <p className="text-sm text-text-primary">{subscription.customer_name || "Unknown"}</p>
+              <p className="text-xs text-text-muted">{subscription.customer_email || "--"}</p>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Product</p>
-              <p className="text-sm text-white">{subscription.product_name || "--"}</p>
+              <p className="text-sm text-text-secondary mb-1">Product</p>
+              <p className="text-sm text-text-primary">{subscription.product_name || "--"}</p>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Frequency</p>
-              <p className="text-sm text-white">{capitalize(subscription.plan_frequency)}</p>
+              <p className="text-sm text-text-secondary mb-1">Frequency</p>
+              <p className="text-sm text-text-primary">{capitalize(subscription.plan_frequency)}</p>
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Price</p>
-              <p className="text-sm text-white">
+              <p className="text-sm text-text-secondary mb-1">Price</p>
+              <p className="text-sm text-text-primary">
                 {formatDiscountedPrice(
                   subscription.variant_price_amount,
                   subscription.plan_discount_percent
@@ -314,8 +311,8 @@ export default function AdminSubscriptionDetailPage() {
             </div>
 
             <div>
-              <p className="text-sm text-gray-400 mb-1">Current Period</p>
-              <p className="text-sm text-white">
+              <p className="text-sm text-text-secondary mb-1">Current Period</p>
+              <p className="text-sm text-text-primary">
                 {subscription.current_period_start && subscription.current_period_end
                   ? `${new Date(subscription.current_period_start).toLocaleDateString()} - ${new Date(subscription.current_period_end).toLocaleDateString()}`
                   : "N/A"}
@@ -325,13 +322,13 @@ export default function AdminSubscriptionDetailPage() {
         </div>
 
         {/* View in Stripe Button */}
-        <div className="mt-6 pt-6 border-t border-neutral-700">
+        <div className="mt-6 pt-6 border-t border-border-default">
           <a
             href={`https://dashboard.stripe.com/subscriptions/${subscription.stripe_subscription_id}`}
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Button className="bg-neutral-700 hover:bg-neutral-600 text-white">
+            <Button variant="outline">
               <ExternalLink className="w-4 h-4 mr-2" />
               View in Stripe
             </Button>
@@ -342,24 +339,24 @@ export default function AdminSubscriptionDetailPage() {
       {/* Event Timeline */}
       <div>
         <div className="flex items-center space-x-2 mb-4">
-          <Clock className="w-5 h-5 text-gray-400" />
-          <h2 className="text-lg font-semibold text-white">Event Timeline</h2>
+          <Clock className="w-5 h-5 text-text-secondary" />
+          <h2 className="text-lg font-semibold text-text-primary">Event Timeline</h2>
         </div>
 
         {events.length === 0 ? (
-          <Card className="bg-neutral-800 border-neutral-700 p-6">
-            <p className="text-gray-500 text-center">No events recorded for this subscription.</p>
+          <Card className="admin-card p-6">
+            <p className="text-text-muted text-center">No events recorded for this subscription.</p>
           </Card>
         ) : (
           <div className="relative pl-3">
             {/* Vertical line */}
-            <div className="absolute left-[11px] top-0 bottom-0 w-0.5 bg-neutral-700" />
+            <div className="absolute left-[11px] top-0 bottom-0 w-0.5 bg-border-default" />
 
             <div className="space-y-6">
               {events.map((event) => {
                 const colors = EVENT_DOT_COLORS[event.event_type] || {
-                  bg: "bg-gray-500/20",
-                  dot: "bg-gray-400",
+                  bg: "bg-state-info-bg",
+                  dot: "bg-state-info",
                 };
 
                 return (
@@ -373,8 +370,8 @@ export default function AdminSubscriptionDetailPage() {
 
                     {/* Content */}
                     <div className="ml-10">
-                      <p className="text-white text-sm">{getEventDescription(event)}</p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-text-primary text-sm">{getEventDescription(event)}</p>
+                      <p className="text-xs text-text-muted mt-1">
                         {event.created_at
                           ? new Date(event.created_at).toLocaleString()
                           : "Unknown date"}

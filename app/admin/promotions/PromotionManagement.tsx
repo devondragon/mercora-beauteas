@@ -128,36 +128,36 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <Card className="bg-neutral-800 border-neutral-700 w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        <div className="p-6 border-b border-neutral-700">
+    <div className="fixed inset-0 bg-text-primary/50 flex items-center justify-center p-4 z-50">
+      <Card className="admin-card w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-border-default">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white">
+            <h2 className="text-xl font-bold text-text-primary">
               {isNew ? "Create New Promotion" : "Edit Promotion"}
             </h2>
-            <Button variant="ghost" onClick={onClose} className="text-gray-400">
+            <Button variant="ghost" onClick={onClose} className="text-text-muted">
               ✕
             </Button>
           </div>
         </div>
-        
+
         <div className="p-6 overflow-y-auto max-h-[75vh]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Promotion Name
                 </label>
                 <Input
                   value={formData.name || ""}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Summer Sale 2024"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Promotion Code
                 </label>
                 <div className="flex space-x-2">
@@ -165,7 +165,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                     value={formData.code || ""}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
                     placeholder="SUMMER20"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                   <Button
                     type="button"
@@ -179,14 +179,14 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Discount Type
                 </label>
                 <Select
                   value={formData.type}
                   onValueChange={(value: any) => setFormData({ ...formData, type: value })}
                 >
-                  <SelectTrigger className="bg-neutral-700 border-neutral-600">
+                  <SelectTrigger className="admin-input">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -201,7 +201,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
 
               {formData.type !== "free_shipping" && formData.type !== "bogo" && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     {formData.type === "percentage" ? "Percentage" : "Amount"} ({formData.type === "percentage" ? "%" : "$"})
                   </label>
                   <Input
@@ -209,7 +209,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                     value={formData.value || 0}
                     onChange={(e) => setFormData({ ...formData, value: Number(e.target.value) })}
                     placeholder={formData.type === "percentage" ? "20" : "50"}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
               )}
@@ -217,31 +217,31 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Valid From
                 </label>
                 <Input
                   type="date"
                   value={formData.validFrom || ""}
                   onChange={(e) => setFormData({ ...formData, validFrom: e.target.value })}
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Valid To
                 </label>
                 <Input
                   type="date"
                   value={formData.validTo || ""}
                   onChange={(e) => setFormData({ ...formData, validTo: e.target.value })}
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Minimum Order Amount ($)
                 </label>
                 <Input
@@ -249,12 +249,12 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                   value={formData.minimumAmount || 0}
                   onChange={(e) => setFormData({ ...formData, minimumAmount: Number(e.target.value) })}
                   placeholder="0"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Maximum Uses (optional)
                 </label>
                 <Input
@@ -262,14 +262,14 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                   value={formData.maxUses || ""}
                   onChange={(e) => setFormData({ ...formData, maxUses: e.target.value ? Number(e.target.value) : undefined })}
                   placeholder="Unlimited"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
             </div>
           </div>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               Description
             </label>
             <Textarea
@@ -277,21 +277,21 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Describe this promotion..."
               rows={3}
-              className="bg-neutral-700 border-neutral-600"
+              className="admin-input"
             />
           </div>
 
           {/* Advanced Configuration Sections */}
           <div className="mt-6 space-y-6">
             {/* Product & Category Conditions */}
-            <div className="border-t border-neutral-600 pt-6">
-              <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+            <div className="border-t border-border-default pt-6">
+              <h4 className="text-sm font-medium text-text-primary mb-4 flex items-center">
                 <Tag className="w-4 h-4 mr-2" />
                 Product & Category Requirements
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Required Categories (comma-separated)
                   </label>
                   <Input
@@ -304,11 +304,11 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="electronics, clothing, books"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Specific Product SKUs (comma-separated)
                   </label>
                   <Input
@@ -321,13 +321,13 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="PROD-001, PROD-002"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Minimum Quantity
                   </label>
                   <Input
@@ -341,11 +341,11 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="1"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Maximum Quantity
                   </label>
                   <Input
@@ -359,21 +359,21 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="10"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
               </div>
             </div>
 
             {/* Customer Targeting */}
-            <div className="border-t border-neutral-600 pt-6">
-              <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+            <div className="border-t border-border-default pt-6">
+              <h4 className="text-sm font-medium text-text-primary mb-4 flex items-center">
                 <Users className="w-4 h-4 mr-2" />
                 Customer Targeting
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Customer Segments (comma-separated)
                   </label>
                   <Input
@@ -386,11 +386,11 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="vip, new-customer, loyalty"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Customer Types (comma-separated)
                   </label>
                   <Input
@@ -403,7 +403,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="guest, registered, business"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
               </div>
@@ -420,7 +420,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                   />
-                  <label htmlFor="firstPurchaseOnly" className="text-sm text-gray-300">
+                  <label htmlFor="firstPurchaseOnly" className="text-sm text-text-secondary">
                     First purchase only
                   </label>
                 </div>
@@ -428,14 +428,14 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
             </div>
 
             {/* Advanced Settings */}
-            <div className="border-t border-neutral-600 pt-6">
-              <h4 className="text-sm font-medium text-white mb-4 flex items-center">
+            <div className="border-t border-border-default pt-6">
+              <h4 className="text-sm font-medium text-text-primary mb-4 flex items-center">
                 <Settings className="w-4 h-4 mr-2" />
                 Advanced Settings
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Priority (higher = applied first)
                   </label>
                   <Input
@@ -443,11 +443,11 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                     value={formData.priority || 100}
                     onChange={(e) => setFormData({ ...formData, priority: Number(e.target.value) })}
                     placeholder="100"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Per-Customer Limit
                   </label>
                   <Input
@@ -461,7 +461,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                       }
                     })}
                     placeholder="1"
-                    className="bg-neutral-700 border-neutral-600"
+                    className="admin-input"
                   />
                 </div>
                 <div className="flex flex-col justify-end">
@@ -472,7 +472,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                         checked={formData.stackable || false}
                         onCheckedChange={(checked) => setFormData({ ...formData, stackable: !!checked })}
                       />
-                      <label htmlFor="stackable" className="text-sm text-gray-300">
+                      <label htmlFor="stackable" className="text-sm text-text-secondary">
                         Stackable
                       </label>
                     </div>
@@ -488,7 +488,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
                           }
                         })}
                       />
-                      <label htmlFor="requiresAccount" className="text-sm text-gray-300">
+                      <label htmlFor="requiresAccount" className="text-sm text-text-secondary">
                         Account Required
                       </label>
                     </div>
@@ -498,15 +498,14 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
             </div>
           </div>
         </div>
-        
-        <div className="p-6 border-t border-neutral-700 flex items-center justify-end space-x-3">
+
+        <div className="p-6 border-t border-border-default flex items-center justify-end space-x-3">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             disabled={saving || !formData.name?.trim() || !formData.code?.trim()}
-            className="bg-orange-600 hover:bg-orange-700"
           >
             {saving ? "Saving..." : "Save Promotion"}
           </Button>
@@ -708,7 +707,7 @@ export default function PromotionManagement() {
   }, [searchQuery, promotions]);
 
   if (loading) {
-    return <div className="text-gray-400">Loading promotions...</div>;
+    return <div className="text-text-muted">Loading promotions...</div>;
   }
 
   return (
@@ -716,19 +715,16 @@ export default function PromotionManagement() {
       {/* Header Actions */}
       <div className="flex items-center justify-between">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-muted w-4 h-4" />
           <Input
             type="text"
             placeholder="Search promotions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 w-64 bg-neutral-800 border-neutral-700"
+            className="pl-10 w-64 admin-input"
           />
         </div>
-        <Button 
-          onClick={() => openEditor(null, true)}
-          className="bg-orange-600 hover:bg-orange-700 text-white"
-        >
+        <Button onClick={() => openEditor(null, true)}>
           <Plus className="w-4 h-4 mr-2" />
           New Promotion
         </Button>
@@ -736,25 +732,25 @@ export default function PromotionManagement() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-white">{promotions.length}</div>
-          <div className="text-sm text-gray-400">Total Promotions</div>
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-text-primary">{promotions.length}</div>
+          <div className="text-sm text-text-muted">Total Promotions</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-green-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-state-success">
             {promotions.filter(p => p.status === "active").length}
           </div>
-          <div className="text-sm text-gray-400">Active Promotions</div>
+          <div className="text-sm text-text-muted">Active Promotions</div>
         </Card>
       </div>
 
       {/* Promotions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredPromotions.map((promotion) => (
-          <Card key={promotion.id} className="bg-neutral-800 border-neutral-700 p-6">
+          <Card key={promotion.id} className="admin-card p-6">
             <div className="flex items-start justify-between mb-4">
-              <div className="w-10 h-10 bg-orange-600/20 rounded-lg flex items-center justify-center">
-                <Percent className="w-5 h-5 text-orange-400" />
+              <div className="w-10 h-10 bg-primary-500/20 rounded-lg flex items-center justify-center">
+                <Percent className="w-5 h-5 text-primary-600" />
               </div>
               <div className="flex items-center space-x-2">
                 <Badge variant={promotion.status === "active" ? "default" : "secondary"}>
@@ -762,24 +758,24 @@ export default function PromotionManagement() {
                 </Badge>
               </div>
             </div>
-            
-            <h3 className="text-lg font-semibold text-white mb-2">{promotion.name}</h3>
+
+            <h3 className="text-lg font-semibold text-text-primary mb-2">{promotion.name}</h3>
             <div className="flex items-center space-x-2 mb-3">
-              <code className="bg-neutral-700 px-2 py-1 rounded text-orange-400 font-mono text-sm">
+              <code className="bg-surface-light px-2 py-1 rounded text-primary-600 font-mono text-sm">
                 {promotion.code}
               </code>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => copyCode(promotion.code)}
-                className="p-1 text-gray-400 hover:text-white"
+                className="p-1 text-text-muted hover:text-text-primary"
               >
                 <Copy className="w-3 h-3" />
               </Button>
             </div>
-            <p className="text-sm text-gray-400 mb-4">{promotion.description}</p>
-            
-            <div className="space-y-2 text-xs text-gray-500 mb-4">
+            <p className="text-sm text-text-muted mb-4">{promotion.description}</p>
+
+            <div className="space-y-2 text-xs text-text-muted mb-4">
               <div className="flex justify-between">
                 <span>Valid until:</span>
                 <span>{new Date(promotion.validTo).toLocaleDateString()}</span>
@@ -791,14 +787,14 @@ export default function PromotionManagement() {
                 </div>
               )}
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => openEditor(promotion)}
-                  className="text-orange-500 hover:text-orange-400"
+                  className="text-primary-600 hover:text-primary-700"
                 >
                   <Edit className="w-4 h-4" />
                 </Button>
@@ -806,17 +802,17 @@ export default function PromotionManagement() {
                   variant="ghost"
                   size="sm"
                   onClick={() => handleDelete(promotion.id)}
-                  className="text-red-500 hover:text-red-400"
+                  className="text-state-error hover:text-state-error"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
-              
+
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => toggleStatus(promotion.id)}
-                className={promotion.status === "active" ? "text-orange-500" : "text-green-500"}
+                className={promotion.status === "active" ? "text-primary-600" : "text-state-success"}
               >
                 {promotion.status === "active" ? "Deactivate" : "Activate"}
               </Button>
@@ -826,7 +822,7 @@ export default function PromotionManagement() {
       </div>
 
       {filteredPromotions.length === 0 && !loading && (
-        <div className="text-center py-8 text-gray-400">
+        <div className="text-center py-8 text-text-muted">
           {searchQuery ? "No promotions found matching your search." : "No promotions available."}
         </div>
       )}

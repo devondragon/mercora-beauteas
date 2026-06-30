@@ -6,7 +6,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
   
   return (
     <div className="space-y-6 px-4">
-      <Suspense fallback={<div className="text-gray-400">Loading category...</div>}>
+      <Suspense fallback={<div className="text-text-secondary">Loading category...</div>}>
         <CategoryDetail categoryId={id} />
       </Suspense>
     </div>

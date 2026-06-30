@@ -26,7 +26,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { 
+import {
   ArrowLeft, Package, RotateCcw, XCircle, RefreshCw,
   DollarSign, AlertTriangle, CheckCircle, Truck,
   Calendar, User, MapPin, CreditCard
@@ -97,19 +97,19 @@ interface RefundResponse {
 }
 
 const statusConfig = {
-  pending: { color: "bg-yellow-600", icon: RefreshCw, label: "Pending" },
-  processing: { color: "bg-blue-600", icon: RefreshCw, label: "Processing" },
-  shipped: { color: "bg-orange-600", icon: Truck, label: "Shipped" },
-  delivered: { color: "bg-green-600", icon: CheckCircle, label: "Delivered" },
-  cancelled: { color: "bg-gray-600", icon: XCircle, label: "Cancelled" },
-  refunded: { color: "bg-red-600", icon: AlertTriangle, label: "Refunded" }
+  pending: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: RefreshCw, label: "Pending" },
+  processing: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: RefreshCw, label: "Processing" },
+  shipped: { bg: "bg-state-info-bg", text: "text-state-info", icon: Truck, label: "Shipped" },
+  delivered: { bg: "bg-state-success-bg", text: "text-state-success", icon: CheckCircle, label: "Delivered" },
+  cancelled: { bg: "bg-state-error-bg", text: "text-state-error", icon: XCircle, label: "Cancelled" },
+  refunded: { bg: "bg-state-error-bg", text: "text-state-error", icon: AlertTriangle, label: "Refunded" }
 };
 
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orderId = params.id as string;
-  
+
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -150,7 +150,7 @@ export default function OrderDetailPage() {
       if (response.ok) {
         const data = await response.json() as { data: Array<{key: string, value: string}> };
         const policySettings: Record<string, any> = {};
-        
+
         data.data.forEach(setting => {
           const key = setting.key.replace('refund.', '');
           try {
@@ -185,7 +185,7 @@ export default function OrderDetailPage() {
     const config = statusConfig[status];
     const Icon = config.icon;
     return (
-      <Badge className={`${config.color} text-white`}>
+      <Badge className={`${config.bg} ${config.text}`}>
         <Icon className="w-3 h-3 mr-1" />
         {config.label}
       </Badge>
@@ -194,7 +194,7 @@ export default function OrderDetailPage() {
 
   const handleCancelOrder = async () => {
     if (!order || !reason.trim()) return;
-    
+
     setActionLoading(true);
     try {
       const response = await fetch('/api/orders/refund', {
@@ -217,12 +217,12 @@ export default function OrderDetailPage() {
       }
 
       const result = await response.json() as RefundResponse;
-      
+
       // Refresh order data
       await fetchOrder();
-      
+
       alert(`Order cancelled successfully! Refund ID: ${result.refund.id}\nAmount refunded: $${(result.refund.amount / 100).toFixed(2)}`);
-      
+
     } catch (error) {
       console.error('Error cancelling order:', error);
       alert(`Error processing cancellation: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -235,7 +235,7 @@ export default function OrderDetailPage() {
 
   const handleReturnItems = async () => {
     if (!order || selectedItems.size === 0 || !reason.trim()) return;
-    
+
     setActionLoading(true);
     try {
       // Calculate refund amount with tax, discount, and shipping considerations
@@ -269,12 +269,12 @@ export default function OrderDetailPage() {
       }
 
       const result = await response.json() as RefundResponse;
-      
+
       // Refresh order data
       await fetchOrder();
-      
+
       alert(`Return processed successfully! Refund ID: ${result.refund.id}\nAmount refunded: $${(result.refund.amount / 100).toFixed(2)}\nItems returned: ${result.refund.items.length}`);
-      
+
     } catch (error) {
       console.error('Error processing return:', error);
       alert(`Error processing return: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -291,7 +291,7 @@ export default function OrderDetailPage() {
 
     // Get order totals - handle unit conversions (some in cents, some in dollars)
     const orderSubtotal = order.extensions?.subtotal || 0; // in cents
-    const orderTax = order.extensions?.tax_amount || 0; // in cents  
+    const orderTax = order.extensions?.tax_amount || 0; // in cents
     const orderDiscount = order.extensions?.discount_amount || 0; // in cents
     const orderShipping = Math.round((order.extensions?.shipping_cost || 0) * 100); // convert dollars to cents
 
@@ -317,15 +317,15 @@ export default function OrderDetailPage() {
 
     // Calculate proportional amounts
     const subtotalRatio = actualOrderSubtotal > 0 ? returnItemsSubtotal / actualOrderSubtotal : 0;
-    
-    
-    
+
+
+
     const returnTax = Math.round(orderTax * subtotalRatio);
     const returnDiscount = Math.round(orderDiscount * subtotalRatio);
-    
+
     // Shipping refund based on policy
     const isFullReturn = selectedItemIds.length === order.items.length;
-    const returnShipping = (isFullReturn && refundPolicy.refundShippingOnFullReturn) || 
+    const returnShipping = (isFullReturn && refundPolicy.refundShippingOnFullReturn) ||
                           (!isFullReturn && refundPolicy.refundShipping) ? orderShipping : 0;
 
     // Calculate base refund amount
@@ -388,7 +388,7 @@ export default function OrderDetailPage() {
     return (
       <div className="p-6">
         <div className="flex items-center justify-center py-12">
-          <RefreshCw className="w-8 h-8 text-orange-400 animate-spin" />
+          <RefreshCw className="w-8 h-8 text-primary-500 animate-spin" />
         </div>
       </div>
     );
@@ -398,12 +398,12 @@ export default function OrderDetailPage() {
     return (
       <div className="p-6">
         <div className="text-center py-12">
-          <Package className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-400 mb-2">Order not found</h3>
-          <p className="text-gray-500">The requested order could not be found</p>
+          <Package className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary mb-2">Order not found</h3>
+          <p className="text-text-muted">The requested order could not be found</p>
           <Button
             onClick={() => router.push('/admin/orders')}
-            className="mt-4 bg-orange-600 hover:bg-orange-700"
+            className="mt-4 bg-primary-500 hover:bg-primary-600"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Orders
@@ -417,9 +417,9 @@ export default function OrderDetailPage() {
     <div className="p-6 space-y-6">
       {/* Debug Information - Remove after fixing */}
       {process.env.NODE_ENV === 'development' && (
-        <Card className="bg-red-900/20 border-red-700 p-4">
-          <h4 className="text-red-400 font-semibold mb-2">Debug Info</h4>
-          <div className="text-xs text-red-300 space-y-1">
+        <Card className="bg-state-error-bg border-state-error p-4">
+          <h4 className="text-state-error font-semibold mb-2">Debug Info</h4>
+          <div className="text-xs text-state-error space-y-1">
             <div>Extensions keys: {order.extensions ? Object.keys(order.extensions).join(', ') : 'none'}</div>
             <div>Discount amount: {order.extensions?.discount_amount ?? 'undefined'}</div>
             <div>Subtotal: {order.extensions?.subtotal ?? 'undefined'}</div>
@@ -431,23 +431,23 @@ export default function OrderDetailPage() {
           </div>
         </Card>
       )}
-      
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <Button
             onClick={() => router.push('/admin/orders')}
             variant="ghost"
-            className="text-gray-400 hover:text-white"
+            className="text-text-secondary hover:text-text-primary"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Orders
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-white">Order #{order.id}</h1>
+            <h1 className="text-2xl font-bold text-text-primary">Order #{order.id}</h1>
             <div className="flex items-center space-x-4 mt-1">
               {getStatusBadge(order.status)}
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-text-secondary">
                 Created {new Date(order.created_at).toLocaleDateString()}
               </span>
             </div>
@@ -456,7 +456,7 @@ export default function OrderDetailPage() {
         <Button
           onClick={fetchOrder}
           disabled={loading}
-          className="bg-orange-600 hover:bg-orange-700"
+          className="bg-primary-500 hover:bg-primary-600"
         >
           <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
@@ -466,24 +466,24 @@ export default function OrderDetailPage() {
       {/* Order Information */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Customer & Payment Info */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Customer & Payment</h3>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Customer & Payment</h3>
           <div className="space-y-3">
             <div className="flex items-center space-x-2">
-              <User className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-300">{order.shipping_address?.recipient || 'Guest Customer'}</span>
+              <User className="w-4 h-4 text-text-secondary" />
+              <span className="text-text-secondary">{order.shipping_address?.recipient || 'Guest Customer'}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <CreditCard className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-300">{order.payment_method || 'Not specified'}</span>
+              <CreditCard className="w-4 h-4 text-text-secondary" />
+              <span className="text-text-secondary">{order.payment_method || 'Not specified'}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <DollarSign className="w-4 h-4 text-gray-400" />
+              <DollarSign className="w-4 h-4 text-text-secondary" />
               <span className={`font-medium ${
-                order.payment_status === 'paid' ? 'text-green-400' :
-                order.payment_status === 'failed' ? 'text-red-400' :
-                order.payment_status === 'refunded' ? 'text-orange-400' :
-                'text-yellow-400'
+                order.payment_status === 'paid' ? 'text-state-success' :
+                order.payment_status === 'failed' ? 'text-state-error' :
+                order.payment_status === 'refunded' ? 'text-state-error' :
+                'text-state-warning'
               }`}>
                 {order.payment_status || 'pending'}
               </span>
@@ -492,10 +492,10 @@ export default function OrderDetailPage() {
         </Card>
 
         {/* Shipping Info */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Shipping Information</h3>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Shipping Information</h3>
           {order.shipping_address ? (
-            <div className="space-y-2 text-sm text-gray-300">
+            <div className="space-y-2 text-sm text-text-secondary">
               <div>{order.shipping_address.recipient}</div>
               <div>{order.shipping_address.line1}</div>
               <div>
@@ -503,114 +503,114 @@ export default function OrderDetailPage() {
               </div>
               <div>{order.shipping_address.country}</div>
               {order.tracking_number && (
-                <div className="mt-3 pt-3 border-t border-neutral-600">
-                  <p className="text-xs text-gray-400 mb-1">Tracking</p>
+                <div className="mt-3 pt-3 border-t border-border-default">
+                  <p className="text-xs text-text-secondary mb-1">Tracking</p>
                   <p className="font-medium">{order.tracking_number}</p>
                   {order.extensions?.carrier && (
-                    <p className="text-xs text-gray-400">{order.extensions.carrier}</p>
+                    <p className="text-xs text-text-secondary">{order.extensions.carrier}</p>
                   )}
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-gray-400 text-sm">No shipping address</p>
+            <p className="text-text-secondary text-sm">No shipping address</p>
           )}
         </Card>
 
         {/* Order Totals */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Order Totals</h3>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Order Totals</h3>
           <div className="space-y-2 text-sm">
             {order.extensions?.subtotal && (
               <div className="flex justify-between">
-                <span className="text-gray-400">Subtotal:</span>
-                <span className="text-white">{formatCurrency(order.extensions.subtotal)}</span>
+                <span className="text-text-secondary">Subtotal:</span>
+                <span className="text-text-primary">{formatCurrency(order.extensions.subtotal)}</span>
               </div>
             )}
             {order.extensions?.shipping_cost && (
               <div className="flex justify-between">
-                <span className="text-gray-400">Shipping:</span>
-                <span className="text-white">{formatCurrency(Math.round((order.extensions.shipping_cost || 0) * 100))}</span>
+                <span className="text-text-secondary">Shipping:</span>
+                <span className="text-text-primary">{formatCurrency(Math.round((order.extensions.shipping_cost || 0) * 100))}</span>
               </div>
             )}
             {order.extensions?.tax_amount && (
               <div className="flex justify-between">
-                <span className="text-gray-400">Tax:</span>
-                <span className="text-white">{formatCurrency(order.extensions.tax_amount)}</span>
+                <span className="text-text-secondary">Tax:</span>
+                <span className="text-text-primary">{formatCurrency(order.extensions.tax_amount)}</span>
               </div>
             )}
             {/* Try multiple discount field names */}
             {(() => {
               const extensions = order.extensions || {};
-              const discountAmount = extensions.discount_amount || 
-                                   extensions.discountAmount || 
-                                   extensions.discount || 
+              const discountAmount = extensions.discount_amount ||
+                                   extensions.discountAmount ||
+                                   extensions.discount ||
                                    extensions.promotion_discount ||
                                    0;
-              
+
               if (discountAmount > 0) {
                 return (
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Discount:</span>
-                    <span className="text-green-400">-{formatCurrency(discountAmount)}</span>
+                    <span className="text-text-secondary">Discount:</span>
+                    <span className="text-state-success">-{formatCurrency(discountAmount)}</span>
                   </div>
                 );
               }
-              
+
               // Debug: show if any discount-related fields exist
-              const discountFields = Object.keys(extensions).filter(key => 
+              const discountFields = Object.keys(extensions).filter(key =>
                 key.toLowerCase().includes('discount') || key.toLowerCase().includes('promotion')
               );
-              
+
               if (discountFields.length > 0 && process.env.NODE_ENV === 'development') {
                 return (
-                  <div className="text-xs text-yellow-400 mt-1">
+                  <div className="text-xs text-state-warning mt-1">
                     Found discount fields: {discountFields.join(', ')}
                   </div>
                 );
               }
-              
+
               return null;
             })()}
-            
+
             {/* Calculate discount from item-level data if available */}
             {(() => {
               const itemLevelDiscount = order.items.reduce((total, item) => {
                 const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-                const listPrice = item.list_price 
+                const listPrice = item.list_price
                   ? (typeof item.list_price === 'number' ? item.list_price : item.list_price.amount)
                   : finalPrice;
                 return total + ((listPrice - finalPrice) * item.quantity);
               }, 0);
-              
+
               if (itemLevelDiscount > 0) {
                 return (
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Discount (from items):</span>
-                    <span className="text-green-400">-{formatCurrency(itemLevelDiscount)}</span>
+                    <span className="text-text-secondary">Discount (from items):</span>
+                    <span className="text-state-success">-{formatCurrency(itemLevelDiscount)}</span>
                   </div>
                 );
               }
-              
+
               return null;
             })()}
-            
-            <div className="flex justify-between text-base font-semibold border-t border-neutral-600 pt-2">
-              <span className="text-white">Total:</span>
-              <span className="text-orange-400">{formatCurrency(order.total_amount.amount)}</span>
+
+            <div className="flex justify-between text-base font-semibold border-t border-border-default pt-2">
+              <span className="text-text-primary">Total:</span>
+              <span className="text-primary-600">{formatCurrency(order.total_amount.amount)}</span>
             </div>
           </div>
         </Card>
       </div>
 
       {/* Order Items */}
-      <Card className="bg-neutral-800 border-neutral-700 p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Order Items</h3>
+      <Card className="admin-card p-6">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Order Items</h3>
         <div className="space-y-3">
           {order.items.map((item, index) => {
             const itemKey = `${item.product_id}-${item.variant_id || 'default'}`;
             return (
-              <div key={itemKey} className="flex items-center justify-between bg-neutral-700 p-4 rounded">
+              <div key={itemKey} className="flex items-center justify-between bg-surface p-4 rounded">
                 {actionType === 'return' && (
                   <input
                     type="checkbox"
@@ -621,34 +621,34 @@ export default function OrderDetailPage() {
                   />
                 )}
                 <div className="flex-1">
-                  <p className="text-white font-medium">{item.product_name}</p>
+                  <p className="text-text-primary font-medium">{item.product_name}</p>
                   <div className="text-sm space-y-1">
-                    <p className="text-gray-400">
+                    <p className="text-text-secondary">
                       Quantity: {item.quantity}
                     </p>
                     {(() => {
                       const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-                      const listPrice = item.list_price 
+                      const listPrice = item.list_price
                         ? (typeof item.list_price === 'number' ? item.list_price : item.list_price.amount)
                         : finalPrice;
                       const hasDiscount = listPrice > finalPrice;
-                      
+
                       return (
                         <div className="space-y-1">
                           {hasDiscount ? (
                             <>
-                              <p className="text-gray-500">
+                              <p className="text-text-muted">
                                 List: {formatCurrency(listPrice)} × {item.quantity} = {formatCurrency(listPrice * item.quantity)}
                               </p>
-                              <p className="text-green-400">
+                              <p className="text-state-success">
                                 Discounted: {formatCurrency(finalPrice)} × {item.quantity} = {formatCurrency(finalPrice * item.quantity)}
                               </p>
-                              <p className="text-orange-400 text-xs">
+                              <p className="text-state-sale text-xs">
                                 Item savings: {formatCurrency((listPrice - finalPrice) * item.quantity)}
                               </p>
                             </>
                           ) : (
-                            <p className="text-gray-400">
+                            <p className="text-text-secondary">
                               Price: {formatCurrency(finalPrice)} × {item.quantity}
                             </p>
                           )}
@@ -657,10 +657,10 @@ export default function OrderDetailPage() {
                     })()}
                   </div>
                 </div>
-                <p className="text-white font-semibold">
+                <p className="text-text-primary font-semibold">
                   {formatCurrency(
-                    (typeof item.unit_price === 'number' 
-                      ? item.unit_price 
+                    (typeof item.unit_price === 'number'
+                      ? item.unit_price
                       : item.unit_price.amount) * item.quantity
                   )}
                 </p>
@@ -672,12 +672,12 @@ export default function OrderDetailPage() {
 
       {/* Action Buttons */}
       {!actionType && order.status !== 'cancelled' && order.status !== 'refunded' && (
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Returns & Exchanges</h3>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Returns & Exchanges</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Button
               onClick={() => setActionType('cancel')}
-              className="bg-red-600 hover:bg-red-700"
+              variant="destructive"
               disabled={order.status === 'delivered'}
             >
               <XCircle className="w-4 h-4 mr-2" />
@@ -685,7 +685,7 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={() => setActionType('return')}
-              className="bg-orange-600 hover:bg-orange-700"
+              variant="secondary"
               disabled={order.status !== 'delivered'}
             >
               <RotateCcw className="w-4 h-4 mr-2" />
@@ -693,14 +693,14 @@ export default function OrderDetailPage() {
             </Button>
             <Button
               onClick={() => setActionType('exchange')}
-              className="bg-blue-600 hover:bg-blue-700"
+              variant="outline"
               disabled={order.status !== 'delivered'}
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Process Exchange
             </Button>
           </div>
-          <div className="mt-4 text-sm text-gray-400">
+          <div className="mt-4 text-sm text-text-secondary">
             <p>• Cancellation: Available for pending/processing orders only</p>
             <p>• Returns & Exchanges: Available for delivered orders only</p>
             <p>• All actions will process appropriate Stripe refunds automatically</p>
@@ -710,9 +710,9 @@ export default function OrderDetailPage() {
 
       {/* Action Forms */}
       {actionType && (
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-text-primary">
               {actionType === 'cancel' ? 'Cancel Order' :
                actionType === 'return' ? 'Process Return' :
                'Process Exchange'}
@@ -724,7 +724,7 @@ export default function OrderDetailPage() {
                 setReason("");
               }}
               variant="ghost"
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
             >
               <XCircle className="w-4 h-4" />
             </Button>
@@ -732,32 +732,32 @@ export default function OrderDetailPage() {
 
           {actionType === 'cancel' && (
             <div className="space-y-4">
-              <div className="bg-red-900/20 border border-red-700 p-4 rounded">
+              <div className="bg-state-error-bg border border-state-error p-4 rounded">
                 <div className="flex items-center space-x-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <span className="font-medium text-red-400">Order Cancellation</span>
+                  <AlertTriangle className="w-4 h-4 text-state-error" />
+                  <span className="font-medium text-state-error">Order Cancellation</span>
                 </div>
-                <p className="text-sm text-gray-300">
-                  This will cancel the entire order and process a full refund of ${formatCurrency(order.total_amount.amount)} 
+                <p className="text-sm text-text-secondary">
+                  This will cancel the entire order and process a full refund of ${formatCurrency(order.total_amount.amount)}
                   to the customer&rsquo;s original payment method via Stripe.
                 </p>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Cancellation Reason</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Cancellation Reason</label>
                 <Textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="bg-neutral-700 border-neutral-600 text-white"
+                  className="admin-input"
                   placeholder="Enter reason for cancellation..."
                   rows={3}
                 />
               </div>
-              
+
               <Button
                 onClick={handleCancelOrder}
                 disabled={!reason.trim() || actionLoading}
-                className="bg-red-600 hover:bg-red-700"
+                variant="destructive"
               >
                 {actionLoading ? (
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -771,12 +771,12 @@ export default function OrderDetailPage() {
 
           {actionType === 'return' && (
             <div className="space-y-4">
-              <div className="bg-orange-900/20 border border-orange-700 p-4 rounded">
+              <div className="bg-state-warning-bg border border-state-warning p-4 rounded">
                 <div className="flex items-center space-x-2 mb-2">
-                  <RotateCcw className="w-4 h-4 text-orange-400" />
-                  <span className="font-medium text-orange-400">Item Return Processing</span>
+                  <RotateCcw className="w-4 h-4 text-state-warning" />
+                  <span className="font-medium text-state-warning">Item Return Processing</span>
                 </div>
-                <p className="text-sm text-gray-300">
+                <p className="text-sm text-text-secondary">
                   Select individual items to return or use the buttons below to select all items.
                   Refund amounts include proportional tax and discount calculations.
                 </p>
@@ -788,7 +788,7 @@ export default function OrderDetailPage() {
                   onClick={selectAllItems}
                   variant="outline"
                   size="sm"
-                  className="border-gray-600 text-gray-400 hover:text-white"
+                  className="border-border-default text-text-secondary hover:text-text-primary"
                 >
                   Select All
                 </Button>
@@ -796,11 +796,11 @@ export default function OrderDetailPage() {
                   onClick={clearItemSelection}
                   variant="outline"
                   size="sm"
-                  className="border-gray-600 text-gray-400 hover:text-white"
+                  className="border-border-default text-text-secondary hover:text-text-primary"
                 >
                   Clear Selection
                 </Button>
-                <span className="text-sm text-gray-400">
+                <span className="text-sm text-text-secondary">
                   {selectedItems.size} of {order?.items.length || 0} items selected
                 </span>
               </div>
@@ -809,41 +809,41 @@ export default function OrderDetailPage() {
               {selectedItems.size > 0 && (() => {
                 const calculation = calculateReturnAmount(Array.from(selectedItems));
                 return (
-                  <div className="bg-neutral-700 p-4 rounded border-l-4 border-green-500">
-                    <h4 className="text-sm font-medium text-white mb-3">Return Amount Breakdown</h4>
+                  <div className="bg-surface p-4 rounded border-l-4 border-state-success">
+                    <h4 className="text-sm font-medium text-text-primary mb-3">Return Amount Breakdown</h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Items Subtotal:</span>
-                        <span className="text-white">${(calculation.subtotal / 100).toFixed(2)}</span>
+                        <span className="text-text-secondary">Items Subtotal:</span>
+                        <span className="text-text-primary">${(calculation.subtotal / 100).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Proportional Tax:</span>
-                        <span className="text-white">${(calculation.tax / 100).toFixed(2)}</span>
+                        <span className="text-text-secondary">Proportional Tax:</span>
+                        <span className="text-text-primary">${(calculation.tax / 100).toFixed(2)}</span>
                       </div>
                       {calculation.discount > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Proportional Discount:</span>
-                          <span className="text-green-400">-${(calculation.discount / 100).toFixed(2)}</span>
+                          <span className="text-text-secondary">Proportional Discount:</span>
+                          <span className="text-state-success">-${(calculation.discount / 100).toFixed(2)}</span>
                         </div>
                       )}
                       <div className="flex justify-between">
-                        <span className="text-gray-400">Shipping Refund:</span>
-                        <span className="text-white">${(calculation.shipping / 100).toFixed(2)}</span>
+                        <span className="text-text-secondary">Shipping Refund:</span>
+                        <span className="text-text-primary">${(calculation.shipping / 100).toFixed(2)}</span>
                       </div>
                       {(calculation.restockingFee || 0) > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Restocking Fee ({calculation.policy?.restockingFeePercent || 0}%):</span>
-                          <span className="text-red-400">-${((calculation.restockingFee || 0) / 100).toFixed(2)}</span>
+                          <span className="text-text-secondary">Restocking Fee ({calculation.policy?.restockingFeePercent || 0}%):</span>
+                          <span className="text-state-error">-${((calculation.restockingFee || 0) / 100).toFixed(2)}</span>
                         </div>
                       )}
-                      <div className="col-span-2 border-t border-neutral-600 pt-2 mt-2">
+                      <div className="col-span-2 border-t border-border-default pt-2 mt-2">
                         <div className="flex justify-between text-base font-semibold">
-                          <span className="text-white">Total Refund:</span>
-                          <span className="text-orange-400">${(calculation.total / 100).toFixed(2)}</span>
+                          <span className="text-text-primary">Total Refund:</span>
+                          <span className="text-primary-600">${(calculation.total / 100).toFixed(2)}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs text-gray-400 mt-2 space-y-1">
+                    <div className="text-xs text-text-secondary mt-2 space-y-1">
                       {calculation.discount > 0 && (
                         <p>* Discount prorated based on returned item value</p>
                       )}
@@ -860,22 +860,22 @@ export default function OrderDetailPage() {
                   </div>
                 );
               })()}
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Return Reason</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Return Reason</label>
                 <Textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="bg-neutral-700 border-neutral-600 text-white"
+                  className="admin-input"
                   placeholder="Enter reason for return..."
                   rows={3}
                 />
               </div>
-              
+
               <Button
                 onClick={handleReturnItems}
                 disabled={selectedItems.size === 0 || !reason.trim() || actionLoading}
-                className="bg-orange-600 hover:bg-orange-700"
+                variant="secondary"
               >
                 {actionLoading ? (
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -889,13 +889,13 @@ export default function OrderDetailPage() {
 
           {actionType === 'exchange' && (
             <div className="space-y-4">
-              <div className="bg-blue-900/20 border border-blue-700 p-4 rounded">
+              <div className="bg-state-info-bg border border-state-info p-4 rounded">
                 <div className="flex items-center space-x-2 mb-2">
-                  <RefreshCw className="w-4 h-4 text-blue-400" />
-                  <span className="font-medium text-blue-400">Exchange Processing</span>
+                  <RefreshCw className="w-4 h-4 text-state-info" />
+                  <span className="font-medium text-state-info">Exchange Processing</span>
                 </div>
-                <p className="text-sm text-gray-300">
-                  Exchange feature coming soon. This will allow customers to exchange items for different sizes, 
+                <p className="text-sm text-text-secondary">
+                  Exchange feature coming soon. This will allow customers to exchange items for different sizes,
                   colors, or products with automatic payment adjustments.
                 </p>
               </div>
@@ -906,31 +906,31 @@ export default function OrderDetailPage() {
 
       {/* Refund History */}
       {order.extensions?.refunds && order.extensions.refunds.length > 0 && (
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Refund History</h3>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Refund History</h3>
           <div className="space-y-3">
             {order.extensions.refunds.map((refund: any, index: number) => (
-              <div key={index} className="bg-neutral-700 p-4 rounded border-l-4 border-orange-500">
+              <div key={index} className="bg-surface p-4 rounded border-l-4 border-primary-500">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <Badge className={refund.type === 'full' ? 'bg-red-600' : 'bg-orange-600'}>
+                    <Badge className={refund.type === 'full' ? 'bg-state-error' : 'bg-state-warning'}>
                       {refund.type === 'full' ? 'Full Refund' : 'Partial Refund'}
                     </Badge>
-                    <span className="text-white font-semibold">
+                    <span className="text-text-primary font-semibold">
                       ${(refund.amount / 100).toFixed(2)}
                     </span>
                   </div>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-text-secondary">
                     {new Date(refund.processed_at).toLocaleDateString()}
                   </span>
                 </div>
-                <div className="text-sm text-gray-300 space-y-1">
+                <div className="text-sm text-text-secondary space-y-1">
                   <p><strong>Reason:</strong> {refund.reason}</p>
                   {refund.notes && <p><strong>Notes:</strong> {refund.notes}</p>}
                   {refund.items && refund.items.length > 0 && (
                     <p><strong>Items:</strong> {refund.items.length} item(s)</p>
                   )}
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-text-secondary">
                     <strong>Stripe Refund ID:</strong> {refund.stripe_refund_id}
                   </p>
                 </div>
@@ -942,9 +942,9 @@ export default function OrderDetailPage() {
 
       {/* Notes Section */}
       {order.notes && (
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Order Notes</h3>
-          <p className="text-gray-300 whitespace-pre-line">{order.notes}</p>
+        <Card className="admin-card p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Order Notes</h3>
+          <p className="text-text-secondary whitespace-pre-line">{order.notes}</p>
         </Card>
       )}
     </div>
