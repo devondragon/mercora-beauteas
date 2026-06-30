@@ -49,18 +49,18 @@ export default async function HomePage() {
   const featuredProducts = (await getProductsByCategory("cat_clearly_calendula")).slice(0, 3);
 
   return (
-    <main className="bg-neutral-900 text-white px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <main className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       {/* Hero Section */}
       <section className="max-w-6xl mx-auto text-center mb-16 sm:mb-20">
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight uppercase mb-4 sm:mb-6 leading-tight">
           This Tea Reveals Your Most Radiant Skin
         </h1>
-        <p className="text-gray-400 text-base sm:text-lg max-w-2xl mx-auto mb-6 sm:mb-8 px-4">
+        <p className="text-text-secondary text-base sm:text-lg max-w-2xl mx-auto mb-6 sm:mb-8 px-4">
           Organic skincare teas crafted to reveal your most radiant skin.
           Pure botanicals. Transformative ritual. BeauTeas.
         </p>
         <Link href="/category/clearly-calendula" className="inline-block">
-          <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-[#c4a87c] text-[#c4a87c] hover:bg-[#c4a87c] hover:text-black transition rounded">
+          <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse transition rounded">
             Discover Our Teas
           </button>
         </Link>

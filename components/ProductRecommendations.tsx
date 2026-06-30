@@ -221,8 +221,8 @@ export default function ProductRecommendations({
 
   return (
     <div className="mt-20 text-center relative">
-      <div className="border-t border-neutral-700 w-full relative mb-10">
-        <span className="text-orange-400 text-xl font-semibold bg-neutral-900 px-4 absolute -top-4 left-1/2 transform -translate-x-1/2 font-serif">
+      <div className="border-t border-border-default w-full relative mb-10">
+        <span className="text-primary-600 text-xl font-semibold bg-surface-dark px-4 absolute -top-4 left-1/2 transform -translate-x-1/2 font-serif">
           {sectionTitle}
         </span>
       </div>
@@ -269,15 +269,17 @@ export default function ProductRecommendations({
             />
           </div>
           <div className="flex-1 min-w-0 max-w-4xl">
-            <div className="bg-neutral-900 text-white px-6 py-4 rounded-2xl shadow-lg relative text-left"
-                style={{ border: "1px solid #f59e42" }}>
+            <div className="bg-white text-text-primary px-6 py-4 rounded-2xl shadow-lg relative text-left"
+                style={{ border: "1px solid #cf8577" }}>
+              {/* Inline hex (not Tailwind classes) for the CSS-triangle speech-bubble pointer:
+                  #cf8577 = primary-500 (accent border), #ffffff = bubble fill (bg-white) */}
               <span className="whitespace-pre-wrap break-words block">{agentAnswer}</span>
               <span
                 className="absolute left-[-18px] top-6 w-0 h-0"
                 style={{
                   borderTop: "12px solid transparent",
                   borderBottom: "12px solid transparent",
-                  borderRight: "18px solid #f59e42"
+                  borderRight: "18px solid #cf8577"
                 }}
               />
               <span
@@ -285,7 +287,7 @@ export default function ProductRecommendations({
                 style={{
                   borderTop: "10px solid transparent",
                   borderBottom: "10px solid transparent",
-                  borderRight: "16px solid #1a1a1a"
+                  borderRight: "16px solid #ffffff"
                 }}
               />
             </div>

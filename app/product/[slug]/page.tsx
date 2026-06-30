@@ -140,7 +140,7 @@ export default async function ProductPage({
   ]);
 
   return (
-    <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <main className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <JsonLdScript data={productJsonLd} />
       <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
