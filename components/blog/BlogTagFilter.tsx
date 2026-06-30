@@ -38,10 +38,10 @@ export function BlogTagFilter({ tags }: BlogTagFilterProps) {
           type="button"
           aria-pressed={active === tag}
           onClick={() => filter(tag)}
-          className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
+          className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary-400 focus-visible:ring-offset-2 ${
             active === tag
-              ? "bg-amber-600 text-white"
-              : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+              ? "bg-primary-500 text-text-inverse"
+              : "bg-white text-text-secondary border border-border-default hover:bg-surface"
           }`}
         >
           {tag}

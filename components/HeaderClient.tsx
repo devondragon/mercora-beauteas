@@ -40,7 +40,7 @@
  * @param categories - Array of category objects for navigation dropdown
  *
  * === Styling ===
- * - Dark theme with orange accent colors
+ * - Warm cream theme with blush/terracotta accent colors
  * - Responsive layout with flexbox
  * - Consistent hover states and transitions
  */
@@ -175,7 +175,7 @@ export default function HeaderClient({
                 style={{ paddingLeft: `${level * 8}px` }}
               >
                 <span className={`flex items-center ${hasChildCategories ? 'font-semibold' : ''}`}>
-                  {level > 0 && <span className="mr-2 text-gray-400">└</span>}
+                  {level > 0 && <span className="mr-2 text-text-secondary">└</span>}
                   {getCategoryName(category)}
                 </span>
               </Link>
@@ -199,7 +199,7 @@ export default function HeaderClient({
       2: 'ml-8 border-l-2 border-primary-500/10 pl-3',
       3: 'ml-10 border-l-2 border-primary-500/5 pl-3'
     };
-    return indentationClasses[level as keyof typeof indentationClasses] || 'ml-12 border-l border-neutral-700 pl-4';
+    return indentationClasses[level as keyof typeof indentationClasses] || 'ml-12 border-l border-border-default pl-4';
   };
 
   /**
@@ -239,7 +239,7 @@ export default function HeaderClient({
                   {getCategoryName(group.parent)}
                 </div>
                 {group.children.length > 0 && (
-                  <div className="text-xs text-gray-400 mt-1">
+                  <div className="text-xs text-text-secondary mt-1">
                     {group.children.length} subcategories
                   </div>
                 )}
@@ -278,8 +278,8 @@ export default function HeaderClient({
         
         {/* Additional categories if any */}
         {categoryGroups.length > 6 && (
-          <div className="border-t border-neutral-700 pt-4 mt-6">
-            <div className="text-xs text-gray-400 mb-3 uppercase tracking-wide">More Categories</div>
+          <div className="border-t border-border-default pt-4 mt-6">
+            <div className="text-xs text-text-secondary mb-3 uppercase tracking-wide">More Categories</div>
             <div className="grid grid-cols-2 gap-2">
               {categoryGroups.slice(6).map(group => (
                 <Link
@@ -315,7 +315,7 @@ export default function HeaderClient({
               {hasChildCategories ? (
                 <button
                   onClick={() => toggleCategoryExpansion(category.id)}
-                  className="mr-2 p-3 text-gray-400 hover:text-white flex-shrink-0 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                  className="mr-2 p-3 text-text-secondary hover:text-text-primary flex-shrink-0 min-h-[48px] min-w-[48px] flex items-center justify-center"
                   aria-label={isExpanded ? 'Collapse category' : 'Expand category'}
                 >
                   {isExpanded ? (
@@ -374,7 +374,7 @@ export default function HeaderClient({
               Categories <ChevronDown className="ml-1 h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="bg-white text-black max-h-96 overflow-y-auto">
+          <DropdownMenuContent align="start" className="bg-white text-text-primary max-h-96 overflow-y-auto">
             {rootCategories.length > 0 ? (
               <CategoryDropdownTree cats={rootCategories} />
             ) : (
@@ -441,7 +441,7 @@ export default function HeaderClient({
           </SheetTrigger>
           <SheetContent
             side="right"
-            className="bg-black text-white transition-all ease-in-out px-3 w-full sm:w-[400px] !max-w-[400px] !duration-300 data-[state=closed]:!duration-200 data-[state=open]:!duration-300 flex flex-col h-full border-l border-neutral-800 overflow-y-auto"
+            className="bg-white text-text-primary transition-all ease-in-out px-3 w-full sm:w-[400px] !max-w-[400px] !duration-300 data-[state=closed]:!duration-200 data-[state=open]:!duration-300 flex flex-col h-full border-l border-border-default overflow-y-auto"
           >
             {/* Accessibility components */}
             <VisuallyHidden>
@@ -452,10 +452,10 @@ export default function HeaderClient({
             </VisuallyHidden>
 
             {/* Mobile Menu Header */}
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-700">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-default">
               <div>
-                <h2 className="text-xl font-bold text-white">Menu</h2>
-                <p className="text-sm text-gray-400">Browse our organic skincare teas</p>
+                <h2 className="text-xl font-bold text-text-primary">Menu</h2>
+                <p className="text-sm text-text-secondary">Browse our organic skincare teas</p>
               </div>
               <div className="w-8 h-8 bg-primary-500/20 rounded-full flex items-center justify-center">
                 <Grid3X3 className="w-4 h-4 text-primary-400" />
@@ -487,7 +487,7 @@ export default function HeaderClient({
                 <span>Gift Cards</span>
               </Link>
 
-              <div className="border-t border-neutral-700 pt-6 space-y-3">
+              <div className="border-t border-border-default pt-6 space-y-3">
                 <button 
                   className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter w-full text-left"
                   onClick={() => {
