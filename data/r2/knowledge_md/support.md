@@ -5,17 +5,16 @@ category: support
 tags: [contact, support, faq]
 ---
 
-**AI NOTES:** Direct users to the support team when the agent can’t help or contact info is needed.
+**AI NOTES:** Direct users to the support team when the assistant can't help or when human contact is needed. Use only the contact details listed here.
 
 ## Contact Us
 
-Reach us at support@example.com or 1-800-555-0199.
+Email us at hello@beauteas.com — we're happy to help with orders, products, subscriptions, and anything else.
 
-Our hours are:
+## Support Hours
 
-- Mon–Fri: 9am–5pm PT
-- Sat–Sun: Closed
+Our team responds Monday–Friday, 9am–5pm Pacific, and we aim to reply within one business day.
 
 ## When to Escalate
 
-If you can’t find what you need, just ask to “speak to support” and the AI will guide you.
+If the assistant can't answer your question, just ask to "speak to support" and we'll connect you with a member of our team.
