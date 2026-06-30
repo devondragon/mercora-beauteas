@@ -5,7 +5,7 @@ category: general
 tags: [faq, organic, ingredients]
 ---
 
-**AI NOTES:** Use this for general questions not covered by other articles. Do not make medical, health, or treatment claims — BeauTeas teas support skin wellness but are not a medical treatment. For ingredient or caffeine specifics, defer to the individual product page.
+**AI NOTES:** Use this for general questions not covered by other articles. Do not make medical, health, or treatment claims — BeauTeas teas support skin wellness but are not a medical treatment. Caffeine guidance below is approximate (it depends on steep time); for exact figures, defer to the individual product page.
 
 ## Are BeauTeas teas organic?
 
@@ -17,7 +17,13 @@ BeauTeas is a drinkable tea ritual — "build your beauty from within." Enjoy th
 
 ## Are the teas caffeinated?
 
-Our blends are herbal botanical teas. Caffeine and ingredient details vary by blend, so check the individual product page for specifics.
+Each daily blend uses a different tea base, so caffeine follows your day:
+
+- **Clearly Calendula Morning** is a **black tea** — our most caffeinated blend, for a bright, energizing start. A typical cup of black tea has roughly 40–70 mg of caffeine (less than a cup of coffee).
+- **Clearly Calendula Afternoon** is a **green tea** — a gentler, balanced lift, roughly 25–45 mg per cup.
+- **Clearly Calendula Evening** is an **herbal** blend — naturally **caffeine-free**, so it's perfect for winding down.
+
+Exact caffeine depends on how long you steep — a longer steep draws out more. See the product page for blend-specific details.
 
 ## Sales Tax
 

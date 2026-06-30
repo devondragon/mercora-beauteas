@@ -11,9 +11,11 @@ tags: [blends, recommendations, how-to-choose, faq]
 
 Our signature line is built around organic calendula and botanicals chosen to support healthy, radiant skin from within. The three daily blends are designed to be enjoyed across your day:
 
-- **Clearly Calendula Morning** — a bright start to your day.
-- **Clearly Calendula Afternoon** — a balancing midday cup.
-- **Clearly Calendula Evening** — a calming wind-down.
+- **Clearly Calendula Morning** — a **black tea** for a bright, energizing start (our most caffeinated blend).
+- **Clearly Calendula Afternoon** — a **green tea** for a balanced midday lift (moderate caffeine).
+- **Clearly Calendula Evening** — a **caffeine-free herbal** blend for a calming wind-down.
+
+If caffeine matters for your routine, steer earlier sippers toward Morning, midday toward Afternoon, and anyone winding down or caffeine-sensitive toward the caffeine-free Evening.
 
 ## Not Sure Where to Start?
 
