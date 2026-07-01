@@ -34,7 +34,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
-import { calculateTax, formatAmountForStripe, formatAmountFromStripe } from "@/lib/stripe";
+import { calculateTax, formatAmountForStripe, formatAmountFromStripe, isStripeConfigured } from "@/lib/stripe";
 
 // Fallback tax rate for when Stripe Tax is unavailable
 const FALLBACK_TAX_RATE = 0.07;
@@ -104,8 +104,22 @@ export async function POST(req: NextRequest) {
       });
 
     } catch (stripeError) {
-      console.error("Stripe Tax calculation failed:", stripeError);
-      
+      // Distinguish a *configuration* problem (no secret key in this runtime)
+      // from a transient Stripe outage. The fallback rate is a reasonable
+      // degradation for an outage, but a missing key means EVERY order is
+      // charged a flat FALLBACK_TAX_RATE with no accurate tax — that must be
+      // loud, not silent (it's what masked the checkout payment-intent failure).
+      if (!isStripeConfigured()) {
+        console.error(
+          "[tax] STRIPE_SECRET_KEY not configured — charging flat fallback tax " +
+            `rate (${FALLBACK_TAX_RATE * 100}%) for ALL orders. Set it in ` +
+            "`.dev.vars` for `wrangler dev`, or `wrangler secret put " +
+            "STRIPE_SECRET_KEY --env <env>` for deployed envs."
+        );
+      } else {
+        console.error("Stripe Tax calculation failed (using fallback rate):", stripeError);
+      }
+
       // Fall back to simple calculation
       const amount = subtotal * FALLBACK_TAX_RATE;
       const breakdown: TaxBreakdown = {
@@ -116,11 +130,15 @@ export async function POST(req: NextRequest) {
         total: subtotal + shippingCost + amount,
       };
 
-      return NextResponse.json({ 
-        amount, 
+      return NextResponse.json({
+        amount,
         breakdown,
         calculated_by: "fallback",
-        error: "Stripe Tax unavailable, using fallback rate"
+        // Flag config problems distinctly so the client/monitoring can tell a
+        // "Stripe is down" fallback from a "Stripe was never wired up" one.
+        error: isStripeConfigured()
+          ? "Stripe Tax unavailable, using fallback rate"
+          : "Stripe Tax not configured, using fallback rate",
       });
     }
 

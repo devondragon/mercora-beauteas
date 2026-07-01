@@ -32,7 +32,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createPaymentIntent, formatAmountForStripe } from '@/lib/stripe';
+import { createPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
 import type { Address } from '@/lib/types';
 
@@ -91,6 +91,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Fail loudly and specifically when Stripe isn't configured in this runtime.
+    // Previously this surfaced as an opaque 500 ("Failed to create payment
+    // intent") because the missing-secret-key throw was swallowed by the generic
+    // catch below. The Workers runtime reads secrets from `.dev.vars` /
+    // `wrangler secret`, NOT `.env.local`.
+    if (!isStripeConfigured()) {
+      console.error(
+        '[payment-intent] STRIPE_SECRET_KEY is not configured in this runtime. ' +
+          'For `wrangler dev`/OpenNext preview set it in `.dev.vars`; for deployed ' +
+          'envs use `wrangler secret put STRIPE_SECRET_KEY --env <env>`. ' +
+          '`.env.local` is only read by `next dev`.'
+      );
+      return NextResponse.json(
+        {
+          error: 'Payments are temporarily unavailable. Please try again later.',
+          code: 'stripe_not_configured',
+        },
+        { status: 503 }
+      );
+    }
+
     // If a gift card is applied as tender, re-verify its CURRENT balance here.
     // The client derives `amount` from a balance it fetched earlier; if the card
     // was partially redeemed in the meantime, that amount would under-collect.
@@ -145,7 +166,11 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error creating payment intent:', error);
+    // Log the actual cause (message + full error) so a real Stripe failure is
+    // diagnosable from `wrangler tail` instead of hiding behind the generic
+    // client-facing message.
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('Error creating payment intent:', detail, error);
     return NextResponse.json(
       { error: 'Failed to create payment intent' },
       { status: 500 }

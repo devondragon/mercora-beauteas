@@ -88,6 +88,17 @@ export const getStripe = (): StripeServer => {
 };
 
 /**
+ * Whether server-side Stripe is usable in THIS runtime (secret key present).
+ *
+ * The Workers runtime (`wrangler dev` / deployed Worker) reads secrets from
+ * `.dev.vars` or `wrangler secret put` — NOT `.env.local` (which only
+ * `next dev` reads). A missing key here is a *configuration* problem and is
+ * distinct from a transient Stripe API outage; callers should treat the two
+ * differently (loud config error vs. graceful degradation).
+ */
+export const isStripeConfigured = (): boolean => Boolean(secretKey);
+
+/**
  * Get a Stripe SDK instance configured for Cloudflare Workers runtime.
  * Uses fetch-based HTTP client instead of Node.js http module.
  *
