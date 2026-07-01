@@ -127,7 +127,7 @@ export default function SubscriptionToggle({
             <p className="text-base text-text-muted line-through">
               ${(variantPriceInCents / 100).toFixed(2)}
             </p>
-            <p className="text-lg font-bold text-state-sale">
+            <p className="text-lg font-bold text-state-success">
               ${(discountedPrice / 100).toFixed(2)}
             </p>
             {selectedPlan && (
@@ -147,7 +147,7 @@ export default function SubscriptionToggle({
               <p className="text-base text-text-muted line-through sm:text-lg">
                 ${(compareAtPriceInCents! / 100).toFixed(2)}
               </p>
-              <p className="text-lg font-bold text-state-sale sm:text-xl">
+              <p className="text-lg font-bold text-state-success sm:text-xl">
                 ${(variantPriceInCents / 100).toFixed(2)}
               </p>
               <p className="text-xs italic text-state-sale sm:text-sm">
