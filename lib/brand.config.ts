@@ -78,7 +78,7 @@ export const brand = {
       success: { DEFAULT: "#4f7a5b", bg: "#eef4ee" }, // sage — in-stock, savings, success
       error: { DEFAULT: "#b3534b", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
       sale: "#99544a",       // terracotta (= primary-700) — sale price emphasis
-      warning: { DEFAULT: "#b08d5e", bg: "#f6efe2" }, // honey — low stock / caution
+      warning: { DEFAULT: "#8a6a34", bg: "#f6efe2" }, // deep honey — AA-legible text on cream; -bg tint for fills
       info: { DEFAULT: "#555555", bg: "#f0ede8" },    // neutral informational
     },
   },
