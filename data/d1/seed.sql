@@ -1,3 +1,5 @@
+PRAGMA defer_foreign_keys = true;
+
 -- BeauTeas Database Seed Data
 -- Organic Skincare Tea E-Commerce Platform
 -- Based on Mercora MACH Alliance Open Data Model
@@ -139,9 +141,8 @@ INSERT INTO admin_settings (key, value, category, data_type, created_at, updated
 DELETE FROM pages;
 
 -- BeauTeas content pages
-INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
-
 -- About Us Page (with Founder Story) - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('About BeauTeas', 'about', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Our Story</h1>
@@ -205,9 +206,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium text-lg">Experience the Collection</a>
   </div>
 </div>
-', 'BeauTeas was founded on ancestral wisdom and the belief that true beauty is cultivated from within. Discover our founder''s story and philosophy.', 'About BeauTeas - Our Heritage & Philosophy | Luxury Organic Skincare Teas', 'Discover the BeauTeas story: ancestral wisdom meets modern skincare science. Learn about our founder, our organic calendula heritage, and our commitment to radiant beauty from within.', 'about, beauteas, organic tea, skincare, calendula, luxury, heritage, founder, philosophy', 'published', strftime(''%s'', ''now''), 'about', 1, 1, 'About Us', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'BeauTeas was founded on ancestral wisdom and the belief that true beauty is cultivated from within. Discover our founder''s story and philosophy.', 'About BeauTeas - Our Heritage & Philosophy | Luxury Organic Skincare Teas', 'Discover the BeauTeas story: ancestral wisdom meets modern skincare science. Learn about our founder, our organic calendula heritage, and our commitment to radiant beauty from within.', 'about, beauteas, organic tea, skincare, calendula, luxury, heritage, founder, philosophy', 'published', strftime('%s', 'now'), 'about', 1, 1, 'About Us', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Brewing Directions Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('The Art of Brewing', 'brewing-directions', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">The Art of Brewing</h1>
@@ -345,9 +347,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <p class="text-text-secondary">Our team delights in helping you perfect your brewing practice. <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">Reach out anytime</a>.</p>
   </div>
 </div>
-', 'Master the art of brewing BeauTeas for optimal flavor and botanical potency. Detailed guidance for each blend, plus iced tea methods.', 'The Art of Brewing - BeauTeas Preparation Guide | BeauTeas', 'Master the art of brewing BeauTeas organic skincare teas. Optimal temperatures, steeping times, and techniques for black, green, and herbal blends.', 'brewing, art of tea, preparation, steep time, temperature, ritual, iced tea, cold brew', 'published', strftime(''%s'', ''now''), 'default', 2, 1, 'Brewing Guide', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Master the art of brewing BeauTeas for optimal flavor and botanical potency. Detailed guidance for each blend, plus iced tea methods.', 'The Art of Brewing - BeauTeas Preparation Guide | BeauTeas', 'Master the art of brewing BeauTeas organic skincare teas. Optimal temperatures, steeping times, and techniques for black, green, and herbal blends.', 'brewing, art of tea, preparation, steep time, temperature, ritual, iced tea, cold brew', 'published', strftime('%s', 'now'), 'default', 2, 1, 'Brewing Guide', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- How Our Teas Work Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('The Science of Radiance', 'how-it-works', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">The Science of Radiance</h1>
@@ -461,9 +464,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium text-lg">The Complete Ritual Collection</a>
   </div>
 </div>
-', 'Discover the botanical science behind BeauTeas. Learn how calendula, spearmint, rooibos, and premium teas work in harmony to reveal radiant skin.', 'The Science of Radiance - How BeauTeas Work | BeauTeas', 'Explore the science behind BeauTeas organic skincare teas. Discover how calendula, spearmint, rooibos, and premium botanicals transform skin from within.', 'how it works, botanical science, calendula, spearmint, rooibos, skincare, radiance, transformation', 'published', strftime(''%s'', ''now''), 'default', 3, 1, 'How It Works', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Discover the botanical science behind BeauTeas. Learn how calendula, spearmint, rooibos, and premium teas work in harmony to reveal radiant skin.', 'The Science of Radiance - How BeauTeas Work | BeauTeas', 'Explore the science behind BeauTeas organic skincare teas. Discover how calendula, spearmint, rooibos, and premium botanicals transform skin from within.', 'how it works, botanical science, calendula, spearmint, rooibos, skincare, radiance, transformation', 'published', strftime('%s', 'now'), 'default', 3, 1, 'How It Works', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- FAQ Page (Expanded)
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Frequently Asked Questions', 'faq', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Questions & Guidance</h1>
@@ -583,9 +587,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     </div>
   </div>
 </div>
-', 'Find answers to your questions about BeauTeas organic skincare teas, including brewing rituals, ingredients, skin types, and our commitment to quality.', 'Questions & Guidance | BeauTeas', 'Explore thoughtfully answered questions about BeauTeas organic skincare teas. Learn about our ingredients, brewing rituals, skin benefits, and membership privileges.', 'faq, questions, guidance, help, organic tea, skincare, ingredients, skin type', 'published', strftime(''%s'', ''now''), 'default', 4, 1, 'FAQ', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Find answers to your questions about BeauTeas organic skincare teas, including brewing rituals, ingredients, skin types, and our commitment to quality.', 'Questions & Guidance | BeauTeas', 'Explore thoughtfully answered questions about BeauTeas organic skincare teas. Learn about our ingredients, brewing rituals, skin benefits, and membership privileges.', 'faq, questions, guidance, help, organic tea, skincare, ingredients, skin type', 'published', strftime('%s', 'now'), 'default', 4, 1, 'FAQ', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Shipping & Returns Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Shipping & Delivery', 'shipping-returns', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Shipping & Delivery</h1>
@@ -661,9 +666,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700 font-medium">hello@beauteas.com</a>
   </div>
 </div>
-', 'BeauTeas shipping options, delivery times, and our 30-day satisfaction guarantee. Thoughtfully packaged and delivered.', 'Shipping & Delivery | BeauTeas', 'BeauTeas shipping and delivery information. Free shipping on orders over $35, expedited options available. 30-day satisfaction guarantee.', 'shipping, delivery, returns, satisfaction guarantee, free shipping', 'published', strftime(''%s'', ''now''), 'default', 5, 1, 'Shipping', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'BeauTeas shipping options, delivery times, and our 30-day satisfaction guarantee. Thoughtfully packaged and delivered.', 'Shipping & Delivery | BeauTeas', 'BeauTeas shipping and delivery information. Free shipping on orders over $35, expedited options available. 30-day satisfaction guarantee.', 'shipping, delivery, returns, satisfaction guarantee, free shipping', 'published', strftime('%s', 'now'), 'default', 5, 1, 'Shipping', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Contact Us Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Contact Us', 'contact', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Let Us Hear From You</h1>
@@ -709,9 +715,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <p class="text-text-secondary text-sm">We honor your inbox—only meaningful correspondence, never noise.</p>
   </div>
 </div>
-', 'Connect with BeauTeas for questions about our organic skincare teas, orders, or partnership opportunities. We welcome your correspondence.', 'Contact Us | BeauTeas', 'Reach out to BeauTeas. Email hello@beauteas.com for questions about organic skincare teas, orders, or partnership opportunities.', 'contact, correspondence, client care, partnerships, connect', 'published', strftime(''%s'', ''now''), 'default', 6, 1, 'Contact', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Connect with BeauTeas for questions about our organic skincare teas, orders, or partnership opportunities. We welcome your correspondence.', 'Contact Us | BeauTeas', 'Reach out to BeauTeas. Email hello@beauteas.com for questions about organic skincare teas, orders, or partnership opportunities.', 'contact, correspondence, client care, partnerships, connect', 'published', strftime('%s', 'now'), 'default', 6, 1, 'Contact', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Privacy Policy Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Privacy Policy', 'privacy-policy', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4">Privacy Policy</h1>
@@ -797,9 +804,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
   <p class="mb-4">If you have questions about this privacy policy or your personal information, contact us at:</p>
   <p class="mb-2">Email: <a href="mailto:privacy@beauteas.com" class="text-primary-600 hover:text-primary-700">privacy@beauteas.com</a></p>
 </div>
-', 'BeauTeas Privacy Policy - Learn how we collect, use, and protect your personal information.', 'Privacy Policy | BeauTeas', 'BeauTeas privacy policy. Learn how we collect, use, and protect your personal information when you shop with us.', 'privacy, policy, data, security, personal information, GDPR, CCPA', 'published', strftime(''%s'', ''now''), 'legal', 7, 1, 'Privacy', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'BeauTeas Privacy Policy - Learn how we collect, use, and protect your personal information.', 'Privacy Policy | BeauTeas', 'BeauTeas privacy policy. Learn how we collect, use, and protect your personal information when you shop with us.', 'privacy, policy, data, security, personal information, GDPR, CCPA', 'published', strftime('%s', 'now'), 'legal', 7, 1, 'Privacy', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Terms of Service Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Terms of Service', 'terms-of-service', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4">Terms of Service</h1>
@@ -868,9 +876,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
   <p class="mb-4">Questions about these terms? Contact us at:</p>
   <p class="mb-2">Email: <a href="mailto:legal@beauteas.com" class="text-primary-600 hover:text-primary-700">legal@beauteas.com</a></p>
 </div>
-', 'BeauTeas Terms of Service - Review the terms and conditions for using our website and purchasing products.', 'Terms of Service | BeauTeas', 'BeauTeas terms of service and conditions. Read about ordering, shipping, returns, health disclaimers, and more.', 'terms, service, conditions, legal, agreement, policy', 'published', strftime(''%s'', ''now''), 'legal', 8, 1, 'Terms', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'BeauTeas Terms of Service - Review the terms and conditions for using our website and purchasing products.', 'Terms of Service | BeauTeas', 'BeauTeas terms of service and conditions. Read about ordering, shipping, returns, health disclaimers, and more.', 'terms, service, conditions, legal, agreement, policy', 'published', strftime('%s', 'now'), 'legal', 8, 1, 'Terms', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Subscription Details Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('The Membership', 'subscriptions', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">The BeauTeas Membership</h1>
@@ -989,9 +998,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium">Join the Membership</a>
   </div>
 </div>
-', 'Join the BeauTeas Membership for preferred pricing, complimentary delivery, and priority access to new blends. Flexible, no commitment.', 'The Membership | BeauTeas', 'Join the BeauTeas Membership. Enjoy 10% preferred pricing, complimentary delivery, and priority access to new organic skincare tea blends. No commitment, complete flexibility.', 'membership, subscription, preferred pricing, complimentary delivery, exclusive access, organic tea', 'published', strftime(''%s'', ''now''), 'default', 9, 0, 'Subscriptions', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Join the BeauTeas Membership for preferred pricing, complimentary delivery, and priority access to new blends. Flexible, no commitment.', 'The Membership | BeauTeas', 'Join the BeauTeas Membership. Enjoy 10% preferred pricing, complimentary delivery, and priority access to new organic skincare tea blends. No commitment, complete flexibility.', 'membership, subscription, preferred pricing, complimentary delivery, exclusive access, organic tea', 'published', strftime('%s', 'now'), 'default', 9, 0, 'Subscriptions', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Skin Concern Guide Page (SEO-focused)
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Skin Concern Guide', 'skin-concerns', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-8">Tea for Your Skin Concerns</h1>
@@ -1105,9 +1115,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-8 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium">Get the Sample Pack</a>
   </div>
 </div>
-', 'Find the right BeauTeas blend for your skin concerns: acne, aging, redness, dryness, and hormonal issues.', 'Skin Concern Guide - Tea for Acne, Anti-Aging & More | BeauTeas', 'Find the best BeauTeas organic tea for your skin concerns. Solutions for acne, anti-aging, redness, dryness, and hormonal skin issues.', 'skin concerns, acne, anti-aging, wrinkles, redness, dryness, hormonal acne, skincare tea', 'published', strftime(''%s'', ''now''), 'default', 10, 0, 'Skin Guide', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Find the right BeauTeas blend for your skin concerns: acne, aging, redness, dryness, and hormonal issues.', 'Skin Concern Guide - Tea for Acne, Anti-Aging & More | BeauTeas', 'Find the best BeauTeas organic tea for your skin concerns. Solutions for acne, anti-aging, redness, dryness, and hormonal skin issues.', 'skin concerns, acne, anti-aging, wrinkles, redness, dryness, hormonal acne, skincare tea', 'published', strftime('%s', 'now'), 'default', 10, 0, 'Skin Guide', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Our Ingredients Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Our Ingredients', 'ingredients', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-8">Our Ingredients</h1>
@@ -1214,9 +1225,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <p>If you have specific allergies or dietary concerns, please <a href="/contact" class="text-primary-600 hover:text-primary-700 underline">contact us</a>. We''re happy to provide additional information to ensure our teas are right for you.</p>
   </div>
 </div>
-', 'Learn about the organic ingredients in BeauTeas skincare teas: calendula, spearmint, chamomile, rooibos, and more.', 'Our Ingredients - Organic Tea Ingredients | BeauTeas', 'Discover the organic ingredients in BeauTeas skincare teas. Learn about calendula, spearmint, chamomile, rooibos, and other botanicals that support healthy skin.', 'ingredients, organic, calendula, spearmint, chamomile, rooibos, green tea, black tea, skincare', 'published', strftime(''%s'', ''now''), 'default', 11, 0, 'Ingredients', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Learn about the organic ingredients in BeauTeas skincare teas: calendula, spearmint, chamomile, rooibos, and more.', 'Our Ingredients - Organic Tea Ingredients | BeauTeas', 'Discover the organic ingredients in BeauTeas skincare teas. Learn about calendula, spearmint, chamomile, rooibos, and other botanicals that support healthy skin.', 'ingredients, organic, calendula, spearmint, chamomile, rooibos, green tea, black tea, skincare', 'published', strftime('%s', 'now'), 'default', 11, 0, 'Ingredients', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Testimonials Page - Elevated Luxury Tone
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Transformations', 'testimonials', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Voices of Radiance</h1>
@@ -1317,9 +1329,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <p class="text-center text-text-secondary">Has BeauTeas become part of your transformation? We would be honored to hear your story. Reach us at <a href="mailto:hello@beauteas.com" class="text-primary-600 hover:text-primary-700">hello@beauteas.com</a> or share your moments on Instagram <a href="https://instagram.com/beauteas" class="text-primary-600 hover:text-primary-700">@beauteas</a>.</p>
   </div>
 </div>
-', 'Read transformative stories from BeauTeas devotees. Authentic experiences from those who''ve discovered their radiance through organic skincare teas.', 'Voices of Radiance - Transformations | BeauTeas', 'Discover authentic transformation stories from BeauTeas members. Read how organic skincare teas have helped our community achieve clearer, more radiant skin.', 'transformations, testimonials, stories, radiance, results, skincare journey, organic tea', 'published', strftime(''%s'', ''now''), 'default', 12, 0, 'Testimonials', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Read transformative stories from BeauTeas devotees. Authentic experiences from those who''ve discovered their radiance through organic skincare teas.', 'Voices of Radiance - Transformations | BeauTeas', 'Discover authentic transformation stories from BeauTeas members. Read how organic skincare teas have helped our community achieve clearer, more radiant skin.', 'transformations, testimonials, stories, radiance, results, skincare journey, organic tea', 'published', strftime('%s', 'now'), 'default', 12, 0, 'Testimonials', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- The BeauTeas Ritual Page (Luxury Lifestyle)
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('The BeauTeas Ritual', 'ritual', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">The Art of the BeauTeas Ritual</h1>
@@ -1412,9 +1425,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium text-lg">Experience the Collection</a>
   </div>
 </div>
-', 'Discover the BeauTeas Ritual—a daily practice of intentional self-care through the art of tea. Morning, afternoon, and evening moments of luxury.', 'The BeauTeas Ritual - Daily Self-Care Tea Practice | BeauTeas', 'Transform your daily tea into a ritual of self-care and intention. Discover the art of the BeauTeas morning, afternoon, and evening skincare tea ritual.', 'ritual, self-care, mindfulness, tea ceremony, luxury, wellness, daily practice, intention', 'published', strftime(''%s'', ''now''), 'default', 13, 1, 'The Ritual', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Discover the BeauTeas Ritual—a daily practice of intentional self-care through the art of tea. Morning, afternoon, and evening moments of luxury.', 'The BeauTeas Ritual - Daily Self-Care Tea Practice | BeauTeas', 'Transform your daily tea into a ritual of self-care and intention. Discover the art of the BeauTeas morning, afternoon, and evening skincare tea ritual.', 'ritual, self-care, mindfulness, tea ceremony, luxury, wellness, daily practice, intention', 'published', strftime('%s', 'now'), 'default', 13, 1, 'The Ritual', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Gift Guide Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Gift Guide', 'gifts', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">The Art of Gifting Wellness</h1>
@@ -1546,9 +1560,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/contact" class="inline-block text-primary-600 hover:text-primary-700 font-medium">Inquire about corporate gifting →</a>
   </div>
 </div>
-', 'Find the perfect BeauTeas gift for tea lovers and skincare enthusiasts. Curated gift sets for every occasion.', 'Gift Guide - Luxury Tea Gifts | BeauTeas', 'Shop BeauTeas gift sets and subscriptions. Perfect wellness gifts for holidays, birthdays, bridal parties, and anyone who deserves daily self-care.', 'gifts, gift guide, presents, holiday, birthday, bridal, tea gifts, wellness gifts, luxury', 'published', strftime(''%s'', ''now''), 'default', 14, 1, 'Gifts', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Find the perfect BeauTeas gift for tea lovers and skincare enthusiasts. Curated gift sets for every occasion.', 'Gift Guide - Luxury Tea Gifts | BeauTeas', 'Shop BeauTeas gift sets and subscriptions. Perfect wellness gifts for holidays, birthdays, bridal parties, and anyone who deserves daily self-care.', 'gifts, gift guide, presents, holiday, birthday, bridal, tea gifts, wellness gifts, luxury', 'published', strftime('%s', 'now'), 'default', 14, 1, 'Gifts', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Our Promise / Quality Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Our Promise', 'our-promise', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">Our Promise to You</h1>
@@ -1673,9 +1688,10 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     <a href="/product/clearly-calendula-sample-pack" class="inline-block bg-primary-600 text-white px-10 py-4 rounded-lg hover:bg-primary-700 transition-colors font-medium text-lg">Try BeauTeas Risk-Free</a>
   </div>
 </div>
-', 'Discover the BeauTeas commitment to quality: USDA organic, ethically sourced, third-party tested, and sustainably packaged.', 'Our Promise - Quality & Sourcing | BeauTeas', 'Learn about BeauTeas quality standards: 100% USDA organic, ethically sourced ingredients, third-party testing, small-batch blending, and sustainable packaging.', 'quality, organic, sourcing, ethical, sustainable, promise, guarantee, standards, purity', 'published', strftime(''%s'', ''now''), 'default', 15, 1, 'Our Promise', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now'')),
+', 'Discover the BeauTeas commitment to quality: USDA organic, ethically sourced, third-party tested, and sustainably packaged.', 'Our Promise - Quality & Sourcing | BeauTeas', 'Learn about BeauTeas quality standards: 100% USDA organic, ethically sourced ingredients, third-party testing, small-batch blending, and sustainable packaging.', 'quality, organic, sourcing, ethical, sustainable, promise, guarantee, standards, purity', 'published', strftime('%s', 'now'), 'default', 15, 1, 'Our Promise', 1, strftime('%s', 'now'), strftime('%s', 'now'));
 
 -- Press & Features Page
+INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, meta_keywords, status, published_at, template, sort_order, show_in_nav, nav_title, version, created_at, updated_at) VALUES
 ('Press & Media', 'press', '
 <div class="max-w-4xl mx-auto">
   <h1 class="text-4xl font-serif mb-4 text-center">In the Press</h1>
@@ -1773,4 +1789,5 @@ INSERT INTO pages (title, slug, content, excerpt, meta_title, meta_description, 
     </div>
   </div>
 </div>
-', 'BeauTeas in the press: media features, reviews, awards, and press inquiries. See what the wellness world is saying.', 'Press & Media | BeauTeas', 'Read BeauTeas press coverage, reviews, and awards. Media inquiries, influencer partnerships, and affiliate program information.', 'press, media, features, reviews, awards, influencer, affiliate, partnerships, coverage', 'published', strftime(''%s'', ''now''), 'default', 16, 0, 'Press', 1, strftime(''%s'', ''now''), strftime(''%s'', ''now''));
+', 'BeauTeas in the press: media features, reviews, awards, and press inquiries. See what the wellness world is saying.', 'Press & Media | BeauTeas', 'Read BeauTeas press coverage, reviews, and awards. Media inquiries, influencer partnerships, and affiliate program information.', 'press, media, features, reviews, awards, influencer, affiliate, partnerships, coverage', 'published', strftime('%s', 'now'), 'default', 16, 0, 'Press', 1, strftime('%s', 'now'), strftime('%s', 'now'));
+

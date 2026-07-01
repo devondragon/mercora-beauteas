@@ -100,7 +100,7 @@ export default function GiftCardInput() {
             onClick={handleApply}
             disabled={isLoading || !code.trim()}
             size="sm"
-            className="bg-secondary-400 hover:bg-secondary-500 text-text-inverse"
+            className="bg-primary-500 hover:bg-primary-600 text-text-inverse"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
           </Button>

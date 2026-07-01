@@ -52,6 +52,7 @@ export default async function HomePage() {
     <main className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       {/* Hero Section */}
       <section className="max-w-6xl mx-auto text-center mb-16 sm:mb-20">
+        <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-secondary-600 mb-4">USDA-Certified Organic · Skincare Teas</p>
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight uppercase mb-4 sm:mb-6 leading-tight">
           This Tea Reveals Your Most Radiant Skin
         </h1>
