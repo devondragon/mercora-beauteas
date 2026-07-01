@@ -553,7 +553,7 @@ export default function KnowledgeManagement() {
                 variant="ghost"
                 size="sm"
                 onClick={() => openEditor(article)}
-                className="text-primary-600 hover:text-primary-700"
+                className="text-primary-700 hover:text-primary-800"
               >
                 <Edit className="w-4 h-4" />
               </Button>

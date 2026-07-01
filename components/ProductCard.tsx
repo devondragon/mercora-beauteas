@@ -206,7 +206,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
 
           <Link
             href={`/product/${slug}`}
-            className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium"
+            className="text-primary-700 hover:text-primary-800 hover:underline text-sm font-medium"
             prefetch={true}
           >
             Learn more →

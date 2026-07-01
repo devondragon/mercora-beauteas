@@ -365,7 +365,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
                 <h4 className="font-semibold text-text-primary">Shipping Address</h4>
                 <button
                   onClick={handleBackToShipping}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  className="text-sm text-primary-700 hover:text-primary-800 font-medium"
                   disabled={isLoading}
                 >
                   Edit
@@ -401,7 +401,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
                 <h4 className="font-semibold text-text-primary">Shipping Method</h4>
                 <button
                   onClick={handleBackToShipping}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  className="text-sm text-primary-700 hover:text-primary-800 font-medium"
                   disabled={isLoading}
                 >
                   Edit

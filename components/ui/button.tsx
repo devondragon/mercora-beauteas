@@ -68,7 +68,7 @@ const buttonVariants = cva(
           "bg-secondary-400 text-text-inverse shadow-xs hover:bg-secondary-500",
         ghost:
           "text-text-primary hover:bg-surface",
-        link: "text-primary-600 underline-offset-4 hover:underline hover:text-primary-700",
+        link: "text-primary-700 underline-offset-4 hover:underline hover:text-primary-800",
       },
       size: {
         default: "h-11 px-4 py-2 has-[>svg]:px-3", // 44px mobile-first

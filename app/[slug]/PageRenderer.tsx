@@ -150,13 +150,13 @@ export default function PageRenderer({ page }: PageRendererProps) {
                   <div className="flex flex-wrap gap-4">
                     <a
                       href="mailto:hello@beauteas.com"
-                      className="text-primary-600 hover:text-primary-700 transition-colors"
+                      className="text-primary-700 hover:text-primary-800 transition-colors"
                     >
                       Contact Support
                     </a>
                     <Link
                       href="/about"
-                      className="text-primary-600 hover:text-primary-700 transition-colors"
+                      className="text-primary-700 hover:text-primary-800 transition-colors"
                     >
                       About Us
                     </Link>

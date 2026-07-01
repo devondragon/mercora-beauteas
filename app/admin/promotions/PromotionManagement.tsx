@@ -794,7 +794,7 @@ export default function PromotionManagement() {
                   variant="ghost"
                   size="sm"
                   onClick={() => openEditor(promotion)}
-                  className="text-primary-600 hover:text-primary-700"
+                  className="text-primary-700 hover:text-primary-800"
                 >
                   <Edit className="w-4 h-4" />
                 </Button>

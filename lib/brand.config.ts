@@ -53,7 +53,7 @@ export const brand = {
     text: {
       primary: "#222222",     // Primary text (charcoal)
       secondary: "#555555",   // Muted text
-      muted: "#777777",       // Very muted text
+      muted: "#6b6b6b",       // Very muted text
       inverse: "#ffffff",     // Text on dark backgrounds
     },
     // Border colors
@@ -75,8 +75,8 @@ export const brand = {
     },
     // Functional/state colors, muted to sit on warm cream
     state: {
-      success: { DEFAULT: "#4f7a5b", bg: "#eef4ee" }, // sage — in-stock, savings, success
-      error: { DEFAULT: "#b3534b", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
+      success: { DEFAULT: "#446b52", bg: "#eef4ee" }, // sage — in-stock, savings, success
+      error: { DEFAULT: "#a1453d", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
       sale: "#99544a",       // terracotta (= primary-700) — sale price emphasis
       warning: { DEFAULT: "#8a6a34", bg: "#f6efe2" }, // deep honey — AA-legible text on cream; -bg tint for fills
       info: { DEFAULT: "#555555", bg: "#f0ede8" },    // neutral informational

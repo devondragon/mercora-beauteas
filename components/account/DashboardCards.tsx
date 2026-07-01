@@ -52,7 +52,7 @@ export default function DashboardCards({
         )}
         <Link
           href="/account/orders"
-          className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 transition-colors"
+          className="inline-flex items-center gap-1 text-sm text-primary-700 hover:text-primary-800 transition-colors"
         >
           View all orders <ArrowRight className="h-3 w-3" />
         </Link>
@@ -75,7 +75,7 @@ export default function DashboardCards({
         )}
         <Link
           href="/account/subscriptions"
-          className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 transition-colors mt-3"
+          className="inline-flex items-center gap-1 text-sm text-primary-700 hover:text-primary-800 transition-colors mt-3"
         >
           Manage subscriptions <ArrowRight className="h-3 w-3" />
         </Link>
@@ -92,7 +92,7 @@ export default function DashboardCards({
         </p>
         <Link
           href="/account/addresses"
-          className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 transition-colors"
+          className="inline-flex items-center gap-1 text-sm text-primary-700 hover:text-primary-800 transition-colors"
         >
           Manage addresses <ArrowRight className="h-3 w-3" />
         </Link>

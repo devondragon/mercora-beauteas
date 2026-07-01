@@ -160,7 +160,7 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         {/* Back to blog */}
         <div className="py-8 text-center">
-          <Link href="/blog" className="text-sm text-primary-600 hover:text-primary-700">
+          <Link href="/blog" className="text-sm text-primary-700 hover:text-primary-800">
             ← Back to Beauty Journal
           </Link>
         </div>

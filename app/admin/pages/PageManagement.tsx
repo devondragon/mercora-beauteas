@@ -659,7 +659,7 @@ Generate complete content now:`;
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditPage(page)}
-                            className="text-primary-600 hover:text-primary-700 hover:bg-surface-light"
+                            className="text-primary-700 hover:text-primary-800 hover:bg-surface-light"
                           >
                             <Edit3 className="w-4 h-4" />
                           </Button>

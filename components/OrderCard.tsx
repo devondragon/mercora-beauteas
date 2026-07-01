@@ -120,7 +120,7 @@ export default function OrderCard({ order }: { order: Order }) {
     <div className="rounded-lg border border-border-default bg-white p-4 shadow sm:p-6">
       <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="truncate text-base font-bold sm:text-lg">
-          <Link href={`/account/orders/${order.id}`} className="text-primary-600 hover:text-primary-700 transition-colors">
+          <Link href={`/account/orders/${order.id}`} className="text-primary-700 hover:text-primary-800 transition-colors">
             Order ID: <span className="text-text-primary">{order.id}</span>
           </Link>
         </h3>

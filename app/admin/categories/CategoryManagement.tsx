@@ -158,7 +158,7 @@ function CategoryTree({ categories, allCategories, onEdit, onDelete, onMove, lev
                 variant="ghost"
                 size="sm"
                 onClick={() => onEdit(category)}
-                className="text-primary-600 hover:text-primary-700"
+                className="text-primary-700 hover:text-primary-800"
               >
                 <Edit className="w-4 h-4" />
               </Button>
@@ -1032,7 +1032,7 @@ export default function CategoryManagement() {
                       variant="ghost"
                       size="sm"
                       onClick={() => openEditor(category)}
-                      className="text-primary-600 hover:text-primary-700"
+                      className="text-primary-700 hover:text-primary-800"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>

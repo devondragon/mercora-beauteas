@@ -137,7 +137,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                       variant="ghost"
                       size="sm"
                       onClick={() => onEdit(product)}
-                      className="text-primary-600 hover:text-primary-700"
+                      className="text-primary-700 hover:text-primary-800"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
