@@ -522,7 +522,7 @@ Generate complete content now:`;
               <p className="text-text-secondary text-sm">Total Pages</p>
               <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
             </div>
-            <FileText className="w-8 h-8 text-blue-500" />
+            <FileText className="w-8 h-8 text-state-info" />
           </div>
         </Card>
 
@@ -709,7 +709,7 @@ Generate complete content now:`;
                                 </AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => handleDeletePage(page)}
-                                  className="bg-state-error text-text-inverse hover:bg-state-error"
+                                  className="bg-state-error text-text-inverse hover:opacity-75"
                                 >
                                   Delete
                                 </AlertDialogAction>

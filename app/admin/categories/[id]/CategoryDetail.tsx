@@ -223,6 +223,7 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
                   <Button
                     size="sm"
                     onClick={handleBulkAssignProducts}
+                    className="bg-state-success text-text-inverse hover:opacity-90"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add to Category

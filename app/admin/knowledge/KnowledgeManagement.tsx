@@ -126,7 +126,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
             <h2 className="text-xl font-bold text-text-primary">
               {isNew ? "Create New Article" : "Edit Article"}
             </h2>
-            <Button variant="ghost" onClick={onClose} className="text-text-muted">
+            <Button variant="ghost" onClick={onClose} className="text-text-secondary">
               ✕
             </Button>
           </div>
@@ -172,7 +172,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                   Generate
                 </Button>
               </div>
-              <p className="text-xs text-text-muted mt-1">Auto-generated from title if left empty</p>
+              <p className="text-xs text-text-secondary mt-1">Auto-generated from title if left empty</p>
             </div>
 
             <div>
@@ -216,14 +216,14 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                           </div>
                           <div>
                             <h3 className="text-lg font-semibold text-text-primary">Chai AI Assistant</h3>
-                            <p className="text-sm text-text-muted">Knowledge article generation</p>
+                            <p className="text-sm text-text-secondary">Knowledge article generation</p>
                           </div>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowAiAssistant(false)}
-                          className="text-text-muted hover:text-text-primary"
+                          className="text-text-secondary hover:text-text-primary"
                         >
                           ✕
                         </Button>
@@ -287,7 +287,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
         </div>
 
         <div className="p-6 border-t border-border-default flex items-center justify-between">
-          <div className="text-sm text-text-muted">
+          <div className="text-sm text-text-secondary">
             Changes will automatically trigger AI vectorization
           </div>
           <div className="flex items-center space-x-3">
@@ -447,7 +447,7 @@ export default function KnowledgeManagement() {
   }, [searchQuery, articles]);
 
   if (loading) {
-    return <div className="text-text-muted">Loading knowledge base...</div>;
+    return <div className="text-text-secondary">Loading knowledge base...</div>;
   }
 
   return (
@@ -456,7 +456,7 @@ export default function KnowledgeManagement() {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-muted w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
             <Input
               type="text"
               placeholder="Search articles..."
@@ -489,19 +489,19 @@ export default function KnowledgeManagement() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-text-primary">{articles.length}</div>
-          <div className="text-sm text-text-muted">Total Articles</div>
+          <div className="text-sm text-text-secondary">Total Articles</div>
         </Card>
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-state-success">
             {articles.filter(a => a.isVectorized).length}
           </div>
-          <div className="text-sm text-text-muted">AI Indexed</div>
+          <div className="text-sm text-text-secondary">AI Indexed</div>
         </Card>
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-primary-600">
             {Math.round(articles.reduce((acc, a) => acc + a.size, 0) / 1024)}
           </div>
-          <div className="text-sm text-text-muted">KB Total Size</div>
+          <div className="text-sm text-text-secondary">KB Total Size</div>
         </Card>
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-state-info">
@@ -511,7 +511,7 @@ export default function KnowledgeManagement() {
               return modified > weekAgo;
             }).length}
           </div>
-          <div className="text-sm text-text-muted">Updated This Week</div>
+          <div className="text-sm text-text-secondary">Updated This Week</div>
         </Card>
       </div>
 
@@ -539,7 +539,7 @@ export default function KnowledgeManagement() {
             </div>
 
             <h3 className="text-lg font-semibold text-text-primary mb-2">{article.title}</h3>
-            <p className="text-sm text-text-muted mb-4">{article.filename}</p>
+            <p className="text-sm text-text-secondary mb-4">{article.filename}</p>
 
             <div className="flex items-center text-xs text-text-muted mb-4">
               <Calendar className="w-3 h-3 mr-1" />
@@ -560,7 +560,7 @@ export default function KnowledgeManagement() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-state-info hover:text-state-info"
+                className="text-state-info hover:opacity-75"
               >
                 <Eye className="w-4 h-4" />
               </Button>
@@ -568,7 +568,7 @@ export default function KnowledgeManagement() {
                 variant="ghost"
                 size="sm"
                 onClick={() => handleDelete(article.filename)}
-                className="text-state-error hover:text-state-error"
+                className="text-state-error hover:opacity-75"
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -578,7 +578,7 @@ export default function KnowledgeManagement() {
       </div>
 
       {filteredArticles.length === 0 && !loading && (
-        <div className="text-center py-8 text-text-muted">
+        <div className="text-center py-8 text-text-secondary">
           {searchQuery ? "No articles found matching your search." : "No articles available."}
         </div>
       )}

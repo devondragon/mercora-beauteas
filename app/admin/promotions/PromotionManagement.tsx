@@ -135,7 +135,7 @@ function PromotionEditor({ promotion, isOpen, onClose, onSave, isNew = false }: 
             <h2 className="text-xl font-bold text-text-primary">
               {isNew ? "Create New Promotion" : "Edit Promotion"}
             </h2>
-            <Button variant="ghost" onClick={onClose} className="text-text-muted">
+            <Button variant="ghost" onClick={onClose} className="text-text-secondary">
               ✕
             </Button>
           </div>
@@ -707,7 +707,7 @@ export default function PromotionManagement() {
   }, [searchQuery, promotions]);
 
   if (loading) {
-    return <div className="text-text-muted">Loading promotions...</div>;
+    return <div className="text-text-secondary">Loading promotions...</div>;
   }
 
   return (
@@ -715,7 +715,7 @@ export default function PromotionManagement() {
       {/* Header Actions */}
       <div className="flex items-center justify-between">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-muted w-4 h-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
           <Input
             type="text"
             placeholder="Search promotions..."
@@ -734,13 +734,13 @@ export default function PromotionManagement() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-text-primary">{promotions.length}</div>
-          <div className="text-sm text-text-muted">Total Promotions</div>
+          <div className="text-sm text-text-secondary">Total Promotions</div>
         </Card>
         <Card className="admin-card p-4">
           <div className="text-2xl font-bold text-state-success">
             {promotions.filter(p => p.status === "active").length}
           </div>
-          <div className="text-sm text-text-muted">Active Promotions</div>
+          <div className="text-sm text-text-secondary">Active Promotions</div>
         </Card>
       </div>
 
@@ -768,12 +768,12 @@ export default function PromotionManagement() {
                 variant="ghost"
                 size="sm"
                 onClick={() => copyCode(promotion.code)}
-                className="p-1 text-text-muted hover:text-text-primary"
+                className="p-1 text-text-secondary hover:text-text-primary"
               >
                 <Copy className="w-3 h-3" />
               </Button>
             </div>
-            <p className="text-sm text-text-muted mb-4">{promotion.description}</p>
+            <p className="text-sm text-text-secondary mb-4">{promotion.description}</p>
 
             <div className="space-y-2 text-xs text-text-muted mb-4">
               <div className="flex justify-between">
@@ -802,7 +802,7 @@ export default function PromotionManagement() {
                   variant="ghost"
                   size="sm"
                   onClick={() => handleDelete(promotion.id)}
-                  className="text-state-error hover:text-state-error"
+                  className="text-state-error hover:opacity-75"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
@@ -822,7 +822,7 @@ export default function PromotionManagement() {
       </div>
 
       {filteredPromotions.length === 0 && !loading && (
-        <div className="text-center py-8 text-text-muted">
+        <div className="text-center py-8 text-text-secondary">
           {searchQuery ? "No promotions found matching your search." : "No promotions available."}
         </div>
       )}

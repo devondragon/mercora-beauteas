@@ -365,7 +365,7 @@ export default function AdminSubscriptionsPage() {
               className={
                 statusFilter === tab.key
                   ? "bg-primary-500 hover:bg-primary-600 text-text-inverse"
-                  : "bg-white text-text-muted hover:bg-surface hover:text-text-primary border border-border-default"
+                  : "bg-white text-text-secondary hover:bg-surface hover:text-text-primary border border-border-default"
               }
               size="sm"
             >

@@ -522,7 +522,7 @@ export default function AdminDashboard() {
               <div className="flex-1">
                 <p className="text-sm text-text-secondary">Processing</p>
                 <div className="w-full bg-surface rounded-full h-3 mt-1">
-                  <div className="bg-state-warning h-3 rounded-full" style={{width: `${stats.totalOrders > 0 ? (stats.processingOrders / stats.totalOrders) * 100 : 0}%`}}></div>
+                  <div className="bg-state-info h-3 rounded-full" style={{width: `${stats.totalOrders > 0 ? (stats.processingOrders / stats.totalOrders) * 100 : 0}%`}}></div>
                 </div>
               </div>
               <span className="text-sm text-text-secondary ml-3">{stats.processingOrders}</span>
@@ -576,7 +576,7 @@ export default function AdminDashboard() {
                 <div className="w-3 h-3 bg-text-muted rounded-full"></div>
                 <span className="text-sm text-text-secondary">Inactive</span>
               </div>
-              <span className="text-lg font-semibold text-text-muted">{stats.inactiveProducts}</span>
+              <span className="text-lg font-semibold text-text-secondary">{stats.inactiveProducts}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
