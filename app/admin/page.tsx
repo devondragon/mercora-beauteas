@@ -531,7 +531,7 @@ export default function AdminDashboard() {
               <div className="flex-1">
                 <p className="text-sm text-text-secondary">Shipped</p>
                 <div className="w-full bg-surface rounded-full h-3 mt-1">
-                  <div className="bg-state-info h-3 rounded-full" style={{width: `${stats.totalOrders > 0 ? (stats.shippedOrders / stats.totalOrders) * 100 : 0}%`}}></div>
+                  <div className="bg-secondary-400 h-3 rounded-full" style={{width: `${stats.totalOrders > 0 ? (stats.shippedOrders / stats.totalOrders) * 100 : 0}%`}}></div>
                 </div>
               </div>
               <span className="text-sm text-text-secondary ml-3">{stats.shippedOrders}</span>
