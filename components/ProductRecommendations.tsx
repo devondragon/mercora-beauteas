@@ -231,9 +231,9 @@ export default function ProductRecommendations({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
           {Array.from({ length: maxRecommendations }, (_, i) => (
             <div key={i} className="animate-pulse">
-              <div className="bg-gray-200 aspect-square rounded-lg mb-4"></div>
-              <div className="bg-gray-200 h-4 rounded mb-2"></div>
-              <div className="bg-gray-200 h-4 rounded w-2/3 mx-auto"></div>
+              <div className="bg-surface-light aspect-square rounded-lg mb-4"></div>
+              <div className="bg-surface-light h-4 rounded mb-2"></div>
+              <div className="bg-surface-light h-4 rounded w-2/3 mx-auto"></div>
             </div>
           ))}
         </div>
