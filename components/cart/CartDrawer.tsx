@@ -40,6 +40,7 @@
  */
 
 import { useCartStore } from "@/lib/stores/cart-store";
+import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription, SheetClose } from "@/components/ui/sheet";
 import CartItemCard from "./CartItemCard";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,8 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
  * @returns JSX element representing a sliding cart drawer with items and totals
  */
 export default function CartDrawer() {
-  const [isOpen, setIsOpen] = useState(false);
+  const isOpen = useCartUIStore((state) => state.isOpen);
+  const setCartOpen = useCartUIStore((state) => state.setCartOpen);
   const [hasMounted, setHasMounted] = useState(false);
   const items = useCartStore((state) => state.items) || [];
 
@@ -74,7 +76,7 @@ export default function CartDrawer() {
   const itemCount = hasMounted ? items.length : 0;
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+    <Sheet open={isOpen} onOpenChange={setCartOpen}>
       <SheetTrigger asChild>
         <Button
           variant="ghost"
@@ -140,7 +142,7 @@ export default function CartDrawer() {
                   asChild
                   className="w-full bg-primary-500 hover:bg-primary-600 mt-4"
                 >
-                  <Link href="/checkout" onClick={() => setIsOpen(false)}>
+                  <Link href="/checkout" onClick={() => setCartOpen(false)}>
                     Proceed to Checkout
                   </Link>
                 </Button>

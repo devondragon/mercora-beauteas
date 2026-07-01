@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Gift } from "lucide-react";
 
@@ -56,6 +57,10 @@ export default function GiftCardPurchaseForm() {
     toast("Gift card added to cart", {
       description: `A $${denom.amount} gift card for ${recipientEmail.trim()} is ready at checkout.`,
       icon: "🎁",
+      action: {
+        label: "View Cart",
+        onClick: () => useCartUIStore.getState().openCart(),
+      },
     });
 
     // Reset the recipient fields for the next gift card

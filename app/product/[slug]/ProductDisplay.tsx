@@ -38,6 +38,7 @@ import ProductRecommendations from "@/components/ProductRecommendations";
 import { StarRating } from "@/components/reviews/StarRating";
 import { ProductReviewsSection } from "@/components/reviews/ProductReviewsSection";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -313,6 +314,10 @@ export default function ProductDisplay({
                     toast("Added to Cart", {
                       description: `${fullName} has been added to your cart.`,
                       icon: "\uD83D\uDD25",
+                      action: {
+                        label: "View Cart",
+                        onClick: () => useCartUIStore.getState().openCart(),
+                      },
                     });
                   }}
                 />
@@ -371,6 +376,10 @@ export default function ProductDisplay({
                       toast("Added to Cart", {
                         description: `${fullName} has been added to your cart.`,
                         icon: "\uD83D\uDD25",
+                        action: {
+                          label: "View Cart",
+                          onClick: () => useCartUIStore.getState().openCart(),
+                        },
                       });
                     }}
                   >
