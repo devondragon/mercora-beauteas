@@ -53,13 +53,13 @@ export function BlogImageUpload({ imageUrl, onChange, onAltText }: BlogImageUplo
     <div>
       {imageUrl ? (
         <div className="relative">
-          <div className="relative aspect-video overflow-hidden rounded border border-neutral-700">
+          <div className="relative aspect-video overflow-hidden rounded border border-border-default">
             <img src={imageUrl} alt="Cover" className="h-full w-full object-cover" />
           </div>
           <button
             type="button"
             onClick={() => onChange("")}
-            className="absolute right-1 top-1 rounded bg-black/70 p-1 text-white hover:bg-black"
+            className="absolute right-1 top-1 rounded bg-text-primary/70 p-1 text-white hover:bg-text-primary"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -71,21 +71,21 @@ export function BlogImageUpload({ imageUrl, onChange, onAltText }: BlogImageUplo
           onDragLeave={() => setDragging(false)}
           onClick={() => inputRef.current?.click()}
           className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded border-2 border-dashed py-6 text-sm transition-colors ${
-            dragging ? "border-amber-500 bg-amber-900/10" : "border-neutral-600 hover:border-neutral-500"
+            dragging ? "border-secondary-500 bg-secondary-400/10" : "border-border-default hover:border-border-dark"
           }`}
         >
           {uploading ? (
-            <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-secondary-600" />
           ) : (
             <>
-              <Upload className="h-6 w-6 text-neutral-500" />
-              <span className="text-neutral-400">Click or drop image</span>
+              <Upload className="h-6 w-6 text-text-muted" />
+              <span className="text-text-secondary">Click or drop image</span>
             </>
           )}
         </div>
       )}
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-xs text-state-error">{error}</p>}
     </div>
   );
 }

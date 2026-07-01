@@ -54,9 +54,9 @@ function CategoryTreeItem({
   const highlightText = (text: string, query: string) => {
     if (!query) return text;
     const parts = text.split(new RegExp(`(${query})`, 'gi'));
-    return parts.map((part, index) => 
+    return parts.map((part, index) =>
       part.toLowerCase() === query.toLowerCase() ? (
-        <span key={index} className="bg-yellow-400 text-black">{part}</span>
+        <span key={index} className="bg-state-warning-bg text-text-primary">{part}</span>
       ) : (
         part
       )
@@ -66,8 +66,8 @@ function CategoryTreeItem({
   return (
     <div className="space-y-1">
       <div 
-        className={`flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-neutral-700/50 ${
-          isSelected ? 'bg-orange-600/20 border border-orange-600/30' : ''
+        className={`flex items-center space-x-2 p-2 rounded cursor-pointer hover:bg-surface ${
+          isSelected ? 'bg-primary-500/20 border border-primary-500/30' : ''
         }`}
         style={{ marginLeft: `${level * 16}px` }}
         onClick={() => onToggle(category.id)}
@@ -80,23 +80,23 @@ function CategoryTreeItem({
               e.stopPropagation();
               onToggleExpand(category.id);
             }}
-            className="p-0 h-auto w-4 text-gray-400 hover:text-white"
+            className="p-0 h-auto w-4 text-text-secondary hover:text-text-primary"
           >
-            {isExpanded ? 
-              <ChevronDown className="w-3 h-3" /> : 
+            {isExpanded ?
+              <ChevronDown className="w-3 h-3" /> :
               <ChevronRight className="w-3 h-3" />
             }
           </Button>
         ) : (
           <div className="w-4 h-3" /> // Spacer
         )}
-        
-        <div className="w-5 h-5 bg-orange-600/20 rounded flex items-center justify-center">
-          <FolderOpen className="w-3 h-3 text-orange-400" />
+
+        <div className="w-5 h-5 bg-primary-500/20 rounded flex items-center justify-center">
+          <FolderOpen className="w-3 h-3 text-primary-500" />
         </div>
-        
+
         <div className="flex items-center space-x-2 flex-1">
-          <span className="text-sm text-white">
+          <span className="text-sm text-text-primary">
             {highlightText(name, searchQuery)}
           </span>
           {category.product_count !== undefined && category.product_count > 0 && (
@@ -107,7 +107,7 @@ function CategoryTreeItem({
         </div>
         
         {isSelected && (
-          <Check className="w-4 h-4 text-orange-400" />
+          <Check className="w-4 h-4 text-primary-500" />
         )}
       </div>
       
@@ -240,7 +240,7 @@ export default function CategoryPicker({
               <Badge
                 key={category.id}
                 variant="secondary"
-                className="bg-orange-600/20 text-orange-300 border-orange-600/30"
+                className="bg-primary-500/20 text-primary-600 border-primary-500/30"
               >
                 <Tag className="w-3 h-3 mr-1" />
                 {getCategoryName(category)}
@@ -261,7 +261,7 @@ export default function CategoryPicker({
                 variant="ghost"
                 size="sm"
                 onClick={handleClearAll}
-                className="text-xs text-gray-400 hover:text-white"
+                className="text-xs text-text-secondary hover:text-text-primary"
               >
                 Clear all
               </Button>
@@ -275,9 +275,9 @@ export default function CategoryPicker({
           variant="outline"
           onClick={() => setIsOpen(!isOpen)}
           disabled={disabled}
-          className="w-full justify-between bg-neutral-800 border-neutral-600 hover:bg-neutral-700"
+          className="w-full justify-between bg-white border-border-default hover:bg-surface"
         >
-          <span className={selectedCategoryIds.length === 0 ? "text-gray-400" : ""}>
+          <span className={selectedCategoryIds.length === 0 ? "text-text-secondary" : ""}>
             {selectedCategoryIds.length === 0 
               ? placeholder 
               : `${selectedCategoryIds.length} categories selected`
@@ -289,24 +289,24 @@ export default function CategoryPicker({
 
       {/* Dropdown */}
       {isOpen && (
-        <Card className="absolute top-full left-0 right-0 z-50 mt-2 bg-neutral-800 border-neutral-700 shadow-lg max-h-80 overflow-hidden">
-          <div className="p-3 border-b border-neutral-700">
+        <Card className="admin-card absolute top-full left-0 right-0 z-50 mt-2 shadow-lg max-h-80 overflow-hidden">
+          <div className="p-3 border-b border-border-default">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search categories..."
-                className="pl-10 bg-neutral-700 border-neutral-600"
+                className="pl-10 admin-input"
               />
             </div>
           </div>
-          
+
           <div className="max-h-60 overflow-y-auto p-2">
             {loading ? (
-              <div className="text-center py-4 text-gray-400">Loading categories...</div>
+              <div className="text-center py-4 text-text-secondary">Loading categories...</div>
             ) : rootCategories.length === 0 ? (
-              <div className="text-center py-4 text-gray-400">
+              <div className="text-center py-4 text-text-secondary">
                 {searchQuery ? "No categories found" : "No categories available"}
               </div>
             ) : (
@@ -327,8 +327,8 @@ export default function CategoryPicker({
             )}
           </div>
           
-          <div className="p-3 border-t border-neutral-700 flex items-center justify-between">
-            <div className="text-xs text-gray-400">
+          <div className="p-3 border-t border-border-default flex items-center justify-between">
+            <div className="text-xs text-text-secondary">
               {maxSelections && `${selectedCategoryIds.length}/${maxSelections} selected`}
             </div>
             <Button

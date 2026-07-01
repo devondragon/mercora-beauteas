@@ -105,15 +105,15 @@ export default function AdminGuard({
   // Loading state
   if (!userLoaded || !authLoaded || isAuthorized === null) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <Card className="bg-neutral-800 border-neutral-700 p-8 text-center">
+      <div className="min-h-screen bg-surface-dark flex items-center justify-center">
+        <Card className="admin-card p-8 text-center">
           <div className="flex items-center justify-center mb-4">
-            <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           </div>
-          <h2 className="text-xl font-semibold text-white mb-2">
+          <h2 className="text-xl font-semibold text-text-primary mb-2">
             Checking Access Permissions
           </h2>
-          <p className="text-gray-400">
+          <p className="text-text-secondary">
             Verifying your admin credentials...
           </p>
         </Card>
@@ -128,47 +128,47 @@ export default function AdminGuard({
     }
 
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <Card className="bg-neutral-800 border-neutral-700 p-8 text-center max-w-md">
+      <div className="min-h-screen bg-surface-dark flex items-center justify-center">
+        <Card className="admin-card p-8 text-center max-w-md">
           <div className="flex items-center justify-center mb-4">
             {!isSignedIn ? (
-              <LogIn className="w-12 h-12 text-blue-500" />
+              <LogIn className="w-12 h-12 text-state-info" />
             ) : (
-              <Shield className="w-12 h-12 text-red-500" />
+              <Shield className="w-12 h-12 text-state-error" />
             )}
           </div>
-          
-          <h2 className="text-xl font-semibold text-white mb-4">
+
+          <h2 className="text-xl font-semibold text-text-primary mb-4">
             {!isSignedIn ? "Sign In Required" : "Access Denied"}
           </h2>
-          
-          <p className="text-gray-400 mb-6">
+
+          <p className="text-text-secondary mb-6">
             {authError}
           </p>
 
           {!isSignedIn ? (
             <SignInButton mode="modal">
-              <Button className="bg-orange-600 hover:bg-orange-700 text-white">
+              <Button className="bg-primary-500 hover:bg-primary-600 text-white">
                 <LogIn className="w-4 h-4 mr-2" />
                 Sign In to Continue
               </Button>
             </SignInButton>
           ) : (
             <div className="space-y-4">
-              <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-4">
+              <div className="bg-state-warning-bg border border-state-warning rounded-lg p-4">
                 <div className="flex items-center justify-center mb-2">
-                  <AlertTriangle className="w-5 h-5 text-yellow-500" />
+                  <AlertTriangle className="w-5 h-5 text-state-warning" />
                 </div>
-                <p className="text-yellow-300 text-sm">
+                <p className="text-state-warning text-sm">
                   You don&rsquo;t have admin privileges for this application.
                   Please contact the system administrator to request access.
                 </p>
               </div>
-              
-              <Button 
-                variant="outline" 
+
+              <Button
+                variant="outline"
                 onClick={() => window.location.href = "/"}
-                className="border-neutral-600 text-gray-300 hover:bg-neutral-700"
+                className="border-border-default text-text-secondary hover:bg-surface"
               >
                 Return to Home
               </Button>

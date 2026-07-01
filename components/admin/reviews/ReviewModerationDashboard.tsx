@@ -76,11 +76,11 @@ const statusOptions: Array<{ label: string; value: "all" | ReviewStatus }> = [
 ];
 
 const statusStyles: Record<ReviewStatus, string> = {
-  pending: "bg-sky-500/20 text-sky-200",
-  needs_review: "bg-yellow-500/20 text-yellow-200",
-  published: "bg-emerald-500/20 text-emerald-200",
-  suppressed: "bg-slate-500/20 text-slate-200",
-  auto_rejected: "bg-rose-500/20 text-rose-200",
+  pending: "bg-state-info-bg text-state-info",
+  needs_review: "bg-state-warning-bg text-state-warning",
+  published: "bg-state-success-bg text-state-success",
+  suppressed: "bg-surface text-text-muted",
+  auto_rejected: "bg-state-error-bg text-state-error",
 };
 
 function formatTimestamp(value?: string | null) {
@@ -366,9 +366,9 @@ export default function ReviewModerationDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <AlertTriangle className="h-4 w-4 text-yellow-400" /> Needs attention
+              <AlertTriangle className="h-4 w-4 text-state-warning" /> Needs attention
             </CardTitle>
-            <CardDescription className="text-3xl font-semibold text-white">
+            <CardDescription className="text-3xl font-semibold text-text-primary">
               {metrics?.needs_review ?? 0}
             </CardDescription>
           </CardHeader>
@@ -376,9 +376,9 @@ export default function ReviewModerationDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Sparkles className="h-4 w-4 text-emerald-400" /> Published reviews
+              <Sparkles className="h-4 w-4 text-state-success" /> Published reviews
             </CardTitle>
-            <CardDescription className="text-3xl font-semibold text-white">
+            <CardDescription className="text-3xl font-semibold text-text-primary">
               {metrics?.published ?? 0}
             </CardDescription>
           </CardHeader>
@@ -386,9 +386,9 @@ export default function ReviewModerationDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Flag className="h-4 w-4 text-rose-400" /> Flagged items
+              <Flag className="h-4 w-4 text-state-error" /> Flagged items
             </CardTitle>
-            <CardDescription className="text-3xl font-semibold text-white">
+            <CardDescription className="text-3xl font-semibold text-text-primary">
               {metrics?.flagged ?? 0}
             </CardDescription>
           </CardHeader>
@@ -396,9 +396,9 @@ export default function ReviewModerationDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-sky-400" /> Last publish
+              <CheckCircle2 className="h-4 w-4 text-state-info" /> Last publish
             </CardTitle>
-            <CardDescription className="text-white">
+            <CardDescription className="text-text-primary">
               {metrics?.last_published_at ? relativeTime(metrics.last_published_at) : "No reviews yet"}
             </CardDescription>
           </CardHeader>
@@ -430,10 +430,10 @@ export default function ReviewModerationDashboard() {
                 value={statusFilter}
                 onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}
               >
-                <SelectTrigger className="w-48 border border-neutral-700 bg-neutral-900 text-white hover:bg-neutral-800">
+                <SelectTrigger className="w-48 border border-border-default bg-white text-text-primary hover:bg-surface">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent className="border border-neutral-700 bg-neutral-900 text-white">
+                <SelectContent className="border border-border-default bg-white text-text-primary">
                   {statusOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
@@ -467,7 +467,7 @@ export default function ReviewModerationDashboard() {
             </div>
           </form>
 
-          {error && <p className="text-sm text-rose-400">{error}</p>}
+          {error && <p className="text-sm text-state-error">{error}</p>}
 
           <div className="overflow-hidden rounded-lg border border-border">
             <Table>
@@ -486,7 +486,7 @@ export default function ReviewModerationDashboard() {
                 {reviews.map((review) => (
                   <TableRow key={review.id} className="align-top">
                     <TableCell className="max-w-[220px] whitespace-normal">
-                      <div className="font-semibold text-white">
+                      <div className="font-semibold text-text-primary">
                         {review.product_name ?? review.product_id}
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -496,7 +496,7 @@ export default function ReviewModerationDashboard() {
                         Order #{review.order_id}
                       </div>
                       {review.is_verified && (
-                        <Badge variant="outline" className="mt-1 text-xs text-emerald-200">
+                        <Badge variant="outline" className="mt-1 text-xs text-state-success">
                           Verified purchase
                         </Badge>
                       )}
@@ -504,7 +504,7 @@ export default function ReviewModerationDashboard() {
                     <TableCell>
                       <div className="text-sm text-muted-foreground">{review.customer_id}</div>
                       {review.admin_response && (
-                        <div className="mt-1 flex items-center gap-1 text-xs text-emerald-200">
+                        <div className="mt-1 flex items-center gap-1 text-xs text-state-success">
                           <MessageCircle className="h-3 w-3" /> Responded
                         </div>
                       )}
@@ -512,12 +512,12 @@ export default function ReviewModerationDashboard() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <StarRating value={review.rating} size="sm" />
-                        <span className="text-sm text-white">{review.rating.toFixed(1)}</span>
+                        <span className="text-sm text-text-primary">{review.rating.toFixed(1)}</span>
                       </div>
                     </TableCell>
                     <TableCell>{renderStatusBadge(review.status)}</TableCell>
                     <TableCell>
-                      <div className="text-sm text-white">{relativeTime(review.submitted_at)}</div>
+                      <div className="text-sm text-text-primary">{relativeTime(review.submitted_at)}</div>
                       <div className="text-xs text-muted-foreground">
                         {formatTimestamp(review.submitted_at)}
                       </div>
@@ -535,7 +535,7 @@ export default function ReviewModerationDashboard() {
                               const [type, value] = reason.includes(":") ? reason.split(":") : ["reason", reason];
                               const label = type === "warn" ? value : type === "match" ? `Match: ${value}` : value;
                               return (
-                                <Badge key={reason} variant="outline" className="text-xs text-amber-200">
+                                <Badge key={reason} variant="outline" className="text-xs text-state-warning">
                                   {label}
                                 </Badge>
                               );
@@ -543,7 +543,7 @@ export default function ReviewModerationDashboard() {
                           </div>
                         )}
                         {review.flags?.length ? (
-                          <div className="flex items-center gap-1 text-xs text-rose-300">
+                          <div className="flex items-center gap-1 text-xs text-state-error">
                             <ShieldBan className="h-3 w-3" /> {review.flags.length} flag
                             {review.flags.length === 1 ? "" : "s"}
                           </div>
@@ -649,7 +649,7 @@ export default function ReviewModerationDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {reminderError && <p className="text-sm text-rose-400">{reminderError}</p>}
+          {reminderError && <p className="text-sm text-state-error">{reminderError}</p>}
           {loadingReminders ? (
             <p className="text-sm text-muted-foreground">Checking for reminder candidates…</p>
           ) : reminders.length === 0 ? (
@@ -658,7 +658,7 @@ export default function ReviewModerationDashboard() {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {reminders.map((candidate) => (
                 <div key={`${candidate.orderId}:${candidate.productId}`} className="rounded-lg border border-border p-4">
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-sm font-semibold text-text-primary">
                     {candidate.productName ?? candidate.productId}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">

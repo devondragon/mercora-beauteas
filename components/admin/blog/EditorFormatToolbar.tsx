@@ -4,9 +4,9 @@ import type { Editor } from "@tiptap/core";
 import { AlignLeft, AlignCenter, AlignRight, Link2, Table as TableIcon, Plus, Minus, Trash2 } from "lucide-react";
 import { promptForLink } from "./editorLinks";
 
-const BTN = "flex h-8 w-8 items-center justify-center rounded text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-40 disabled:pointer-events-none";
-const BTN_ACTIVE = "bg-neutral-800 text-white";
-const DIVIDER = "mx-1 h-5 w-px bg-neutral-700";
+const BTN = "flex h-8 w-8 items-center justify-center rounded text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40 disabled:pointer-events-none";
+const BTN_ACTIVE = "bg-primary-500/10 text-primary-600";
+const DIVIDER = "mx-1 h-5 w-px bg-border-default";
 
 export function EditorFormatToolbar({ editor }: { editor: Editor | null }) {
   const [, force] = useState(0);
@@ -21,7 +21,7 @@ export function EditorFormatToolbar({ editor }: { editor: Editor | null }) {
   const inTable = editor?.isActive("table") ?? false;
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-neutral-800 bg-neutral-950 px-3 py-1">
+    <div className="flex items-center gap-0.5 border-b border-border-default bg-white px-3 py-1">
       {/* Alignment */}
       <button type="button" onClick={() => editor?.chain().focus().setTextAlign("left").run()}
         className={`${BTN} ${editor?.isActive({ textAlign: "left" }) ? BTN_ACTIVE : ""}`} title="Align left">

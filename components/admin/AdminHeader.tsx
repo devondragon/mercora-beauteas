@@ -40,7 +40,7 @@ export default function AdminHeader() {
 
   return (
     <header className={`
-      bg-neutral-900 border-b border-neutral-700 transition-all duration-300
+      admin-header border-b transition-all duration-300
       ${sidebarCollapsed ? 'md:pl-16' : 'md:pl-64'}
     `}>
       <div className="px-6 py-4">
@@ -53,17 +53,17 @@ export default function AdminHeader() {
               {breadcrumbs.map((item, index) => (
                 <div key={item.href} className="flex items-center">
                   {index > 0 && (
-                    <ChevronRight className="w-3 h-3 text-gray-500 mx-2" />
+                    <ChevronRight className="w-3 h-3 text-text-muted mx-2" />
                   )}
-                  
+
                   {item.current ? (
-                    <span className="text-orange-400 font-medium">
+                    <span className="text-primary-600 font-medium">
                       {item.label}
                     </span>
                   ) : (
                     <Link
                       href={item.href}
-                      className="text-gray-400 hover:text-white transition-colors"
+                      className="text-text-secondary hover:text-text-primary transition-colors"
                     >
                       {item.label}
                     </Link>
@@ -71,9 +71,9 @@ export default function AdminHeader() {
                 </div>
               ))}
             </nav>
-            
+
             {/* Page Title */}
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-text-primary">
               {pageTitle}
             </h1>
           </div>
@@ -85,7 +85,7 @@ export default function AdminHeader() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
               disabled
             >
               <Search className="w-4 h-4" />
@@ -96,24 +96,24 @@ export default function AdminHeader() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-gray-400 hover:text-white relative"
+              className="text-text-secondary hover:text-text-primary relative"
               disabled
             >
               <Bell className="w-4 h-4" />
               {/* Notification badge placeholder */}
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs"></span>
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-state-error rounded-full text-xs"></span>
               <span className="sr-only">Notifications</span>
             </Button>
 
             {/* User Menu (placeholder) */}
-            <div className="flex items-center space-x-3 pl-4 border-l border-neutral-700">
+            <div className="flex items-center space-x-3 pl-4 border-l border-border-default">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-neutral-700 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-gray-400" />
+                <div className="w-8 h-8 bg-surface rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-text-secondary" />
                 </div>
                 <div className="hidden md:block">
-                  <div className="text-sm font-medium text-white">Admin User</div>
-                  <div className="text-xs text-gray-400">admin@beauteas.com</div>
+                  <div className="text-sm font-medium text-text-primary">Admin User</div>
+                  <div className="text-xs text-text-secondary">admin@beauteas.com</div>
                 </div>
               </div>
             </div>

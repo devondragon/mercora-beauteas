@@ -283,7 +283,7 @@ export function BlogEditor({ postId }: BlogEditorProps) {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+        <Loader2 className="h-8 w-8 animate-spin text-secondary-500" />
       </div>
     );
   }
@@ -291,32 +291,32 @@ export function BlogEditor({ postId }: BlogEditorProps) {
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-4 py-2">
+      <div className="flex items-center justify-between border-b border-border-default bg-white px-4 py-2">
         <div className="flex items-center gap-2">
-          <Link href="/admin/blog" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-white">
+          <Link href="/admin/blog" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-text-secondary hover:bg-surface hover:text-text-primary">
             <ArrowLeft className="h-4 w-4" /> Blog
           </Link>
-          <span className="text-sm text-neutral-500">{metadata.slug || "new post"}</span>
+          <span className="text-sm text-text-muted">{metadata.slug || "new post"}</span>
         </div>
         <div className="flex items-center gap-2">
-          {statusMsg && <span className="mr-2 text-sm text-amber-400">{statusMsg}</span>}
+          {statusMsg && <span className="mr-2 text-sm text-secondary-600">{statusMsg}</span>}
           <button type="button" onClick={handleSave} disabled={saving}
-            className="flex items-center gap-1.5 rounded bg-neutral-800 px-3 py-1.5 text-sm text-white hover:bg-neutral-700 disabled:opacity-50">
+            className="flex items-center gap-1.5 rounded border border-border-default bg-white px-3 py-1.5 text-sm text-text-primary hover:bg-surface disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save
           </button>
           <button type="button" onClick={handlePublishToggle} disabled={saving}
             className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
               metadata.status === "published"
-                ? "bg-yellow-700/30 text-yellow-400 hover:bg-yellow-700/50"
-                : "bg-amber-600 text-white hover:bg-amber-500"
+                ? "bg-state-warning-bg text-state-warning hover:opacity-80"
+                : "bg-secondary-500 text-white hover:bg-secondary-400"
             }`}>
             <Send className="h-4 w-4" />
             {metadata.status === "published" ? "Unpublish" : "Publish"}
           </button>
           {postId && (
             <button type="button" onClick={handleDelete} disabled={saving}
-              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/30 disabled:opacity-50">
+              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm text-state-error hover:bg-state-error-bg disabled:opacity-50">
               <Trash2 className="h-4 w-4" /> Delete
             </button>
           )}
@@ -325,19 +325,19 @@ export function BlogEditor({ postId }: BlogEditorProps) {
 
       {/* Editor + sidebar */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden bg-neutral-950">
+        <div className="flex flex-1 flex-col overflow-hidden bg-white">
           <EditorFormatToolbar editor={editorInstance} />
           <div className="flex-1 overflow-y-auto px-8 py-6">
             <EditorRoot>
               <EditorContent
                 extensions={editorExtensions}
                 initialContent={content}
-                className="prose prose-invert prose-lg max-w-full focus:outline-none"
+                className="prose prose-lg max-w-full focus:outline-none"
                 editorProps={{
                   handleDOMEvents: { keydown: (_view, event) => handleCommandNavigation(event) },
                   handlePaste: (view, event) => handleImagePaste(view, event, safeUploadFn),
                   handleDrop: (view, event, _slice, moved) => handleImageDrop(view, event, moved, safeUploadFn),
-                  attributes: { class: "prose prose-invert prose-lg max-w-full min-h-[500px] focus:outline-none" },
+                  attributes: { class: "prose prose-lg max-w-full min-h-[500px] focus:outline-none" },
                 }}
                 onCreate={({ editor }) => {
                   editorRef.current = editor;
@@ -348,19 +348,19 @@ export function BlogEditor({ postId }: BlogEditorProps) {
                   // No setEditorInstance/setContent — toolbar/footer subscribe directly; saves use editorRef.
                 }}
               >
-                <EditorCommand className="z-50 w-72 rounded-lg border border-neutral-700 bg-neutral-800 p-1 shadow-xl">
-                  <EditorCommandEmpty className="px-3 py-2 text-sm text-neutral-500">No results</EditorCommandEmpty>
+                <EditorCommand className="z-50 w-72 rounded-lg border border-border-default bg-white p-1 shadow-xl">
+                  <EditorCommandEmpty className="px-3 py-2 text-sm text-text-muted">No results</EditorCommandEmpty>
                   <EditorCommandList>
                     {suggestionItems.map((item) => (
                       <EditorCommandItem key={item.title} value={item.title}
                         onCommand={(val) => item.command?.(val)}
-                        className="flex items-center gap-3 rounded px-3 py-2 text-sm text-white hover:bg-neutral-700 aria-selected:bg-neutral-700">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-neutral-600 bg-neutral-900 text-amber-400">
+                        className="flex items-center gap-3 rounded px-3 py-2 text-sm text-text-primary hover:bg-surface aria-selected:bg-surface">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border-default bg-surface text-secondary-500">
                           {item.icon}
                         </span>
                         <div>
                           <p className="font-medium">{item.title}</p>
-                          <p className="text-xs text-neutral-500">{item.description}</p>
+                          <p className="text-xs text-text-muted">{item.description}</p>
                         </div>
                       </EditorCommandItem>
                     ))}
