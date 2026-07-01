@@ -9,7 +9,7 @@
  * - **Page Titles**: Automatic page title display
  * - **Responsive Design**: Mobile-friendly layout
  * - **Professional Styling**: Admin-optimized header design
- * - **User Context**: Placeholder for user info (no auth for now)
+ * - **User Context**: Shows the signed-in Clerk admin's name and email
  *
  * === Components ===
  * - Breadcrumbs: Hierarchical navigation
@@ -23,8 +23,9 @@
 "use client";
 
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { useAdminLayout } from "./AdminLayoutProvider";
-import { 
+import {
   ChevronRight,
   User,
   Bell,
@@ -37,6 +38,14 @@ import { Button } from "@/components/ui/button";
  */
 export default function AdminHeader() {
   const { breadcrumbs, pageTitle, sidebarCollapsed } = useAdminLayout();
+  const { user } = useUser();
+
+  const displayName =
+    user?.fullName ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+    user?.username ||
+    "Admin User";
+  const displayEmail = user?.primaryEmailAddress?.emailAddress || "";
 
   return (
     <header className={`
@@ -112,8 +121,10 @@ export default function AdminHeader() {
                   <User className="w-4 h-4 text-text-secondary" />
                 </div>
                 <div className="hidden md:block">
-                  <div className="text-sm font-medium text-text-primary">Admin User</div>
-                  <div className="text-xs text-text-secondary">admin@beauteas.com</div>
+                  <div className="text-sm font-medium text-text-primary">{displayName}</div>
+                  {displayEmail && (
+                    <div className="text-xs text-text-secondary">{displayEmail}</div>
+                  )}
                 </div>
               </div>
             </div>
