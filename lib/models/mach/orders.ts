@@ -22,22 +22,27 @@ export async function createOrder(orderData: CreateOrderRequest): Promise<Order>
   // Generate order ID
   const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   
-  // Prepare order record
+  // Prepare order record.
+  // Encoding contract: total_amount / shipping_address / billing_address /
+  // items / external_references / extensions are `text(..., { mode: "json" })`
+  // columns — Drizzle serializes them on write and parses on read. Pass the RAW
+  // objects here; a manual JSON.stringify would double-encode (a JSON string
+  // inside a JSON string) and break json_extract() in SQL.
   const orderRecord = {
     id: orderId,
     customer_id: orderData.customer_id,
     status: "pending" as const,
-    total_amount: JSON.stringify(orderData.total_amount),
+    total_amount: orderData.total_amount,
     currency_code: orderData.currency_code,
-    shipping_address: orderData.shipping_address ? JSON.stringify(orderData.shipping_address) : null,
-    billing_address: orderData.billing_address ? JSON.stringify(orderData.billing_address) : null,
-    items: JSON.stringify(orderData.items),
+    shipping_address: orderData.shipping_address ?? null,
+    billing_address: orderData.billing_address ?? null,
+    items: orderData.items,
     shipping_method: orderData.shipping_method,
     payment_method: orderData.payment_method,
     payment_status: "pending" as const,
     notes: orderData.notes,
-    external_references: orderData.external_references ? JSON.stringify(orderData.external_references) : null,
-    extensions: orderData.extensions ? JSON.stringify(orderData.extensions) : null,
+    external_references: orderData.external_references ?? null,
+    extensions: orderData.extensions ?? null,
   };
   
   const [newOrder] = await db.insert(orders).values(orderRecord).returning();
@@ -218,21 +223,30 @@ export async function getOrdersByStatus(status: Order['status']): Promise<Order[
 
 // Items are always accessed via the items field on the order record (JSON array).
 
-// Utility function to convert database record to Order type
+// Utility function to convert database record to Order type.
+// Encoding contract: the json-mode columns are already parsed by Drizzle on
+// read, so a value normally arrives as an object. We still defensively parse
+// when it's a string — this transparently handles any legacy rows that were
+// double-encoded before the write path was fixed (Drizzle unwraps the outer
+// layer to a string, and this parses the inner JSON).
+function parseJsonField<T>(value: unknown): T | undefined {
+  if (value == null) return undefined;
+  return (typeof value === 'string' ? JSON.parse(value) : value) as T;
+}
+
 function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
   return {
     id: orderRecord.id ?? undefined,
     customer_id: orderRecord.customer_id ?? undefined,
     status: orderRecord.status,
-    total_amount: JSON.parse(orderRecord.total_amount as string) as Money,
+    total_amount: (parseJsonField<Money>(orderRecord.total_amount) ?? {
+      amount: 0,
+      currency: orderRecord.currency_code,
+    }) as Money,
     currency_code: orderRecord.currency_code,
-    shipping_address: orderRecord.shipping_address 
-      ? JSON.parse(orderRecord.shipping_address as string) as Address
-      : undefined,
-    billing_address: orderRecord.billing_address
-      ? JSON.parse(orderRecord.billing_address as string) as Address
-      : undefined,
-    items: JSON.parse(orderRecord.items as string) as OrderItem[],
+    shipping_address: parseJsonField<Address>(orderRecord.shipping_address),
+    billing_address: parseJsonField<Address>(orderRecord.billing_address),
+    items: parseJsonField<OrderItem[]>(orderRecord.items) ?? [],
     shipping_method: orderRecord.shipping_method ?? undefined,
     payment_method: orderRecord.payment_method ?? undefined,
     payment_status: orderRecord.payment_status ?? 'pending',
@@ -240,12 +254,8 @@ function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
     shipped_at: orderRecord.shipped_at ?? undefined,
     delivered_at: orderRecord.delivered_at ?? undefined,
     notes: orderRecord.notes ?? undefined,
-    external_references: orderRecord.external_references
-      ? JSON.parse(orderRecord.external_references as string)
-      : undefined,
-    extensions: orderRecord.extensions
-      ? JSON.parse(orderRecord.extensions as string)
-      : undefined,
+    external_references: parseJsonField(orderRecord.external_references),
+    extensions: parseJsonField(orderRecord.extensions),
     created_at: orderRecord.created_at ?? undefined,
     updated_at: orderRecord.updated_at ?? undefined,
   };

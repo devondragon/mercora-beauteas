@@ -187,7 +187,9 @@ export async function POST(request: NextRequest) {
         }
       ]
     };
-    updateData.extensions = JSON.stringify(updatedExtensions);
+    // extensions is a `mode: "json"` column — assign the RAW object and let
+    // Drizzle serialize; a manual JSON.stringify would double-encode.
+    updateData.extensions = updatedExtensions;
 
     // Add cancellation reason to notes for full cancellations
     if (type === 'full') {

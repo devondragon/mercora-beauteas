@@ -240,21 +240,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Encoding contract: total_amount / shipping_address / billing_address /
+    // items / external_references / extensions are `mode: "json"` columns —
+    // Drizzle serializes them on write and parses on read. Pass the RAW objects;
+    // a manual JSON.stringify would double-encode and break json_extract() in SQL.
     const machOrder: any = {
       id: orderId,
       customer_id: customerId,
       status: paymentConfirmed ? 'processing' : 'pending',
-      total_amount: JSON.stringify(body.total_amount),
+      total_amount: body.total_amount,
       currency_code: body.currency_code,
-      shipping_address: body.shipping_address ? JSON.stringify(body.shipping_address) : null,
-      billing_address: body.billing_address ? JSON.stringify(body.billing_address) : null,
-      items: JSON.stringify(body.items),
+      shipping_address: body.shipping_address ?? null,
+      billing_address: body.billing_address ?? null,
+      items: body.items,
       shipping_method: body.shipping_method || null,
       payment_method: body.payment_method || null,
       payment_status: paymentConfirmed ? 'paid' : 'pending',
       notes: body.notes || null,
-      external_references: body.external_references ? JSON.stringify(body.external_references) : null,
-      extensions: body.extensions ? JSON.stringify(body.extensions) : null,
+      external_references: body.external_references ?? null,
+      extensions: body.extensions ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -420,7 +424,9 @@ export async function PUT(request: NextRequest) {
     const currentOrder = existingOrder[0];
     
 
-    // Build update data (MACH-compliant)
+    // Build update data (MACH-compliant).
+    // external_references / extensions are `mode: "json"` columns — pass the RAW
+    // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
     const updateData: any = {
       ...(status && { status }),
       ...(payment_status && { payment_status }),
@@ -429,8 +435,8 @@ export async function PUT(request: NextRequest) {
       ...(shipped_at && { shipped_at }),
       ...(delivered_at && { delivered_at }),
       ...(notes && { notes }),
-      ...(external_references && { external_references: JSON.stringify(external_references) }),
-      ...(extensions && { extensions: JSON.stringify(extensions) }),
+      ...(external_references && { external_references }),
+      ...(extensions && { extensions }),
       updated_at: new Date().toISOString()
     };
 
