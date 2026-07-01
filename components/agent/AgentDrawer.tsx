@@ -355,7 +355,7 @@ export default function AgentDrawer({
               ref={inputRef}
               type="text"
               placeholder={isLoading ? "Waiting for response..." : "Type your question..."}
-              className="w-full border rounded pl-3 pr-10 py-2 disabled:bg-surface-light disabled:cursor-not-allowed"
+              className="w-full border rounded pl-3 pr-10 py-2 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/40 disabled:bg-surface-light disabled:cursor-not-allowed"
               value={input}
               disabled={isLoading}
               onChange={(e) => setInput(e.target.value)}
