@@ -282,5 +282,56 @@ scripts/shopify-migration/
   output/                   # migration-report.txt
 ```
 
+---
+
+## Catalog data pipeline (ETL → enrich → image-sync)
+
+The ETL is a **one-time cutover import**, not an ongoing sync. Once BeauTeas runs
+on Mercora, Shopify is gone and **D1 (edited via the admin UI) is the permanent
+source of truth.** The ETL only bootstraps the environment; everything we layer
+on top must be reproducible and version-controlled so it survives re-runs and
+reaches prod the same way it reached dev.
+
+The catalog for any environment is built in three deterministic, idempotent
+stages — **identical for dev and prod** (rehearse on dev, then run prod):
+
+| Stage | Command | What it does |
+|---|---|---|
+| **1. ETL** | `tsx scripts/shopify-migration/migrate-all.ts` | Base catalog: products, variants, prices, images (→ D1 + R2). Accurate but flat — `extensions` only `{vendor, product_type}`, descriptions carry benefits/ingredients inline. |
+| **2. enrich** | `node scripts/enrich-catalog.mjs --env <dev\|production>` | Applies the committed enrichment layer (`data/enrichment/products.json`, keyed by **slug**): structured `extensions` (benefits, brewing, caffeine, servings, certifications, ingredients) merged onto the base, plus clean single-source descriptions that replace the inline-heavy ETL copy. Idempotent; `--dry-run` to preview. |
+| **3. image-sync** | `node scripts/sync-images.mjs push --env <dev\|production>` | Publishes committed curated imagery (`data/r2/`) to the env's R2 bucket. `pull` fetches exactly the images the target catalog references into `data/r2/` (used to make a local checkout mirror dev/prod). |
+
+Why slug-keyed enrichment: numeric Shopify IDs change every ETL run, but the slug
+(`clearly-calendula-morning`) is stable, so enrichment re-applies cleanly.
+
+### Local dev mirrors the real catalog
+
+`data/d1/seed.sql` (loaded by `npm run dev` / `preview:dev` via
+`scripts/db-local-ensure.mjs`) is a **generated snapshot**, not a hand-authored
+parallel catalog. After the pipeline runs against dev, regenerate it:
+
+```bash
+node scripts/db-dump.mjs --env dev          # dev catalog → data/d1/seed.sql (INSERT OR REPLACE)
+node scripts/sync-images.mjs pull --env dev # dev's referenced images → data/r2/
+```
+
+`db-dump` emits `INSERT OR REPLACE` so the seed is idempotent and coexists with
+rows that migrations already seed (e.g. the gift-card product from
+`0010_add_gift_cards.sql`). `preview:dev` auto-seeds local D1 + R2 via
+`db-local-ensure.mjs` + `r2-local-ensure.mjs` (see `npm run seed:local`).
+
+### Open item: category curation
+
+The ETL imports Shopify's collections verbatim, including utility/junk ones
+(`frontpage`, `best-selling-products`, `newest-products`) and an inactive
+`drinkware`, and their descriptions have the same inline-bullet issue product
+descriptions had. Curating the category set (which to keep/hide, hero images,
+clean descriptions) is the natural next extension of the enrichment layer — a
+`data/enrichment/categories.json` applied by `enrich-catalog`. Until that
+decision is made, regenerating `seed.sql` from an env mirrors that env's
+categories as-is.
+
+---
+
 Related: [PRODUCTION-CUTOVER-RUNBOOK.md](PRODUCTION-CUTOVER-RUNBOOK.md) ·
 [MIGRATION-PLAN.md](MIGRATION-PLAN.md) · [CLAUDE.md](CLAUDE.md) (Database & Migrations).
