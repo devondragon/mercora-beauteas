@@ -320,16 +320,16 @@ rows that migrations already seed (e.g. the gift-card product from
 `0010_add_gift_cards.sql`). `preview:dev` auto-seeds local D1 + R2 via
 `db-local-ensure.mjs` + `r2-local-ensure.mjs` (see `npm run seed:local`).
 
-### Open item: category curation
+### Category curation
 
-The ETL imports Shopify's collections verbatim, including utility/junk ones
-(`frontpage`, `best-selling-products`, `newest-products`) and an inactive
-`drinkware`, and their descriptions have the same inline-bullet issue product
-descriptions had. Curating the category set (which to keep/hide, hero images,
-clean descriptions) is the natural next extension of the enrichment layer — a
-`data/enrichment/categories.json` applied by `enrich-catalog`. Until that
-decision is made, regenerating `seed.sql` from an env mirrors that env's
-categories as-is.
+The ETL imports Shopify's collections verbatim, including utility ones
+(`frontpage`, `best-selling-products`, `newest-products`). `enrich-catalog`
+also applies **`data/enrichment/categories.json`** (same slug-keyed pattern) to
+curate them: sets `status` (active/inactive — the storefront nav lists
+active-only, so inactive ones are hidden), a clean `description`, and a hero
+`primary_image`. Current curation keeps `clearly-calendula`, `drinkware`, and
+`gift-cards` active with hero images and hides the three utility collections.
+Add/adjust entries there rather than editing a remote DB.
 
 ---
 

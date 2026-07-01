@@ -32,7 +32,8 @@ import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = "beauteas-db-dev"; // wrangler binding name; --env selects the actual DB
-const ENRICHMENT = join(ROOT, "data/enrichment/products.json");
+const PRODUCTS_FILE = join(ROOT, "data/enrichment/products.json");
+const CATEGORIES_FILE = join(ROOT, "data/enrichment/categories.json");
 const tag = "[enrich]";
 
 function parseArgs() {
@@ -70,14 +71,10 @@ function d1Json(command) {
 }
 
 const sqlStr = (s) => `'${String(s).replace(/'/g, "''")}'`;
+const localized = (s) => JSON.stringify({ en: s });
 
-const enrichment = JSON.parse(readFileSync(ENRICHMENT, "utf8"));
-const slugs = Object.keys(enrichment);
-console.log(`${tag} ${slugs.length} enrichment entries → ${env} D1 (${scope})`);
-
-// Pull current products so we merge rather than clobber. slug is stored either
-// as a plain string or a localized JSON object ({"en": …}) — normalize in JS
-// (avoids json_extract erroring on the plain-string rows).
+// slug is stored either as a plain string or a localized JSON object ({"en": …})
+// — normalize in JS (avoids json_extract erroring on the plain-string rows).
 const normalizeSlug = (raw) => {
   if (typeof raw !== "string") return raw;
   if (raw.startsWith("{")) {
@@ -90,56 +87,95 @@ const normalizeSlug = (raw) => {
   }
   return raw;
 };
-const rows = d1Json("SELECT id, slug, extensions FROM products")[0].results;
-const bySlug = new Map(rows.map((r) => [normalizeSlug(r.slug), r]));
 
-const statements = [];
-const missing = [];
-for (const slug of slugs) {
-  const row = bySlug.get(slug);
-  if (!row) {
-    missing.push(slug);
-    continue;
+const readJsonIfExists = (p) => {
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
   }
-  const entry = enrichment[slug];
-  const sets = [];
+};
 
-  if (entry.extensions && Object.keys(entry.extensions).length) {
-    let base = {};
-    try {
-      base = row.extensions ? JSON.parse(row.extensions) : {};
-    } catch {
-      base = {};
+// UPDATE the target row's extensions by MERGING (preserves ETL-provided keys).
+function mergeExtensions(entry, row) {
+  if (!entry.extensions || !Object.keys(entry.extensions).length) return null;
+  let base = {};
+  try {
+    base = row.extensions ? JSON.parse(row.extensions) : {};
+  } catch {
+    base = {};
+  }
+  return `extensions=${sqlStr(JSON.stringify({ ...base, ...entry.extensions }))}`;
+}
+
+// Per-table SET builders. Products: extensions (merged) + clean description.
+// Categories: status, clean description, hero image.
+const BUILDERS = {
+  products: (entry, row) =>
+    [
+      mergeExtensions(entry, row),
+      typeof entry.description === "string" && entry.description.trim()
+        ? `description=${sqlStr(localized(entry.description))}`
+        : null,
+    ].filter(Boolean),
+  categories: (entry) =>
+    [
+      typeof entry.status === "string" ? `status=${sqlStr(entry.status)}` : null,
+      typeof entry.description === "string" && entry.description.trim()
+        ? `description=${sqlStr(localized(entry.description))}`
+        : null,
+      entry.primary_image ? `primary_image=${sqlStr(JSON.stringify(entry.primary_image))}` : null,
+    ].filter(Boolean),
+};
+
+function prepare(table, file) {
+  const data = readJsonIfExists(file);
+  if (!data) return { statements: [], missing: [] };
+  const rows = d1Json(`SELECT id, slug, extensions FROM ${table}`)[0].results;
+  const bySlug = new Map(rows.map((r) => [normalizeSlug(r.slug), r]));
+  const statements = [];
+  const missing = [];
+  for (const slug of Object.keys(data)) {
+    const row = bySlug.get(slug);
+    if (!row) {
+      missing.push(slug);
+      continue;
     }
-    const merged = { ...base, ...entry.extensions };
-    sets.push(`extensions=${sqlStr(JSON.stringify(merged))}`);
+    const sets = BUILDERS[table](data[slug], row);
+    if (!sets.length) continue;
+    sets.push("updated_at=datetime('now')");
+    statements.push(`UPDATE ${table} SET ${sets.join(", ")} WHERE id=${sqlStr(row.id)};`);
   }
-  if (typeof entry.description === "string" && entry.description.trim()) {
-    sets.push(`description=${sqlStr(JSON.stringify({ en: entry.description }))}`);
-  }
-  if (!sets.length) continue;
-
-  sets.push("updated_at=datetime('now')");
-  statements.push(`UPDATE products SET ${sets.join(", ")} WHERE id=${sqlStr(row.id)};`);
+  return { statements, missing };
 }
 
-if (missing.length) {
-  console.warn(`${tag} WARN: ${missing.length} slug(s) not in target catalog — skipped: ${missing.join(", ")}`);
+const jobs = [
+  { table: "products", file: PRODUCTS_FILE },
+  { table: "categories", file: CATEGORIES_FILE },
+];
+
+const allStatements = [];
+for (const { table, file } of jobs) {
+  const { statements, missing } = prepare(table, file);
+  if (missing.length) {
+    console.warn(`${tag} WARN: ${missing.length} ${table} slug(s) not in target catalog — skipped: ${missing.join(", ")}`);
+  }
+  if (statements.length) console.log(`${tag} ${statements.length} ${table} enrichment(s) prepared for ${env} (${scope}).`);
+  allStatements.push(...statements);
 }
-if (!statements.length) {
+
+if (!allStatements.length) {
   console.log(`${tag} Nothing to apply.`);
   process.exit(0);
 }
 
 if (dryRun) {
-  console.log(`\n${statements.join("\n\n")}\n`);
-  console.log(`${tag} --dry-run: ${statements.length} statement(s) NOT applied.`);
+  console.log(`\n${allStatements.join("\n\n")}\n`);
+  console.log(`${tag} --dry-run: ${allStatements.length} statement(s) NOT applied.`);
   process.exit(0);
 }
 
-// Apply as one batched file via stdin-less temp: pass through --command per statement
-// keeps it simple and transactional enough for a handful of rows.
-for (const stmt of statements) {
+for (const stmt of allStatements) {
   wrangler(["d1", "execute", DB, scope, "--env", env, "--command", stmt], { capture: true });
 }
-console.log(`${tag} Applied ${statements.length} product enrichment(s) to ${env}.`);
+console.log(`${tag} Applied ${allStatements.length} enrichment statement(s) to ${env}.`);

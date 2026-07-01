@@ -1,0 +1,20 @@
+{
+  "clearly-calendula": {
+    "status": "active",
+    "description": "Clear your skin from within. Our USDA-certified organic Clearly Calendula teas blend calendula flower with botanicals that help fight acne, calm blemishes, and support the glowing skin you deserve — a full day of skincare, one cup at a time.",
+    "primary_image": { "url": "categories/clearly-calendula.png", "alt_text": "Clearly Calendula organic skincare teas" }
+  },
+  "drinkware": {
+    "status": "active",
+    "description": "Enjoy your BeauTeas hot or iced wherever you go — mugs, travel mugs, and bottles made for your daily skincare-tea ritual.",
+    "primary_image": { "url": "categories/drinkware.png", "alt_text": "BeauTeas drinkware" }
+  },
+  "gift-cards": {
+    "status": "active",
+    "description": "Give the gift of glowing skin. BeauTeas gift cards never expire and are perfect for anyone who loves tea and clean, plant-based beauty.",
+    "primary_image": { "url": "categories/gift-cards.png", "alt_text": "BeauTeas gift cards" }
+  },
+  "frontpage": { "status": "inactive" },
+  "best-selling-products": { "status": "inactive" },
+  "newest-products": { "status": "inactive" }
+}
