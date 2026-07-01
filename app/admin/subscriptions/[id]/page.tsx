@@ -32,6 +32,7 @@ import {
   RefreshCw,
   AlertCircle,
 } from "lucide-react";
+import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
 
 // ---------- Types ----------
 
@@ -71,15 +72,6 @@ interface SubscriptionEvent {
 }
 
 // ---------- Constants ----------
-
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  active: "bg-state-success-bg text-state-success",
-  paused: "bg-state-warning-bg text-state-warning",
-  canceled: "bg-state-error-bg text-state-error",
-  past_due: "bg-state-error-bg text-state-error",
-  incomplete: "bg-state-warning-bg text-state-warning",
-  trialing: "bg-state-info-bg text-state-info",
-};
 
 const EVENT_DOT_COLORS: Record<string, { bg: string; dot: string }> = {
   created: { bg: "bg-state-success-bg", dot: "bg-state-success" },
@@ -230,7 +222,10 @@ export default function AdminSubscriptionDetailPage() {
 
   // ---------- Main render ----------
 
-  const statusColorClass = STATUS_BADGE_COLORS[subscription.status] || "bg-state-info-bg text-state-info";
+  const statusStyle =
+    subscriptionStatusConfig[subscription.status as keyof typeof subscriptionStatusConfig] ??
+    defaultSubscriptionStatusStyle;
+  const StatusIcon = statusStyle.icon;
 
   return (
     <div className="p-6 space-y-6">
@@ -253,7 +248,8 @@ export default function AdminSubscriptionDetailPage() {
 
             <div>
               <p className="text-sm text-text-secondary mb-1">Status</p>
-              <Badge className={`${statusColorClass} text-xs`}>
+              <Badge variant={statusStyle.variant} className="text-xs">
+                <StatusIcon className="w-3 h-3 mr-1" />
                 {capitalize(subscription.status.replace("_", " "))}
               </Badge>
             </div>

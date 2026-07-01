@@ -17,6 +17,12 @@ const badgeVariants = cva(
           "border-transparent bg-state-error text-text-inverse [a&]:hover:bg-state-error/90 focus-visible:ring-state-error/20",
         outline:
           "text-text-primary [a&]:hover:bg-surface-light [a&]:hover:text-text-primary",
+        success:
+          "border-transparent bg-state-success-bg text-state-success",
+        warning:
+          "border-transparent bg-state-warning-bg text-state-warning",
+        info:
+          "border-transparent bg-state-info-bg text-state-info",
       },
     },
     defaultVariants: {

@@ -40,11 +40,11 @@ export default function ProductCard({ product }: { product: any }) {
             {description.length > 60 ? description.substring(0, 60) + '...' : description}
           </p>
           {isOnSale ? (
-            <p className={`text-xs mt-0.5 ${stateStyles.savings}`}>
+            <p className="text-xs mt-0.5">
               <span className={`${stateStyles.priceOriginal} mr-1`}>
                 ${(compareAtPrice / 100).toFixed(2)}
               </span>
-              <span className="font-medium">${displayPrice.toFixed(2)}</span>
+              <span className={stateStyles.priceSale}>${displayPrice.toFixed(2)}</span>
             </p>
           ) : (
             <p className="text-xs font-medium text-text-primary mt-0.5">

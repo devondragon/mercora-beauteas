@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { stateStyles } from "@/lib/ui/state-styles";
 import type { SubscriptionPlan, SubscriptionFrequency } from "@/lib/types/subscription";
 
 const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
@@ -124,10 +125,10 @@ export default function SubscriptionToggle({
 
           {/* Subscription Price Display */}
           <div className="flex items-center gap-3">
-            <p className="text-base text-text-muted line-through">
+            <p className={`text-base ${stateStyles.priceOriginal}`}>
               ${(variantPriceInCents / 100).toFixed(2)}
             </p>
-            <p className="text-lg font-bold text-state-success">
+            <p className={`text-lg ${stateStyles.priceSale}`}>
               ${(discountedPrice / 100).toFixed(2)}
             </p>
             {selectedPlan && (
@@ -144,10 +145,10 @@ export default function SubscriptionToggle({
         <>
           {onSale ? (
             <div>
-              <p className="text-base text-text-muted line-through sm:text-lg">
+              <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>
                 ${(compareAtPriceInCents! / 100).toFixed(2)}
               </p>
-              <p className="text-lg font-bold text-state-success sm:text-xl">
+              <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>
                 ${(variantPriceInCents / 100).toFixed(2)}
               </p>
               <p className="text-xs italic text-state-sale sm:text-sm">

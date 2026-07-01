@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { stateStyles } from "@/lib/ui/state-styles";
 import { Loader2, Gift, X } from "lucide-react";
 
 interface GiftCardValidationResponse {
@@ -108,7 +109,7 @@ export default function GiftCardInput() {
       )}
 
       {error && (
-        <div className="text-sm text-state-error bg-state-error-bg border border-state-error rounded-md px-3 py-2">
+        <div className={stateStyles.errorBox}>
           {error}
         </div>
       )}

@@ -176,11 +176,11 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
           {price !== null && (
             <div className="text-sm">
               {onSale && compareAt != null ? (
-                <div className={stateStyles.savings}>
+                <div>
                   <span className={`${stateStyles.priceOriginal} mr-2`}>
                     ${(compareAt / 100).toFixed(2)}
                   </span>
-                  <span className="font-semibold">
+                  <span className={stateStyles.priceSale}>
                     ${(price / 100).toFixed(2)}
                   </span>
                   <span className={`ml-2 text-xs ${stateStyles.priceSale}`}>

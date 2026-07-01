@@ -224,7 +224,7 @@ export default function AgentDrawer({
         ) : (
           <Button
             variant="ghost"
-            className="text-text-primary hover:bg-text-primary hover:text-primary-500"
+            className="text-text-primary hover:bg-surface-lighter hover:text-primary-500"
             data-testid="agent-drawer-trigger"
           >
             <Search className="mr-2 h-4 w-4" />

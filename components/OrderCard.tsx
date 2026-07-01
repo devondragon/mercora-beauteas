@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { cn } from "@/lib/utils";
-import { Order, Review } from "@/lib/types";
+import { Order, OrderStatus, Review } from "@/lib/types";
 import Link from "next/link";
 import { ReviewForm } from "@/components/reviews/ReviewForm";
-
-type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded";
+import { Badge } from "@/components/ui/badge";
+import { orderStatusConfig, defaultOrderStatusStyle } from "@/lib/ui/status-styles";
 
 interface OrderReviewsResponse {
   data?: Review[];
@@ -41,15 +40,9 @@ export default function OrderCard({ order }: { order: Order }) {
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
-  const statusColor =
-    {
-      pending: "bg-state-warning-bg text-state-warning",
-      processing: "bg-state-info-bg text-state-info",
-      shipped: "bg-state-info-bg text-state-info",
-      delivered: "bg-state-success-bg text-state-success",
-      cancelled: "bg-state-error-bg text-state-error",
-      refunded: "bg-state-error-bg text-state-error",
-    }[order.status as OrderStatus] ?? "bg-surface-light text-text-secondary";
+  const statusStyle =
+    orderStatusConfig[order.status as OrderStatus] ?? defaultOrderStatusStyle;
+  const StatusIcon = statusStyle.icon;
 
   const orderId = order.id ?? "";
   const reviewable =
@@ -124,9 +117,10 @@ export default function OrderCard({ order }: { order: Order }) {
             Order ID: <span className="text-text-primary">{order.id}</span>
           </Link>
         </h3>
-        <span className={cn("self-start rounded-full px-2 py-1 text-xs sm:self-center", statusColor)}>
-          {order.status}
-        </span>
+        <Badge variant={statusStyle.variant} className="self-start sm:self-center">
+          <StatusIcon className="w-3 h-3" />
+          {statusStyle.label}
+        </Badge>
       </div>
 
       <div className="mb-1 text-sm text-text-secondary">Placed on {date}</div>

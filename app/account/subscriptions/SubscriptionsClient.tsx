@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,13 +14,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Pause, Play, SkipForward, X, Package } from "lucide-react";
+import { Pause, Play, SkipForward, X, Package, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import type { EnrichedSubscription } from "./page";
 import { formatDate, getMediaUrl } from "@/lib/utils/account";
+import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
 
 interface SubscriptionsClientProps {
   subscriptions: EnrichedSubscription[];
@@ -38,32 +40,25 @@ const actionSuccessMessages: Record<string, string> = {
   cancel: "Subscription will be canceled at the end of the billing period",
 };
 
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function getStatusBadge(sub: EnrichedSubscription) {
+  // "Canceling" shares the warning color with "Paused" (only 4 semantic
+  // state colors exist) — Clock vs Pause icon keeps them distinguishable.
   if (sub.cancel_at_period_end) {
-    return {
-      label: "Canceling",
-      className: "bg-state-warning-bg text-state-warning",
-    };
+    return { label: "Canceling", variant: "warning" as const, icon: Clock };
   }
 
-  switch (sub.status) {
-    case "active":
-      return { label: "Active", className: "bg-state-success-bg text-state-success" };
-    case "paused":
-      return {
-        label: "Paused",
-        className: "bg-state-warning-bg text-state-warning",
-      };
-    case "canceled":
-      return { label: "Canceled", className: "bg-state-error-bg text-state-error" };
-    case "past_due":
-      return { label: "Past Due", className: "bg-state-error-bg text-state-error" };
-    default:
-      return {
-        label: sub.status,
-        className: "bg-state-info-bg text-state-info",
-      };
-  }
+  const config =
+    subscriptionStatusConfig[sub.status as keyof typeof subscriptionStatusConfig] ??
+    defaultSubscriptionStatusStyle;
+  return {
+    label: capitalize(sub.status.replace("_", " ")),
+    variant: config.variant,
+    icon: config.icon,
+  };
 }
 
 export default function SubscriptionsClient({
@@ -152,11 +147,10 @@ export default function SubscriptionsClient({
                 <h3 className="text-lg font-semibold text-text-primary truncate">
                   {sub.product?.name || "Unknown Product"}
                 </h3>
-                <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium mt-1 ${status.className}`}
-                >
+                <Badge variant={status.variant} className="mt-1">
+                  <status.icon className="w-3 h-3 mr-1" />
                   {status.label}
-                </span>
+                </Badge>
               </div>
             </div>
 

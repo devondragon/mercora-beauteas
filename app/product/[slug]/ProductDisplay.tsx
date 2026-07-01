@@ -328,7 +328,7 @@ export default function ProductDisplay({
                 {onSale ? (
                   <div>
                     <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>${(compareAt! / 100).toFixed(2)}</p>
-                    <p className={`text-lg font-bold sm:text-xl ${stateStyles.savings}`}>${(price / 100).toFixed(2)}</p>
+                    <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>${(price / 100).toFixed(2)}</p>
                     <p className="text-xs italic text-primary-600 sm:text-sm">Limited-time offer</p>
                   </div>
                 ) : (

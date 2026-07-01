@@ -42,6 +42,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
+import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
 
 // ---------- Types ----------
 
@@ -86,15 +87,6 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "paused", label: "Paused" },
   { key: "canceled", label: "Canceled" },
 ];
-
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  active: "bg-state-success-bg text-state-success",
-  paused: "bg-state-warning-bg text-state-warning",
-  canceled: "bg-state-error-bg text-state-error",
-  past_due: "bg-state-error-bg text-state-error",
-  incomplete: "bg-state-warning-bg text-state-warning",
-  trialing: "bg-state-info-bg text-state-info",
-};
 
 // ---------- Helpers ----------
 
@@ -208,8 +200,16 @@ export default function AdminSubscriptionsPage() {
   // ---------- Render helpers ----------
 
   const renderStatusBadge = (status: string) => {
-    const colorClass = STATUS_BADGE_COLORS[status] || "bg-state-info-bg text-state-info";
-    return <Badge className={`${colorClass} text-xs`}>{capitalize(status.replace("_", " "))}</Badge>;
+    const config =
+      subscriptionStatusConfig[status as keyof typeof subscriptionStatusConfig] ??
+      defaultSubscriptionStatusStyle;
+    const Icon = config.icon;
+    return (
+      <Badge variant={config.variant} className="text-xs">
+        <Icon className="w-3 h-3 mr-1" />
+        {capitalize(status.replace("_", " "))}
+      </Badge>
+    );
   };
 
   const renderPaymentBadge = (status: string) => {

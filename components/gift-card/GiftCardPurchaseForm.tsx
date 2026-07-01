@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { stateStyles } from "@/lib/ui/state-styles";
 import { Gift } from "lucide-react";
 
 // Denominations mirror the seeded gift-card product variants.
@@ -128,7 +129,7 @@ export default function GiftCardPurchaseForm() {
       </div>
 
       {error && (
-        <div className="text-sm text-state-error bg-state-error-bg border border-state-error rounded-md px-3 py-2">
+        <div className={stateStyles.errorBox}>
           {error}
         </div>
       )}

@@ -9,4 +9,5 @@ export const stateStyles = {
   savings: "text-state-success",
   inStock: "text-state-success",
   outOfStock: "text-state-error",
+  errorBox: "text-sm text-state-error bg-state-error-bg border border-state-error rounded-md px-3 py-2",
 } as const;

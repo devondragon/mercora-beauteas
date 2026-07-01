@@ -56,12 +56,12 @@ export default function StripeProvider({
       // NOTE: Stripe Elements cannot read Tailwind/CSS custom properties, so
       // these are deliberately inline hex values mirroring the BeauTeas brand
       // tokens (lib/brand.config.ts): primary-500 #cf8577, text-primary #222222,
-      // state.error #b3534b.
+      // state.error #a1453d.
       variables: {
         colorPrimary: '#cf8577', // BeauTeas primary-500 (terracotta)
         colorBackground: '#ffffff',
         colorText: '#222222', // BeauTeas text-primary (charcoal)
-        colorDanger: '#b3534b', // BeauTeas state.error
+        colorDanger: '#a1453d', // BeauTeas state.error
         fontFamily: 'system-ui, -apple-system, sans-serif',
         spacingUnit: '4px',
         borderRadius: '8px',
@@ -85,7 +85,7 @@ export default function StripeProvider({
           outline: 'none',
         },
         '.Input--invalid': {
-          borderColor: '#b3534b',
+          borderColor: '#a1453d',
         },
         '.Label': {
           fontSize: '14px',

@@ -28,9 +28,10 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft, Package, RotateCcw, XCircle, RefreshCw,
-  DollarSign, AlertTriangle, CheckCircle, Truck,
+  DollarSign, AlertTriangle, CheckCircle,
   Calendar, User, MapPin, CreditCard
 } from "lucide-react";
+import { orderStatusConfig } from "@/lib/ui/status-styles";
 
 interface Order {
   id: string;
@@ -95,15 +96,6 @@ interface RefundResponse {
     payment_status: string;
   };
 }
-
-const statusConfig = {
-  pending: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: RefreshCw, label: "Pending" },
-  processing: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: RefreshCw, label: "Processing" },
-  shipped: { bg: "bg-state-info-bg", text: "text-state-info", icon: Truck, label: "Shipped" },
-  delivered: { bg: "bg-state-success-bg", text: "text-state-success", icon: CheckCircle, label: "Delivered" },
-  cancelled: { bg: "bg-state-error-bg", text: "text-state-error", icon: XCircle, label: "Cancelled" },
-  refunded: { bg: "bg-state-error-bg", text: "text-state-error", icon: AlertTriangle, label: "Refunded" }
-};
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -182,10 +174,10 @@ export default function OrderDetailPage() {
   };
 
   const getStatusBadge = (status: Order["status"]) => {
-    const config = statusConfig[status];
+    const config = orderStatusConfig[status];
     const Icon = config.icon;
     return (
-      <Badge className={`${config.bg} ${config.text}`}>
+      <Badge variant={config.variant}>
         <Icon className="w-3 h-3 mr-1" />
         {config.label}
       </Badge>

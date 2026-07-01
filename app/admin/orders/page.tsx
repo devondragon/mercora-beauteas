@@ -57,11 +57,12 @@ import { Badge } from "@/components/ui/badge";
 import {
   ClipboardList, Search, Filter, Eye, Edit, Truck,
   Calendar, DollarSign, User, MapPin, Package,
-  RefreshCw, ChevronDown, ChevronRight, AlertCircle,
-  CheckCircle, Clock, XCircle, ArrowRight, MoreHorizontal,
+  RefreshCw, ChevronDown, ChevronRight,
+  CheckCircle, Clock, ArrowRight, MoreHorizontal,
   RotateCcw, ChevronLeft, ChevronsLeft, ChevronsRight
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { orderStatusConfig } from "@/lib/ui/status-styles";
 
 interface Order {
   id: string;
@@ -105,15 +106,6 @@ interface Order {
     [key: string]: any;
   };
 }
-
-const statusConfig = {
-  pending: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: Clock, label: "Pending" },
-  processing: { bg: "bg-state-warning-bg", text: "text-state-warning", icon: RefreshCw, label: "Processing" },
-  shipped: { bg: "bg-state-info-bg", text: "text-state-info", icon: Truck, label: "Shipped" },
-  delivered: { bg: "bg-state-success-bg", text: "text-state-success", icon: CheckCircle, label: "Delivered" },
-  cancelled: { bg: "bg-state-error-bg", text: "text-state-error", icon: XCircle, label: "Cancelled" },
-  refunded: { bg: "bg-state-error-bg", text: "text-state-error", icon: AlertCircle, label: "Refunded" }
-};
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -282,10 +274,10 @@ export default function AdminOrdersPage() {
   };
 
   const getStatusBadge = (status: Order["status"]) => {
-    const config = statusConfig[status];
+    const config = orderStatusConfig[status];
     const Icon = config.icon;
     return (
-      <Badge className={`${config.bg} ${config.text} text-xs`}>
+      <Badge variant={config.variant} className="text-xs">
         <Icon className="w-3 h-3 mr-1" />
         {config.label}
       </Badge>
