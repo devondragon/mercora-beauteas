@@ -40,7 +40,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Product, ProductVariant } from "@/lib/types";
-import { getDarkBlurPlaceholder } from "@/lib/utils/image-placeholders";
+import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
@@ -102,7 +102,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   // Handle consistent flat JSON structure: {"url": "...", "alt_text": "..."}
   const imageUrl = (() => {
     try {
-      if (!product.primary_image) return "/products/placeholder.png";
+      if (!product.primary_image) return "/placeholder.svg";
       
       // If it's a JSON string, parse it first
       let imageData = product.primary_image;
@@ -110,18 +110,18 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
         try {
           imageData = JSON.parse(imageData);
         } catch {
-          return "/products/placeholder.png";
+          return "/placeholder.svg";
         }
       }
       
       const img = imageData as any;
       const url = img?.url;
       
-      if (!url) return "/products/placeholder.png";
+      if (!url) return "/placeholder.svg";
       
       return url.startsWith("/") ? url : "/" + url;
     } catch {
-      return "/products/placeholder.png";
+      return "/placeholder.svg";
     }
   })();
   const imageAlt = name;
@@ -145,7 +145,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               loading={priority ? "eager" : "lazy"}
               fetchPriority={priority ? "high" : "low"}
               placeholder="blur"
-              blurDataURL={getDarkBlurPlaceholder()}
+              blurDataURL={getLightBlurPlaceholder()}
             />
         </div>
         <div className="p-4 sm:p-4 space-y-3">

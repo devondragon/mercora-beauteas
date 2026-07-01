@@ -44,7 +44,7 @@ export default function GiftCardPurchaseForm() {
       name: `BeauTeas Gift Card - $${denom.amount}`,
       price: denom.amount,
       quantity: 1,
-      primaryImageUrl: "/placeholder.jpg",
+      primaryImageUrl: "/placeholder.svg",
       giftCard: {
         recipientEmail: recipientEmail.trim(),
         recipientName: recipientName.trim() || undefined,

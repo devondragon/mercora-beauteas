@@ -60,9 +60,9 @@ interface ProductDisplayProps {
 }
 
 function getMediaUrl(media: any): string {
-  if (!media) return "/placeholder.jpg";
+  if (!media) return "/placeholder.svg";
   if (typeof media === "string") return media;
-  return media.file?.url || "/placeholder.jpg";
+  return media.file?.url || "/placeholder.svg";
 }
 
 function stringifyDescription(description: Product["description"]): string {
@@ -102,11 +102,11 @@ export default function ProductDisplay({
       return Array.from(new Set([primaryImg, ...mediaImages].filter(Boolean))) as string[];
     } catch (error) {
       console.warn("Error processing product images:", error);
-      return ["/placeholder.jpg"];
+      return ["/placeholder.svg"];
     }
   }, [product.media, product.primary_image]);
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.jpg");
+  const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.svg");
   const [activeTab, setActiveTab] = useState<"details" | "reviews">("details");
 
   // Variant selection state
@@ -302,10 +302,10 @@ export default function ProductDisplay({
                           return (
                             (product.primary_image as any)?.url ||
                             (product.primary_image as any)?.file?.url ||
-                            "/placeholder.jpg"
+                            "/placeholder.svg"
                           );
                         } catch (error) {
-                          return "/placeholder.jpg";
+                          return "/placeholder.svg";
                         }
                       })(),
                     });
@@ -360,10 +360,10 @@ export default function ProductDisplay({
                             return (
                               (product.primary_image as any)?.url ||
                               (product.primary_image as any)?.file?.url ||
-                              "/placeholder.jpg"
+                              "/placeholder.svg"
                             );
                           } catch (error) {
-                            return "/placeholder.jpg";
+                            return "/placeholder.svg";
                           }
                         })(),
                       });

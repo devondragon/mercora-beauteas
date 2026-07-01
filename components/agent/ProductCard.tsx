@@ -6,7 +6,7 @@ import { stateStyles } from "@/lib/ui/state-styles";
 
 export default function ProductCard({ product }: { product: any }) {
   // Extract primary image URL from the new product structure
-  const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.jpg";
+  const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.svg";
   
   // Get price from first variant
   const variant = product.variants?.[0];

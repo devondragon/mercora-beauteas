@@ -50,7 +50,7 @@ export function formatMoney(money?: { amount: number; currency_code?: string } |
 }
 
 export function getMediaUrl(media: { file?: { url?: string } } | string | null | undefined): string {
-  if (!media) return "/placeholder.jpg";
+  if (!media) return "/placeholder.svg";
   if (typeof media === "string") return media;
-  return media.file?.url || "/placeholder.jpg";
+  return media.file?.url || "/placeholder.svg";
 }
