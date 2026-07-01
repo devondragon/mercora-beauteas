@@ -44,7 +44,7 @@ export const extensions: any[] = [
   }),
   HorizontalRule,
   TiptapLink.configure({
-    HTMLAttributes: { class: "text-amber-400 underline cursor-pointer" },
+    HTMLAttributes: { class: "text-secondary-600 underline cursor-pointer" },
     openOnClick: false,
   }),
   UpdatedImage.configure({ allowBase64: false }),
