@@ -1,0 +1,105 @@
+{
+  "clearly-calendula-morning": {
+    "description": "Start your day with our energizing organic black tea blend designed for skincare benefits. This enhanced Earl Grey combines premium Assam and Qu Hao black teas with lavender, spearmint, vanilla, peppermint, and calendula petals. The smooth Earl Grey flavor with hints of mint and vanilla provides lasting energy while fighting acne-causing bacteria, healing skin damage, increasing collagen production, and delivering powerful antioxidants. Drink one or two cups in the morning to energize while rehydrating and repairing skin. 100% USDA Certified Organic.",
+    "extensions": {
+      "ingredients": "Organic Assam Black Tea, Organic Qu Hao Black Tea, organic lavender, organic spearmint, organic vanilla flavoring, organic peppermint, organic calendula petals",
+      "caffeine": "caffeinated",
+      "servings": "10 tea bags per box",
+      "benefits": [
+        "Fights acne-causing bacteria",
+        "Heals acne and skin damage",
+        "Increases collagen production",
+        "Reduces hormone swings",
+        "Smooth lasting energy",
+        "Rich in antioxidants"
+      ],
+      "certifications": [
+        "USDA Organic"
+      ],
+      "brewing": {
+        "temp": "212°F",
+        "time": "3-5 minutes"
+      }
+    }
+  },
+  "clearly-calendula-afternoon": {
+    "description": "Power through your afternoon with our refreshing organic green tea blend designed for skin health and sustained energy. This unique blend combines premium Dragonwell and Sencha green teas with lemon verbena, spearmint, peppermint, and calendula petals. Perfect hot or iced, at work, school, or the gym. The calendula fights bacteria and stimulates collagen, spearmint provides anti-inflammatory benefits, and lemon verbena combats acne-causing bacteria. Enjoy smooth, long-lasting energy while supporting your skin health journey. 100% USDA Certified Organic.",
+    "extensions": {
+      "ingredients": "Organic Dragonwell Green Tea, Organic Sencha Green Tea, organic lemon verbena, organic spearmint, organic peppermint, organic calendula petals",
+      "caffeine": "caffeinated",
+      "servings": "10 tea bags per box",
+      "benefits": [
+        "Fights acne-causing bacteria",
+        "Heals acne and skin damage",
+        "Aids weight loss",
+        "Reduces hormone swings",
+        "Smooth long-lasting energy",
+        "Rich in antioxidants"
+      ],
+      "certifications": [
+        "USDA Organic"
+      ],
+      "brewing": {
+        "temp": "175°F",
+        "time": "2-3 minutes"
+      }
+    }
+  },
+  "clearly-calendula-evening": {
+    "description": "Wind down your day with our soothing caffeine-free herbal blend designed for evening relaxation and overnight skin repair. This calming tea combines organic chamomile, rooibos, spearmint, peppermint, and calendula petals. Chamomile promotes relaxation, calendula heals and fights bacteria, spearmint controls hormone-based acne, peppermint reduces oil production, and rooibos delivers antioxidants plus natural alpha hydroxy acids (AHA) for gentle skin renewal. Enjoy before bed for a restful sleep while your skin repairs. 100% USDA Certified Organic and completely caffeine-free.",
+    "extensions": {
+      "ingredients": "Organic chamomile, organic rooibos, organic spearmint, organic peppermint, organic calendula petals",
+      "caffeine": "caffeine-free",
+      "servings": "10 tea bags per box",
+      "benefits": [
+        "Fights acne-causing bacteria",
+        "Heals acne and skin damage",
+        "Contains alpha hydroxy acid (AHA)",
+        "Reduces hormone-based acne",
+        "Soothing and calming",
+        "Rich in antioxidants"
+      ],
+      "certifications": [
+        "USDA Organic"
+      ],
+      "brewing": {
+        "temp": "212°F",
+        "time": "5-7 minutes"
+      }
+    }
+  },
+  "clearly-calendula-sample-pack": {
+    "description": "Discover the complete Clearly Calendula collection with our sample pack featuring one box (10 tea bags) each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Experience the full day of skincare tea benefits - energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. The perfect introduction to beauty from within or a thoughtful gift for tea and skincare enthusiasts.",
+    "extensions": {
+      "benefits": [
+        "100% USDA Certified Organic",
+        "Fights and heals acne",
+        "Increases collagen production",
+        "Rich in antioxidants",
+        "Hydrating and flavorful",
+        "Sugar-free/zero calorie",
+        "All-natural clean beauty"
+      ],
+      "certifications": [
+        "USDA Organic"
+      ]
+    }
+  },
+  "clearly-calendula-full-package": {
+    "description": "Discover the complete Clearly Calendula collection with our sample pack featuring one box (10 tea bags) each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Experience the full day of skincare tea benefits - energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. The perfect introduction to beauty from within or a thoughtful gift for tea and skincare enthusiasts.",
+    "extensions": {
+      "benefits": [
+        "100% USDA Certified Organic",
+        "Fights and heals acne",
+        "Increases collagen production",
+        "Rich in antioxidants",
+        "Hydrating and flavorful",
+        "Sugar-free/zero calorie",
+        "All-natural clean beauty"
+      ],
+      "certifications": [
+        "USDA Organic"
+      ]
+    }
+  }
+}
