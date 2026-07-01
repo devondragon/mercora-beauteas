@@ -51,6 +51,7 @@ import {
   SITE_NAME,
   resolveLocalizedField,
   resolveImageUrl,
+  stripSiteName,
 } from "@/lib/seo/metadata";
 import {
   JsonLdScript,
@@ -79,7 +80,7 @@ export async function generateMetadata({
   const imageUrl = resolveImageUrl(product.primary_image);
 
   return {
-    title: product.seo?.meta_title || name,
+    title: stripSiteName(product.seo?.meta_title || name),
     description: product.seo?.meta_description || description,
     alternates: {
       canonical: `/product/${slug}`,

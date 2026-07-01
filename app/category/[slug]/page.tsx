@@ -47,6 +47,7 @@ import {
   SITE_NAME,
   resolveLocalizedField,
   resolveImageUrl,
+  stripSiteName,
 } from "@/lib/seo/metadata";
 import {
   JsonLdScript,
@@ -78,7 +79,7 @@ export async function generateMetadata({
     : undefined;
 
   return {
-    title: metaTitle || name,
+    title: stripSiteName(metaTitle || name),
     description: metaDescription || description,
     alternates: {
       canonical: `/category/${slug}`,
