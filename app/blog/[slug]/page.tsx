@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     : undefined;
 
   return {
-    title: `${title} | ${SITE_NAME}`,
+    title,
     description,
     openGraph: {
       title,

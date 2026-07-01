@@ -8,10 +8,10 @@ import { formatDate } from "@/lib/utils/date";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: `Beauty Journal | ${SITE_NAME}`,
+  title: "Beauty Journal",
   description: "Tea wisdom, skincare insights, and wellness rituals for your beauty from within journey.",
   openGraph: {
-    title: `Beauty Journal | ${SITE_NAME}`,
+    title: "Beauty Journal",
     description: "Tea wisdom, skincare insights, and wellness rituals for your beauty from within journey.",
     url: `${BASE_URL}/blog`,
     siteName: SITE_NAME,

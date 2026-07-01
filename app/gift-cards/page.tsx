@@ -8,10 +8,9 @@
 
 import type { Metadata } from "next";
 import GiftCardPurchaseForm from "@/components/gift-card/GiftCardPurchaseForm";
-import { SITE_NAME } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = {
-  title: `Gift Cards | ${SITE_NAME}`,
+  title: "Gift Cards",
   description:
     "Give the gift of glow. A BeauTeas digital gift card is delivered by email and redeemable at checkout on any of our organic skincare teas.",
 };
