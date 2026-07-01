@@ -45,8 +45,20 @@ import { getProductsByCategory } from "@/lib/models/mach/products";
  * @returns Server-rendered home page with hero section and featured products
  */
 export default async function HomePage() {
-  // Fetch only 3 featured products with optimized query
-  const featuredProducts = (await getProductsByCategory("cat_clearly_calendula")).slice(0, 3);
+  // Feature the three time-of-day blends in ritual order (Morning → Afternoon
+  // → Evening), excluding bundles like the Mega Month and Sample Pack.
+  const TIME_OF_DAY_ORDER = ["morning", "afternoon", "evening"];
+  const productKey = (product: { slug?: unknown; name?: unknown }) => {
+    const raw = product.slug ?? product.name;
+    const value = typeof raw === "string" ? raw : Object.values(raw || {})[0];
+    return (typeof value === "string" ? value : "").toLowerCase();
+  };
+  const featuredProducts = (await getProductsByCategory("cat_clearly_calendula"))
+    .map((product) => ({ product, rank: TIME_OF_DAY_ORDER.findIndex((t) => productKey(product).includes(t)) }))
+    .filter(({ rank }) => rank !== -1)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 3)
+    .map(({ product }) => product);
 
   return (
     <main className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
