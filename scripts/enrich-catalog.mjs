@@ -113,6 +113,7 @@ function mergeExtensions(entry, row) {
 const BUILDERS = {
   products: (entry, row) =>
     [
+      typeof entry.status === "string" ? `status=${sqlStr(entry.status)}` : null,
       mergeExtensions(entry, row),
       typeof entry.description === "string" && entry.description.trim()
         ? `description=${sqlStr(localized(entry.description))}`
@@ -124,7 +125,10 @@ const BUILDERS = {
       typeof entry.description === "string" && entry.description.trim()
         ? `description=${sqlStr(localized(entry.description))}`
         : null,
-      entry.primary_image ? `primary_image=${sqlStr(JSON.stringify(entry.primary_image))}` : null,
+      // Present + object → set; present + null → clear to SQL NULL; absent → leave.
+      "primary_image" in entry
+        ? `primary_image=${entry.primary_image === null ? "NULL" : sqlStr(JSON.stringify(entry.primary_image))}`
+        : null,
     ].filter(Boolean),
 };
 
