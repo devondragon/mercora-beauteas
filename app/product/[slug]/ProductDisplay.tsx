@@ -34,6 +34,7 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
+import { Check } from "lucide-react";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import { StarRating } from "@/components/reviews/StarRating";
 import { ProductReviewsSection } from "@/components/reviews/ProductReviewsSection";
@@ -78,6 +79,50 @@ function stringifyDescription(description: Product["description"]): string {
     }
   }
   return "";
+}
+
+/**
+ * Normalize a description into clean paragraphs. Blank lines become paragraph
+ * breaks; stray single newlines collapse to spaces. This keeps the copy tight
+ * regardless of how the source content (seed, ETL, admin editor) was formatted,
+ * avoiding the "overly spaced out" wall of whitespace `whitespace-pre-line` produced.
+ */
+function formatDescriptionParagraphs(description: Product["description"]): string[] {
+  const raw = stringifyDescription(description);
+  if (!raw) return [];
+  return raw
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim())
+    .filter(Boolean);
+}
+
+interface ProductExtensions {
+  ingredients?: string;
+  caffeine?: string;
+  servings?: string;
+  benefits?: string[];
+  certifications?: string[];
+  brewing?: { temp?: string; time?: string };
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[\s-]+/)
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
+/** Structured "at a glance" facts derived from a product's extensions. */
+function buildProductSpecs(ext: ProductExtensions): Array<{ label: string; value: string }> {
+  const specs: Array<{ label: string; value: string }> = [];
+  if (ext.caffeine) specs.push({ label: "Caffeine", value: titleCase(ext.caffeine) });
+  if (ext.servings) specs.push({ label: "Servings", value: ext.servings });
+  if (ext.brewing?.temp) specs.push({ label: "Brew temp", value: ext.brewing.temp });
+  if (ext.brewing?.time) specs.push({ label: "Steep time", value: ext.brewing.time });
+  if (Array.isArray(ext.certifications) && ext.certifications.length) {
+    specs.push({ label: "Certified", value: ext.certifications.join(", ") });
+  }
+  return specs;
 }
 
 export default function ProductDisplay({
@@ -126,7 +171,21 @@ export default function ProductDisplay({
   const available = quantityInStock > 0;
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
-  const productDescription = useMemo(() => stringifyDescription(product.description), [product.description]);
+  const descriptionParagraphs = useMemo(
+    () => formatDescriptionParagraphs(product.description),
+    [product.description]
+  );
+
+  const extensions = useMemo(
+    () => (product.extensions ?? {}) as ProductExtensions,
+    [product.extensions]
+  );
+  const benefits = useMemo(
+    () => (Array.isArray(extensions.benefits) ? extensions.benefits.filter(Boolean) : []),
+    [extensions.benefits]
+  );
+  const specs = useMemo(() => buildProductSpecs(extensions), [extensions]);
+  const ingredients = extensions.ingredients?.trim();
 
   const reviewsTabLabel = useMemo(() => {
     if (ratingSummary) {
@@ -228,11 +287,51 @@ export default function ProductDisplay({
               </div>
               <div className="p-6">
                 {activeTab === "details" ? (
-                  <div className="space-y-4 text-sm text-text-secondary">
-                    {productDescription ? (
-                      <p className="whitespace-pre-line leading-relaxed text-text-secondary">{productDescription}</p>
+                  <div className="space-y-6 text-sm text-text-secondary">
+                    {descriptionParagraphs.length ? (
+                      <div className="space-y-3 leading-relaxed">
+                        {descriptionParagraphs.map((paragraph, index) => (
+                          <p key={`desc-${index}`}>{paragraph}</p>
+                        ))}
+                      </div>
                     ) : (
-                      <p className="text-sm text-text-muted">Product description coming soon.</p>
+                      <p className="text-text-muted">Product description coming soon.</p>
+                    )}
+
+                    {benefits.length > 0 && (
+                      <div>
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-primary">
+                          Skin benefits
+                        </h3>
+                        <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                          {benefits.map((benefit, index) => (
+                            <li key={`benefit-${index}`} className="flex items-start gap-2">
+                              <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-state-success" aria-hidden="true" />
+                              <span>{benefit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {specs.length > 0 && (
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md bg-surface-light/60 p-4 sm:grid-cols-3">
+                        {specs.map((spec) => (
+                          <div key={spec.label}>
+                            <dt className="text-xs uppercase tracking-wide text-text-muted">{spec.label}</dt>
+                            <dd className="mt-0.5 font-medium text-text-primary">{spec.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+
+                    {ingredients && (
+                      <div>
+                        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-primary">
+                          Ingredients
+                        </h3>
+                        <p className="leading-relaxed">{ingredients}</p>
+                      </div>
                     )}
                   </div>
                 ) : (
