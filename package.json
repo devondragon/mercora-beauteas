@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/db-local-ensure.mjs",
     "dev": "next dev --turbopack",
+    "db:local": "node scripts/db-local-ensure.mjs",
+    "db:reset:local": "wrangler d1 migrations apply beauteas-db-dev --local --env dev && wrangler d1 execute beauteas-db-dev --local --env dev --file data/d1/seed.sql",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
