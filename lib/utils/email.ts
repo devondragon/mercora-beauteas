@@ -180,7 +180,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
             </tr>
             <tr style="border-top: 2px solid #e2e8f0; padding: 12px 0 0; margin: 12px 0 0;">
               <td style="color: #1e293b; font-size: 16px; font-weight: bold; padding-top: 12px;">Total:</td>
-              <td style="text-align: right; color: #f97316; font-size: 18px; font-weight: bold; padding-top: 12px;">$${orderData.total.toFixed(2)}</td>
+              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">$${orderData.total.toFixed(2)}</td>
             </tr>
           </table>
         </div>
@@ -246,7 +246,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
             <p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Carrier:</strong> ${orderData.carrier}</p>
             ${orderData.trackingNumber ? `<p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Tracking Number:</strong> ${orderData.trackingNumber}</p>` : ''}
             ${orderData.trackingUrl ? `
-              <a href="${orderData.trackingUrl}" style="display: inline-block; background-color: #f97316; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 12px;">
+              <a href="${orderData.trackingUrl}" style="display: inline-block; background-color: #cf8577; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 12px;">
                 Track Your Package
               </a>
             ` : ''}
@@ -280,10 +280,10 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
 
     case 'refunded':
       statusMessage = "Your order has been refunded";
-      statusColor = "#f97316";
+      statusColor = "#cf8577";
       statusContent = `
         <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been refunded and the payment has been processed back to your original payment method.</p>
-        <div style="background-color: #fef3f2; border-left: 4px solid #f97316; padding: 12px 16px; margin: 16px 0;">
+        <div style="background-color: #fef3f2; border-left: 4px solid #cf8577; padding: 12px 16px; margin: 16px 0;">
           <p style="color: #ea580c; font-size: 14px; margin: 0 0 4px;"><strong>Refund Processing:</strong></p>
           <p style="color: #7c2d12; font-size: 14px; margin: 0;">Please allow 5-10 business days for the refund to appear on your statement.</p>
         </div>

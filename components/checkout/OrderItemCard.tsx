@@ -22,7 +22,7 @@ export default function OrderItemCard({ item }: OrderItemCardProps) {
 
       <div className="flex-1">
         <div className="font-medium text-sm leading-tight">{item.name}</div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-text-muted">
           {item.quantity} × ${item.price.toFixed(2)}
         </div>
       </div>

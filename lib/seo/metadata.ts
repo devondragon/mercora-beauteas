@@ -21,6 +21,15 @@ export const BASE_URL = "https://beauteas.com";
 /** Brand name used for og:site_name and title template suffix */
 export const SITE_NAME = "BeauTeas";
 
+/**
+ * Strip a trailing " | BeauTeas" (site name) from a title string so the Next.js
+ * metadata title template (`%s | BeauTeas`) doesn't double it. Safe to call on
+ * titles that don't have the suffix (returns them unchanged).
+ */
+export function stripSiteName(title: string): string {
+  return title.replace(new RegExp(`\\s*\\|\\s*${SITE_NAME}\\s*$`), "").trim();
+}
+
 /** R2 image CDN base URL for relative image paths */
 const IMAGE_CDN = "https://img.beauteas.com";
 

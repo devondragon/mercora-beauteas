@@ -32,7 +32,7 @@ export default async function AccountDashboard() {
       <h1 className="text-2xl sm:text-3xl font-bold mb-2">
         Welcome back, {displayName}
       </h1>
-      <p className="text-gray-400 mb-8">Here&rsquo;s an overview of your account.</p>
+      <p className="text-text-secondary mb-8">Here&rsquo;s an overview of your account.</p>
       <DashboardCards
         recentOrders={recentOrders}
         activeSubscriptionCount={activeSubscriptions.length}

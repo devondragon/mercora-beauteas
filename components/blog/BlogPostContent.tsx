@@ -10,19 +10,19 @@ interface BlogPostContentProps {
 export function BlogPostContent({ html }: BlogPostContentProps) {
   return (
     <div
-      className="prose prose-invert prose-lg max-w-none
-        prose-headings:text-white prose-headings:font-bold
-        prose-p:text-neutral-200
-        prose-a:text-amber-400 prose-a:no-underline hover:prose-a:underline
-        prose-strong:text-white
-        prose-code:text-amber-300 prose-code:bg-neutral-800 prose-code:px-1 prose-code:rounded
-        prose-pre:bg-neutral-800 prose-pre:border prose-pre:border-neutral-700
-        prose-blockquote:border-amber-600 prose-blockquote:text-neutral-300
+      className="prose prose-lg max-w-none
+        prose-headings:text-text-primary prose-headings:font-bold
+        prose-p:text-text-secondary
+        prose-a:text-secondary-600 prose-a:no-underline hover:prose-a:underline
+        prose-strong:text-text-primary
+        prose-code:text-secondary-600 prose-code:bg-surface prose-code:px-1 prose-code:rounded
+        prose-pre:bg-surface prose-pre:border prose-pre:border-border-default
+        prose-blockquote:border-secondary-400 prose-blockquote:text-text-secondary
         prose-img:rounded-lg prose-img:my-6
-        prose-hr:border-neutral-700
+        prose-hr:border-border-default
         prose-table:border-collapse
-        prose-th:border prose-th:border-neutral-700 prose-th:bg-neutral-800 prose-th:px-3 prose-th:py-2
-        prose-td:border prose-td:border-neutral-700 prose-td:px-3 prose-td:py-2"
+        prose-th:border prose-th:border-border-default prose-th:bg-surface prose-th:px-3 prose-th:py-2
+        prose-td:border prose-td:border-border-default prose-td:px-3 prose-td:py-2"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

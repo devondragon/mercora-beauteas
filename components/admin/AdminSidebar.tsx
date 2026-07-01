@@ -141,40 +141,40 @@ export default function AdminSidebar() {
     <>
       {/* Mobile Overlay */}
       {isMobile && !sidebarCollapsed && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40"
+        <div
+          className="fixed inset-0 bg-text-primary/50 z-40"
           onClick={toggleSidebar}
         />
       )}
 
       {/* Sidebar */}
       <div className={`
-        fixed md:relative top-0 left-0 h-screen bg-neutral-900 border-r border-neutral-700 z-50
+        fixed md:relative top-0 left-0 h-screen admin-sidebar border-r z-50
         transition-all duration-300 ease-in-out
         ${sidebarCollapsed ? 'w-16' : 'w-64'}
         ${isMobile && sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'}
       `}>
-        
+
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
           {!sidebarCollapsed && (
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-[#c4a87c] rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-secondary-400 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-lg">B</span>
               </div>
               <div>
-                <h1 className="text-white font-semibold text-lg">BeauTeas</h1>
-                <p className="text-gray-400 text-xs">Admin Panel</p>
+                <h1 className="text-text-primary font-semibold text-lg">BeauTeas</h1>
+                <p className="text-text-secondary text-xs">Admin Panel</p>
               </div>
             </div>
           )}
-          
+
           {/* Toggle Button */}
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleSidebar}
-            className="text-gray-400 hover:text-white p-2"
+            className="text-text-secondary hover:text-text-primary p-2"
           >
             {isMobile ? (
               sidebarCollapsed ? <Menu className="w-4 h-4" /> : <X className="w-4 h-4" />
@@ -196,9 +196,9 @@ export default function AdminSidebar() {
                 href={item.href}
                 className={`
                   flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors
-                  ${active 
-                    ? 'bg-orange-600 text-white' 
-                    : 'text-gray-300 hover:text-white hover:bg-neutral-800'
+                  ${active
+                    ? 'admin-nav-active'
+                    : 'admin-nav-inactive'
                   }
                   ${sidebarCollapsed ? 'justify-center' : ''}
                 `}
@@ -219,8 +219,8 @@ export default function AdminSidebar() {
 
         {/* Sidebar Footer */}
         {!sidebarCollapsed && (
-          <div className="p-4 border-t border-neutral-700">
-            <div className="text-xs text-gray-500">
+          <div className="p-4 border-t border-border-default">
+            <div className="text-xs text-text-muted">
               <div className="mb-1">BeauTeas Admin v1.0</div>
               <div>Powered by MACH Alliance</div>
             </div>

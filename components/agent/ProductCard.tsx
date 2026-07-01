@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { stateStyles } from "@/lib/ui/state-styles";
 
 export default function ProductCard({ product }: { product: any }) {
   // Extract primary image URL from the new product structure
-  const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.jpg";
+  const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.svg";
   
   // Get price from first variant
   const variant = product.variants?.[0];
@@ -34,18 +35,22 @@ export default function ProductCard({ product }: { product: any }) {
         </div>
         <div className="flex-1 min-w-0">
           {/* Smaller, more compact text */}
-          <h4 className="text-xs font-semibold truncate text-gray-900">{product.name}</h4>
-          <p className="text-xs text-gray-500 truncate">
+          <h4 className="text-xs font-semibold truncate text-text-primary">{product.name}</h4>
+          <p className="text-xs text-text-muted truncate">
             {description.length > 60 ? description.substring(0, 60) + '...' : description}
           </p>
-          <p className="text-xs font-medium text-orange-600 mt-0.5">
-            ${displayPrice.toFixed(2)}
-            {isOnSale && (
-              <span className="text-xs text-gray-400 line-through ml-1">
+          {isOnSale ? (
+            <p className="text-xs mt-0.5">
+              <span className={`${stateStyles.priceOriginal} mr-1`}>
                 ${(compareAtPrice / 100).toFixed(2)}
               </span>
-            )}
-          </p>
+              <span className={stateStyles.priceSale}>${displayPrice.toFixed(2)}</span>
+            </p>
+          ) : (
+            <p className="text-xs font-medium text-text-primary mt-0.5">
+              ${displayPrice.toFixed(2)}
+            </p>
+          )}
         </div>
       </Link>
     </div>

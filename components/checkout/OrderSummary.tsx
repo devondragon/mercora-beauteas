@@ -4,6 +4,7 @@ import OrderItemCard from "./OrderItemCard";
 import DiscountCodeInput from "./DiscountCodeInput";
 import GiftCardInput from "./GiftCardInput";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { stateStyles } from "@/lib/ui/state-styles";
 
 interface Props {
   items: CartItem[];
@@ -42,7 +43,7 @@ export default function OrderSummary({
   const total = Math.max(0, totalBeforeGiftCard - giftCardApplied);
 
   return (
-    <div className="bg-white text-black p-6 rounded-xl">
+    <div className="bg-white text-text-primary p-6 rounded-xl">
       <h2 className="text-lg font-semibold mb-4">Order Summary</h2>
 
       <div className="space-y-1">
@@ -69,7 +70,7 @@ export default function OrderSummary({
       
       {/* Cart Discounts */}
       {cartDiscounts.map((discount) => (
-        <div key={discount.promotionId} className="flex justify-between text-sm text-green-600">
+        <div key={discount.promotionId} className={`flex justify-between text-sm ${stateStyles.savings}`}>
           <span>{discount.displayName}</span>
           <span>-${discount.amount.toFixed(2)}</span>
         </div>
@@ -82,7 +83,7 @@ export default function OrderSummary({
       
       {/* Shipping Discounts */}
       {shippingDiscounts.map((discount) => (
-        <div key={discount.promotionId} className="flex justify-between text-sm text-green-600">
+        <div key={discount.promotionId} className={`flex justify-between text-sm ${stateStyles.savings}`}>
           <span>{discount.displayName}</span>
           <span>-${discount.amount.toFixed(2)}</span>
         </div>
@@ -95,7 +96,7 @@ export default function OrderSummary({
 
       {/* Gift card tender */}
       {giftCardApplied > 0 && appliedGiftCard && (
-        <div className="flex justify-between text-sm text-amber-600">
+        <div className="flex justify-between text-sm text-secondary-600">
           <span>Gift Card ({appliedGiftCard.code})</span>
           <span>-${giftCardApplied.toFixed(2)}</span>
         </div>

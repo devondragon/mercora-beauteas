@@ -47,20 +47,20 @@ export default function AdminLayout({
   return (
     <AdminGuard>
       <AdminLayoutProvider>
-        <div className="min-h-screen bg-neutral-950 text-white">
+        <div className="min-h-screen bg-surface-dark text-text-primary">
           {/* Admin Header */}
           <AdminHeader />
-          
+
           <div className="flex">
             {/* Admin Sidebar */}
             <AdminSidebar />
-            
+
             {/* Main Admin Content Area */}
             <main className="flex-1 transition-all duration-300 ease-in-out">
               <div className="p-6">
                 <Suspense fallback={
                   <div className="flex items-center justify-center h-64">
-                    <div className="text-gray-400">Loading...</div>
+                    <div className="text-text-secondary">Loading...</div>
                   </div>
                 }>
                   {children}
@@ -74,7 +74,7 @@ export default function AdminLayout({
             position="top-right"
             toastOptions={{
               className:
-                "bg-neutral-800 text-white border border-neutral-700 shadow-lg",
+                "bg-white text-text-primary border border-border-default shadow-lg",
               duration: 4000,
             }}
           />

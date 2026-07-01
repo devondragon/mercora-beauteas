@@ -51,6 +51,7 @@ import {
   SITE_NAME,
   resolveLocalizedField,
   resolveImageUrl,
+  stripSiteName,
 } from "@/lib/seo/metadata";
 import {
   JsonLdScript,
@@ -79,7 +80,7 @@ export async function generateMetadata({
   const imageUrl = resolveImageUrl(product.primary_image);
 
   return {
-    title: product.seo?.meta_title || name,
+    title: stripSiteName(product.seo?.meta_title || name),
     description: product.seo?.meta_description || description,
     alternates: {
       canonical: `/product/${slug}`,
@@ -140,7 +141,7 @@ export default async function ProductPage({
   ]);
 
   return (
-    <main className="bg-neutral-900 text-white min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <main className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <JsonLdScript data={productJsonLd} />
       <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">

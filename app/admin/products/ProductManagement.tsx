@@ -18,16 +18,16 @@ interface ProductTableProps {
 
 function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
   return (
-    <div className="bg-neutral-800 rounded-lg overflow-hidden">
+    <div className="admin-card border rounded-lg overflow-hidden">
       <table className="w-full">
-        <thead className="bg-neutral-700">
+        <thead className="bg-surface-light">
           <tr>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Product</th>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Categories</th>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Price</th>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Stock</th>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Status</th>
-            <th className="text-left p-4 text-sm font-medium text-gray-300">Actions</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Product</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Categories</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Price</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Stock</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Status</th>
+            <th className="text-left p-4 text-sm font-medium text-text-secondary">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -36,12 +36,12 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
             const price = defaultVariant?.price?.amount;
             const stock = defaultVariant?.inventory?.quantity ?? 0;
             const name = typeof product.name === "string" ? product.name : Object.values(product.name || {})[0] || "";
-            
+
             return (
-              <tr key={product.id} className="border-t border-neutral-700">
+              <tr key={product.id} className="border-t border-border-default">
                 <td className="p-4">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-neutral-600 rounded-md overflow-hidden flex items-center justify-center">
+                    <div className="w-10 h-10 bg-surface-light rounded-md overflow-hidden flex items-center justify-center">
                       {(() => {
                         // Extract primary image URL from product
                         const getPrimaryImageUrl = () => {
@@ -94,8 +94,8 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                       })()}
                     </div>
                     <div>
-                      <div className="font-medium text-white">{name}</div>
-                      <div className="text-sm text-gray-400">ID: {product.id}</div>
+                      <div className="font-medium text-text-primary">{name}</div>
+                      <div className="text-sm text-text-secondary">ID: {product.id}</div>
                     </div>
                   </div>
                 </td>
@@ -109,7 +109,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-gray-500 text-sm">No categories</span>
+                      <span className="text-text-muted text-sm">No categories</span>
                     )}
                     {product.categories && product.categories.length > 3 && (
                       <Badge variant="outline" className="text-xs">
@@ -118,7 +118,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                     )}
                   </div>
                 </td>
-                <td className="p-4 text-white">
+                <td className="p-4 text-text-primary">
                   {price ? `$${(price / 100).toFixed(2)}` : "N/A"}
                 </td>
                 <td className="p-4">
@@ -137,7 +137,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                       variant="ghost"
                       size="sm"
                       onClick={() => onEdit(product)}
-                      className="text-orange-500 hover:text-orange-400"
+                      className="text-primary-700 hover:text-primary-800"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
@@ -145,7 +145,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                       variant="ghost"
                       size="sm"
                       onClick={() => onDelete(product.id.toString())}
-                      className="text-red-500 hover:text-red-400"
+                      className="text-state-error hover:opacity-75"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -324,7 +324,7 @@ export default function ProductManagement() {
   };
 
   if (loading) {
-    return <div className="text-gray-400">Loading products...</div>;
+    return <div className="text-text-secondary">Loading products...</div>;
   }
 
   return (
@@ -333,20 +333,20 @@ export default function ProductManagement() {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
             <Input
               type="text"
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64 bg-neutral-800 border-neutral-700"
+              className="pl-10 w-64 admin-input"
             />
           </div>
           <Button
             onClick={triggerVectorization}
             disabled={isVectorizing}
             variant="outline"
-            className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black"
+            className="border-primary-500 text-primary-600 hover:bg-primary-500 hover:text-text-inverse"
           >
             {isVectorizing ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -356,7 +356,7 @@ export default function ProductManagement() {
             {isVectorizing ? "Vectorizing..." : "Reindex AI"}
           </Button>
         </div>
-        <Button onClick={handleNewProduct} className="bg-orange-600 hover:bg-orange-700 text-white">
+        <Button onClick={handleNewProduct}>
           <Plus className="w-4 h-4 mr-2" />
           Add Product
         </Button>
@@ -364,33 +364,33 @@ export default function ProductManagement() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-white">{totalProducts}</div>
-          <div className="text-sm text-gray-400">Total Products</div>
+        <Card className="admin-card border p-4">
+          <div className="text-2xl font-bold text-text-primary">{totalProducts}</div>
+          <div className="text-sm text-text-secondary">Total Products</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-green-400">
+        <Card className="admin-card border p-4">
+          <div className="text-2xl font-bold text-state-success">
             {products.filter(p => p.status === "active").length}
           </div>
-          <div className="text-sm text-gray-400">Active Products (This Page)</div>
+          <div className="text-sm text-text-secondary">Active Products (This Page)</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-orange-400">
+        <Card className="admin-card border p-4">
+          <div className="text-2xl font-bold text-state-warning">
             {products.filter(p => {
               const stock = p.variants?.[0]?.inventory?.quantity ?? 0;
               return stock > 0 && stock < 10;
             }).length}
           </div>
-          <div className="text-sm text-gray-400">Low Stock (This Page)</div>
+          <div className="text-sm text-text-secondary">Low Stock (This Page)</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-red-400">
+        <Card className="admin-card border p-4">
+          <div className="text-2xl font-bold text-state-error">
             {products.filter(p => {
               const stock = p.variants?.[0]?.inventory?.quantity ?? 0;
               return stock === 0;
             }).length}
           </div>
-          <div className="text-sm text-gray-400">Out of Stock (Page)</div>
+          <div className="text-sm text-text-secondary">Out of Stock (Page)</div>
         </Card>
       </div>
 
@@ -405,7 +405,7 @@ export default function ProductManagement() {
       {/* Pagination Controls */}
       {!searchQuery && totalPages > 1 && (
         <div className="flex items-center justify-between mt-6">
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-text-secondary">
             Showing {((currentPage - 1) * productsPerPage) + 1}-{Math.min(currentPage * productsPerPage, totalProducts)} of {totalProducts} products
           </div>
           <div className="flex items-center space-x-2">
@@ -414,7 +414,7 @@ export default function ProductManagement() {
               size="sm"
               onClick={() => handlePageChange(currentPage - 1)}
               disabled={currentPage === 1 || loading}
-              className="border-neutral-700 text-gray-300 hover:bg-neutral-700"
+              className="border-border-default text-text-secondary hover:bg-surface"
             >
               Previous
             </Button>
@@ -429,7 +429,7 @@ export default function ProductManagement() {
                     size="sm"
                     onClick={() => handlePageChange(pageNum)}
                     disabled={loading}
-                    className={pageNum === currentPage ? "bg-orange-600 hover:bg-orange-700" : "text-gray-300 hover:bg-neutral-700"}
+                    className={pageNum === currentPage ? "bg-primary-500 hover:bg-primary-600" : "text-text-secondary hover:bg-surface"}
                   >
                     {pageNum}
                   </Button>
@@ -441,7 +441,7 @@ export default function ProductManagement() {
               size="sm"
               onClick={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages || loading}
-              className="border-neutral-700 text-gray-300 hover:bg-neutral-700"
+              className="border-border-default text-text-secondary hover:bg-surface"
             >
               Next
             </Button>
@@ -450,7 +450,7 @@ export default function ProductManagement() {
       )}
 
       {filteredProducts.length === 0 && !loading && (
-        <div className="text-center py-8 text-gray-400">
+        <div className="text-center py-8 text-text-secondary">
           {searchQuery ? "No products found matching your search." : "No products available."}
         </div>
       )}

@@ -42,6 +42,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
+import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
 
 // ---------- Types ----------
 
@@ -86,15 +87,6 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "paused", label: "Paused" },
   { key: "canceled", label: "Canceled" },
 ];
-
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  active: "bg-green-500 text-white",
-  paused: "bg-yellow-500 text-white",
-  canceled: "bg-red-500 text-white",
-  past_due: "bg-blue-500 text-white",
-  incomplete: "bg-gray-500 text-white",
-  trialing: "bg-purple-500 text-white",
-};
 
 // ---------- Helpers ----------
 
@@ -208,18 +200,26 @@ export default function AdminSubscriptionsPage() {
   // ---------- Render helpers ----------
 
   const renderStatusBadge = (status: string) => {
-    const colorClass = STATUS_BADGE_COLORS[status] || "bg-gray-500 text-white";
-    return <Badge className={`${colorClass} text-xs`}>{capitalize(status.replace("_", " "))}</Badge>;
+    const config =
+      subscriptionStatusConfig[status as keyof typeof subscriptionStatusConfig] ??
+      defaultSubscriptionStatusStyle;
+    const Icon = config.icon;
+    return (
+      <Badge variant={config.variant} className="text-xs">
+        <Icon className="w-3 h-3 mr-1" />
+        {capitalize(status.replace("_", " "))}
+      </Badge>
+    );
   };
 
   const renderPaymentBadge = (status: string) => {
     if (status === "active") {
-      return <Badge className="bg-green-500/20 text-green-400 text-xs">Current</Badge>;
+      return <Badge className="bg-state-success-bg text-state-success text-xs">Current</Badge>;
     }
     if (status === "past_due") {
-      return <Badge className="bg-red-500/20 text-red-400 text-xs">Past Due</Badge>;
+      return <Badge className="bg-state-error-bg text-state-error text-xs">Past Due</Badge>;
     }
-    return <Badge className="bg-gray-500/20 text-gray-400 text-xs">N/A</Badge>;
+    return <Badge className="bg-state-info-bg text-state-info text-xs">N/A</Badge>;
   };
 
   // ---------- Loading state ----------
@@ -228,8 +228,8 @@ export default function AdminSubscriptionsPage() {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-12">
-          <RefreshCw className="w-8 h-8 text-orange-400 animate-spin mb-4" />
-          <p className="text-gray-400">Loading subscriptions...</p>
+          <RefreshCw className="w-8 h-8 text-primary-500 animate-spin mb-4" />
+          <p className="text-text-secondary">Loading subscriptions...</p>
         </div>
       </div>
     );
@@ -241,12 +241,9 @@ export default function AdminSubscriptionsPage() {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-12">
-          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
-          <p className="text-red-400 mb-4">{error}</p>
-          <Button
-            onClick={() => fetchSubscriptions(1, statusFilter, searchQuery)}
-            className="bg-orange-600 hover:bg-orange-700"
-          >
+          <AlertCircle className="w-12 h-12 text-state-error mb-4" />
+          <p className="text-state-error mb-4">{error}</p>
+          <Button onClick={() => fetchSubscriptions(1, statusFilter, searchQuery)}>
             Retry
           </Button>
         </div>
@@ -261,13 +258,12 @@ export default function AdminSubscriptionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-2">Subscription Management</h1>
-          <p className="text-gray-400">Monitor subscription health and browse customer subscriptions</p>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">Subscription Management</h1>
+          <p className="text-text-secondary">Monitor subscription health and browse customer subscriptions</p>
         </div>
         <Button
           onClick={() => fetchSubscriptions(currentPage, statusFilter, searchQuery)}
           disabled={loading}
-          className="bg-orange-600 hover:bg-orange-700"
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -277,82 +273,82 @@ export default function AdminSubscriptionsPage() {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* Active Subscriptions */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
-            <Repeat className="w-8 h-8 text-green-400" />
+            <Repeat className="w-8 h-8 text-state-success" />
             <div>
-              <p className="text-sm text-gray-400">Active</p>
-              <p className="text-2xl font-bold text-white">{stats.activeCount}</p>
-              <p className="text-xs text-gray-500">subscriptions</p>
+              <p className="text-sm text-text-secondary">Active</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.activeCount}</p>
+              <p className="text-xs text-text-muted">subscriptions</p>
             </div>
           </div>
         </Card>
 
         {/* Monthly Recurring Revenue */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
-            <DollarSign className="w-8 h-8 text-green-400" />
+            <DollarSign className="w-8 h-8 text-state-success" />
             <div>
-              <p className="text-sm text-gray-400">MRR</p>
-              <p className="text-2xl font-bold text-white">${stats.mrr.toFixed(2)}</p>
-              <p className="text-xs text-gray-500">monthly recurring</p>
+              <p className="text-sm text-text-secondary">MRR</p>
+              <p className="text-2xl font-bold text-text-primary">${stats.mrr.toFixed(2)}</p>
+              <p className="text-xs text-text-muted">monthly recurring</p>
             </div>
           </div>
         </Card>
 
         {/* Churn Rate */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
-            <TrendingDown className={`w-8 h-8 ${stats.churnRate > 5 ? "text-red-400" : "text-green-400"}`} />
+            <TrendingDown className={`w-8 h-8 ${stats.churnRate > 5 ? "text-state-error" : "text-state-success"}`} />
             <div>
-              <p className="text-sm text-gray-400">Churn Rate</p>
-              <p className={`text-2xl font-bold ${stats.churnRate > 5 ? "text-red-400" : "text-white"}`}>
+              <p className="text-sm text-text-secondary">Churn Rate</p>
+              <p className={`text-2xl font-bold ${stats.churnRate > 5 ? "text-state-error" : "text-text-primary"}`}>
                 {stats.churnRate.toFixed(1)}%
               </p>
-              <p className="text-xs text-gray-500">30-day rolling</p>
+              <p className="text-xs text-text-muted">30-day rolling</p>
             </div>
           </div>
         </Card>
 
         {/* Paused */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
-            <Pause className="w-8 h-8 text-yellow-400" />
+            <Pause className="w-8 h-8 text-state-warning" />
             <div>
-              <p className="text-sm text-gray-400">Paused</p>
-              <p className="text-2xl font-bold text-white">{stats.pausedCount}</p>
-              <p className="text-xs text-gray-500">subscriptions</p>
+              <p className="text-sm text-text-secondary">Paused</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.pausedCount}</p>
+              <p className="text-xs text-text-muted">subscriptions</p>
             </div>
           </div>
         </Card>
 
         {/* New This Month */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
-            <Plus className="w-8 h-8 text-blue-400" />
+            <Plus className="w-8 h-8 text-state-info" />
             <div>
-              <p className="text-sm text-gray-400">New This Month</p>
-              <p className="text-2xl font-bold text-white">{stats.newThisMonth}</p>
-              <p className="text-xs text-gray-500">subscriptions</p>
+              <p className="text-sm text-text-secondary">New This Month</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.newThisMonth}</p>
+              <p className="text-xs text-text-muted">subscriptions</p>
             </div>
           </div>
         </Card>
 
         {/* Revenue Trend */}
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center space-x-3">
             {stats.revenueTrendPercent >= 0 ? (
-              <TrendingUp className="w-8 h-8 text-green-400" />
+              <TrendingUp className="w-8 h-8 text-state-success" />
             ) : (
-              <TrendingDown className="w-8 h-8 text-red-400" />
+              <TrendingDown className="w-8 h-8 text-state-error" />
             )}
             <div>
-              <p className="text-sm text-gray-400">Revenue Trend</p>
-              <p className={`text-2xl font-bold ${stats.revenueTrendPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+              <p className="text-sm text-text-secondary">Revenue Trend</p>
+              <p className={`text-2xl font-bold ${stats.revenueTrendPercent >= 0 ? "text-state-success" : "text-state-error"}`}>
                 {stats.revenueTrendPercent > 0 ? "+" : ""}
                 {stats.revenueTrendPercent.toFixed(1)}%
               </p>
-              <p className="text-xs text-gray-500">vs last month</p>
+              <p className="text-xs text-text-muted">vs last month</p>
             </div>
           </div>
         </Card>
@@ -368,8 +364,8 @@ export default function AdminSubscriptionsPage() {
               onClick={() => setStatusFilter(tab.key)}
               className={
                 statusFilter === tab.key
-                  ? "bg-orange-600 hover:bg-orange-700 text-white"
-                  : "bg-neutral-800 text-gray-400 hover:bg-neutral-700 hover:text-white"
+                  ? "bg-primary-500 hover:bg-primary-600 text-text-inverse"
+                  : "bg-white text-text-secondary hover:bg-surface hover:text-text-primary border border-border-default"
               }
               size="sm"
             >
@@ -381,12 +377,12 @@ export default function AdminSubscriptionsPage() {
         {/* Search */}
         <div className="flex-1">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
             <Input
               placeholder="Search by customer name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-neutral-700 border-neutral-600 text-white"
+              className="pl-10 admin-input"
             />
           </div>
         </div>
@@ -394,70 +390,70 @@ export default function AdminSubscriptionsPage() {
 
       {/* Subscription Table */}
       {subscriptions.length === 0 && !loading ? (
-        <Card className="bg-neutral-800 border-neutral-700 p-8">
+        <Card className="admin-card p-8">
           <div className="flex flex-col items-center justify-center py-8">
-            <Repeat className="w-12 h-12 text-gray-600 mb-4" />
-            <h3 className="text-lg font-medium text-gray-400 mb-2">No subscriptions yet</h3>
-            <p className="text-gray-500">
+            <Repeat className="w-12 h-12 text-text-muted mb-4" />
+            <h3 className="text-lg font-medium text-text-secondary mb-2">No subscriptions yet</h3>
+            <p className="text-text-muted">
               Subscriptions will appear here once customers subscribe to products.
             </p>
           </div>
         </Card>
       ) : (
-        <Card className="bg-neutral-800 border-neutral-700 overflow-hidden">
+        <Card className="admin-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-neutral-700">
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                <tr className="border-b border-border-default">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Status
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Customer
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Product
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Frequency
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Next Billing
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Price
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Created
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">
+                  <th className="text-left text-xs font-medium text-text-secondary uppercase tracking-wider px-4 py-3">
                     Payment Status
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-700">
+              <tbody className="divide-y divide-border-default">
                 {subscriptions.map((sub) => (
                   <tr
                     key={sub.id}
                     onClick={() => router.push(`/admin/subscriptions/${sub.id}`)}
-                    className="cursor-pointer hover:bg-neutral-800/50 transition-colors"
+                    className="cursor-pointer hover:bg-surface transition-colors"
                   >
                     <td className="px-4 py-3">{renderStatusBadge(sub.status)}</td>
                     <td className="px-4 py-3">
-                      <div className="text-white text-sm">{sub.customer_name || "Unknown"}</div>
-                      <div className="text-xs text-gray-500">{sub.customer_email || "--"}</div>
+                      <div className="text-text-primary text-sm">{sub.customer_name || "Unknown"}</div>
+                      <div className="text-xs text-text-muted">{sub.customer_email || "--"}</div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">{sub.product_name || "--"}</td>
-                    <td className="px-4 py-3 text-sm text-white">{capitalize(sub.plan_frequency)}</td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-text-primary">{sub.product_name || "--"}</td>
+                    <td className="px-4 py-3 text-sm text-text-primary">{capitalize(sub.plan_frequency)}</td>
+                    <td className="px-4 py-3 text-sm text-text-primary">
                       {sub.current_period_end
                         ? new Date(sub.current_period_end).toLocaleDateString()
                         : "--"}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-text-primary">
                       {formatDiscountedPrice(sub.variant_price_amount, sub.plan_discount_percent)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-text-primary">
                       {sub.created_at ? new Date(sub.created_at).toLocaleDateString() : "--"}
                     </td>
                     <td className="px-4 py-3">{renderPaymentBadge(sub.status)}</td>
@@ -471,15 +467,15 @@ export default function AdminSubscriptionsPage() {
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between bg-neutral-800 border border-neutral-700 rounded-lg p-4">
-          <div className="flex items-center space-x-2 text-sm text-gray-400">
+        <div className="flex items-center justify-between admin-card border rounded-lg p-4">
+          <div className="flex items-center space-x-2 text-sm text-text-secondary">
             <span>Showing</span>
-            <span className="font-medium text-white">
+            <span className="font-medium text-text-primary">
               {Math.min((currentPage - 1) * SUBS_PER_PAGE + 1, totalSubscriptions)}-
               {Math.min(currentPage * SUBS_PER_PAGE, totalSubscriptions)}
             </span>
             <span>of</span>
-            <span className="font-medium text-white">{totalSubscriptions}</span>
+            <span className="font-medium text-text-primary">{totalSubscriptions}</span>
             <span>subscriptions</span>
           </div>
 
@@ -490,7 +486,7 @@ export default function AdminSubscriptionsPage() {
               size="sm"
               onClick={() => handlePageChange(1)}
               disabled={currentPage === 1 || loading}
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
             >
               <ChevronsLeft className="w-4 h-4" />
             </Button>
@@ -501,7 +497,7 @@ export default function AdminSubscriptionsPage() {
               size="sm"
               onClick={() => handlePageChange(currentPage - 1)}
               disabled={currentPage === 1 || loading}
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
@@ -529,8 +525,8 @@ export default function AdminSubscriptionsPage() {
                     disabled={loading}
                     className={`min-w-[2rem] ${
                       currentPage === pageNum
-                        ? "bg-orange-600 hover:bg-orange-700 text-white"
-                        : "text-gray-400 hover:text-white"
+                        ? ""
+                        : "text-text-secondary hover:text-text-primary"
                     }`}
                   >
                     {pageNum}
@@ -545,7 +541,7 @@ export default function AdminSubscriptionsPage() {
               size="sm"
               onClick={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages || loading}
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
@@ -556,17 +552,17 @@ export default function AdminSubscriptionsPage() {
               size="sm"
               onClick={() => handlePageChange(totalPages)}
               disabled={currentPage === totalPages || loading}
-              className="text-gray-400 hover:text-white"
+              className="text-text-secondary hover:text-text-primary"
             >
               <ChevronsRight className="w-4 h-4" />
             </Button>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-400">Page</span>
-            <span className="font-medium text-white">{currentPage}</span>
-            <span className="text-sm text-gray-400">of</span>
-            <span className="font-medium text-white">{totalPages}</span>
+            <span className="text-sm text-text-secondary">Page</span>
+            <span className="font-medium text-text-primary">{currentPage}</span>
+            <span className="text-sm text-text-secondary">of</span>
+            <span className="font-medium text-text-primary">{totalPages}</span>
           </div>
         </div>
       )}

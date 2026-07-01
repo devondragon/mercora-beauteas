@@ -24,11 +24,11 @@ interface MetadataSidebarProps {
 }
 
 const inputClass =
-  "w-full rounded border border-neutral-600 bg-neutral-900 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500";
+  "w-full rounded border border-border-default bg-white px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-secondary-500";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-400">
+    <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-secondary">
       {children}
     </label>
   );
@@ -45,18 +45,18 @@ export function MetadataSidebar({ metadata, onChange }: MetadataSidebarProps) {
     <>
       {!open && (
         <button type="button" onClick={() => setOpen(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-l border border-r-0 border-neutral-700 bg-neutral-800 text-neutral-400 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-l border border-r-0 border-border-default bg-white text-text-secondary hover:text-text-primary"
           aria-label="Open metadata sidebar">
           <PanelRight className="h-5 w-5" />
         </button>
       )}
 
       {open && (
-        <aside className="flex w-80 shrink-0 flex-col border-l border-neutral-800 bg-neutral-900">
-          <div className="flex items-center justify-between border-b border-neutral-700 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">Post Settings</h2>
+        <aside className="flex w-80 shrink-0 flex-col border-l border-border-default bg-white">
+          <div className="flex items-center justify-between border-b border-border-default px-4 py-3">
+            <h2 className="text-sm font-semibold text-text-primary">Post Settings</h2>
             <button type="button" onClick={() => setOpen(false)}
-              className="rounded p-1 text-neutral-400 hover:bg-neutral-700 hover:text-white"
+              className="rounded p-1 text-text-secondary hover:bg-surface hover:text-text-primary"
               aria-label="Close sidebar">
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -139,8 +139,8 @@ export function MetadataSidebar({ metadata, onChange }: MetadataSidebarProps) {
               <Label>Status</Label>
               <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
                 metadata.status === "published"
-                  ? "bg-green-900/40 text-green-400"
-                  : "bg-yellow-900/40 text-yellow-400"
+                  ? "bg-state-success-bg text-state-success"
+                  : "bg-state-warning-bg text-state-warning"
               }`}>
                 {metadata.status}
               </span>

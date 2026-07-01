@@ -47,7 +47,7 @@ const emptyForm: AddressFormData = {
   is_default: false,
 };
 
-const inputClasses = "w-full bg-neutral-900 border border-neutral-600 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500";
+const inputClasses = "w-full bg-white border border-border-default rounded-md px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-primary-500";
 
 export default function AddressManager({ initialAddresses }: AddressManagerProps) {
   const router = useRouter();
@@ -169,12 +169,12 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
   if (addresses.length === 0 && !showForm) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <MapPin className="h-12 w-12 text-neutral-600 mb-4" />
-        <h2 className="text-xl font-semibold text-white mb-2">No addresses saved</h2>
-        <p className="text-neutral-400 mb-6 max-w-md">
+        <MapPin className="h-12 w-12 text-text-muted mb-4" />
+        <h2 className="text-xl font-semibold text-text-primary mb-2">No addresses saved</h2>
+        <p className="text-text-secondary mb-6 max-w-md">
           Add a shipping or billing address to speed up checkout.
         </p>
-        <Button onClick={openAdd} className="bg-orange-500 hover:bg-orange-600 text-white">
+        <Button onClick={openAdd} className="bg-primary-500 hover:bg-primary-600 text-text-inverse">
           <Plus className="h-4 w-4 mr-2" />
           Add Address
         </Button>
@@ -185,7 +185,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <Button onClick={openAdd} className="bg-orange-500 hover:bg-orange-600 text-white">
+        <Button onClick={openAdd} className="bg-primary-500 hover:bg-primary-600 text-text-inverse">
           <Plus className="h-4 w-4 mr-2" />
           Add Address
         </Button>
@@ -193,14 +193,14 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
 
       {/* Address form modal */}
       {showForm && (
-        <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 mb-6">
+        <div className="bg-white border border-border-default rounded-lg p-5 mb-6">
           <h2 className="text-lg font-semibold mb-4">
             {editingId ? "Edit Address" : "New Address"}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Label (optional)</label>
+                <label className="block text-sm text-text-secondary mb-1">Label (optional)</label>
                 <input
                   type="text"
                   placeholder="e.g. Home, Work"
@@ -210,7 +210,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Type</label>
+                <label className="block text-sm text-text-secondary mb-1">Type</label>
                 <select
                   value={form.type}
                   onChange={(e) => setForm({ ...form, type: e.target.value as "shipping" | "billing" })}
@@ -222,7 +222,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
               </div>
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Address Line 1 *</label>
+              <label className="block text-sm text-text-secondary mb-1">Address Line 1 *</label>
               <input
                 type="text"
                 required
@@ -232,7 +232,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Address Line 2</label>
+              <label className="block text-sm text-text-secondary mb-1">Address Line 2</label>
               <input
                 type="text"
                 value={form.line2}
@@ -242,7 +242,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">City *</label>
+                <label className="block text-sm text-text-secondary mb-1">City *</label>
                 <input
                   type="text"
                   required
@@ -252,7 +252,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">State / Region</label>
+                <label className="block text-sm text-text-secondary mb-1">State / Region</label>
                 <input
                   type="text"
                   value={form.region}
@@ -261,7 +261,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Postal Code</label>
+                <label className="block text-sm text-text-secondary mb-1">Postal Code</label>
                 <input
                   type="text"
                   value={form.postal_code}
@@ -272,7 +272,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Country *</label>
+                <label className="block text-sm text-text-secondary mb-1">Country *</label>
                 <input
                   type="text"
                   required
@@ -284,12 +284,12 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 />
               </div>
               <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.is_default}
                     onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-                    className="rounded border-neutral-600"
+                    className="rounded border-border-default"
                   />
                   Set as default address
                 </label>
@@ -299,7 +299,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
+                className="bg-primary-500 hover:bg-primary-600 text-text-inverse"
               >
                 {saving ? "Saving..." : editingId ? "Update Address" : "Add Address"}
               </Button>
@@ -307,7 +307,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 type="button"
                 variant="outline"
                 onClick={() => setShowForm(false)}
-                className="border-neutral-600 text-gray-300 hover:text-white"
+                className="border-border-default text-text-secondary hover:text-text-primary"
               >
                 Cancel
               </Button>
@@ -321,25 +321,25 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
         {addresses.filter((addr) => addr.id).map((addr) => (
           <div
             key={addr.id}
-            className="bg-neutral-800 border border-neutral-700 rounded-lg p-5 relative"
+            className="bg-white border border-border-default rounded-lg p-5 relative"
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
                 {addr.label && (
-                  <span className="text-white font-medium">{addr.label}</span>
+                  <span className="text-text-primary font-medium">{addr.label}</span>
                 )}
-                <span className="inline-flex items-center rounded-full bg-neutral-700 px-2 py-0.5 text-xs text-gray-300 capitalize">
+                <span className="inline-flex items-center rounded-full bg-surface-light px-2 py-0.5 text-xs text-text-secondary capitalize">
                   {addr.type}
                 </span>
                 {addr.is_default && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-xs text-orange-400">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary-500/10 px-2 py-0.5 text-xs text-primary-600">
                     <Star className="h-3 w-3" />
                     Default
                   </span>
                 )}
               </div>
             </div>
-            <p className="text-sm text-gray-300 whitespace-pre-line mb-4">
+            <p className="text-sm text-text-secondary whitespace-pre-line mb-4">
               {formatAddress(addr.address)}
             </p>
             <div className="flex gap-2">
@@ -347,7 +347,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                 variant="outline"
                 size="sm"
                 onClick={() => openEdit(addr)}
-                className="border-neutral-600 text-gray-300 hover:text-white"
+                className="border-border-default text-text-secondary hover:text-text-primary"
               >
                 <Pencil className="h-3 w-3 mr-1" />
                 Edit
@@ -357,7 +357,7 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   variant="outline"
                   size="sm"
                   onClick={() => handleSetDefault(addr.id!)}
-                  className="border-neutral-600 text-gray-300 hover:text-white"
+                  className="border-border-default text-text-secondary hover:text-text-primary"
                 >
                   <Star className="h-3 w-3 mr-1" />
                   Set Default
@@ -368,26 +368,26 @@ export default function AddressManager({ initialAddresses }: AddressManagerProps
                   <Button
                     variant="outline"
                     size="sm"
-                    className="border-red-800 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                    className="border-state-error text-state-error hover:bg-state-error-bg"
                   >
                     <Trash2 className="h-3 w-3 mr-1" />
                     Delete
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="bg-neutral-800 border-neutral-700">
+                <AlertDialogContent className="bg-white border-border-default">
                   <AlertDialogHeader>
-                    <AlertDialogTitle className="text-white">Delete Address?</AlertDialogTitle>
-                    <AlertDialogDescription className="text-neutral-400">
+                    <AlertDialogTitle className="text-text-primary">Delete Address?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-text-secondary">
                       This will permanently remove this address from your account.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel className="border-neutral-600 text-neutral-300 hover:text-white bg-transparent hover:bg-neutral-700">
+                    <AlertDialogCancel className="border-border-default text-text-secondary hover:text-text-primary bg-transparent hover:bg-surface-light">
                       Cancel
                     </AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() => handleDelete(addr.id!)}
-                      className="bg-red-500 hover:bg-red-600 text-white"
+                      className="bg-state-error hover:bg-state-error/90 text-text-inverse"
                     >
                       Delete
                     </AlertDialogAction>

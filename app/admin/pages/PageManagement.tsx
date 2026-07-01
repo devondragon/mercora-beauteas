@@ -110,9 +110,9 @@ interface PageStats {
 }
 
 const STATUS_COLORS = {
-  draft: "bg-yellow-100 text-yellow-800",
-  published: "bg-green-100 text-green-800",
-  archived: "bg-gray-100 text-gray-800"
+  draft: "bg-state-warning-bg text-state-warning",
+  published: "bg-state-success-bg text-state-success",
+  archived: "bg-state-info-bg text-state-info"
 };
 
 const STATUS_ICONS = {
@@ -484,21 +484,21 @@ Generate complete content now:`;
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Pages Management</h1>
-          <p className="text-gray-400 mt-1">
+          <h1 className="text-3xl font-bold text-text-primary">Pages Management</h1>
+          <p className="text-text-secondary mt-1">
             Manage content pages, privacy policy, terms of service, and other static content.
           </p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-orange-600 hover:bg-orange-700">
+            <Button className="bg-primary-500 hover:bg-primary-600">
               <Plus className="w-4 h-4 mr-2" />
               Create Page
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-neutral-900 border-neutral-800">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white border-border-default">
             <DialogHeader>
-              <DialogTitle className="text-white">Create New Page</DialogTitle>
+              <DialogTitle className="text-text-primary">Create New Page</DialogTitle>
             </DialogHeader>
             <CreateEditPageForm
               formData={formData}
@@ -516,64 +516,64 @@ Generate complete content now:`;
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="admin-card p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Total Pages</p>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
+              <p className="text-text-secondary text-sm">Total Pages</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.total}</p>
             </div>
-            <FileText className="w-8 h-8 text-blue-500" />
+            <FileText className="w-8 h-8 text-state-info" />
           </div>
         </Card>
-        
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+
+        <Card className="admin-card p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Published</p>
-              <p className="text-2xl font-bold text-white">{stats.published}</p>
+              <p className="text-text-secondary text-sm">Published</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.published}</p>
             </div>
-            <Eye className="w-8 h-8 text-green-500" />
+            <Eye className="w-8 h-8 text-state-success" />
           </div>
         </Card>
-        
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+
+        <Card className="admin-card p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Drafts</p>
-              <p className="text-2xl font-bold text-white">{stats.draft}</p>
+              <p className="text-text-secondary text-sm">Drafts</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.draft}</p>
             </div>
-            <EyeOff className="w-8 h-8 text-yellow-500" />
+            <EyeOff className="w-8 h-8 text-state-warning" />
           </div>
         </Card>
-        
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+
+        <Card className="admin-card p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Archived</p>
-              <p className="text-2xl font-bold text-white">{stats.archived}</p>
+              <p className="text-text-secondary text-sm">Archived</p>
+              <p className="text-2xl font-bold text-text-primary">{stats.archived}</p>
             </div>
-            <Lock className="w-8 h-8 text-gray-500" />
+            <Lock className="w-8 h-8 text-text-muted" />
           </div>
         </Card>
       </div>
 
       {/* Filters */}
-      <Card className="bg-neutral-800 border-neutral-700 p-6">
+      <Card className="admin-card p-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
             <Input
               placeholder="Search pages by title or content..."
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
-              className="pl-10 bg-neutral-700 border-neutral-600 text-white"
+              className="admin-input pl-10"
             />
           </div>
           <Select value={filterStatus} onValueChange={handleStatusFilter}>
-            <SelectTrigger className="w-full sm:w-48 bg-neutral-700 border-neutral-600 text-white">
+            <SelectTrigger className="admin-input w-full sm:w-48">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-neutral-800 border-neutral-700">
+            <SelectContent className="bg-white border-border-default">
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="published">Published</SelectItem>
               <SelectItem value="draft">Draft</SelectItem>
@@ -584,28 +584,28 @@ Generate complete content now:`;
       </Card>
 
       {/* Pages Table */}
-      <Card className="bg-neutral-800 border-neutral-700">
+      <Card className="bg-white border border-border-default">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-neutral-700">
-                <TableHead className="text-gray-300">Title</TableHead>
-                <TableHead className="text-gray-300">Status</TableHead>
-                <TableHead className="text-gray-300">Template</TableHead>
-                <TableHead className="text-gray-300">Updated</TableHead>
-                <TableHead className="text-gray-300">Actions</TableHead>
+              <TableRow className="border-border-default">
+                <TableHead className="text-text-secondary">Title</TableHead>
+                <TableHead className="text-text-secondary">Status</TableHead>
+                <TableHead className="text-text-secondary">Template</TableHead>
+                <TableHead className="text-text-secondary">Updated</TableHead>
+                <TableHead className="text-text-secondary">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                  <TableCell colSpan={5} className="text-center text-text-secondary py-8">
                     Loading pages...
                   </TableCell>
                 </TableRow>
               ) : pages.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-gray-400 py-8">
+                  <TableCell colSpan={5} className="text-center text-text-secondary py-8">
                     No pages found
                   </TableCell>
                 </TableRow>
@@ -613,13 +613,13 @@ Generate complete content now:`;
                 pages.map((page) => {
                   const StatusIcon = STATUS_ICONS[page.status];
                   const template = getTemplate(page.template);
-                  
+
                   return (
-                    <TableRow key={page.id} className="border-neutral-700 hover:bg-neutral-700/50">
+                    <TableRow key={page.id} className="border-border-default hover:bg-surface-light">
                       <TableCell>
                         <div className="space-y-1">
-                          <div className="font-medium text-white">{page.title}</div>
-                          <div className="text-sm text-gray-400">/{page.slug}</div>
+                          <div className="font-medium text-text-primary">{page.title}</div>
+                          <div className="text-sm text-text-secondary">/{page.slug}</div>
                           <div className="flex items-center gap-2">
                             {page.show_in_nav && (
                               <Badge variant="outline" className="text-xs">
@@ -643,14 +643,14 @@ Generate complete content now:`;
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="text-gray-300">
+                        <span className="text-text-secondary">
                           {template?.display_name || page.template}
                         </span>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <div className="text-gray-300">{formatDate(page.updated_at)}</div>
-                          <div className="text-xs text-gray-400">v{page.version}</div>
+                          <div className="text-text-secondary">{formatDate(page.updated_at)}</div>
+                          <div className="text-xs text-text-secondary">v{page.version}</div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -659,57 +659,57 @@ Generate complete content now:`;
                             variant="ghost"
                             size="sm"
                             onClick={() => handleEditPage(page)}
-                            className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
+                            className="text-primary-700 hover:text-primary-800 hover:bg-surface-light"
                           >
                             <Edit3 className="w-4 h-4" />
                           </Button>
-                          
+
                           {page.status === 'draft' && (
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleToggleStatus(page, 'publish')}
-                              className="text-green-400 hover:text-green-300 hover:bg-green-900/20"
+                              className="text-state-success hover:text-state-success hover:bg-state-success-bg"
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
                           )}
-                          
+
                           {page.status === 'published' && (
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleToggleStatus(page, 'unpublish')}
-                              className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-900/20"
+                              className="text-state-warning hover:text-state-warning hover:bg-state-warning-bg"
                             >
                               <EyeOff className="w-4 h-4" />
                             </Button>
                           )}
-                          
+
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                                className="text-state-error hover:text-state-error hover:bg-state-error-bg"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-neutral-900 border-neutral-800">
+                            <AlertDialogContent className="bg-white border-border-default">
                               <AlertDialogHeader>
-                                <AlertDialogTitle className="text-white">Delete Page</AlertDialogTitle>
-                                <AlertDialogDescription className="text-gray-400">
+                                <AlertDialogTitle className="text-text-primary">Delete Page</AlertDialogTitle>
+                                <AlertDialogDescription className="text-text-secondary">
                                   Are you sure you want to delete &quot;{page.title}&quot;? This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-neutral-700 border-neutral-600 text-white hover:bg-neutral-600">
+                                <AlertDialogCancel className="admin-button-secondary">
                                   Cancel
                                 </AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => handleDeletePage(page)}
-                                  className="bg-red-600 hover:bg-red-700"
+                                  className="bg-state-error text-text-inverse hover:opacity-75"
                                 >
                                   Delete
                                 </AlertDialogAction>
@@ -729,9 +729,9 @@ Generate complete content now:`;
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-neutral-900 border-neutral-800">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white border-border-default">
           <DialogHeader>
-            <DialogTitle className="text-white">Edit Page</DialogTitle>
+            <DialogTitle className="text-text-primary">Edit Page</DialogTitle>
           </DialogHeader>
           <CreateEditPageForm
             formData={formData}
@@ -784,34 +784,34 @@ function CreateEditPageForm({
       {/* Basic Information */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="title" className="text-white">Title *</Label>
+          <Label htmlFor="title" className="text-text-primary">Title *</Label>
           <Input
             id="title"
             value={formData.title || ""}
             onChange={(e) => onChange('title', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="Enter page title"
           />
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="slug" className="text-white">Slug *</Label>
+          <Label htmlFor="slug" className="text-text-primary">Slug *</Label>
           <Input
             id="slug"
             value={formData.slug || ""}
             onChange={(e) => onChange('slug', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="page-url-slug"
           />
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="status" className="text-white">Status</Label>
+          <Label htmlFor="status" className="text-text-primary">Status</Label>
           <Select value={formData.status} onValueChange={(value) => onChange('status', value)}>
-            <SelectTrigger className="bg-neutral-700 border-neutral-600 text-white">
+            <SelectTrigger className="admin-input">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-neutral-800 border-neutral-700">
+            <SelectContent className="bg-white border-border-default">
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="published">Published</SelectItem>
               <SelectItem value="archived">Archived</SelectItem>
@@ -820,12 +820,12 @@ function CreateEditPageForm({
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="template" className="text-white">Template</Label>
+          <Label htmlFor="template" className="text-text-primary">Template</Label>
           <Select value={formData.template} onValueChange={handleTemplateChange}>
-            <SelectTrigger className="bg-neutral-700 border-neutral-600 text-white">
+            <SelectTrigger className="admin-input">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-neutral-800 border-neutral-700">
+            <SelectContent className="bg-white border-border-default">
               {templates.map(template => (
                 <SelectItem key={template.name} value={template.name}>
                   {template.display_name}
@@ -839,14 +839,14 @@ function CreateEditPageForm({
       {/* Content */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="content" className="text-white">Content *</Label>
+          <Label htmlFor="content" className="text-text-primary">Content *</Label>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onGenerateContent}
             disabled={isGeneratingContent || !formData.title?.trim()}
-            className="border-orange-600 text-orange-400 hover:bg-orange-600 hover:text-white"
+            className="border-primary-500 text-primary-600 hover:bg-primary-500 hover:text-text-inverse"
           >
             {isGeneratingContent ? (
               <>
@@ -865,19 +865,19 @@ function CreateEditPageForm({
           id="content"
           value={formData.content || ""}
           onChange={(e) => onChange('content', e.target.value)}
-          className="bg-neutral-700 border-neutral-600 text-white min-h-[200px]"
+          className="admin-input min-h-[200px]"
           placeholder="Enter page content (HTML supported) or use Chai AI to generate content"
         />
       </div>
 
       {/* Excerpt */}
       <div className="space-y-2">
-        <Label htmlFor="excerpt" className="text-white">Excerpt</Label>
+        <Label htmlFor="excerpt" className="text-text-primary">Excerpt</Label>
         <Textarea
           id="excerpt"
           value={formData.excerpt || ""}
           onChange={(e) => onChange('excerpt', e.target.value)}
-          className="bg-neutral-700 border-neutral-600 text-white"
+          className="admin-input"
           placeholder="Short description of the page"
           rows={3}
         />
@@ -886,35 +886,35 @@ function CreateEditPageForm({
       {/* SEO Fields */}
       <div className="grid grid-cols-1 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="meta_title" className="text-white">SEO Title</Label>
+          <Label htmlFor="meta_title" className="text-text-primary">SEO Title</Label>
           <Input
             id="meta_title"
             value={formData.meta_title || ""}
             onChange={(e) => onChange('meta_title', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="SEO title (defaults to page title)"
           />
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="meta_description" className="text-white">SEO Description</Label>
+          <Label htmlFor="meta_description" className="text-text-primary">SEO Description</Label>
           <Textarea
             id="meta_description"
             value={formData.meta_description || ""}
             onChange={(e) => onChange('meta_description', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="SEO description for search engines"
             rows={2}
           />
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="meta_keywords" className="text-white">SEO Keywords</Label>
+          <Label htmlFor="meta_keywords" className="text-text-primary">SEO Keywords</Label>
           <Input
             id="meta_keywords"
             value={formData.meta_keywords || ""}
             onChange={(e) => onChange('meta_keywords', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="comma, separated, keywords"
           />
         </div>
@@ -928,16 +928,16 @@ function CreateEditPageForm({
             checked={formData.show_in_nav || false}
             onCheckedChange={(checked) => onChange('show_in_nav', checked)}
           />
-          <Label htmlFor="show_in_nav" className="text-white">Show in Navigation</Label>
+          <Label htmlFor="show_in_nav" className="text-text-primary">Show in Navigation</Label>
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="nav_title" className="text-white">Navigation Title</Label>
+          <Label htmlFor="nav_title" className="text-text-primary">Navigation Title</Label>
           <Input
             id="nav_title"
             value={formData.nav_title || ""}
             onChange={(e) => onChange('nav_title', e.target.value)}
-            className="bg-neutral-700 border-neutral-600 text-white"
+            className="admin-input"
             placeholder="Alternative title for navigation"
           />
         </div>
@@ -950,7 +950,7 @@ function CreateEditPageForm({
           checked={formData.is_protected || false}
           onCheckedChange={(checked) => onChange('is_protected', checked)}
         />
-        <Label htmlFor="is_protected" className="text-white">Protected Page (requires login)</Label>
+        <Label htmlFor="is_protected" className="text-text-primary">Protected Page (requires login)</Label>
       </div>
 
       {/* Actions */}
@@ -958,13 +958,13 @@ function CreateEditPageForm({
         <Button
           variant="outline"
           onClick={onCancel}
-          className="border-neutral-600 text-gray-300 hover:bg-neutral-700"
+          className="border-border-default text-text-secondary hover:bg-surface-light"
         >
           Cancel
         </Button>
         <Button
           onClick={onSubmit}
-          className="bg-orange-600 hover:bg-orange-700"
+          className="bg-primary-500 hover:bg-primary-600"
         >
           {isEdit ? 'Update Page' : 'Create Page'}
         </Button>

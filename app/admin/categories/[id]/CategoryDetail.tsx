@@ -123,11 +123,11 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
   };
 
   if (loading) {
-    return <div className="text-gray-400">Loading category details...</div>;
+    return <div className="text-text-secondary">Loading category details...</div>;
   }
 
   if (!category) {
-    return <div className="text-red-400">Category not found</div>;
+    return <div className="text-state-error">Category not found</div>;
   }
 
   const productsToShow = showAddProducts 
@@ -142,26 +142,26 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
           <Button
             variant="ghost"
             onClick={() => router.push("/admin/categories")}
-            className="text-gray-400 hover:text-white"
+            className="text-text-secondary hover:text-text-primary"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Categories
           </Button>
-          
+
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-orange-600/20 rounded-lg flex items-center justify-center">
-              <FolderOpen className="w-6 h-6 text-orange-400" />
+            <div className="w-12 h-12 bg-primary-500/20 rounded-lg flex items-center justify-center">
+              <FolderOpen className="w-6 h-6 text-primary-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">{getCategoryName(category)}</h1>
-              <p className="text-gray-400">
+              <h1 className="text-2xl font-bold text-text-primary">{getCategoryName(category)}</h1>
+              <p className="text-text-secondary">
                 {category.path} • {categoryProducts.length} products
               </p>
             </div>
           </div>
         </div>
-        
-        <Button variant="outline" className="text-orange-500 border-orange-500">
+
+        <Button variant="outline" className="text-primary-600 border-primary-500">
           <Edit className="w-4 h-4 mr-2" />
           Edit Category
         </Button>
@@ -169,33 +169,33 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-white">{categoryProducts.length}</div>
-          <div className="text-sm text-gray-400">Products in Category</div>
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-text-primary">{categoryProducts.length}</div>
+          <div className="text-sm text-text-secondary">Products in Category</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-green-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-state-success">
             {categoryProducts.filter(p => p.status === 'active').length}
           </div>
-          <div className="text-sm text-gray-400">Active Products</div>
+          <div className="text-sm text-text-secondary">Active Products</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-orange-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-primary-600">
             {categoryProducts.reduce((sum, p) => {
               const stock = p.variants?.[0]?.inventory?.quantity ?? 0;
               return sum + stock;
             }, 0)}
           </div>
-          <div className="text-sm text-gray-400">Total Stock</div>
+          <div className="text-sm text-text-secondary">Total Stock</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-blue-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-state-info">
             ${categoryProducts.reduce((sum, p) => {
               const price = p.variants?.[0]?.price?.amount ?? 0;
               return sum + price;
             }, 0) / 100}
           </div>
-          <div className="text-sm text-gray-400">Total Value</div>
+          <div className="text-sm text-text-secondary">Total Value</div>
         </Card>
       </div>
 
@@ -204,26 +204,26 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
               <Input
                 type="text"
                 placeholder={showAddProducts ? "Search all products..." : "Search category products..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 w-64 bg-neutral-800 border-neutral-700"
+                className="admin-input pl-10 w-64"
               />
             </div>
-            
+
             {selectedProducts.length > 0 && (
               <div className="flex items-center space-x-2">
-                <Badge variant="outline" className="text-orange-400">
+                <Badge variant="outline" className="text-primary-600">
                   {selectedProducts.length} selected
                 </Badge>
                 {showAddProducts ? (
                   <Button
                     size="sm"
                     onClick={handleBulkAssignProducts}
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-state-success text-text-inverse hover:opacity-90"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add to Category
@@ -278,20 +278,20 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
             const isSelected = selectedProducts.includes(product.id);
             
             return (
-              <Card 
-                key={product.id} 
-                className={`bg-neutral-800 border-neutral-700 p-4 cursor-pointer transition-colors ${
-                  isSelected ? 'ring-2 ring-orange-500 bg-orange-900/10' : 'hover:bg-neutral-750'
+              <Card
+                key={product.id}
+                className={`admin-card p-4 cursor-pointer transition-colors ${
+                  isSelected ? 'ring-2 ring-primary-500 bg-primary-500/10' : 'hover:bg-surface-light'
                 }`}
                 onClick={() => handleToggleProductSelection(product.id)}
               >
                 <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 bg-neutral-600 rounded-md flex items-center justify-center">
+                  <div className="w-10 h-10 bg-surface-light rounded-md flex items-center justify-center">
                     📦
                   </div>
                   <div className="flex items-center space-x-2">
                     {isSelected && (
-                      <div className="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                      <div className="w-4 h-4 bg-primary-500 rounded-full flex items-center justify-center">
                         <div className="w-2 h-2 bg-white rounded-full" />
                       </div>
                     )}
@@ -300,16 +300,16 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     </Badge>
                   </div>
                 </div>
-                
-                <h3 className="text-lg font-semibold text-white mb-2">{name}</h3>
-                <p className="text-sm text-gray-400 mb-3">ID: {product.id}</p>
-                
+
+                <h3 className="text-lg font-semibold text-text-primary mb-2">{name}</h3>
+                <p className="text-sm text-text-secondary mb-3">ID: {product.id}</p>
+
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-text-muted">
                     <Package className="w-3 h-3 mr-1 inline" />
                     {stock} in stock
                   </div>
-                  <div className="text-white font-medium">
+                  <div className="text-text-primary font-medium">
                     {price ? `$${(price / 100).toFixed(2)}` : "N/A"}
                   </div>
                 </div>
@@ -335,7 +335,7 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
         </div>
 
         {productsToShow.length === 0 && (
-          <div className="text-center py-8 text-gray-400">
+          <div className="text-center py-8 text-text-secondary">
             {showAddProducts 
               ? (searchQuery ? "No products found matching your search." : "All products are already in this category.")
               : (searchQuery ? "No products found in this category." : "No products in this category yet.")

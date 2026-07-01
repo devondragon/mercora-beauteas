@@ -53,7 +53,7 @@ export const brand = {
     text: {
       primary: "#222222",     // Primary text (charcoal)
       secondary: "#555555",   // Muted text
-      muted: "#777777",       // Very muted text
+      muted: "#6b6b6b",       // Very muted text
       inverse: "#ffffff",     // Text on dark backgrounds
     },
     // Border colors
@@ -61,6 +61,25 @@ export const brand = {
       DEFAULT: "#e8d5cf",     // Default border (soft blush)
       light: "#f3dcd4",       // Lighter border
       dark: "#d4b8ad",        // Darker border
+    },
+    // Secondary accent (honey/gold) — formalizes the legacy #c4a87c accent
+    secondary: {
+      50: "#faf6ef",
+      100: "#f3e9d6",
+      200: "#e8d4ad",
+      300: "#d8c08f",
+      400: "#c4a87c",   // main — replaces all hardcoded #c4a87c
+      500: "#b08d5e",
+      600: "#94733f",
+      700: "#7a5e34",
+    },
+    // Functional/state colors, muted to sit on warm cream
+    state: {
+      success: { DEFAULT: "#446b52", bg: "#eef4ee" }, // sage — in-stock, savings, success
+      error: { DEFAULT: "#a1453d", bg: "#f7e9e7" },   // dusty rose — validation + hard errors
+      sale: "#99544a",       // terracotta (= primary-700) — sale price emphasis
+      warning: { DEFAULT: "#8a6a34", bg: "#f6efe2" }, // deep honey — AA-legible text on cream; -bg tint for fills
+      info: { DEFAULT: "#555555", bg: "#f0ede8" },    // neutral informational
     },
   },
 

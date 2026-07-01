@@ -134,19 +134,19 @@ export default function PaymentForm({
   };
 
   return (
-    <div className="text-black w-full">
+    <div className="text-text-primary w-full">
       {!stripe || !elements ? (
         <div className="min-h-[300px] w-full flex items-center justify-center">
           <div className="flex flex-col items-center gap-2">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-            <p className="text-sm text-gray-600">Loading payment form...</p>
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+            <p className="text-sm text-text-secondary">Loading payment form...</p>
           </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6 w-full">
           {/* Stripe Payment Element */}
           <div className="min-h-[300px] w-full">
-            <PaymentElement 
+            <PaymentElement
               id="payment-element"
               options={paymentElementOptions}
             />
@@ -154,7 +154,7 @@ export default function PaymentForm({
 
           {/* Error display */}
           {errorMessage && (
-            <div className="text-red-600 text-sm font-medium p-3 bg-red-50 rounded-lg border border-red-200">
+            <div className="text-state-error text-sm font-medium p-3 bg-state-error-bg rounded-lg border border-state-error">
               {errorMessage}
             </div>
           )}
@@ -163,7 +163,7 @@ export default function PaymentForm({
           <Button
             type="submit"
             disabled={!stripe || !elements || isLoading || disabled}
-            className="w-full bg-black text-white hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
+            className="w-full bg-primary-500 text-text-inverse hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] touch-manipulation"
           >
             {isLoading ? (
               <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export default function PaymentForm({
       )}
 
       {/* Payment security notice */}
-      <div className="mt-4 text-xs text-gray-500 text-center">
+      <div className="mt-4 text-xs text-text-muted text-center">
         <p>Your payment information is secure and encrypted</p>
       </div>
     </div>

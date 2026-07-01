@@ -44,7 +44,7 @@ export const extensions: any[] = [
   }),
   HorizontalRule,
   TiptapLink.configure({
-    HTMLAttributes: { class: "text-amber-400 underline cursor-pointer" },
+    HTMLAttributes: { class: "text-secondary-600 underline cursor-pointer" },
     openOnClick: false,
   }),
   UpdatedImage.configure({ allowBase64: false }),
@@ -72,10 +72,10 @@ export const extensions: any[] = [
   }),
   TableRow,
   TableHeader.configure({
-    HTMLAttributes: { class: "border border-neutral-600 bg-neutral-800 px-3 py-2 font-semibold text-left" },
+    HTMLAttributes: { class: "border border-border-default bg-surface px-3 py-2 font-semibold text-left" },
   }),
   TableCell.configure({
-    HTMLAttributes: { class: "border border-neutral-600 px-3 py-2" },
+    HTMLAttributes: { class: "border border-border-default px-3 py-2" },
   }),
   GlobalDragHandle.configure({ dragHandleWidth: 20, scrollTreshold: 100 }),
 ];

@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
 import type { SubscriptionPlan } from "@/lib/types/subscription";
 import SubscriptionToggle from "@/components/subscription/SubscriptionToggle";
+import { stateStyles } from "@/lib/ui/state-styles";
 import {
   Select,
   SelectContent,
@@ -59,9 +60,9 @@ interface ProductDisplayProps {
 }
 
 function getMediaUrl(media: any): string {
-  if (!media) return "/placeholder.jpg";
+  if (!media) return "/placeholder.svg";
   if (typeof media === "string") return media;
-  return media.file?.url || "/placeholder.jpg";
+  return media.file?.url || "/placeholder.svg";
 }
 
 function stringifyDescription(description: Product["description"]): string {
@@ -101,11 +102,11 @@ export default function ProductDisplay({
       return Array.from(new Set([primaryImg, ...mediaImages].filter(Boolean))) as string[];
     } catch (error) {
       console.warn("Error processing product images:", error);
-      return ["/placeholder.jpg"];
+      return ["/placeholder.svg"];
     }
   }, [product.media, product.primary_image]);
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.jpg");
+  const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.svg");
   const [activeTab, setActiveTab] = useState<"details" | "reviews">("details");
 
   // Variant selection state
@@ -142,7 +143,7 @@ export default function ProductDisplay({
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
         {/* Image Gallery Section */}
         <div>
-          <div className="relative aspect-[3/4] w-full overflow-hidden rounded bg-neutral-800">
+          <div className="relative aspect-[3/4] w-full overflow-hidden rounded bg-surface-light">
             <Image
               src={getMediaUrl(selectedImage)}
               alt={typeof product.name === "string" ? product.name : ""}
@@ -160,7 +161,7 @@ export default function ProductDisplay({
                 key={`thumb-${index}`}
                 onClick={() => setSelectedImage(imageUrl)}
                 className={`relative h-16 w-16 flex-shrink-0 overflow-hidden rounded border sm:h-20 sm:w-20 ${
-                  selectedImage === imageUrl ? "border-orange-500" : "border-gray-700"
+                  selectedImage === imageUrl ? "border-primary-500" : "border-border-default"
                 }`}
               >
                 <Image
@@ -181,7 +182,7 @@ export default function ProductDisplay({
           </h1>
 
           {ratingSummary ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-400">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-secondary">
               <StarRating value={ratingSummary.average} size="sm" />
               <span>
                 {ratingSummary.average.toFixed(1)} · {ratingSummary.count} review{ratingSummary.count === 1 ? "" : "s"}
@@ -189,25 +190,25 @@ export default function ProductDisplay({
               <button
                 type="button"
                 onClick={() => setActiveTab("reviews")}
-                className="rounded-full border border-transparent px-3 py-1 text-xs font-semibold text-orange-300 transition hover:border-orange-500 hover:text-orange-200"
+                className="rounded-full border border-transparent px-3 py-1 text-xs font-semibold text-primary-700 transition hover:border-primary-500 hover:text-primary-800"
               >
                 Read reviews
               </button>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-amber-300">Be the first to share feedback once your order is delivered.</p>
+            <p className="mt-3 text-sm text-text-muted">Be the first to share feedback once your order is delivered.</p>
           )}
 
           <div className="mt-6">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900">
-              <div className="flex flex-wrap border-b border-neutral-800">
+            <div className="rounded-lg border border-border-default bg-white">
+              <div className="flex flex-wrap border-b border-border-default">
                 <button
                   type="button"
                   onClick={() => setActiveTab("details")}
                   className={`flex-1 px-4 py-3 text-sm font-semibold sm:flex-none sm:px-6 ${
                     activeTab === "details"
-                      ? "border-b-2 border-orange-500 text-white"
-                      : "text-gray-400 hover:text-white"
+                      ? "border-b-2 border-primary-500 text-text-primary"
+                      : "text-text-secondary hover:text-text-primary"
                   }`}
                 >
                   Details
@@ -217,8 +218,8 @@ export default function ProductDisplay({
                   onClick={() => setActiveTab("reviews")}
                   className={`flex-1 px-4 py-3 text-sm font-semibold sm:flex-none sm:px-6 ${
                     activeTab === "reviews"
-                      ? "border-b-2 border-orange-500 text-white"
-                      : "text-gray-400 hover:text-white"
+                      ? "border-b-2 border-primary-500 text-text-primary"
+                      : "text-text-secondary hover:text-text-primary"
                   }`}
                 >
                   {reviewsTabLabel}
@@ -226,11 +227,11 @@ export default function ProductDisplay({
               </div>
               <div className="p-6">
                 {activeTab === "details" ? (
-                  <div className="space-y-4 text-sm text-gray-300">
+                  <div className="space-y-4 text-sm text-text-secondary">
                     {productDescription ? (
-                      <p className="whitespace-pre-line leading-relaxed text-gray-300">{productDescription}</p>
+                      <p className="whitespace-pre-line leading-relaxed text-text-secondary">{productDescription}</p>
                     ) : (
-                      <p className="text-sm text-gray-500">Product description coming soon.</p>
+                      <p className="text-sm text-text-muted">Product description coming soon.</p>
                     )}
                   </div>
                 ) : (
@@ -247,12 +248,12 @@ export default function ProductDisplay({
           <div className="mt-6 space-y-6">
             {variants.length > 1 && (
               <div>
-                <label className="mb-2 block text-sm font-medium text-white">Choose an option:</label>
+                <label className="mb-2 block text-sm font-medium text-text-primary">Choose an option:</label>
                 <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
-                  <SelectTrigger className="w-full border border-neutral-700 bg-neutral-900 text-white hover:bg-neutral-800 sm:w-auto">
+                  <SelectTrigger className="w-full border border-border-default bg-white text-text-primary hover:bg-surface-light sm:w-auto">
                     <SelectValue placeholder="Select a variant" />
                   </SelectTrigger>
-                  <SelectContent className="bg-neutral-900 border border-neutral-700 text-white">
+                  <SelectContent className="bg-white border border-border-default text-text-primary">
                     {variants.map((variant) => {
                       const optionDisplay = variant.option_values?.map((value) => `${value.value}`).join(", ") || `Variant ${variant.id}`;
                       const priceDisplay = variant.price ? `$${(variant.price.amount / 100).toFixed(2)}` : "";
@@ -261,12 +262,12 @@ export default function ProductDisplay({
                         <SelectItem
                           key={variant.id}
                           value={variant.id}
-                          className="text-white hover:bg-neutral-800 focus:bg-neutral-800"
+                          className="text-text-primary hover:bg-surface-light focus:bg-surface-light"
                         >
                           <div className="flex w-full items-center justify-between">
                             <span>{optionDisplay}</span>
                             {priceDisplay && (
-                              <span className="ml-2 text-orange-400 font-semibold">{priceDisplay}</span>
+                              <span className="ml-2 text-primary-600 font-semibold">{priceDisplay}</span>
                             )}
                           </div>
                         </SelectItem>
@@ -301,10 +302,10 @@ export default function ProductDisplay({
                           return (
                             (product.primary_image as any)?.url ||
                             (product.primary_image as any)?.file?.url ||
-                            "/placeholder.jpg"
+                            "/placeholder.svg"
                           );
                         } catch (error) {
-                          return "/placeholder.jpg";
+                          return "/placeholder.svg";
                         }
                       })(),
                     });
@@ -317,7 +318,7 @@ export default function ProductDisplay({
                 />
 
                 {selectedVariant?.inventory && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
                   </p>
                 )}
@@ -326,23 +327,23 @@ export default function ProductDisplay({
               <>
                 {onSale ? (
                   <div>
-                    <p className="text-base text-gray-500 line-through sm:text-lg">${(compareAt! / 100).toFixed(2)}</p>
-                    <p className="text-lg font-bold text-green-400 sm:text-xl">${(price / 100).toFixed(2)}</p>
-                    <p className="text-xs italic text-orange-400 sm:text-sm">Limited-time offer</p>
+                    <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>${(compareAt! / 100).toFixed(2)}</p>
+                    <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>${(price / 100).toFixed(2)}</p>
+                    <p className="text-xs italic text-primary-600 sm:text-sm">Limited-time offer</p>
                   </div>
                 ) : (
-                  <p className="text-lg font-semibold text-white sm:text-xl">${(price / 100).toFixed(2)}</p>
+                  <p className="text-lg font-semibold text-text-primary sm:text-xl">${(price / 100).toFixed(2)}</p>
                 )}
 
                 {selectedVariant?.inventory && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
                   </p>
                 )}
 
                 {available ? (
                   <button
-                    className="w-full rounded bg-orange-500 px-6 py-3 font-bold text-black transition hover:bg-orange-400 sm:w-auto"
+                    className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
                     onClick={() => {
                       const productName = typeof product.name === "string" ? product.name : "";
                       const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
@@ -359,10 +360,10 @@ export default function ProductDisplay({
                             return (
                               (product.primary_image as any)?.url ||
                               (product.primary_image as any)?.file?.url ||
-                              "/placeholder.jpg"
+                              "/placeholder.svg"
                             );
                           } catch (error) {
-                            return "/placeholder.jpg";
+                            return "/placeholder.svg";
                           }
                         })(),
                       });
@@ -376,7 +377,7 @@ export default function ProductDisplay({
                     Add to Cart
                   </button>
                 ) : (
-                  <p className="text-lg font-semibold text-orange-500 sm:text-xl">Coming soon</p>
+                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Coming soon</p>
                 )}
               </>
             )}

@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { cn } from "@/lib/utils";
-import { Order, Review } from "@/lib/types";
+import { Order, OrderStatus, Review } from "@/lib/types";
 import Link from "next/link";
 import { ReviewForm } from "@/components/reviews/ReviewForm";
-
-type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded";
+import { Badge } from "@/components/ui/badge";
+import { orderStatusConfig, defaultOrderStatusStyle } from "@/lib/ui/status-styles";
 
 interface OrderReviewsResponse {
   data?: Review[];
@@ -41,15 +40,9 @@ export default function OrderCard({ order }: { order: Order }) {
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
-  const statusColor =
-    {
-      pending: "bg-yellow-600 text-white",
-      processing: "bg-blue-600 text-white",
-      shipped: "bg-indigo-600 text-white",
-      delivered: "bg-green-600 text-white",
-      cancelled: "bg-red-600 text-white",
-      refunded: "bg-purple-600 text-white",
-    }[order.status as OrderStatus] ?? "bg-gray-700 text-white";
+  const statusStyle =
+    orderStatusConfig[order.status as OrderStatus] ?? defaultOrderStatusStyle;
+  const StatusIcon = statusStyle.icon;
 
   const orderId = order.id ?? "";
   const reviewable =
@@ -117,21 +110,22 @@ export default function OrderCard({ order }: { order: Order }) {
   }
 
   return (
-    <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-4 shadow sm:p-6">
+    <div className="rounded-lg border border-border-default bg-white p-4 shadow sm:p-6">
       <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="truncate text-base font-bold sm:text-lg">
-          <Link href={`/account/orders/${order.id}`} className="text-orange-400 hover:text-orange-300 transition-colors">
-            Order ID: <span className="text-white">{order.id}</span>
+          <Link href={`/account/orders/${order.id}`} className="text-primary-700 hover:text-primary-800 transition-colors">
+            Order ID: <span className="text-text-primary">{order.id}</span>
           </Link>
         </h3>
-        <span className={cn("self-start rounded-full px-2 py-1 text-xs sm:self-center", statusColor)}>
-          {order.status}
-        </span>
+        <Badge variant={statusStyle.variant} className="self-start sm:self-center">
+          <StatusIcon className="w-3 h-3" />
+          {statusStyle.label}
+        </Badge>
       </div>
 
-      <div className="mb-1 text-sm text-gray-400">Placed on {date}</div>
+      <div className="mb-1 text-sm text-text-secondary">Placed on {date}</div>
 
-      <div className="mb-1 text-sm text-gray-300">
+      <div className="mb-1 text-sm text-text-secondary">
         {itemCount} item{itemCount !== 1 ? "s" : ""}{" "}
         {previewItem && (
           <>
@@ -140,19 +134,19 @@ export default function OrderCard({ order }: { order: Order }) {
         )}
       </div>
 
-      <div className="mt-2 text-lg font-semibold text-white">
-        Total: <span className="text-green-400">${total}</span>
+      <div className="mt-2 text-lg font-semibold text-text-primary">
+        Total: <span className="text-state-success">${total}</span>
       </div>
 
       <div className="mt-4 flex flex-col gap-2">
         {!reviewable && (
-          <p className="text-xs text-amber-300">
+          <p className="text-xs text-state-warning">
             Delivery pending – we’ll invite you to review items once your teas arrive.
           </p>
         )}
-        {reviewError && <p className="text-xs text-red-400">{reviewError}</p>}
+        {reviewError && <p className="text-xs text-state-error">{reviewError}</p>}
         {submittedReviewCount > 0 && (
-          <p className="text-xs text-green-300">
+          <p className="text-xs text-state-success">
             {submittedReviewCount} review{submittedReviewCount === 1 ? "" : "s"} submitted for this order.
           </p>
         )}
@@ -163,11 +157,11 @@ export default function OrderCard({ order }: { order: Order }) {
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="flex w-full items-center justify-between rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:border-orange-500 hover:text-orange-300"
+            className="flex w-full items-center justify-between rounded-md border border-border-default bg-surface-light px-3 py-2 text-sm font-medium text-text-primary transition hover:border-primary-500 hover:text-primary-700"
             aria-expanded={expanded}
           >
             <span>{expanded ? "Hide order items" : "Review items from this order"}</span>
-            <span className="text-xs text-gray-400">{expanded ? "▲" : "▼"}</span>
+            <span className="text-xs text-text-secondary">{expanded ? "▲" : "▼"}</span>
           </button>
           {expanded && (
             <div className="mt-4 space-y-4">
@@ -175,13 +169,13 @@ export default function OrderCard({ order }: { order: Order }) {
                 const itemKey = item.id ?? item.product_id ?? `${orderId}-${index}`;
                 const review = reviews[itemKey] ?? (item.product_id ? reviews[item.product_id] : undefined);
                 return (
-                  <div key={itemKey} className="rounded-lg border border-neutral-700 bg-neutral-900 p-4">
+                  <div key={itemKey} className="rounded-lg border border-border-default bg-surface-light p-4">
                     <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-white">{item.product_name}</p>
-                        <p className="text-xs text-gray-400">SKU {item.sku}</p>
+                        <p className="text-sm font-semibold text-text-primary">{item.product_name}</p>
+                        <p className="text-xs text-text-secondary">SKU {item.sku}</p>
                       </div>
-                      <p className="text-xs text-gray-400">Quantity: {item.quantity}</p>
+                      <p className="text-xs text-text-secondary">Quantity: {item.quantity}</p>
                     </div>
                     {reviewable ? (
                       <ReviewForm
@@ -195,14 +189,14 @@ export default function OrderCard({ order }: { order: Order }) {
                         canSubmit={reviewable}
                       />
                     ) : (
-                      <p className="text-xs text-amber-300">
+                      <p className="text-xs text-state-warning">
                         Reviews unlock once delivery is confirmed for this order.
                       </p>
                     )}
                   </div>
                 );
               })}
-              {loadingReviews && <p className="text-xs text-gray-400">Checking existing reviews…</p>}
+              {loadingReviews && <p className="text-xs text-text-secondary">Checking existing reviews…</p>}
             </div>
           )}
         </div>

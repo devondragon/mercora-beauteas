@@ -9,12 +9,19 @@ export default async function Footer() {
     getSocialMediaSettings()
   ]);
 
+  const curatedHrefs = new Set<string>(
+    [...brand.footerLinks.column2, ...brand.footerLinks.column3].map((l) => l.href)
+  );
+  const primaryNavPages = navigationPages.filter(
+    (page) => !curatedHrefs.has(`/${page.slug}`)
+  );
+
   return (
     <footer className="bg-surface text-text-primary mt-16 relative z-10">
       <div className="ml-0 sm:ml-[100px] lg:ml-[200px] px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8 text-sm text-text-secondary z-10 relative">
         <div className="space-y-2">
           {/* Navigation Pages from CMS */}
-          {navigationPages.map((page) => (
+          {primaryNavPages.map((page) => (
             <Link
               key={page.id}
               href={`/${page.slug}`}

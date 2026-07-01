@@ -40,9 +40,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Product, ProductVariant } from "@/lib/types";
-import { getDarkBlurPlaceholder } from "@/lib/utils/image-placeholders";
+import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
+import { stateStyles } from "@/lib/ui/state-styles";
 
 /**
  * Props interface for ProductCard component
@@ -101,7 +102,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   // Handle consistent flat JSON structure: {"url": "...", "alt_text": "..."}
   const imageUrl = (() => {
     try {
-      if (!product.primary_image) return "/products/placeholder.png";
+      if (!product.primary_image) return "/placeholder.svg";
       
       // If it's a JSON string, parse it first
       let imageData = product.primary_image;
@@ -109,18 +110,18 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
         try {
           imageData = JSON.parse(imageData);
         } catch {
-          return "/products/placeholder.png";
+          return "/placeholder.svg";
         }
       }
       
       const img = imageData as any;
       const url = img?.url;
       
-      if (!url) return "/products/placeholder.png";
+      if (!url) return "/placeholder.svg";
       
       return url.startsWith("/") ? url : "/" + url;
     } catch {
-      return "/products/placeholder.png";
+      return "/placeholder.svg";
     }
   })();
   const imageAlt = name;
@@ -132,8 +133,8 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
 
   return (
     <Link href={`/product/${slug}`} prefetch={true}>
-      <div className="bg-neutral-800 rounded-lg overflow-hidden shadow hover:shadow-lg transition cursor-pointer touch-manipulation">
-        <div className="relative aspect-video bg-neutral-700">
+      <div className="bg-white border border-border-default rounded-lg overflow-hidden shadow hover:shadow-lg transition cursor-pointer touch-manipulation">
+        <div className="relative aspect-[3/4] bg-surface-light">
             <Image
               src={imageUrl}
               alt={imageAlt}
@@ -144,30 +145,30 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               loading={priority ? "eager" : "lazy"}
               fetchPriority={priority ? "high" : "low"}
               placeholder="blur"
-              blurDataURL={getDarkBlurPlaceholder()}
+              blurDataURL={getLightBlurPlaceholder()}
             />
         </div>
         <div className="p-4 sm:p-4 space-y-3">
-          <h3 className="text-white text-lg sm:text-xl font-semibold line-clamp-2 leading-snug">
+          <h3 className="text-text-primary text-lg sm:text-xl font-semibold line-clamp-2 leading-snug">
             {name}
           </h3>
-          <p className="text-gray-400 text-sm sm:text-sm line-clamp-2 leading-relaxed">
+          <p className="text-text-secondary text-sm sm:text-sm line-clamp-2 leading-relaxed">
             {shortDescription}
           </p>
           <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
             {hasRatings ? (
               <div className="flex items-center gap-2">
                 <StarRating value={ratingSummary!.average} size="sm" />
-                <span className="text-sm font-semibold text-white">
+                <span className="text-sm font-semibold text-text-primary">
                   {ratingSummary!.average.toFixed(1)}
                 </span>
-                <span className="text-xs text-gray-400">({ratingSummary!.count})</span>
+                <span className="text-xs text-text-secondary">({ratingSummary!.count})</span>
               </div>
             ) : (
-              <span className="text-xs text-gray-500">Be the first to review</span>
+              <span className="text-xs text-text-muted">Be the first to review</span>
             )}
             {lastUpdatedLabel && (
-              <span className="hidden text-[11px] text-gray-500 sm:inline">
+              <span className="hidden text-[11px] text-text-muted sm:inline">
                 Updated {lastUpdatedLabel}
               </span>
             )}
@@ -175,19 +176,19 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
           {price !== null && (
             <div className="text-sm">
               {onSale && compareAt != null ? (
-                <div className="text-green-400">
-                  <span className="line-through text-gray-400 mr-2">
+                <div>
+                  <span className={`${stateStyles.priceOriginal} mr-2`}>
                     ${(compareAt / 100).toFixed(2)}
                   </span>
-                  <span className="font-semibold">
+                  <span className={stateStyles.priceSale}>
                     ${(price / 100).toFixed(2)}
                   </span>
-                  <span className="ml-2 text-xs text-orange-500 font-bold">
+                  <span className={`ml-2 text-xs ${stateStyles.priceSale}`}>
                     On Sale
                   </span>
                 </div>
               ) : (
-                <div className="text-white font-semibold">
+                <div className="text-text-primary font-semibold">
                   ${(price / 100).toFixed(2)}
                 </div>
               )}
@@ -196,8 +197,8 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
           <p
             className={`mt-2 text-xs ${
               availability === "available"
-                ? "text-green-400"
-                : "text-orange-500"
+                ? stateStyles.inStock
+                : stateStyles.outOfStock
             }`}
           >
             {availability === "available" ? "In Stock" : "Coming Soon"}
@@ -205,7 +206,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
 
           <Link
             href={`/product/${slug}`}
-            className="text-orange-500 hover:underline text-sm font-medium"
+            className="text-primary-700 hover:text-primary-800 hover:underline text-sm font-medium"
             prefetch={true}
           >
             Learn more →

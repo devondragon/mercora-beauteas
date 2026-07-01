@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { stateStyles } from "@/lib/ui/state-styles";
 import { Loader2, Gift, X } from "lucide-react";
 
 interface GiftCardValidationResponse {
@@ -56,19 +57,19 @@ export default function GiftCardInput() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm text-gray-600">
+      <div className="flex items-center gap-2 text-sm text-text-muted">
         <Gift className="h-4 w-4" />
         <span>Have a gift card?</span>
       </div>
 
       {appliedGiftCard ? (
-        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+        <div className="flex items-center justify-between bg-secondary-50 border border-secondary-200 rounded-md px-3 py-2">
           <div className="flex items-center gap-2">
-            <Gift className="h-4 w-4 text-amber-600" />
-            <span className="text-sm font-medium text-amber-700">
+            <Gift className="h-4 w-4 text-secondary-600" />
+            <span className="text-sm font-medium text-secondary-700">
               {appliedGiftCard.code}
             </span>
-            <span className="text-xs text-amber-600">
+            <span className="text-xs text-secondary-600">
               (${appliedGiftCard.balance.toFixed(2)} available)
             </span>
           </div>
@@ -76,7 +77,7 @@ export default function GiftCardInput() {
             size="sm"
             variant="ghost"
             onClick={removeGiftCard}
-            className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-100"
+            className="h-6 w-6 p-0 text-secondary-600 hover:text-secondary-700 hover:bg-secondary-100"
           >
             <X className="h-3 w-3" />
           </Button>
@@ -100,7 +101,7 @@ export default function GiftCardInput() {
             onClick={handleApply}
             disabled={isLoading || !code.trim()}
             size="sm"
-            className="bg-amber-500 hover:bg-amber-600 text-white"
+            className="bg-primary-500 hover:bg-primary-600 text-text-inverse"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
           </Button>
@@ -108,7 +109,7 @@ export default function GiftCardInput() {
       )}
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div className={stateStyles.errorBox}>
           {error}
         </div>
       )}

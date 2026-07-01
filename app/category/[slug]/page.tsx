@@ -47,6 +47,7 @@ import {
   SITE_NAME,
   resolveLocalizedField,
   resolveImageUrl,
+  stripSiteName,
 } from "@/lib/seo/metadata";
 import {
   JsonLdScript,
@@ -78,7 +79,7 @@ export async function generateMetadata({
     : undefined;
 
   return {
-    title: metaTitle || name,
+    title: stripSiteName(metaTitle || name),
     description: metaDescription || description,
     alternates: {
       canonical: `/category/${slug}`,
@@ -192,6 +193,7 @@ export default async function CategoryPage({
               </h1>
               {category.description && (
                 <p className="text-gray-200 text-lg max-w-2xl line-clamp-3 whitespace-pre-line">
+                  {/* text-gray-200 sits over the photo + dark scrim below — kept (image overlay) */}
                   {typeof category.description === 'string' ? category.description : (category.description?.en || '')}
                 </p>
               )}
@@ -207,7 +209,7 @@ export default async function CategoryPage({
             {typeof category.name === 'string' ? category.name : (category.name?.en || 'Category')}
           </h1>
           {category.description && (
-            <p className="text-gray-400 max-w-2xl mx-auto whitespace-pre-line">
+            <p className="text-text-secondary max-w-2xl mx-auto whitespace-pre-line">
               {typeof category.description === 'string' ? category.description : (category.description?.en || '')}
             </p>
           )}
@@ -217,7 +219,7 @@ export default async function CategoryPage({
       {/* Error Display */}
       {error && (
         <div className="text-center py-8">
-          <p className="text-red-400">Error loading products: {error}</p>
+          <p className="text-state-error">Error loading products: {error}</p>
         </div>
       )}
 

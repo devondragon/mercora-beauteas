@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useCartStore } from "@/lib/stores/cart-store";
+import { stateStyles } from "@/lib/ui/state-styles";
 import { Gift } from "lucide-react";
 
 // Denominations mirror the seeded gift-card product variants.
@@ -44,7 +45,7 @@ export default function GiftCardPurchaseForm() {
       name: `BeauTeas Gift Card - $${denom.amount}`,
       price: denom.amount,
       quantity: 1,
-      primaryImageUrl: "/placeholder.jpg",
+      primaryImageUrl: "/placeholder.svg",
       giftCard: {
         recipientEmail: recipientEmail.trim(),
         recipientName: recipientName.trim() || undefined,
@@ -76,8 +77,8 @@ export default function GiftCardPurchaseForm() {
               onClick={() => setAmount(d.amount)}
               className={`rounded-lg border px-6 py-3 text-lg font-semibold transition ${
                 amount === d.amount
-                  ? "border-[#c4a87c] bg-[#fdf8f6] text-[#c4a87c]"
-                  : "border-gray-200 text-gray-700 hover:border-[#c4a87c]"
+                  ? "border-secondary-400 bg-surface-dark text-secondary-600"
+                  : "border-border-default text-text-secondary hover:border-secondary-400"
               }`}
             >
               ${d.amount}
@@ -89,7 +90,7 @@ export default function GiftCardPurchaseForm() {
       {/* Recipient */}
       <div className="space-y-2">
         <Label htmlFor="recipientEmail" className="text-sm font-medium">
-          Recipient email <span className="text-red-500">*</span>
+          Recipient email <span className="text-state-error">*</span>
         </Label>
         <Input
           id="recipientEmail"
@@ -102,7 +103,7 @@ export default function GiftCardPurchaseForm() {
 
       <div className="space-y-2">
         <Label htmlFor="recipientName" className="text-sm font-medium">
-          Recipient name <span className="text-gray-400">(optional)</span>
+          Recipient name <span className="text-text-secondary">(optional)</span>
         </Label>
         <Input
           id="recipientName"
@@ -115,7 +116,7 @@ export default function GiftCardPurchaseForm() {
 
       <div className="space-y-2">
         <Label htmlFor="message" className="text-sm font-medium">
-          Personal message <span className="text-gray-400">(optional)</span>
+          Personal message <span className="text-text-secondary">(optional)</span>
         </Label>
         <Textarea
           id="message"
@@ -128,21 +129,21 @@ export default function GiftCardPurchaseForm() {
       </div>
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div className={stateStyles.errorBox}>
           {error}
         </div>
       )}
 
       <Button
         onClick={handleAddToCart}
-        className="w-full bg-[#c4a87c] hover:bg-[#b3966b] text-white"
+        className="w-full bg-secondary-400 hover:bg-secondary-500 text-text-inverse"
         size="lg"
       >
         <Gift className="mr-2 h-4 w-4" />
         Add gift card to cart
       </Button>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-text-muted">
         Digital delivery: the code is emailed to your recipient after checkout. Gift
         cards never expire and any unused balance stays on the card.
       </p>

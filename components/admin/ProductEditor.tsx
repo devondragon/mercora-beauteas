@@ -781,54 +781,54 @@ export default function ProductEditor({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <Card className="bg-neutral-800 border-neutral-700 w-full max-w-4xl max-h-[95vh] overflow-hidden">
-        <div className="p-6 border-b border-neutral-700">
+    <div className="fixed inset-0 bg-text-primary/50 flex items-center justify-center p-4 z-50">
+      <Card className="admin-card w-full max-w-4xl max-h-[95vh] overflow-hidden">
+        <div className="p-6 border-b border-border-default">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white flex items-center">
+            <h2 className="text-xl font-bold text-text-primary flex items-center">
               <Package className="w-5 h-5 mr-2" />
               {isNew ? "Create New Product" : "Edit Product"}
             </h2>
-            <Button variant="ghost" onClick={onClose} className="text-gray-400">
+            <Button variant="ghost" onClick={onClose} className="text-text-secondary">
               <X className="w-5 h-5" />
             </Button>
           </div>
         </div>
-        
+
         <div className="p-6 overflow-y-auto max-h-[75vh] space-y-6">
           {/* Basic Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white">Basic Information</h3>
-            
+            <h3 className="text-lg font-semibold text-text-primary">Basic Information</h3>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Product Name *
                 </label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Product name..."
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Brand
                 </label>
                 <Input
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
                   placeholder="Brand name..."
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
             </div>
-            
+
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-text-secondary">
                   Description
                 </label>
                 <Button
@@ -836,7 +836,7 @@ export default function ProductEditor({
                   variant="outline"
                   size="sm"
                   onClick={() => setShowAiAssistant(true)}
-                  className="border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white"
+                  className="border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
                   Chai AI Assist
@@ -847,17 +847,17 @@ export default function ProductEditor({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Product description...\n\nOr click 'Chai AI Assist' above for AI-powered description generation!"
                 rows={4}
-                className="bg-neutral-700 border-neutral-600"
+                className="admin-input"
               />
               
               {/* AI Assistant Dialog */}
               {showAiAssistant && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
-                  <Card className="bg-neutral-900 border-purple-500/30 w-full max-w-lg">
+                <div className="fixed inset-0 bg-text-primary/60 flex items-center justify-center p-4 z-[60]">
+                  <Card className="admin-card border-secondary-400/30 w-full max-w-lg">
                     <div className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-orange-500 rounded-lg flex items-center justify-center">
+                          <div className="w-10 h-10 bg-gradient-to-br from-secondary-400 to-primary-500 rounded-lg flex items-center justify-center">
                             <Image
                               src="/volt.svg"
                               alt="Chai AI"
@@ -866,23 +866,23 @@ export default function ProductEditor({
                             />
                           </div>
                           <div>
-                            <h3 className="text-lg font-semibold text-white">Chai AI Assistant</h3>
-                            <p className="text-sm text-gray-400">Product description generation</p>
+                            <h3 className="text-lg font-semibold text-text-primary">Chai AI Assistant</h3>
+                            <p className="text-sm text-text-secondary">Product description generation</p>
                           </div>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowAiAssistant(false)}
-                          className="text-gray-400 hover:text-white"
+                          className="text-text-secondary hover:text-text-primary"
                         >
                           ✕
                         </Button>
                       </div>
-                      
+
                       <div className="space-y-4">
                         <div>
-                          <p className="text-sm text-gray-300 mb-3">
+                          <p className="text-sm text-text-secondary mb-3">
                             Tell me about this product and I&rsquo;ll create a compelling description that highlights its key features and benefits!
                           </p>
                           <Textarea
@@ -890,13 +890,13 @@ export default function ProductEditor({
                             onChange={(e) => setAiPrompt(e.target.value)}
                             placeholder="Describe the product details...\n\nFor example:\n- Key features and specifications\n- Target audience or use cases\n- Unique selling points\n- Materials or technology\n- Size, weight, or capacity details"
                             rows={6}
-                            className="bg-neutral-800 border-neutral-600 text-white"
+                            className="admin-input"
                           />
                         </div>
-                        
+
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-gray-500">
-                            Product: <strong className="text-gray-300">{name || 'Please add a product name first'}</strong>
+                          <p className="text-xs text-text-muted">
+                            Product: <strong className="text-text-secondary">{name || 'Please add a product name first'}</strong>
                           </p>
                           <div className="flex space-x-3">
                             <Button
@@ -912,7 +912,7 @@ export default function ProductEditor({
                             <Button
                               onClick={generateAiDescription}
                               disabled={generatingDescription || !aiPrompt.trim() || !name.trim()}
-                              className="bg-gradient-to-r from-purple-600 to-orange-600 hover:from-purple-700 hover:to-orange-700"
+                              className="bg-gradient-to-r from-secondary-400 to-primary-500 hover:from-secondary-500 hover:to-primary-600"
                             >
                               {generatingDescription ? (
                                 <>
@@ -936,7 +936,7 @@ export default function ProductEditor({
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 URL Slug
               </label>
               <div className="flex space-x-2">
@@ -944,7 +944,7 @@ export default function ProductEditor({
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   placeholder="url-friendly-slug"
-                  className="bg-neutral-700 border-neutral-600 flex-1"
+                  className="admin-input flex-1"
                 />
                 <Button
                   type="button"
@@ -956,17 +956,17 @@ export default function ProductEditor({
                 </Button>
               </div>
             </div>
-            
+
             {/* Product Type and Timestamps */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Product Type
                 </label>
                 <select
                   value={productType}
                   onChange={(e) => setProductType(e.target.value)}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white"
+                  className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="">Select type...</option>
                   <option value="simple">Simple Product</option>
@@ -976,30 +976,30 @@ export default function ProductEditor({
                   <option value="subscription">Subscription</option>
                   <option value="service">Service</option>
                 </select>
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Classification for product management
                 </div>
               </div>
-              
+
               {!isNew && createdAt && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center">
+                  <label className="block text-sm font-medium text-text-secondary mb-2 flex items-center">
                     <Clock className="w-3 h-3 mr-1" />
                     Created
                   </label>
-                  <div className="bg-neutral-800 border border-neutral-600 rounded px-3 py-2 text-gray-400 text-sm">
+                  <div className="admin-input border rounded px-3 py-2 text-text-secondary text-sm">
                     {new Date(createdAt).toLocaleString()}
                   </div>
                 </div>
               )}
-              
+
               {!isNew && updatedAt && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center">
+                  <label className="block text-sm font-medium text-text-secondary mb-2 flex items-center">
                     <Clock className="w-3 h-3 mr-1" />
                     Last Updated
                   </label>
-                  <div className="bg-neutral-800 border border-neutral-600 rounded px-3 py-2 text-gray-400 text-sm">
+                  <div className="admin-input border rounded px-3 py-2 text-text-secondary text-sm">
                     {new Date(updatedAt).toLocaleString()}
                   </div>
                 </div>
@@ -1009,13 +1009,13 @@ export default function ProductEditor({
 
           {/* Categories */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <Tag className="w-4 h-4 mr-2" />
               Categories & Tags
             </h3>
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Categories
               </label>
               <CategoryPicker
@@ -1024,72 +1024,72 @@ export default function ProductEditor({
                 placeholder="Select product categories..."
               />
             </div>
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Tags (comma-separated)
               </label>
               <Input
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="tag1, tag2, tag3"
-                className="bg-neutral-700 border-neutral-600"
+                className="admin-input"
               />
             </div>
           </div>
 
           {/* SEO */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <Search className="w-4 h-4 mr-2" />
               SEO & Search Optimization
             </h3>
-            
+
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Meta Title
                 </label>
                 <Input
                   value={seoTitle}
                   onChange={(e) => setSeoTitle(e.target.value)}
                   placeholder="Custom page title for search engines"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                   maxLength={60}
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   {seoTitle.length}/60 characters (optimal: 50-60)
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Meta Description
                 </label>
                 <Textarea
                   value={seoDescription}
                   onChange={(e) => setSeoDescription(e.target.value)}
                   placeholder="Brief description for search engine results"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                   rows={3}
                   maxLength={160}
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   {seoDescription.length}/160 characters (optimal: 150-160)
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   SEO Keywords (comma-separated)
                 </label>
                 <Input
                   value={seoKeywords}
                   onChange={(e) => setSeoKeywords(e.target.value)}
                   placeholder="calendula, organic tea, skincare, herbal blend"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Add relevant keywords to help customers find this product
                 </div>
               </div>
@@ -1098,14 +1098,14 @@ export default function ProductEditor({
 
           {/* Media & Images */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <ImageIcon className="w-4 h-4 mr-2" />
               Images & Media
             </h3>
-            
+
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Primary Image
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1114,9 +1114,9 @@ export default function ProductEditor({
                       value={primaryImageUrl}
                       onChange={(e) => setPrimaryImageUrl(e.target.value)}
                       placeholder="/products/product-name.jpg or full URL"
-                      className="bg-neutral-700 border-neutral-600"
+                      className="admin-input"
                     />
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-text-secondary mt-1">
                       Path or URL for the main product image
                     </div>
                   </div>
@@ -1132,24 +1132,24 @@ export default function ProductEditor({
                       />
                       <label
                         htmlFor="primary-image-upload"
-                        className={`flex items-center justify-center px-4 py-2 border border-orange-500 rounded-md cursor-pointer transition-colors ${
+                        className={`flex items-center justify-center px-4 py-2 border border-primary-500 rounded-md cursor-pointer transition-colors ${
                           uploadingPrimary
-                            ? 'bg-orange-600/20 text-orange-300 cursor-not-allowed'
-                            : 'text-orange-500 hover:bg-orange-500 hover:text-black'
+                            ? 'bg-primary-500/20 text-primary-700 cursor-not-allowed'
+                            : 'text-primary-600 hover:bg-primary-500 hover:text-text-inverse'
                         }`}
                       >
                         <Upload className="w-4 h-4 mr-2" />
                         {uploadingPrimary ? 'Uploading...' : 'Upload Image'}
                       </label>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-text-secondary mt-1">
                       Upload to R2 bucket (JPEG, PNG, WebP, max 10MB)
                     </div>
                   </div>
                 </div>
                 {primaryImageUrl && (
                   <div className="mt-3">
-                    <div className="relative w-32 h-32 rounded-lg overflow-hidden border border-neutral-600">
+                    <div className="relative w-32 h-32 rounded-lg overflow-hidden border border-border-default">
                       <Image
                         src={primaryImageUrl.startsWith("/") ? primaryImageUrl : `/${primaryImageUrl}`}
                         alt={primaryImageAlt || "Primary image preview"}
@@ -1158,30 +1158,30 @@ export default function ProductEditor({
                         sizes="128px"
                       />
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-text-muted mt-1">
                       Preview: {primaryImageUrl}
                     </div>
                   </div>
                 )}
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Primary Image Alt Text
                 </label>
                 <Input
                   value={primaryImageAlt}
                   onChange={(e) => setPrimaryImageAlt(e.target.value)}
                   placeholder="Descriptive text for accessibility and SEO"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Describe the image for screen readers and search engines
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Additional Media
                 </label>
                 <div className="space-y-3">
@@ -1189,7 +1189,7 @@ export default function ProductEditor({
                     value={mediaUrls}
                     onChange={(e) => setMediaUrls(e.target.value)}
                     placeholder="/products/image-2.jpg\n/products/video-demo.mp4\n/products/manual.pdf"
-                    className="bg-neutral-700 border-neutral-600 font-mono text-sm"
+                    className="admin-input font-mono text-sm"
                     rows={3}
                   />
                   <div className="flex items-center space-x-4">
@@ -1205,17 +1205,17 @@ export default function ProductEditor({
                       />
                       <label
                         htmlFor="media-upload"
-                        className={`flex items-center px-3 py-2 border border-green-500 rounded-md cursor-pointer transition-colors text-sm ${
+                        className={`flex items-center px-3 py-2 border border-state-success rounded-md cursor-pointer transition-colors text-sm ${
                           uploadingMedia
-                            ? 'bg-green-600/20 text-green-300 cursor-not-allowed'
-                            : 'text-green-500 hover:bg-green-500 hover:text-black'
+                            ? 'bg-state-success-bg text-state-success cursor-not-allowed'
+                            : 'text-state-success hover:bg-state-success hover:text-text-inverse'
                         }`}
                       >
                         <Upload className="w-3 h-3 mr-1" />
                         {uploadingMedia ? 'Uploading...' : 'Upload Images'}
                       </label>
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-text-secondary">
                       Upload multiple images to R2 bucket (max 10MB each)
                     </div>
                   </div>
@@ -1224,11 +1224,11 @@ export default function ProductEditor({
                       {mediaUrls.split('\n').filter(Boolean).map((url, index) => {
                         const cleanUrl = url.trim();
                         const isImage = cleanUrl.match(/\.(jpg|jpeg|png|webp|gif)$/i);
-                        
+
                         return (
                           <div key={index} className="relative group">
                             {isImage ? (
-                              <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-neutral-600 bg-neutral-800">
+                              <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-border-default bg-surface">
                                 <Image
                                   src={cleanUrl.startsWith("/") ? cleanUrl : `/${cleanUrl}`}
                                   alt={`Media ${index + 1}`}
@@ -1236,13 +1236,13 @@ export default function ProductEditor({
                                   className="object-cover"
                                   sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                                 />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                <div className="absolute inset-0 bg-text-primary/0 group-hover:bg-text-primary/20 transition-colors" />
                               </div>
                             ) : (
-                              <div className="relative w-full aspect-square rounded-lg border border-neutral-600 bg-neutral-800 flex items-center justify-center">
+                              <div className="relative w-full aspect-square rounded-lg border border-border-default bg-surface flex items-center justify-center">
                                 <div className="text-center">
-                                  <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                  <div className="text-xs text-gray-400 truncate px-2">
+                                  <FileText className="w-8 h-8 text-text-secondary mx-auto mb-2" />
+                                  <div className="text-xs text-text-secondary truncate px-2">
                                     {cleanUrl.split('/').pop()}
                                   </div>
                                 </div>
@@ -1255,12 +1255,12 @@ export default function ProductEditor({
                                   urls.splice(index, 1);
                                   setMediaUrls(urls.join('\n'));
                                 }}
-                                className="w-6 h-6 bg-red-600 hover:bg-red-700 rounded-full flex items-center justify-center text-white text-xs"
+                                className="w-6 h-6 bg-state-error hover:opacity-90 rounded-full flex items-center justify-center text-white text-xs"
                               >
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="text-xs text-gray-500 mt-1 truncate">
+                            <div className="text-xs text-text-muted mt-1 truncate">
                               {cleanUrl}
                             </div>
                           </div>
@@ -1275,14 +1275,14 @@ export default function ProductEditor({
 
           {/* Rating & Reviews */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <Star className="w-4 h-4 mr-2" />
               Customer Reviews & Rating
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Average Rating (0-5)
                 </label>
                 <Input
@@ -1293,15 +1293,15 @@ export default function ProductEditor({
                   value={ratingAverage}
                   onChange={(e) => setRatingAverage(e.target.value)}
                   placeholder="4.5"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Aggregated customer rating from reviews
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Review Count
                 </label>
                 <Input
@@ -1310,9 +1310,9 @@ export default function ProductEditor({
                   value={ratingCount}
                   onChange={(e) => setRatingCount(e.target.value)}
                   placeholder="127"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Total number of customer reviews
                 </div>
               </div>
@@ -1321,29 +1321,29 @@ export default function ProductEditor({
 
           {/* Related Products & External References */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <Link className="w-4 h-4 mr-2" />
               Product Relationships
             </h3>
-            
+
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Related Products (comma-separated IDs)
                 </label>
                 <Input
                   value={relatedProducts}
                   onChange={(e) => setRelatedProducts(e.target.value)}
                   placeholder="PROD-001, PROD-002, CALENDULA-EVENING-30"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Product IDs for &quot;You might also like&quot; recommendations
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center">
+                <label className="block text-sm font-medium text-text-secondary mb-2 flex items-center">
                   <ExternalLink className="w-3 h-3 mr-1" />
                   External System References (key:value per line)
                 </label>
@@ -1351,10 +1351,10 @@ export default function ProductEditor({
                   value={externalReferences}
                   onChange={(e) => setExternalReferences(e.target.value)}
                   placeholder="erp_id:ERP-12345\npim_id:PIM-67890\nsku_legacy:OLD-SKU-001\nwarehouse_id:WH-999"
-                  className="bg-neutral-700 border-neutral-600 font-mono text-sm"
+                  className="admin-input font-mono text-sm"
                   rows={4}
                 />
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-text-secondary mt-1">
                   Cross-system identifiers for integration (ERP, PIM, warehouse, etc.)
                 </div>
               </div>
@@ -1363,23 +1363,23 @@ export default function ProductEditor({
 
           {/* Product Options */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <FileText className="w-4 h-4 mr-2" />
               Product Options & Variant Generation
             </h3>
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Options Configuration (JSON)
               </label>
               <Textarea
                 value={productOptions}
                 onChange={(e) => setProductOptions(e.target.value)}
                 placeholder='[{"id": "color", "name": "Color", "values": ["Red", "Blue", "Green"]}, {"id": "size", "name": "Size", "values": ["S", "M", "L", "XL"]}]'
-                className="bg-neutral-700 border-neutral-600 font-mono text-sm"
+                className="admin-input font-mono text-sm"
                 rows={6}
               />
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-text-secondary mt-1">
                 Define option types (Color, Size, etc.) that generate product variants. Each option creates variant combinations.
               </div>
             </div>
@@ -1387,23 +1387,23 @@ export default function ProductEditor({
 
           {/* Extensions & Custom Fields */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <Settings className="w-4 h-4 mr-2" />
               Extensions & Custom Fields
             </h3>
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Custom Extensions (JSON)
               </label>
               <Textarea
                 value={extensions}
                 onChange={(e) => setExtensions(e.target.value)}
                 placeholder='{"warranty": "2 years", "certifications": ["ISO-9001"], "custom_fields": {"material_origin": "USA"}}'
-                className="bg-neutral-700 border-neutral-600 font-mono text-sm"
+                className="admin-input font-mono text-sm"
                 rows={5}
               />
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-text-secondary mt-1">
                 Additional custom data fields and business-specific metadata for this product.
               </div>
             </div>
@@ -1413,11 +1413,11 @@ export default function ProductEditor({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Repeat className="w-5 h-5 text-orange-400" />
-                <h3 className="text-lg font-semibold text-white">Subscriptions</h3>
+                <Repeat className="w-5 h-5 text-primary-500" />
+                <h3 className="text-lg font-semibold text-text-primary">Subscriptions</h3>
               </div>
               <div className="flex items-center gap-2">
-                <label htmlFor="subscription-toggle" className="text-sm text-gray-400">
+                <label htmlFor="subscription-toggle" className="text-sm text-text-secondary">
                   {subscriptionEnabled ? "Enabled" : "Disabled"}
                 </label>
                 <Switch
@@ -1432,9 +1432,9 @@ export default function ProductEditor({
               <div className="space-y-4">
                 {/* Warning for plans with active subscribers */}
                 {hasActiveSubscribers && (
-                  <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-yellow-300">
+                  <div className="flex items-start gap-2 p-3 bg-state-warning-bg border border-state-warning rounded-lg">
+                    <AlertTriangle className="w-4 h-4 text-state-warning mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-state-warning">
                       This product has active subscribers. Discount changes apply to new subscribers only.
                       Frequencies can be toggled but existing subscribers keep their current frequency.
                     </p>
@@ -1443,7 +1443,7 @@ export default function ProductEditor({
 
                 {/* Frequency options */}
                 <div>
-                  <label className="text-sm font-medium text-gray-300 mb-2 block">Available Frequencies</label>
+                  <label className="text-sm font-medium text-text-secondary mb-2 block">Available Frequencies</label>
                   <div className="space-y-2">
                     {[
                       { key: 'biweekly' as const, label: 'Every 2 Weeks' },
@@ -1461,9 +1461,9 @@ export default function ProductEditor({
                               setSubFrequencies(prev => ({ ...prev, [freq.key]: !!checked }))
                             }
                           />
-                          <label htmlFor={`freq-${freq.key}`} className="text-sm text-gray-300">{freq.label}</label>
+                          <label htmlFor={`freq-${freq.key}`} className="text-sm text-text-secondary">{freq.label}</label>
                           {hasSubscribers && (
-                            <span className="text-xs text-gray-500">({existingPlan.activeSubscriberCount} active subscriber{existingPlan.activeSubscriberCount !== 1 ? 's' : ''})</span>
+                            <span className="text-xs text-text-muted">({existingPlan.activeSubscriberCount} active subscriber{existingPlan.activeSubscriberCount !== 1 ? 's' : ''})</span>
                           )}
                         </div>
                       );
@@ -1473,7 +1473,7 @@ export default function ProductEditor({
 
                 {/* Discount percentage */}
                 <div>
-                  <label htmlFor="sub-discount" className="text-sm font-medium text-gray-300 mb-1 block">
+                  <label htmlFor="sub-discount" className="text-sm font-medium text-text-secondary mb-1 block">
                     Discount Percentage
                   </label>
                   <div className="flex items-center gap-2">
@@ -1484,11 +1484,11 @@ export default function ProductEditor({
                       max="100"
                       value={subDiscount}
                       onChange={(e) => setSubDiscount(e.target.value)}
-                      className="w-24 bg-neutral-900 border-neutral-700 text-white"
+                      className="w-24 admin-input"
                     />
-                    <span className="text-sm text-gray-400">% off regular price</span>
+                    <span className="text-sm text-text-secondary">% off regular price</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Subscribers save this percentage on each delivery. Default is 10%.
                   </p>
                 </div>
@@ -1499,24 +1499,24 @@ export default function ProductEditor({
           {/* Variant Selector */}
           {variants.length > 0 && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-white flex items-center">
+              <h3 className="text-lg font-semibold text-text-primary flex items-center">
                 <Package className="w-4 h-4 mr-2" />
                 Product Variants ({variants.length})
               </h3>
-              
+
               <div className="flex flex-wrap gap-2">
                 {variants.map((variant, index) => {
                   const variantName = variant.sku || `Variant ${index + 1}`;
                   const isSelected = selectedVariantIndex === index;
-                  
+
                   return (
                     <button
                       key={variant.id || index}
                       onClick={() => handleVariantSwitch(index)}
                       className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                        isSelected 
-                          ? 'bg-orange-600 text-white' 
-                          : 'bg-neutral-700 text-gray-300 hover:bg-neutral-600'
+                        isSelected
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-surface text-text-secondary hover:bg-surface-light'
                       }`}
                     >
                       {variantName}
@@ -1529,7 +1529,7 @@ export default function ProductEditor({
                   );
                 })}
               </div>
-              
+
               {/* Variant Management Buttons */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -1537,12 +1537,12 @@ export default function ProductEditor({
                     type="button"
                     onClick={addNewVariant}
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    className="bg-state-success hover:opacity-90 text-white"
                   >
                     <Plus className="w-4 h-4 mr-1" />
                     Add Variant
                   </Button>
-                  
+
                   {variants.length > 1 && (
                     <Button
                       type="button"
@@ -1555,10 +1555,10 @@ export default function ProductEditor({
                     </Button>
                   )}
                 </div>
-                
+
                 {variants.length > 0 && (
-                  <div className="text-sm text-gray-400">
-                    Editing: <span className="text-orange-400 font-medium">
+                  <div className="text-sm text-text-secondary">
+                    Editing: <span className="text-primary-600 font-medium">
                       {variants[selectedVariantIndex]?.sku || `Variant ${selectedVariantIndex + 1}`}
                     </span>
                   </div>
@@ -1569,15 +1569,15 @@ export default function ProductEditor({
 
           {/* Pricing & Inventory */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
+            <h3 className="text-lg font-semibold text-text-primary flex items-center">
               <DollarSign className="w-4 h-4 mr-2" />
               {variants.length > 1 ? 'Variant Pricing & Inventory' : 'Pricing & Inventory'}
             </h3>
-            
+
             {/* Basic Pricing Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Price ($)
                 </label>
                 <Input
@@ -1586,12 +1586,12 @@ export default function ProductEditor({
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="0.00"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Compare At Price ($)
                 </label>
                 <Input
@@ -1600,12 +1600,12 @@ export default function ProductEditor({
                   value={compareAtPrice}
                   onChange={(e) => setCompareAtPrice(e.target.value)}
                   placeholder="0.00"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Cost ($)
                 </label>
                 <Input
@@ -1614,27 +1614,27 @@ export default function ProductEditor({
                   value={cost}
                   onChange={(e) => setCost(e.target.value)}
                   placeholder="0.00"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   SKU
                 </label>
                 <Input
                   value={sku}
                   onChange={(e) => setSku(e.target.value)}
                   placeholder="SKU-001"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
             </div>
-            
+
             {/* Inventory & Physical Properties */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Stock Quantity
                 </label>
                 <Input
@@ -1642,12 +1642,12 @@ export default function ProductEditor({
                   value={inventory}
                   onChange={(e) => setInventory(e.target.value)}
                   placeholder="0"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Weight (lb)
                 </label>
                 <Input
@@ -1656,30 +1656,30 @@ export default function ProductEditor({
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                   placeholder="0.0"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Barcode/UPC
                 </label>
                 <Input
                   value={barcode}
                   onChange={(e) => setBarcode(e.target.value)}
                   placeholder="123456789012"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Variant Status
                 </label>
                 <select
                   value={variantStatus}
                   onChange={(e) => setVariantStatus(e.target.value as any)}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white"
+                  className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -1687,37 +1687,37 @@ export default function ProductEditor({
                 </select>
               </div>
             </div>
-            
+
             {/* Dimensions */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Dimensions (L×W×H in)
                 </label>
                 <Input
                   value={dimensions}
                   onChange={(e) => setDimensions(e.target.value)}
                   placeholder="12×8×4"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Shipping Required
                 </label>
                 <select
                   value={shippingRequired ? "true" : "false"}
                   onChange={(e) => setShippingRequired(e.target.value === "true")}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white"
+                  className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Position Order
                 </label>
                 <Input
@@ -1725,14 +1725,14 @@ export default function ProductEditor({
                   value={variantPosition}
                   onChange={(e) => setVariantPosition(e.target.value)}
                   placeholder="1"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
             </div>
-            
+
             {/* Variant Attributes JSON Editor */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Variant Attributes (JSON)
               </label>
               <textarea
@@ -1740,9 +1740,9 @@ export default function ProductEditor({
                 onChange={(e) => setVariantAttributes(e.target.value)}
                 placeholder='{"color": "Olive Drab", "capacity": "10L", "material": "Cordura nylon"}'
                 rows={4}
-                className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white font-mono text-sm"
+                className="w-full admin-input border rounded px-3 py-2 font-mono text-sm"
               />
-              <div className="text-xs text-gray-400 mt-1">
+              <div className="text-xs text-text-secondary mt-1">
                 Store additional variant-specific properties as JSON. Examples: color, size, material, capacity
               </div>
             </div>
@@ -1750,17 +1750,17 @@ export default function ProductEditor({
 
           {/* Settings */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-white">Settings</h3>
-            
+            <h3 className="text-lg font-semibold text-text-primary">Settings</h3>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Status
                 </label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as any)}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white"
+                  className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="active">Active</option>
                   <option value="draft">Draft</option>
@@ -1768,39 +1768,39 @@ export default function ProductEditor({
                   <option value="archived">Archived</option>
                 </select>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Fulfillment Type
                 </label>
                 <select
                   value={fulfillmentType}
                   onChange={(e) => setFulfillmentType(e.target.value as any)}
-                  className="w-full bg-neutral-700 border border-neutral-600 rounded px-3 py-2 text-white"
+                  className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="physical">Physical</option>
                   <option value="digital">Digital</option>
                   <option value="service">Service</option>
                 </select>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Tax Category
                 </label>
                 <Input
                   value={taxCategory}
                   onChange={(e) => setTaxCategory(e.target.value)}
                   placeholder="standard"
-                  className="bg-neutral-700 border-neutral-600"
+                  className="admin-input"
                 />
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="p-6 border-t border-neutral-700 flex items-center justify-between">
-          <div className="text-sm text-gray-400">
+
+        <div className="p-6 border-t border-border-default flex items-center justify-between">
+          <div className="text-sm text-text-secondary">
             Changes will be saved to your product catalog
           </div>
           <div className="flex items-center space-x-3">
@@ -1810,7 +1810,6 @@ export default function ProductEditor({
             <Button
               onClick={handleSave}
               disabled={saving || !name.trim()}
-              className="bg-orange-600 hover:bg-orange-700"
             >
               <Save className="w-4 h-4 mr-2" />
               {saving ? "Saving..." : isNew ? "Create Product" : "Save Changes"}

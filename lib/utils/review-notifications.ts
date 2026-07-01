@@ -45,7 +45,7 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
   const responseSection = input.adminResponse
     ? `
         <div style="margin-top: 16px; padding: 16px; background-color: #111827; border-radius: 8px;">
-          <h3 style="margin: 0 0 8px; color: #f97316; font-size: 16px; font-weight: 600;">Store response</h3>
+          <h3 style="margin: 0 0 8px; color: #cf8577; font-size: 16px; font-weight: 600;">Store response</h3>
           <p style="margin: 0; color: #e5e7eb; line-height: 22px;">${input.adminResponse.replace(/\n/g, '<br />')}</p>
         </div>
       `

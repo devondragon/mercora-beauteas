@@ -53,11 +53,15 @@ export default function StripeProvider({
     clientSecret,
     appearance: {
       theme: 'stripe',
+      // NOTE: Stripe Elements cannot read Tailwind/CSS custom properties, so
+      // these are deliberately inline hex values mirroring the BeauTeas brand
+      // tokens (lib/brand.config.ts): primary-500 #cf8577, text-primary #222222,
+      // state.error #a1453d.
       variables: {
-        colorPrimary: '#f97316', // Orange-500 to match your theme
+        colorPrimary: '#cf8577', // BeauTeas primary-500 (terracotta)
         colorBackground: '#ffffff',
-        colorText: '#000000',
-        colorDanger: '#ef4444',
+        colorText: '#222222', // BeauTeas text-primary (charcoal)
+        colorDanger: '#a1453d', // BeauTeas state.error
         fontFamily: 'system-ui, -apple-system, sans-serif',
         spacingUnit: '4px',
         borderRadius: '8px',
@@ -65,7 +69,7 @@ export default function StripeProvider({
       },
       rules: {
         '.Input': {
-          border: '1px solid #d1d5db',
+          border: '1px solid #e8d5cf', // BeauTeas border.DEFAULT
           borderRadius: '8px',
           padding: '12px',
           fontSize: '16px', // 16px prevents zoom on iOS
@@ -76,18 +80,18 @@ export default function StripeProvider({
           '-webkit-appearance': 'none', // Remove iOS styling
         },
         '.Input:focus': {
-          borderColor: '#f97316',
-          boxShadow: '0 0 0 2px rgba(249, 115, 22, 0.2)',
+          borderColor: '#cf8577',
+          boxShadow: '0 0 0 2px rgba(207, 133, 119, 0.2)',
           outline: 'none',
         },
         '.Input--invalid': {
-          borderColor: '#ef4444',
+          borderColor: '#a1453d',
         },
         '.Label': {
           fontSize: '14px',
           fontWeight: '500',
           marginBottom: '8px',
-          color: '#374151',
+          color: '#555555', // BeauTeas text.secondary
           display: 'block',
           width: '100%',
         },
@@ -99,7 +103,7 @@ export default function StripeProvider({
           boxSizing: 'border-box',
         },
         '.Tab--selected': {
-          borderColor: '#f97316',
+          borderColor: '#cf8577',
         },
         '.TabIcon': {
           height: '20px',

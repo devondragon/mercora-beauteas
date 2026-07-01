@@ -15,6 +15,12 @@ const config: Config = {
         // Primary accent color (buttons, links, highlights)
         primary: brand.colors.primary,
 
+        // Secondary accent color (honey/gold)
+        secondary: brand.colors.secondary,
+
+        // Functional/state colors
+        state: brand.colors.state,
+
         // Surface colors for backgrounds
         surface: brand.colors.surface,
 

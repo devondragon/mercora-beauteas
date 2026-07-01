@@ -119,39 +119,39 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <Card className="bg-neutral-800 border-neutral-700 w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        <div className="p-6 border-b border-neutral-700">
+    <div className="fixed inset-0 bg-text-primary/50 flex items-center justify-center p-4 z-50">
+      <Card className="admin-card w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-border-default">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white">
+            <h2 className="text-xl font-bold text-text-primary">
               {isNew ? "Create New Article" : "Edit Article"}
             </h2>
-            <Button variant="ghost" onClick={onClose} className="text-gray-400">
+            <Button variant="ghost" onClick={onClose} className="text-text-secondary">
               ✕
             </Button>
           </div>
         </div>
-        
+
         <div className="p-6 overflow-y-auto max-h-[70vh]">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Title *
               </label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Article title..."
-                className="bg-neutral-700 border-neutral-600"
+                className="admin-input"
                 required
               />
               {!title.trim() && (
-                <p className="text-xs text-red-400 mt-1">Title is required</p>
+                <p className="text-xs text-state-error mt-1">Title is required</p>
               )}
             </div>
-            
+
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-text-secondary mb-2">
                 Filename
               </label>
               <div className="flex space-x-2">
@@ -159,25 +159,25 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                   value={filename}
                   onChange={(e) => setFilename(e.target.value)}
                   placeholder="filename.md"
-                  className="bg-neutral-700 border-neutral-600 flex-1"
+                  className="admin-input flex-1"
                 />
                 <Button
                   type="button"
                   variant="outline"
                   onClick={generateFilename}
                   disabled={!title.trim()}
-                  className="px-3 border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black"
+                  className="px-3 border-primary-500 text-primary-600 hover:bg-primary-500 hover:text-text-inverse"
                   title="Generate filename from title"
                 >
                   Generate
                 </Button>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Auto-generated from title if left empty</p>
+              <p className="text-xs text-text-secondary mt-1">Auto-generated from title if left empty</p>
             </div>
-            
+
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-text-secondary">
                   Content (Markdown)
                 </label>
                 <Button
@@ -185,7 +185,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                   variant="outline"
                   size="sm"
                   onClick={() => setShowAiAssistant(true)}
-                  className="border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white"
+                  className="border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
                   Chai AI Assist
@@ -196,17 +196,17 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="# Article Title\n\nYour content here...\n\nOr click 'Chai AI Assist' above for AI-powered content generation!"
                 rows={20}
-                className="bg-neutral-700 border-neutral-600 font-mono text-sm"
+                className="admin-input font-mono text-sm"
               />
-              
+
               {/* AI Assistant Dialog */}
               {showAiAssistant && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
-                  <Card className="bg-neutral-900 border-purple-500/30 w-full max-w-lg">
+                <div className="fixed inset-0 bg-text-primary/60 flex items-center justify-center p-4 z-[60]">
+                  <Card className="admin-card border-secondary-400/30 w-full max-w-lg">
                     <div className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-orange-500 rounded-lg flex items-center justify-center">
+                          <div className="w-10 h-10 bg-gradient-to-br from-secondary-400 to-primary-500 rounded-lg flex items-center justify-center">
                             <Image
                               src="/volt.svg"
                               alt="Chai AI"
@@ -215,23 +215,23 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                             />
                           </div>
                           <div>
-                            <h3 className="text-lg font-semibold text-white">Chai AI Assistant</h3>
-                            <p className="text-sm text-gray-400">Knowledge article generation</p>
+                            <h3 className="text-lg font-semibold text-text-primary">Chai AI Assistant</h3>
+                            <p className="text-sm text-text-secondary">Knowledge article generation</p>
                           </div>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowAiAssistant(false)}
-                          className="text-gray-400 hover:text-white"
+                          className="text-text-secondary hover:text-text-primary"
                         >
                           ✕
                         </Button>
                       </div>
-                      
+
                       <div className="space-y-4">
                         <div>
-                          <p className="text-sm text-gray-300 mb-3">
+                          <p className="text-sm text-text-secondary mb-3">
                             Tell me a little about what you want me to know and I&rsquo;ll get us started with a comprehensive article!
                           </p>
                           <Textarea
@@ -239,13 +239,13 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                             onChange={(e) => setAiPrompt(e.target.value)}
                             placeholder="Describe what this article should cover...\n\nFor example:\n- A guide to brewing our calendula tea blends\n- Skincare benefits of organic botanicals\n- Product recommendations\n- Daily tea ritual tips\n- FAQ about organic skincare teas"
                             rows={6}
-                            className="bg-neutral-800 border-neutral-600 text-white"
+                            className="admin-input"
                           />
                         </div>
-                        
+
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-gray-500">
-                            Article title: <strong className="text-gray-300">{title || 'Please add a title first'}</strong>
+                          <p className="text-xs text-text-muted">
+                            Article title: <strong className="text-text-secondary">{title || 'Please add a title first'}</strong>
                           </p>
                           <div className="flex space-x-3">
                             <Button
@@ -261,7 +261,7 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
                             <Button
                               onClick={generateAiContent}
                               disabled={generatingContent || !aiPrompt.trim() || !title.trim()}
-                              className="bg-gradient-to-r from-purple-600 to-orange-600 hover:from-purple-700 hover:to-orange-700"
+                              className="bg-gradient-to-r from-secondary-400 to-primary-500 hover:from-secondary-500 hover:to-primary-600"
                             >
                               {generatingContent ? (
                                 <>
@@ -285,9 +285,9 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
             </div>
           </div>
         </div>
-        
-        <div className="p-6 border-t border-neutral-700 flex items-center justify-between">
-          <div className="text-sm text-gray-400">
+
+        <div className="p-6 border-t border-border-default flex items-center justify-between">
+          <div className="text-sm text-text-secondary">
             Changes will automatically trigger AI vectorization
           </div>
           <div className="flex items-center space-x-3">
@@ -297,7 +297,6 @@ function ArticleEditor({ article, isOpen, onClose, onSave, isNew = false }: Arti
             <Button
               onClick={handleSave}
               disabled={saving || !title.trim() || !content.trim()}
-              className="bg-orange-600 hover:bg-orange-700"
             >
               {saving ? "Saving..." : "Save Article"}
             </Button>
@@ -448,7 +447,7 @@ export default function KnowledgeManagement() {
   }, [searchQuery, articles]);
 
   if (loading) {
-    return <div className="text-gray-400">Loading knowledge base...</div>;
+    return <div className="text-text-secondary">Loading knowledge base...</div>;
   }
 
   return (
@@ -457,20 +456,20 @@ export default function KnowledgeManagement() {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
             <Input
               type="text"
               placeholder="Search articles..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64 bg-neutral-800 border-neutral-700"
+              className="pl-10 w-64 admin-input"
             />
           </div>
           <Button
             onClick={triggerVectorization}
             disabled={isVectorizing}
             variant="outline"
-            className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black"
+            className="border-primary-500 text-primary-600 hover:bg-primary-500 hover:text-text-inverse"
           >
             {isVectorizing ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -480,10 +479,7 @@ export default function KnowledgeManagement() {
             {isVectorizing ? "Vectorizing..." : "Reindex AI"}
           </Button>
         </div>
-        <Button 
-          onClick={() => openEditor(null, true)}
-          className="bg-orange-600 hover:bg-orange-700 text-white"
-        >
+        <Button onClick={() => openEditor(null, true)}>
           <Plus className="w-4 h-4 mr-2" />
           New Article
         </Button>
@@ -491,31 +487,31 @@ export default function KnowledgeManagement() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-white">{articles.length}</div>
-          <div className="text-sm text-gray-400">Total Articles</div>
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-text-primary">{articles.length}</div>
+          <div className="text-sm text-text-secondary">Total Articles</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-green-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-state-success">
             {articles.filter(a => a.isVectorized).length}
           </div>
-          <div className="text-sm text-gray-400">AI Indexed</div>
+          <div className="text-sm text-text-secondary">AI Indexed</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-orange-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-primary-600">
             {Math.round(articles.reduce((acc, a) => acc + a.size, 0) / 1024)}
           </div>
-          <div className="text-sm text-gray-400">KB Total Size</div>
+          <div className="text-sm text-text-secondary">KB Total Size</div>
         </Card>
-        <Card className="bg-neutral-800 border-neutral-700 p-4">
-          <div className="text-2xl font-bold text-blue-400">
+        <Card className="admin-card p-4">
+          <div className="text-2xl font-bold text-state-info">
             {articles.filter(a => {
               const modified = new Date(a.lastModified);
               const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
               return modified > weekAgo;
             }).length}
           </div>
-          <div className="text-sm text-gray-400">Updated This Week</div>
+          <div className="text-sm text-text-secondary">Updated This Week</div>
         </Card>
       </div>
 
@@ -523,48 +519,48 @@ export default function KnowledgeManagement() {
       {/* Articles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredArticles.map((article) => (
-          <Card key={article.filename} className="bg-neutral-800 border-neutral-700 p-6">
+          <Card key={article.filename} className="admin-card p-6">
             <div className="flex items-start justify-between mb-4">
-              <div className="w-10 h-10 bg-orange-600/20 rounded-lg flex items-center justify-center">
-                <FileText className="w-5 h-5 text-orange-400" />
+              <div className="w-10 h-10 bg-primary-500/20 rounded-lg flex items-center justify-center">
+                <FileText className="w-5 h-5 text-primary-600" />
               </div>
               <div className="flex items-center space-x-2">
                 {article.isVectorized ? (
-                  <Badge variant="default" className="bg-green-600 text-white">
+                  <Badge variant="default" className="bg-state-success-bg text-state-success">
                     <Bot className="w-3 h-3 mr-1" />
                     AI Ready
                   </Badge>
                 ) : (
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" className="bg-state-warning-bg text-state-warning">
                     Pending
                   </Badge>
                 )}
               </div>
             </div>
-            
-            <h3 className="text-lg font-semibold text-white mb-2">{article.title}</h3>
-            <p className="text-sm text-gray-400 mb-4">{article.filename}</p>
-            
-            <div className="flex items-center text-xs text-gray-500 mb-4">
+
+            <h3 className="text-lg font-semibold text-text-primary mb-2">{article.title}</h3>
+            <p className="text-sm text-text-secondary mb-4">{article.filename}</p>
+
+            <div className="flex items-center text-xs text-text-muted mb-4">
               <Calendar className="w-3 h-3 mr-1" />
               {new Date(article.lastModified).toLocaleDateString()}
               <span className="mx-2">•</span>
               {Math.round(article.size / 1024)} KB
             </div>
-            
+
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => openEditor(article)}
-                className="text-orange-500 hover:text-orange-400"
+                className="text-primary-700 hover:text-primary-800"
               >
                 <Edit className="w-4 h-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-blue-500 hover:text-blue-400"
+                className="text-state-info hover:opacity-75"
               >
                 <Eye className="w-4 h-4" />
               </Button>
@@ -572,7 +568,7 @@ export default function KnowledgeManagement() {
                 variant="ghost"
                 size="sm"
                 onClick={() => handleDelete(article.filename)}
-                className="text-red-500 hover:text-red-400"
+                className="text-state-error hover:opacity-75"
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -582,7 +578,7 @@ export default function KnowledgeManagement() {
       </div>
 
       {filteredArticles.length === 0 && !loading && (
-        <div className="text-center py-8 text-gray-400">
+        <div className="text-center py-8 text-text-secondary">
           {searchQuery ? "No articles found matching your search." : "No articles available."}
         </div>
       )}

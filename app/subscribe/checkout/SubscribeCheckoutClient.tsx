@@ -174,11 +174,11 @@ export default function SubscribeCheckoutClient({
         {/* Info Form */}
         <form onSubmit={handleInfoSubmit} className="space-y-6 lg:col-span-3">
           {/* Contact Info */}
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-6">
-            <h2 className="mb-4 text-lg font-semibold">Contact Information</h2>
+          <div className="rounded-lg border border-border-default bg-white p-6">
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">Contact Information</h2>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="name" className="text-neutral-300">
+                <Label htmlFor="name" className="text-text-secondary">
                   Full Name
                 </Label>
                 <Input
@@ -189,11 +189,11 @@ export default function SubscribeCheckoutClient({
                   placeholder="Full Name"
                   autoComplete="name"
                   required
-                  className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                  className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                 />
               </div>
               <div>
-                <Label htmlFor="email" className="text-neutral-300">
+                <Label htmlFor="email" className="text-text-secondary">
                   Email
                 </Label>
                 <Input
@@ -205,18 +205,18 @@ export default function SubscribeCheckoutClient({
                   placeholder="Email"
                   autoComplete="email"
                   required
-                  className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                  className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                 />
               </div>
             </div>
           </div>
 
           {/* Shipping Address */}
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-6">
-            <h2 className="mb-4 text-lg font-semibold">Shipping Address</h2>
+          <div className="rounded-lg border border-border-default bg-white p-6">
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">Shipping Address</h2>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="line1" className="text-neutral-300">
+                <Label htmlFor="line1" className="text-text-secondary">
                   Street Address
                 </Label>
                 <Input
@@ -227,11 +227,11 @@ export default function SubscribeCheckoutClient({
                   placeholder="Street Address"
                   autoComplete="address-line1"
                   required
-                  className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                  className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                 />
               </div>
               <div>
-                <Label htmlFor="line2" className="text-neutral-300">
+                <Label htmlFor="line2" className="text-text-secondary">
                   Apt / Suite (optional)
                 </Label>
                 <Input
@@ -241,12 +241,12 @@ export default function SubscribeCheckoutClient({
                   onChange={handleAddressChange}
                   placeholder="Apt, Suite, Unit"
                   autoComplete="address-line2"
-                  className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                  className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                 />
               </div>
               <div className="flex gap-3">
                 <div className="flex-[2]">
-                  <Label htmlFor="city" className="text-neutral-300">
+                  <Label htmlFor="city" className="text-text-secondary">
                     City
                   </Label>
                   <Input
@@ -257,11 +257,11 @@ export default function SubscribeCheckoutClient({
                     placeholder="City"
                     autoComplete="address-level2"
                     required
-                    className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                    className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                   />
                 </div>
                 <div className="flex-1">
-                  <Label htmlFor="region" className="text-neutral-300">
+                  <Label htmlFor="region" className="text-text-secondary">
                     State
                   </Label>
                   <Input
@@ -272,11 +272,11 @@ export default function SubscribeCheckoutClient({
                     placeholder="State"
                     autoComplete="address-level1"
                     required
-                    className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                    className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                   />
                 </div>
                 <div className="flex-1">
-                  <Label htmlFor="postal_code" className="text-neutral-300">
+                  <Label htmlFor="postal_code" className="text-text-secondary">
                     ZIP
                   </Label>
                   <Input
@@ -288,12 +288,12 @@ export default function SubscribeCheckoutClient({
                     autoComplete="postal-code"
                     inputMode="numeric"
                     required
-                    className="mt-1 border-neutral-600 bg-neutral-900 text-white placeholder:text-neutral-500"
+                    className="mt-1 border-border-default bg-white text-text-primary placeholder:text-text-muted"
                   />
                 </div>
               </div>
               <div>
-                <Label htmlFor="country" className="text-neutral-300">
+                <Label htmlFor="country" className="text-text-secondary">
                   Country
                 </Label>
                 <Select
@@ -302,10 +302,10 @@ export default function SubscribeCheckoutClient({
                     setAddress((prev) => ({ ...prev, country: value }))
                   }
                 >
-                  <SelectTrigger className="mt-1 border-neutral-600 bg-neutral-900 text-white">
+                  <SelectTrigger className="mt-1 border-border-default bg-white text-text-primary">
                     <SelectValue placeholder="Select Country" />
                   </SelectTrigger>
-                  <SelectContent className="border-neutral-700 bg-neutral-900 text-white">
+                  <SelectContent className="border-border-default bg-white text-text-primary">
                     <SelectItem value="US">United States</SelectItem>
                     <SelectItem value="CA">Canada</SelectItem>
                     <SelectItem value="GB">United Kingdom</SelectItem>
@@ -317,7 +317,7 @@ export default function SubscribeCheckoutClient({
 
           {/* Error */}
           {setupError && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+            <div className="rounded-lg border border-state-error bg-state-error-bg p-3 text-sm text-state-error">
               {setupError}
             </div>
           )}
@@ -326,11 +326,11 @@ export default function SubscribeCheckoutClient({
           <Button
             type="submit"
             disabled={!isInfoValid || isCreatingSetup}
-            className="w-full bg-orange-500 text-black hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full bg-primary-500 text-text-inverse hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isCreatingSetup ? (
               <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 Setting up...
               </span>
             ) : (
@@ -426,16 +426,16 @@ function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps)
     return (
       <div className="flex min-h-[300px] items-center justify-center">
         <div className="flex flex-col items-center gap-2">
-          <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-orange-500" />
-          <p className="text-sm text-neutral-400">Loading payment form...</p>
+          <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-primary-500" />
+          <p className="text-sm text-text-secondary">Loading payment form...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-6">
-      <h2 className="mb-4 text-lg font-semibold">Payment Method</h2>
+    <div className="rounded-lg border border-border-default bg-white p-6">
+      <h2 className="mb-4 text-lg font-semibold text-text-primary">Payment Method</h2>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="min-h-[300px]">
           <PaymentElement
@@ -456,7 +456,7 @@ function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps)
         </div>
 
         {errorMessage && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+          <div className="rounded-lg border border-state-error bg-state-error-bg p-3 text-sm text-state-error">
             {errorMessage}
           </div>
         )}
@@ -464,11 +464,11 @@ function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps)
         <Button
           type="submit"
           disabled={!stripe || !elements || isProcessing}
-          className="w-full bg-orange-500 text-black hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full bg-primary-500 text-text-inverse hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isProcessing ? (
             <span className="flex items-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               Processing...
             </span>
           ) : (
@@ -498,8 +498,8 @@ function OrderSummary({
   discountPercent,
 }: OrderSummaryProps) {
   return (
-    <div className="rounded-lg border border-neutral-700 bg-neutral-800 p-6">
-      <h2 className="mb-4 text-lg font-semibold">Order Summary</h2>
+    <div className="rounded-lg border border-border-default bg-white p-6">
+      <h2 className="mb-4 text-lg font-semibold text-text-primary">Order Summary</h2>
 
       <div className="flex gap-4">
         {imageUrl && (
@@ -508,23 +508,23 @@ function OrderSummary({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-white">{productName}</p>
-          <p className="mt-1 text-sm text-neutral-400">
+          <p className="font-medium text-text-primary">{productName}</p>
+          <p className="mt-1 text-sm text-text-secondary">
             {FREQUENCY_LABELS[frequency]}
           </p>
         </div>
       </div>
 
-      <div className="mt-6 space-y-3 border-t border-neutral-700 pt-4">
+      <div className="mt-6 space-y-3 border-t border-border-default pt-4">
         <div className="flex items-center justify-between">
-          <span className="text-neutral-400">Subscription price</span>
-          <span className="font-semibold text-white">
+          <span className="text-text-secondary">Subscription price</span>
+          <span className="font-semibold text-text-primary">
             ${(subscriptionPriceInCents / 100).toFixed(2)}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-neutral-400">Discount</span>
-          <Badge className="border-transparent bg-green-500/10 text-green-400">
+          <span className="text-text-secondary">Discount</span>
+          <Badge className="border-transparent bg-state-success-bg text-state-success">
             Save {discountPercent}%
           </Badge>
         </div>
