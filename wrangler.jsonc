@@ -73,7 +73,7 @@
       ],
       "vars": {
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YnVzeS1zaHJpbXAtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Rwyc6LL7e1EcFUl2kqrcgWa8KDNzC9m4lc38wQQKiKVmekTxi3q6R6R2nohizFzRNNw9bHTeN8mripgZzgUYUDd00nlOhCWEs"
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj"
       }
     },
 
