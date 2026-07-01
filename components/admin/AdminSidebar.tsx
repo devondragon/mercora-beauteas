@@ -222,7 +222,17 @@ export default function AdminSidebar() {
           <div className="p-4 border-t border-border-default">
             <div className="text-xs text-text-muted">
               <div className="mb-1">BeauTeas Admin v1.0</div>
-              <div>Powered by Mercora</div>
+              <div>
+                Powered by{" "}
+                <a
+                  href="https://github.com/russellkmoore/mercora"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-text-primary underline transition-colors"
+                >
+                  Mercora
+                </a>
+              </div>
             </div>
           </div>
         )}
