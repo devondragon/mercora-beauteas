@@ -222,7 +222,7 @@ export default function AdminSidebar() {
           <div className="p-4 border-t border-border-default">
             <div className="text-xs text-text-muted">
               <div className="mb-1">BeauTeas Admin v1.0</div>
-              <div>Powered by MACH Alliance</div>
+              <div>Powered by Mercora</div>
             </div>
           </div>
         )}
