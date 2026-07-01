@@ -212,10 +212,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Verify payment server-side before marking the order paid. We NEVER trust
+    // the client's payment_status flag: the order is 'paid' only if Stripe
+    // confirms the PaymentIntent succeeded AND it is bound to THIS order. This
+    // makes order creation the primary fulfiller (the webhook is a backup), so
+    // status no longer depends on a reachable NEXT_PUBLIC_URL. Fail closed to
+    // 'pending' on any doubt; the webhook reconciles later.
+    const paymentIntentId = (body.extensions as any)?.payment_intent_id;
+    let verifiedPi: Awaited<ReturnType<typeof retrievePaymentIntent>> | null = null;
+    let paymentConfirmed = false;
+    if (paymentIntentId && typeof paymentIntentId === 'string') {
+      try {
+        verifiedPi = await retrievePaymentIntent(paymentIntentId);
+        paymentConfirmed =
+          verifiedPi.status === 'succeeded' && verifiedPi.metadata?.orderId === orderId;
+        if (!paymentConfirmed) {
+          console.warn(
+            `Order ${orderId}: PaymentIntent ${paymentIntentId} not confirmed ` +
+              `(status=${verifiedPi.status}, boundOrder=${verifiedPi.metadata?.orderId ?? 'none'}); leaving order pending`
+          );
+        }
+      } catch (piError) {
+        console.error(
+          `Order ${orderId}: PaymentIntent ${paymentIntentId} verification failed; leaving order pending`,
+          piError
+        );
+      }
+    }
+
     const machOrder: any = {
       id: orderId,
       customer_id: customerId,
-      status: 'pending',
+      status: paymentConfirmed ? 'processing' : 'pending',
       total_amount: JSON.stringify(body.total_amount),
       currency_code: body.currency_code,
       shipping_address: body.shipping_address ? JSON.stringify(body.shipping_address) : null,
@@ -223,7 +251,7 @@ export async function POST(request: NextRequest) {
       items: JSON.stringify(body.items),
       shipping_method: body.shipping_method || null,
       payment_method: body.payment_method || null,
-      payment_status: 'pending',
+      payment_status: paymentConfirmed ? 'paid' : 'pending',
       notes: body.notes || null,
       external_references: body.external_references ? JSON.stringify(body.external_references) : null,
       extensions: body.extensions ? JSON.stringify(body.extensions) : null,
@@ -292,30 +320,24 @@ export async function POST(request: NextRequest) {
     const hydratedOrder = hydrateOrder(newOrder);
     if (orderInvolvesGiftCards(hydratedOrder)) {
       try {
-        const paymentIntentId = (body.extensions as any)?.payment_intent_id;
-        if (!paymentIntentId || typeof paymentIntentId !== 'string') {
-          console.warn(`Gift card order ${orderId} has no payment_intent_id; deferring fulfillment to webhook`);
+        // Reuse the PaymentIntent verified above — no second Stripe round-trip.
+        // Stored value is only issued/redeemed once payment is confirmed for
+        // THIS order; otherwise defer to the webhook (which re-verifies).
+        if (!verifiedPi || !paymentConfirmed) {
+          console.warn(`Gift card order ${orderId}: payment not confirmed at creation; deferring fulfillment to webhook`);
         } else {
-          const pi = await retrievePaymentIntent(paymentIntentId);
-          const piOrderId = pi.metadata?.orderId;
-          if (pi.status !== 'succeeded') {
-            console.warn(`Gift card fulfillment skipped: PaymentIntent ${paymentIntentId} status=${pi.status}`);
-          } else if (piOrderId !== orderId) {
-            console.error(`Gift card fulfillment blocked: PaymentIntent ${paymentIntentId} bound to ${piOrderId}, not ${orderId}`);
-          } else {
-            // Use ONLY the captured amount. pi.amount is the authorized amount
-            // (can exceed what was captured in partial-capture flows), so we
-            // must never accept it as proof of full payment — fail closed at 0.
-            const paidAmountCents = pi.amount_received ?? 0;
-            const gcResult = await processGiftCardsForOrder(hydratedOrder, { paidAmountCents });
-            if (gcResult.issued || gcResult.redeemed) {
-              console.log(
-                `Gift cards for ${orderId}: issued=${gcResult.issued} redeemed=${gcResult.redeemed}`
-              );
-            }
-            if (gcResult.errors.length) {
-              console.error('Gift card fulfillment errors:', gcResult.errors);
-            }
+          // Use ONLY the captured amount. pi.amount is the authorized amount
+          // (can exceed what was captured in partial-capture flows), so we
+          // must never accept it as proof of full payment — fail closed at 0.
+          const paidAmountCents = verifiedPi.amount_received ?? 0;
+          const gcResult = await processGiftCardsForOrder(hydratedOrder, { paidAmountCents });
+          if (gcResult.issued || gcResult.redeemed) {
+            console.log(
+              `Gift cards for ${orderId}: issued=${gcResult.issued} redeemed=${gcResult.redeemed}`
+            );
+          }
+          if (gcResult.errors.length) {
+            console.error('Gift card fulfillment errors:', gcResult.errors);
           }
         }
       } catch (gcError) {

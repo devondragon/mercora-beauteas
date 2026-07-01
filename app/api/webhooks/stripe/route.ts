@@ -45,7 +45,7 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
-import { getOrderById } from '@/lib/models/mach/orders';
+import { getOrderById, markOrderPaid } from '@/lib/models/mach/orders';
 import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 
 /**
@@ -177,24 +177,20 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   }
 
   try {
-    // Update order status using unified orders endpoint
+    // Mark the order paid directly in D1. This previously self-fetched
+    // `${NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/orders`, which on the
+    // deployed Worker resolved to localhost (unreachable) and silently left the
+    // order 'pending'. Writing to D1 removes that env dependency entirely and
+    // is idempotent (re-marking an already-paid order is a no-op).
     try {
-      const updateRes = await fetch(`${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/orders`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': process.env.STRIPE_WEBHOOK_SECRET || '',
-        },
-        body: JSON.stringify({
-          orderId,
-          status: 'processing',
-          payment_status: 'paid',
-          notes: `Payment completed via Stripe - Payment Intent: ${paymentIntent.id}`,
-        }),
+      const updated = await markOrderPaid(orderId, {
+        status: 'processing',
+        notes: `Payment completed via Stripe - Payment Intent: ${paymentIntent.id}`,
       });
-
-      if (!updateRes.ok) {
-        console.error('Failed to update order status:', await updateRes.text());
+      if (!updated) {
+        // Order not persisted yet — the getOrderById check below throws a
+        // retryable error so Stripe redelivers, by which point it will exist.
+        console.warn(`[webhook] Order ${orderId} not found when marking paid; deferring to retry`);
       }
     } catch (updateError) {
       console.error('Error updating order status:', updateError);

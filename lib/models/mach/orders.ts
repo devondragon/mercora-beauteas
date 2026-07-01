@@ -93,8 +93,40 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
   if (!updated) {
     return null;
   }
-  
+
   return hydrateOrder(updated);
+}
+
+/**
+ * Mark an order as paid (and, by default, move it into fulfillment).
+ *
+ * Writes directly to D1 — used by both the order-creation path (after
+ * server-side PaymentIntent verification) and the Stripe webhook. Returns null
+ * if the order row doesn't exist yet (e.g. webhook wins the race with the
+ * client's order-creation call), so the caller can defer/retry.
+ */
+export async function markOrderPaid(
+  orderId: string,
+  opts?: { status?: Order['status']; notes?: string }
+): Promise<Order | null> {
+  const db = await getDbAsync();
+
+  const updateData: Record<string, unknown> = {
+    payment_status: 'paid',
+    status: opts?.status ?? 'processing',
+    updated_at: sql`CURRENT_TIMESTAMP`,
+  };
+  if (opts?.notes) {
+    updateData.notes = opts.notes;
+  }
+
+  const [updated] = await db
+    .update(orders)
+    .set(updateData)
+    .where(eq(orders.id, orderId))
+    .returning();
+
+  return updated ? hydrateOrder(updated) : null;
 }
 
 // Update order with shipping information
