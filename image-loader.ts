@@ -87,8 +87,8 @@ export default function cloudflareLoader({
   width,
   quality,
 }: ImageLoaderProps) {
-  // Local, bundled placeholder assets are served straight from /public — never route through R2/CDN
-  if (src.startsWith("/placeholder")) return src;
+  // Local, bundled assets are served straight from /public — never route through R2/CDN
+  if (src.startsWith("/placeholder") || src.startsWith("/logo")) return src;
 
   // Local dev server: serve as-is (no optimization, faster builds)
   if (process.env.NODE_ENV === "development") {

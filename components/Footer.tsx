@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getNavigationPages } from "@/lib/models/pages";
 import { getSocialMediaSettings } from "@/lib/utils/settings";
 import { brand } from "@/lib/brand";
@@ -18,7 +19,7 @@ export default async function Footer() {
 
   return (
     <footer className="bg-surface text-text-primary mt-16 relative z-10">
-      <div className="ml-0 sm:ml-[100px] lg:ml-[200px] px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8 text-sm text-text-secondary z-10 relative">
+      <div className="px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8 text-sm text-text-secondary z-10 relative">
         <div className="space-y-2">
           {/* Navigation Pages from CMS */}
           {primaryNavPages.map((page) => (
@@ -112,8 +113,15 @@ export default async function Footer() {
       <div className="text-center text-xs text-text-muted pb-4 pt-2 relative z-10">
         {brand.copyright}
       </div>
-      <div className="absolute bottom-0 left-[10px] sm:left-[20px] text-[60px] sm:text-[100px] lg:text-[140px] font-bold text-surface-light leading-none z-0 select-none uppercase">
-        {brand.name}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-0 select-none pointer-events-none opacity-[0.08]">
+        <Image
+          src="/logo.png"
+          alt=""
+          aria-hidden
+          width={692}
+          height={120}
+          className="h-[60px] sm:h-[100px] lg:h-[140px] w-auto"
+        />
       </div>
     </footer>
   );

@@ -61,6 +61,7 @@ import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, 
 import AgentDrawer from "@/components/agent/AgentDrawer";
 import ClerkLogin from "@/components/login/ClerkLogin";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import Image from "next/image";
 import CartDrawer from "@/components/cart/CartDrawer";
 import { CartHydrationGuard } from "@/components/cart/CartHydrationGuard";
 import ClientOnly from "@/components/ClientOnly";
@@ -349,8 +350,15 @@ export default function HeaderClient({
 
   return (
     <div className="flex justify-between items-center px-4 sm:px-6 py-4 bg-surface-dark text-text-primary">
-      <Link href="/" className="text-lg sm:text-xl font-bold hover:text-primary-500 transition-colors">
-        {brandName}
+      <Link href="/" className="shrink-0 transition-opacity hover:opacity-80" aria-label={brandName}>
+        <Image
+          src="/logo.png"
+          alt={brandName}
+          width={692}
+          height={120}
+          priority
+          className="h-9 w-auto sm:h-10"
+        />
       </Link>
 
       {/* Desktop Navigation */}
