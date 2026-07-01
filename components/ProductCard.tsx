@@ -134,7 +134,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   return (
     <Link href={`/product/${slug}`} prefetch={true}>
       <div className="bg-white border border-border-default rounded-lg overflow-hidden shadow hover:shadow-lg transition cursor-pointer touch-manipulation">
-        <div className="relative aspect-video bg-surface-light">
+        <div className="relative aspect-[3/4] bg-surface-light">
             <Image
               src={imageUrl}
               alt={imageAlt}
