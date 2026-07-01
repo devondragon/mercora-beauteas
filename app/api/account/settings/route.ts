@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomer, updateCustomer, updateCommunicationPreferences } from "@/lib/models/mach/customer";
+import { getOrCreateCustomer } from "@/lib/account/ensure-customer";
 import type { MACHCommunicationPreferences, MACHPersonData } from "@/lib/types/mach/Customer";
 
 export async function GET() {
@@ -39,10 +40,9 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ error: `${field} exceeds ${MAX_NAME_LEN} characters` }, { status: 400 });
     }
 
-    const customer = await getCustomer(userId);
-    if (!customer) {
-      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
-    }
+    // Provision a customer from the Clerk profile if this account has never
+    // written any data (e.g. hasn't placed an order yet).
+    const customer = await getOrCreateCustomer(userId);
 
     // Update person data (name)
     if (body.first_name !== undefined || body.last_name !== undefined) {

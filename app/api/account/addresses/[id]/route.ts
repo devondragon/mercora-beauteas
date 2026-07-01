@@ -27,8 +27,10 @@ export async function PUT(
         return NextResponse.json({ error: `${field} exceeds ${MAX_FIELD_LEN} characters` }, { status: 400 });
     }
 
+    // No customer row means this account has no saved addresses yet, so the
+    // requested address does not exist.
     const customer = await getCustomer(userId);
-    if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    if (!customer) return NextResponse.json({ error: "Address not found" }, { status: 404 });
 
     const updates: Partial<MACHCustomerAddress> = {};
 

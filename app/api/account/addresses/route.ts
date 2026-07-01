@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomer, addCustomerAddress, updateCustomerAddress } from "@/lib/models/mach/customer";
+import { getOrCreateCustomer } from "@/lib/account/ensure-customer";
 import type { MACHCustomerAddress } from "@/lib/types/mach/Customer";
 
 export async function GET() {
@@ -37,14 +38,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `${field} exceeds ${MAX_FIELD_LEN} characters` }, { status: 400 });
     }
 
+    // Provision a customer from the Clerk profile if this account has never
+    // written any data (e.g. hasn't placed an order yet), so a first-time user
+    // can add an address.
+    const customer = await getOrCreateCustomer(userId);
+
     // If new address is default, unset existing defaults first
-    if (body.is_default === true) {
-      const customer = await getCustomer(userId);
-      if (customer?.addresses) {
-        for (const addr of customer.addresses) {
-          if (addr.is_default && addr.id) {
-            await updateCustomerAddress(userId, addr.id, { is_default: false });
-          }
+    if (body.is_default === true && customer.addresses) {
+      for (const addr of customer.addresses) {
+        if (addr.is_default && addr.id) {
+          await updateCustomerAddress(userId, addr.id, { is_default: false });
         }
       }
     }
@@ -65,7 +68,7 @@ export async function POST(req: NextRequest) {
     };
 
     const updated = await addCustomerAddress(userId, address);
-    if (!updated) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    if (!updated) return NextResponse.json({ error: "Failed to create address" }, { status: 500 });
 
     return NextResponse.json({ address }, { status: 201 });
   } catch (error) {
