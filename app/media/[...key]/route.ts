@@ -40,6 +40,9 @@ export async function GET(_req: Request, { params }: RouteContext) {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
+  // Prevent browsers from MIME-sniffing served objects into an executable
+  // content type (e.g. a mislabeled upload sniffed as HTML/SVG).
+  headers.set("X-Content-Type-Options", "nosniff");
   // Image content is immutable per key (handles are stable); cache aggressively.
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
 
