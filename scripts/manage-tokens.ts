@@ -26,6 +26,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { sqlString } from "./lib/sql-escape.mjs";
 
 /** Named permission presets, mirroring PERMISSIONS in lib/auth/unified-auth.ts. */
 const PRESETS: Record<string, string[]> = {
@@ -77,11 +78,6 @@ function resolveDb(flags: Flags): { dbName: string; remoteArgs: string[]; env: s
 /** SHA-256 hex — must match sha256Hex() in lib/auth/unified-auth.ts. */
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
-}
-
-/** Escape a SQL string literal by doubling single quotes. */
-function sqlString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 /** Run `wrangler d1 execute` with a single SQL command. Returns parsed --json result. */

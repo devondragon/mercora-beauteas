@@ -29,6 +29,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { sqlString } from "./lib/sql-escape.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = "beauteas-db-dev"; // wrangler binding name; --env selects the actual DB
@@ -70,7 +71,6 @@ function d1Json(command) {
   return JSON.parse(out.slice(out.indexOf("[")));
 }
 
-const sqlStr = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const localized = (s) => JSON.stringify({ en: s });
 
 // slug is stored either as a plain string or a localized JSON object ({"en": …})
@@ -105,7 +105,7 @@ function mergeExtensions(entry, row) {
   } catch {
     base = {};
   }
-  return `extensions=${sqlStr(JSON.stringify({ ...base, ...entry.extensions }))}`;
+  return `extensions=${sqlString(JSON.stringify({ ...base, ...entry.extensions }))}`;
 }
 
 // Per-table SET builders. Products: extensions (merged) + clean description.
@@ -113,21 +113,21 @@ function mergeExtensions(entry, row) {
 const BUILDERS = {
   products: (entry, row) =>
     [
-      typeof entry.status === "string" ? `status=${sqlStr(entry.status)}` : null,
+      typeof entry.status === "string" ? `status=${sqlString(entry.status)}` : null,
       mergeExtensions(entry, row),
       typeof entry.description === "string" && entry.description.trim()
-        ? `description=${sqlStr(localized(entry.description))}`
+        ? `description=${sqlString(localized(entry.description))}`
         : null,
     ].filter(Boolean),
   categories: (entry) =>
     [
-      typeof entry.status === "string" ? `status=${sqlStr(entry.status)}` : null,
+      typeof entry.status === "string" ? `status=${sqlString(entry.status)}` : null,
       typeof entry.description === "string" && entry.description.trim()
-        ? `description=${sqlStr(localized(entry.description))}`
+        ? `description=${sqlString(localized(entry.description))}`
         : null,
       // Present + object → set; present + null → clear to SQL NULL; absent → leave.
       "primary_image" in entry
-        ? `primary_image=${entry.primary_image === null ? "NULL" : sqlStr(JSON.stringify(entry.primary_image))}`
+        ? `primary_image=${entry.primary_image === null ? "NULL" : sqlString(JSON.stringify(entry.primary_image))}`
         : null,
     ].filter(Boolean),
 };
@@ -148,7 +148,7 @@ function prepare(table, file) {
     const sets = BUILDERS[table](data[slug], row);
     if (!sets.length) continue;
     sets.push("updated_at=datetime('now')");
-    statements.push(`UPDATE ${table} SET ${sets.join(", ")} WHERE id=${sqlStr(row.id)};`);
+    statements.push(`UPDATE ${table} SET ${sets.join(", ")} WHERE id=${sqlString(row.id)};`);
   }
   return { statements, missing };
 }
