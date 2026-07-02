@@ -124,11 +124,6 @@ export async function cleanupExpiredSessions(): Promise<number> {
   }
 }
 
-export async function getSessionCart(sessionId: string): Promise<CartItem[]> {
-  const session = await getSession(sessionId);
-  return session?.cart || [];
-}
-
 // BMC-133 (C6): cart/order tools take a client-supplied session_id and must
 // verify it belongs to the authenticated caller before reading or mutating it
 // — otherwise one agent can hijack another agent's cart/order by guessing or
