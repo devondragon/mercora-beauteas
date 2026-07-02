@@ -54,3 +54,26 @@ export function assertRefundWithinRemaining(
   }
   return { ok: true };
 }
+
+/**
+ * Resolves the amount to charge Stripe for a "full" refund request. A "full"
+ * refund should only ever refund what's still outstanding — never the whole
+ * order total again after prior refunds (partial or full) have already
+ * reduced the remaining balance. Without this, a full refund issued after a
+ * prior partial refund would ask Stripe to refund the entire original total
+ * a second time, and Stripe would reject it with a raw 500 instead of a
+ * clean 400 (BMC-152 review).
+ */
+export function resolveFullRefundAmount(
+  totalAmount: number,
+  alreadyRefunded: number
+): { ok: true; amount: number } | { ok: false; error: string } {
+  const remaining = totalAmount - alreadyRefunded;
+  if (remaining <= 0) {
+    return {
+      ok: false,
+      error: 'Order is already fully refunded'
+    };
+  }
+  return { ok: true, amount: remaining };
+}

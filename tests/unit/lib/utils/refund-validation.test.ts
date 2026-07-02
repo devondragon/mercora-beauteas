@@ -8,9 +8,16 @@
  * Exercises the pure helpers used by app/api/orders/refund/route.ts:
  * computeRefundedTotal() sums extensions.refunds[], and
  * assertRefundWithinRemaining() checks the new request against what's left.
+ *
+ * Also covers a follow-up review gap: the "full" refund branch used to
+ * always refund the whole order total, skipping the cumulative check
+ * entirely — so a full refund issued after a prior partial refund would ask
+ * Stripe to refund the full total a second time and get a raw 500.
+ * resolveFullRefundAmount() fixes that by refunding only what's still
+ * outstanding, and rejecting cleanly once nothing remains.
  */
 import { describe, it, expect } from 'vitest';
-import { computeRefundedTotal, assertRefundWithinRemaining } from '@/lib/utils/refund-validation';
+import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmount } from '@/lib/utils/refund-validation';
 
 describe('computeRefundedTotal', () => {
   it('returns 0 when extensions is undefined', () => {
@@ -86,5 +93,48 @@ describe('assertRefundWithinRemaining', () => {
     const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 5000 }, { amount: 4000 }] });
     const result = assertRefundWithinRemaining(10000, alreadyRefunded, 1000);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('resolveFullRefundAmount', () => {
+  it('refunds the entire total when there are no prior refunds', () => {
+    const result = resolveFullRefundAmount(10000, 0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.amount).toBe(10000);
+    }
+  });
+
+  it('refunds only the outstanding balance after a prior partial refund', () => {
+    const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 4000 }] });
+    const result = resolveFullRefundAmount(10000, alreadyRefunded);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.amount).toBe(6000);
+    }
+  });
+
+  it('refunds only the outstanding balance across multiple prior partial refunds', () => {
+    const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 3000 }, { amount: 2000 }] });
+    const result = resolveFullRefundAmount(10000, alreadyRefunded);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.amount).toBe(5000);
+    }
+  });
+
+  it('rejects when the order is already fully refunded by prior partials', () => {
+    const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 6000 }, { amount: 4000 }] });
+    const result = resolveFullRefundAmount(10000, alreadyRefunded);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Order is already fully refunded');
+    }
+  });
+
+  it('rejects when prior refunds exceed the total (defensive over-refund case)', () => {
+    const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 7000 }, { amount: 4000 }] });
+    const result = resolveFullRefundAmount(10000, alreadyRefunded);
+    expect(result.ok).toBe(false);
   });
 });
