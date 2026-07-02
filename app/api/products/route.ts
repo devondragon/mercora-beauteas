@@ -6,7 +6,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   listProducts,
   createProduct,
-  updateProduct,
   getProductsByCategory
 } from "@/lib/models/mach/products";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
