@@ -36,6 +36,7 @@ import { getDbAsync } from "@/lib/db";
 import { products, deserializeProduct, product_variants } from "@/lib/db/schema/products";
 import { eq } from "drizzle-orm";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { errorDetails } from "@/lib/utils/error-response";
 
 export async function GET(request: NextRequest) {
   try {
@@ -345,7 +346,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Consolidated vectorization error:", error);
     return NextResponse.json(
-      { error: "Internal server error", details: String(error) },
+      { error: "Internal server error", details: errorDetails(error) },
       { status: 500 }
     );
   }
