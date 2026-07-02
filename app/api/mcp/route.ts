@@ -70,15 +70,15 @@ export async function POST(request: NextRequest) {
 
       case 'add_to_cart':
         const { addToCart } = await import('../../../lib/mcp/tools/cart');
-        return NextResponse.json(await addToCart({ ...params, sessionId: session_id }, session_id || 'temp'));
+        return NextResponse.json(await addToCart({ ...params, sessionId: session_id }, session_id || 'temp', auth.agentId!));
 
       case 'update_cart':
         const { updateCart } = await import('../../../lib/mcp/tools/cart');
-        return NextResponse.json(await updateCart({ ...params, sessionId: session_id }, session_id || 'temp'));
+        return NextResponse.json(await updateCart({ ...params, sessionId: session_id }, session_id || 'temp', auth.agentId!));
 
       case 'remove_from_cart':
         const { removeFromCart } = await import('../../../lib/mcp/tools/cart');
-        return NextResponse.json(await removeFromCart({ ...params, sessionId: session_id }, session_id || 'temp'));
+        return NextResponse.json(await removeFromCart({ ...params, sessionId: session_id }, session_id || 'temp', auth.agentId!));
 
       case 'get_cart':
         const { getCartEstimate } = await import('../../../lib/mcp/tools/cart');
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
       case 'bulk_add_to_cart':
         const { bulkAddToCart } = await import('../../../lib/mcp/tools/cart');
-        return NextResponse.json(await bulkAddToCart({ ...params, sessionId: session_id }, session_id || 'temp'));
+        return NextResponse.json(await bulkAddToCart({ ...params, sessionId: session_id }, session_id || 'temp', auth.agentId!));
 
       case 'clear_cart':
         const { clearCart } = await import('../../../lib/mcp/tools/cart');
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
 
       case 'place_order':
         const { placeOrder } = await import('../../../lib/mcp/tools/order');
-        return NextResponse.json(await placeOrder(params, session_id || 'temp'));
+        return NextResponse.json(await placeOrder(params, session_id || 'temp', auth.agentId!));
 
       case 'get_order_status':
         const { getOrderStatus } = await import('../../../lib/mcp/tools/order');

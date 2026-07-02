@@ -1,5 +1,5 @@
 import { createOrder } from '../../models/mach/orders';
-import { getSessionCart } from '../session';
+import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
@@ -7,14 +7,45 @@ import { CartItem } from '../../types/cartitem';
 
 export async function placeOrder(
   request: OrderRequest,
-  sessionId: string
+  sessionId: string,
+  agentId: string
 ): Promise<MCPToolResponse<OrderResponse>> {
   const startTime = Date.now();
-  
+
   try {
+    // Verify the calling agent owns this session before reading/placing its cart
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return {
+        success: false,
+        data: {
+          orderId: '',
+          status: 'failed',
+          total: 0,
+          estimated_delivery: ''
+        },
+        context: {
+          session_id: sessionId,
+          agent_id: agentId,
+          processing_time_ms: Date.now() - startTime
+        },
+        error: {
+          code: ownership.code,
+          message: ownership.message
+        },
+        metadata: {
+          can_fulfill_percentage: 0,
+          estimated_satisfaction: 0,
+          next_actions: ownership.code === 'SESSION_NOT_FOUND'
+            ? ['Create a new session', 'Verify session ID']
+            : ['Use a session created by this agent']
+        }
+      };
+    }
+
     // Get current cart from session
-    const cart = await getSessionCart(sessionId);
-    
+    const cart = ownership.session.cart;
+
     if (cart.length === 0) {
       return {
         success: false,

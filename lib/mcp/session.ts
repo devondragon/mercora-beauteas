@@ -129,6 +129,30 @@ export async function getSessionCart(sessionId: string): Promise<CartItem[]> {
   return session?.cart || [];
 }
 
+// BMC-133 (C6): cart/order tools take a client-supplied session_id and must
+// verify it belongs to the authenticated caller before reading or mutating it
+// — otherwise one agent can hijack another agent's cart/order by guessing or
+// reusing its session_id. This mirrors the ownership check already enforced
+// in app/api/mcp/sessions/[sessionId]/route.ts (same codes/messages) so tool
+// functions can apply it too.
+export type SessionOwnershipResult =
+  | { ok: true; session: AgentSession }
+  | { ok: false; code: 'SESSION_NOT_FOUND' | 'SESSION_ACCESS_DENIED'; message: string };
+
+export async function requireOwnedSession(sessionId: string, agentId: string): Promise<SessionOwnershipResult> {
+  const session = await getSession(sessionId);
+
+  if (!session) {
+    return { ok: false, code: 'SESSION_NOT_FOUND', message: 'Session not found or expired' };
+  }
+
+  if (session.agentId !== agentId) {
+    return { ok: false, code: 'SESSION_ACCESS_DENIED', message: 'Agent does not own this session' };
+  }
+
+  return { ok: true, session };
+}
+
 export async function updateSessionCart(sessionId: string, cart: CartItem[]): Promise<boolean> {
   return updateSession(sessionId, { cart });
 }
