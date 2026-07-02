@@ -8,6 +8,15 @@ export interface AdminAuthResult {
   error?: string;
   userId?: string;
   isDevMode?: boolean;
+  /**
+   * True when authentication succeeded via the ADMIN_VECTORIZE_TOKEN
+   * server-to-server credential rather than a DB-verified, interactive
+   * Clerk admin session. Routes that mutate the admin_users table MUST
+   * reject this identity (see BMC-145) — the service token is scoped for
+   * automation (e.g. vectorize) and must not be usable to self-promote a
+   * Clerk user to a persistent admin.
+   */
+  isServiceToken?: boolean;
 }
 
 export async function checkAdminPermissions(request: NextRequest): Promise<AdminAuthResult> {
@@ -31,7 +40,7 @@ export async function checkAdminPermissions(request: NextRequest): Promise<Admin
       const adminToken = process.env.ADMIN_VECTORIZE_TOKEN;
       
       if (adminToken && (await timingSafeEqual(authToken, adminToken))) {
-        return { success: true, userId: "admin-service" };
+        return { success: true, userId: "admin-service", isServiceToken: true };
       }
     }
 
