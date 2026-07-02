@@ -43,17 +43,28 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // MCP Tool execution endpoint
-  const auth = await authenticateAgent(request);
-  
+  // MCP Tool execution endpoint. This is a single JSON-RPC-style dispatcher
+  // that authenticates once for whichever `tool` the body names, so the body
+  // has to be parsed BEFORE authenticateAgent() runs — the hourly
+  // order-placement limit (BMC-142) only applies when the dispatched tool is
+  // place_order, and authenticateAgent needs that flag up front to scope the
+  // rate-limit check/write correctly.
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return createHttpErrorResponse('Invalid JSON body', 400);
+  }
+
+  const { tool, params, session_id } = body;
+
+  const auth = await authenticateAgent(request, { isOrderOp: tool === 'place_order' });
+
   if (!auth.success) {
     return createHttpErrorResponse(auth.error?.message || 'Authentication failed', 401);
   }
 
   try {
-    const body = await request.json() as any;
-    const { tool, params, session_id } = body;
-
     // Route to appropriate tool handler
     switch (tool) {
       case 'search_products':
