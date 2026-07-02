@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { errorDetails } from "@/lib/utils/error-response";
 import {
   getPageById,
   updatePage,
@@ -174,14 +175,15 @@ export async function PUT(
       );
     }
 
-    // Return more detailed error information
+    // Log full detail server-side only; gate the response body behind NODE_ENV.
     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
     const errorStack = error instanceof Error ? error.stack : "No stack trace available";
-    
+
     console.error("Detailed error:", { message: errorMessage, stack: errorStack });
 
+    const detail = errorDetails(error);
     return NextResponse.json(
-      { success: false, error: `Failed to update page: ${errorMessage}` },
+      { success: false, error: detail ? `Failed to update page: ${detail}` : "Failed to update page" },
       { status: 500 }
     );
   }
