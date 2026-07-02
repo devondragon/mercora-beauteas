@@ -33,7 +33,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authResult.error }, { status: 401 });
     }
 
-    const { action, userId, email, displayName } = await request.json() as { 
+    // The ADMIN_VECTORIZE_TOKEN service credential authenticates
+    // server-to-server automation (e.g. vectorize) but is not a
+    // DB-verified, interactive Clerk admin session. Never let it
+    // create/modify admin_users rows — that would let anyone holding the
+    // token self-promote to a persistent browser-session admin. (BMC-145)
+    if (authResult.isServiceToken) {
+      return NextResponse.json({
+        error: 'Admin user management requires an interactive admin session.'
+      }, { status: 403 });
+    }
+
+    const { action, userId, email, displayName } = await request.json() as {
       action: 'add' | 'remove'; 
       userId: string; 
       email?: string; 
