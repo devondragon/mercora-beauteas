@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { isUserAdmin, updateAdminLastLogin } from "../models/admin";
+import { timingSafeEqual } from "./unified-auth";
 
 export interface AdminAuthResult {
   success: boolean;
@@ -29,7 +30,7 @@ export async function checkAdminPermissions(request: NextRequest): Promise<Admin
       // Use admin vectorize token for server-to-server admin API calls
       const adminToken = process.env.ADMIN_VECTORIZE_TOKEN;
       
-      if (adminToken && authToken === adminToken) {
+      if (adminToken && (await timingSafeEqual(authToken, adminToken))) {
         return { success: true, userId: "admin-service" };
       }
     }
