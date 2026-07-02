@@ -82,6 +82,11 @@ export async function POST(request: NextRequest) {
     const fullFilename = `${filename}.${fileExtension}`;
     const r2Path = generateR2Path(folder, fullFilename);
 
+    // Normalize the non-standard "image/jpg" alias to the standard
+    // "image/jpeg" before it's stored as the object's Content-Type, so
+    // served objects always carry a standard image content-type.
+    const storedContentType = file.type === "image/jpg" ? "image/jpeg" : file.type;
+
     // Get R2 bucket from environment
     const env = process.env as any;
     const bucket = env.MEDIA as R2Bucket;
@@ -94,9 +99,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Upload to R2 using consolidated utility. contentType comes from the
-    // validated file.type — never re-derived from the filename.
+    // validated file.type (normalized above) — never re-derived from the filename.
     await uploadToR2(bucket, r2Path, arrayBuffer, {
-      contentType: file.type,
+      contentType: storedContentType,
       customMetadata: {
         originalName: file.name,
         folder: folder,

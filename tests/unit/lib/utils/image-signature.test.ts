@@ -11,10 +11,20 @@ describe('EXT_BY_MIME', () => {
     expect(EXT_BY_MIME['image/jpeg']).toBe('jpg');
     expect(EXT_BY_MIME['image/jpg']).toBe('jpg');
     expect(EXT_BY_MIME['image/webp']).toBe('webp');
-    expect(EXT_BY_MIME['image/gif']).toBe('gif');
   });
 
-  it('does not map unknown/unsupported MIME types', () => {
+  it('maps the non-standard image/jpg alias to the same extension as image/jpeg', () => {
+    // Both spellings must resolve to the same on-disk extension so a client
+    // sending the non-standard alias is treated identically to standard JPEG.
+    expect(EXT_BY_MIME['image/jpg']).toBe(EXT_BY_MIME['image/jpeg']);
+    expect(EXT_BY_MIME['image/jpg']).toBe('jpg');
+  });
+
+  it('does not map unknown/unsupported MIME types, including GIF', () => {
+    // GIF is intentionally out of scope: the upload allowlist is JPEG/PNG/WebP
+    // only (matching the route's rejection message), even though
+    // matchesImageSignature recognizes the GIF signature as a general helper.
+    expect(EXT_BY_MIME['image/gif']).toBeUndefined();
     expect(EXT_BY_MIME['image/svg+xml']).toBeUndefined();
     expect(EXT_BY_MIME['text/html']).toBeUndefined();
     expect(EXT_BY_MIME['application/octet-stream']).toBeUndefined();

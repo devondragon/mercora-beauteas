@@ -16,13 +16,20 @@
  * Pure/no Cloudflare bindings — safe to unit test outside the Workers runtime.
  */
 
-/** Extension to store, keyed by validated MIME type. Never derive from `file.name`. */
+/**
+ * Extension to store, keyed by validated MIME type. Never derive from `file.name`.
+ *
+ * Intentionally scoped to JPEG/PNG/WebP only (the pre-existing upload
+ * allowlist). GIF is deliberately excluded here even though
+ * `matchesImageSignature` below recognizes the GIF signature as a general
+ * helper — callers that key their allowlist off this map (e.g. the
+ * admin upload route) must continue to reject GIF uploads.
+ */
 export const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg", // non-standard but occasionally sent by clients; treat as JPEG
   "image/png": "png",
   "image/webp": "webp",
-  "image/gif": "gif",
 };
 
 function matchesAt(bytes: Uint8Array, offset: number, signature: number[]): boolean {
