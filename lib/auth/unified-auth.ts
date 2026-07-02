@@ -55,7 +55,7 @@ async function sha256Hex(input: string): Promise<string> {
  * ADMIN_VECTORIZE_TOKEN doesn't leak its bytes via response timing.
  * Hashing both sides first reduces the comparison to fixed-length digests.
  */
-async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const [ah, bh] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
   let mismatch = 0;
   for (let i = 0; i < ah.length; i++) {
