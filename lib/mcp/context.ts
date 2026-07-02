@@ -73,6 +73,11 @@ export function enhanceUserContext(agentContext: AgentContext | null, existingUs
   };
 }
 
+// BMC-147: Date.now() + Math.random() gave only ~31 bits of predictable
+// entropy for the session ID suffix. crypto.randomUUID() is Web Crypto —
+// available as a global in the Workers runtime, Node 20+, and jsdom — and
+// gives >=122 bits of cryptographically secure entropy. The `${agentId}_`
+// prefix is preserved since callers may rely on it.
 export function createAgentSessionId(agentId: string): string {
-  return `${agentId}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  return `${agentId}_${crypto.randomUUID()}`;
 }

@@ -224,6 +224,10 @@ export async function createAgent(agentData: {
   return { apiKey };
 }
 
-function generateApiKey(): string {
-  return `mcp_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+// BMC-147: Date.now() + Math.random() is not a CSPRNG and is predictable
+// (narrow, time-seeded search space). crypto.randomUUID() is Web Crypto —
+// available as a global in the Workers runtime, Node 20+, and jsdom — and
+// gives >=122 bits of cryptographically secure entropy.
+export function generateApiKey(): string {
+  return `mcp_${crypto.randomUUID().replace(/-/g, '')}`;
 }
