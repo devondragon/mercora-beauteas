@@ -56,6 +56,12 @@ export async function POST(request: NextRequest) {
     return createHttpErrorResponse('Invalid JSON body', 400);
   }
 
+  // Guard non-object bodies (null / number / string) so the destructure below
+  // can't throw an uncaught 500 for an unauthenticated caller.
+  if (typeof body !== 'object' || body === null) {
+    return createHttpErrorResponse('Invalid JSON body', 400);
+  }
+
   const { tool, params, session_id } = body;
 
   const auth = await authenticateAgent(request, { isOrderOp: tool === 'place_order' });
