@@ -16,6 +16,7 @@ import { eq, and, desc, lt, sql, count, like, gte } from 'drizzle-orm';
 import { customers } from '@/lib/db/schema/customer';
 import { products, product_variants } from '@/lib/db/schema/products';
 import type { SubscriptionStatus } from '@/lib/types/subscription';
+import { isUniqueViolation } from '@/lib/utils/db-errors';
 
 // ─── Subscription Plans ───────────────────────────────────────────
 
@@ -498,23 +499,59 @@ export async function getSubscriptionStats() {
 
 // ─── Webhook Dedup ────────────────────────────────────────────────
 
-export async function isWebhookEventProcessed(eventId: string): Promise<boolean> {
+/**
+ * Atomically claim a webhook event for processing by inserting its id into
+ * processed_webhook_events (event_id is the PRIMARY KEY). Returns true when
+ * this call won the claim (first delivery of this event id) and false when a
+ * UNIQUE/PK violation shows the event was already claimed — by a prior
+ * delivery or a concurrent one that raced ahead — so the caller must treat
+ * this delivery as a duplicate and skip processing. Any other error (e.g. a
+ * genuine DB failure) propagates.
+ *
+ * This is the fix for BMC-153: the previous flow did a `SELECT` dedup check
+ * and only recorded the event *after* the handler finished, which is a
+ * read-then-write race — two concurrent deliveries of the same event could
+ * both pass the "not yet processed" read before either write landed. Making
+ * the PK insert itself the gate (attempted before the handler runs) removes
+ * the race: SQLite/D1 serializes the two inserts and only one can succeed.
+ */
+export async function claimWebhookEvent(eventId: string, eventType: string): Promise<boolean> {
   const db = await getDbAsync();
-  const [existing] = await db
-    .select()
-    .from(processed_webhook_events)
-    .where(eq(processed_webhook_events.event_id, eventId))
-    .limit(1);
-  return !!existing;
+  try {
+    await db.insert(processed_webhook_events).values({
+      event_id: eventId,
+      event_type: eventType,
+      processed_at: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return false;
+    }
+    throw err;
+  }
 }
 
-export async function recordWebhookEvent(eventId: string, eventType: string) {
-  const db = await getDbAsync();
-  await db.insert(processed_webhook_events).values({
-    event_id: eventId,
-    event_type: eventType,
-    processed_at: new Date().toISOString(),
-  });
+/**
+ * Best-effort release of a webhook event's claim row. Used when a handler
+ * throws AFTER successfully claiming the event (claimWebhookEvent returned
+ * true), so the resulting 500 doesn't permanently block Stripe's legitimate
+ * retry — without this, the retry's claim attempt would hit the same PK and
+ * be (wrongly) treated as an already-processed duplicate forever.
+ *
+ * Never throws: a failure here just means a retry gets skipped as a
+ * duplicate instead of reprocessed, which is safe because every downstream
+ * side effect (markOrderPaid, gift card fulfillment, subscription/invoice
+ * handlers) is idempotent and keyed on the domain object, not the webhook
+ * event id — at worst a retry no-ops instead of re-running cleanly.
+ */
+export async function releaseWebhookEventClaim(eventId: string): Promise<void> {
+  try {
+    const db = await getDbAsync();
+    await db.delete(processed_webhook_events).where(eq(processed_webhook_events.event_id, eventId));
+  } catch (err) {
+    console.error('[webhook] Failed to release event claim after handler error:', eventId, err);
+  }
 }
 
 export async function cleanupOldWebhookEvents() {
