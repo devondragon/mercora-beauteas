@@ -35,6 +35,7 @@ import { getDbAsync } from '@/lib/db';
 import { orders } from '@/lib/db/schema/order';
 import { eq } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
+import { computeRefundedTotal, assertRefundWithinRemaining } from '@/lib/utils/refund-validation';
 
 interface RefundRequest {
   orderId: string;
@@ -114,10 +115,16 @@ export async function POST(request: NextRequest) {
       newStatus = order.status; // Keep same status for partial refunds
       newPaymentStatus = 'paid'; // Still considered paid since it's partial
       
-      // Validate partial refund amount doesn't exceed total
-      if (refundAmount > totalAmount.amount) {
+      // Validate partial refund amount doesn't exceed what's actually left
+      // to refund — i.e. total minus everything already recorded in
+      // extensions.refunds[], not just the order total in isolation.
+      // Stripe would also reject a true over-refund, but we want a clean
+      // 400 here instead of surfacing a raw Stripe error (BMC-152).
+      const alreadyRefunded = computeRefundedTotal(extensions);
+      const refundCheck = assertRefundWithinRemaining(totalAmount.amount, alreadyRefunded, refundAmount);
+      if (!refundCheck.ok) {
         return NextResponse.json({
-          error: 'Refund amount cannot exceed order total'
+          error: refundCheck.error
         }, { status: 400 });
       }
     }
