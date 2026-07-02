@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { validatePayment } from '../../../../../../lib/mcp/tools/payment';
-import { getSessionCart } from '../../../../../../lib/mcp/session';
+import { requireOwnedSession } from '../../../../../../lib/mcp/session';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -38,10 +38,26 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Get cart from session if not provided
+    // Get cart from session if not provided. A client-supplied session_id must
+    // belong to the calling agent before we read its cart — same anti-pattern
+    // as the shipping route (BMC-133 review): validatePayment doesn't currently
+    // use the cart, but this keeps the read consistent with the other tools.
     const sessionId = body.session_id || 'temp';
-    const cart = body.cart || await getSessionCart(sessionId);
-    
+    let cart = body.cart;
+    if (!cart) {
+      const owned = await requireOwnedSession(sessionId, auth.agentId!);
+      if (!owned.ok) {
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: owned.code,
+            message: owned.message
+          }
+        }, { status: 403 });
+      }
+      cart = owned.session.cart;
+    }
+
     const paymentRequest = {
       payment_method: body.payment_method,
       billing_address: body.billing_address,

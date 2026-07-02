@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     };
 
     const sessionId = body.session_id || 'temp';
-    const result = await removeFromCart(cartRequest, sessionId);
+    const result = await removeFromCart(cartRequest, sessionId, auth.agentId!);
     
     return NextResponse.json(result);
   } catch (error) {

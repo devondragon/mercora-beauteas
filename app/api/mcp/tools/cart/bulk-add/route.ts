@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     };
 
     const sessionId = body.session_id || 'temp';
-    const result = await bulkAddToCart(bulkRequest, sessionId);
+    const result = await bulkAddToCart(bulkRequest, sessionId, auth.agentId!);
     
     return NextResponse.json(result);
   } catch (error) {

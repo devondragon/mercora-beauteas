@@ -1,19 +1,52 @@
-import { getSession, updateSessionCart, getSessionCart } from '../session';
+import { requireOwnedSession, updateSessionCart } from '../session';
 import { getProductBySlug } from '../../models/mach/products';
 import { CartRequest, CartResponse, MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
 import { ritualBundleSuggestions } from '../catalog';
 
+function cartOwnershipError(
+  ownership: { code: 'SESSION_NOT_FOUND' | 'SESSION_ACCESS_DENIED'; message: string },
+  sessionId: string,
+  agentId: string,
+  processingTime: number
+): MCPToolResponse<CartResponse> {
+  return {
+    success: false,
+    data: { cart: [], total_items: 0, estimated_total: 0 },
+    context: {
+      session_id: sessionId,
+      agent_id: agentId,
+      processing_time_ms: processingTime
+    },
+    error: {
+      code: ownership.code,
+      message: ownership.message
+    },
+    metadata: {
+      can_fulfill_percentage: 0,
+      estimated_satisfaction: 0,
+      next_actions: ownership.code === 'SESSION_NOT_FOUND'
+        ? ['Create a new session', 'Verify session ID']
+        : ['Use a session created by this agent']
+    }
+  };
+}
+
 export async function addToCart(
   request: CartRequest & { sessionId: string },
-  sessionId: string
+  sessionId: string,
+  agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    // Get current cart
-    const currentCart = await getSessionCart(sessionId);
-    
+    // Verify the calling agent owns this session before touching its cart
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return cartOwnershipError(ownership, sessionId, agentId, Date.now() - startTime);
+    }
+    const currentCart = ownership.session.cart;
+
     // Get product details
     const product = await getProductBySlug(request.productId.toString());
     if (!product) {
@@ -100,12 +133,17 @@ export async function addToCart(
 
 export async function bulkAddToCart(
   request: { items: CartRequest[]; sessionId: string; agent_context?: any },
-  sessionId: string
+  sessionId: string,
+  agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    let currentCart = await getSessionCart(sessionId);
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return cartOwnershipError(ownership, sessionId, agentId, Date.now() - startTime);
+    }
+    let currentCart = ownership.session.cart;
     let addedItems = 0;
     let failedItems: string[] = [];
     
@@ -211,10 +249,15 @@ export async function clearCart(
   agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
   const startTime = Date.now();
-  
+
   try {
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return cartOwnershipError(ownership, sessionId, agentId, Date.now() - startTime);
+    }
+
     await updateSessionCart(sessionId, []);
-    
+
     const processingTime = Date.now() - startTime;
     
     return {
@@ -257,12 +300,17 @@ export async function clearCart(
 
 export async function updateCart(
   request: CartRequest & { sessionId: string },
-  sessionId: string
+  sessionId: string,
+  agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    const currentCart = await getSessionCart(sessionId);
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return cartOwnershipError(ownership, sessionId, agentId, Date.now() - startTime);
+    }
+    const currentCart = ownership.session.cart;
     const itemIndex = currentCart.findIndex(item => String(item.variantId) === String(request.variantId));
     
     if (itemIndex === -1) {
@@ -326,9 +374,10 @@ export async function updateCart(
 
 export async function removeFromCart(
   request: CartRequest & { sessionId: string },
-  sessionId: string
+  sessionId: string,
+  agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
-  return updateCart({ ...request, quantity: 0 }, sessionId);
+  return updateCart({ ...request, quantity: 0 }, sessionId, agentId);
 }
 
 export async function getCartEstimate(
@@ -336,9 +385,13 @@ export async function getCartEstimate(
   agentId: string
 ): Promise<MCPToolResponse<CartResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    const cart = await getSessionCart(sessionId);
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return cartOwnershipError(ownership, sessionId, agentId, Date.now() - startTime);
+    }
+    const cart = ownership.session.cart;
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
     const estimatedTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     
