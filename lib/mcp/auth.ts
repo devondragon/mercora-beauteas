@@ -75,21 +75,38 @@ export async function authenticateAgent(request: NextRequest): Promise<AgentAuth
   }
 }
 
-async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit: number): Promise<AgentAuthResult> {
-  const now = new Date();
+/**
+ * Compute the (floored) minute/hour window boundaries used to bucket
+ * mcp_rate_limits rows, as ISO strings.
+ *
+ * This is the single source of truth for how a timestamp maps to a rate
+ * limit window key. It MUST be used by both the read path (checkRateLimit)
+ * and the write path (updateRateLimit's caller) so a request is always
+ * counted against the same row it was checked against — see BMC-142, where
+ * the hour window was read with one derivation but never written at all.
+ */
+export function getRateLimitWindowStarts(now: Date = new Date()): { minuteStart: string; hourStart: string } {
   const minuteStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes());
   const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
+  return {
+    minuteStart: minuteStart.toISOString(),
+    hourStart: hourStart.toISOString()
+  };
+}
+
+async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit: number): Promise<AgentAuthResult> {
+  const { minuteStart, hourStart } = getRateLimitWindowStarts();
 
   try {
     const db = await getDbAsync();
-    
+
     // Check minute rate limit
     const minuteUsage = await db.select()
       .from(mcpRateLimits)
       .where(and(
         eq(mcpRateLimits.agentId, agentId),
         eq(mcpRateLimits.window, 'minute'),
-        gte(mcpRateLimits.windowStart, minuteStart.toISOString())
+        gte(mcpRateLimits.windowStart, minuteStart)
       ))
       .limit(1);
 
@@ -109,7 +126,7 @@ async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit: numbe
       .where(and(
         eq(mcpRateLimits.agentId, agentId),
         eq(mcpRateLimits.window, 'hour'),
-        gte(mcpRateLimits.windowStart, hourStart.toISOString())
+        gte(mcpRateLimits.windowStart, hourStart)
       ))
       .limit(1);
 
@@ -123,9 +140,13 @@ async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit: numbe
       };
     }
 
-    // Update rate limit counters
-    await updateRateLimit(agentId, 'minute', minuteStart.toISOString());
-    
+    // Update rate limit counters. Both windows are written on every call so
+    // the hourly ophLimit above is actually enforceable (previously only the
+    // minute counter was incremented, so hourUsage was always empty and the
+    // hour check could never trip — BMC-142).
+    await updateRateLimit(agentId, 'minute', minuteStart);
+    await updateRateLimit(agentId, 'hour', hourStart);
+
     return { success: true, agentId };
   } catch (error) {
     return {
