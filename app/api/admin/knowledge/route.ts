@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { isSafeKnowledgeFilename } from "@/lib/utils/safe-filename";
 
 export async function GET(request: NextRequest) {
   try {
@@ -110,6 +111,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Filename and content are required" }, { status: 400 });
     }
 
+    if (!isSafeKnowledgeFilename(filename)) {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    }
+
     // Ensure filename ends with .md
     const mdFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
     const key = `knowledge_md/${mdFilename}`;
@@ -191,6 +196,10 @@ export async function DELETE(request: NextRequest) {
 
     if (!filename) {
       return NextResponse.json({ error: "Filename is required" }, { status: 400 });
+    }
+
+    if (!isSafeKnowledgeFilename(filename)) {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
     const key = `knowledge_md/${filename}`;
