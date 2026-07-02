@@ -16,6 +16,7 @@ import { extractReviewsFromFile } from './extractors/file-based/reviews.js';
 import { transformReviews } from './transformers/reviews.js';
 import { loadToD1 } from './loaders/d1-loader.js';
 import { executeQuery, executeSql } from './lib/wrangler-exec.js';
+import { sqlString } from '../lib/sql-escape.mjs';
 
 /**
  * Recalculate product aggregate ratings after review import.
@@ -36,7 +37,7 @@ async function recalculateProductRatings(
     try {
       // Query review counts grouped by rating
       const queryResult = executeQuery(
-        `SELECT rating, COUNT(*) as count FROM product_reviews WHERE product_id = '${productId.replace(/'/g, "''")}' AND status = 'published' GROUP BY rating`,
+        `SELECT rating, COUNT(*) as count FROM product_reviews WHERE product_id = ${sqlString(productId)} AND status = 'published' GROUP BY rating`,
         config.d1DatabaseName,
         config.d1Env
       );
@@ -88,7 +89,7 @@ async function recalculateProductRatings(
       });
 
       // Update product rating
-      const updateSql = `UPDATE products SET rating = '${ratingJson.replace(/'/g, "''")}' WHERE id = '${productId.replace(/'/g, "''")}';`;
+      const updateSql = `UPDATE products SET rating = ${sqlString(ratingJson)} WHERE id = ${sqlString(productId)};`;
       executeSql(updateSql, config.d1DatabaseName, config.d1Env);
 
       updatedCount++;

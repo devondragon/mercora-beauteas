@@ -73,6 +73,7 @@ describe('/api/promotions admin auth gate (BMC-130 / C3)', () => {
     expect(res.status).toBe(401);
     expect(vi.mocked(getDbAsync)).not.toHaveBeenCalled();
     expect(vi.mocked(updateCouponInstance)).not.toHaveBeenCalled();
+    expect(vi.mocked(listCouponInstances)).not.toHaveBeenCalled();
   });
 
   it('DELETE returns 401 when not admin and never deletes a promotion', async () => {
@@ -80,5 +81,6 @@ describe('/api/promotions admin auth gate (BMC-130 / C3)', () => {
     expect(res.status).toBe(401);
     expect(vi.mocked(getDbAsync)).not.toHaveBeenCalled();
     expect(vi.mocked(hardDeleteCouponInstance)).not.toHaveBeenCalled();
+    expect(vi.mocked(listCouponInstances)).not.toHaveBeenCalled();
   });
 });

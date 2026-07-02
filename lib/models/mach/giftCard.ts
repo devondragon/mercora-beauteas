@@ -10,6 +10,7 @@
 import { getDbAsync } from '@/lib/db';
 import { gift_cards, gift_card_transactions } from '@/lib/db/schema/gift-card';
 import type { GiftCardRow } from '@/lib/db/schema/gift-card';
+import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { eq, and, gte, desc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -22,28 +23,6 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // concurrent redeems can bump a caller off its snapshot more than once); a
 // handful of retries makes a lost race recover instead of failing spuriously.
 const MAX_REDEEM_ATTEMPTS = 5;
-
-/**
- * True when an error (or any error in its `cause` chain) is a SQLite UNIQUE
- * constraint violation. Drizzle's D1 driver wraps the underlying error as
- * `"Failed query: …"` and tucks the original `SQLITE_CONSTRAINT_*` text into
- * `cause`, so matching only the top-level message can miss it. We walk the
- * chain and match the constraint text wherever it surfaces.
- */
-function isUniqueViolation(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let current: unknown = err;
-  for (let depth = 0; depth < 5 && current && !seen.has(current); depth++) {
-    seen.add(current);
-    const message =
-      current instanceof Error ? current.message : typeof current === 'string' ? current : '';
-    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)|\bunique\b/i.test(message)) {
-      return true;
-    }
-    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;
-  }
-  return false;
-}
 
 /**
  * Generate a formatted gift card code, e.g. `BEAU-7K3M-9PQR-T4WX`.

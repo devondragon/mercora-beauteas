@@ -155,9 +155,31 @@ export async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit
     // on every call would both mis-enforce the cap on non-order traffic and
     // was the root cause of BMC-142 (unwritten, so the hour check never
     // tripped) before this scoping was added.
-    await updateRateLimit(agentId, 'minute', minuteStart);
+    //
+    // Both increments are issued in a single db.batch([...]) so they commit
+    // atomically: previously they were two sequential awaited writes, so if
+    // the hour write threw after the minute write committed the counters could
+    // drift while the caller still received a RATE_LIMIT_ERROR. D1 has no
+    // db.transaction(); db.batch() is the atomic multi-statement primitive.
+    //
+    // NOTE (residual TOCTOU): the hour hard-cap is still read (above) then
+    // written here as separate steps, so two concurrent order requests can both
+    // pass the pre-read gate before either increments and momentarily exceed
+    // ophLimit. A fully atomic conditional compare-and-increment was not
+    // adopted here because the existing pre-read gate must leave a blocked
+    // request's counter untouched (see rate-limit integration tests), which an
+    // increment-then-check scheme would violate. The cap is therefore enforced
+    // best-effort; the batch below only guarantees the two writes commit
+    // together, not that the cap can never be raced by a hair.
     if (isOrderOp) {
-      await updateRateLimit(agentId, 'hour', hourStart);
+      await db.batch([
+        buildRateLimitUpsert(db, agentId, 'minute', minuteStart),
+        buildRateLimitUpsert(db, agentId, 'hour', hourStart)
+      ]);
+    } else {
+      await db.batch([
+        buildRateLimitUpsert(db, agentId, 'minute', minuteStart)
+      ]);
     }
 
     return { success: true, agentId };
@@ -173,17 +195,27 @@ export async function checkRateLimit(agentId: string, rpmLimit: number, ophLimit
   }
 }
 
-export async function updateRateLimit(agentId: string, window: string, windowStart: string): Promise<void> {
-  const db = await getDbAsync();
-
-  // Upsert rate limit record. The previous `where: eq(windowStart, windowStart)`
-  // clause only allowed the UPDATE to apply when the row's STORED windowStart
-  // already matched the incoming one — so once a row existed for (agentId,
-  // window), its windowStart could never advance and the counter effectively
-  // froze forever (BMC-142 review). Instead, always update, and use a CASE to
-  // decide whether to increment (same window as before) or reset to 1 (the
-  // window has rolled over since the row was last written).
-  await db.insert(mcpRateLimits)
+/**
+ * Build (but do not execute) the upsert that increments a rate-limit window
+ * counter. Returned unawaited so it can either be awaited on its own (see
+ * updateRateLimit) or handed to db.batch([...]) to commit atomically alongside
+ * a sibling window write (see checkRateLimit).
+ *
+ * Upsert semantics: the previous `where: eq(windowStart, windowStart)` clause
+ * only allowed the UPDATE to apply when the row's STORED windowStart already
+ * matched the incoming one — so once a row existed for (agentId, window), its
+ * windowStart could never advance and the counter effectively froze forever
+ * (BMC-142 review). Instead, always update, and use a CASE to decide whether to
+ * increment (same window as before) or reset to 1 (the window has rolled over
+ * since the row was last written).
+ */
+function buildRateLimitUpsert(
+  db: Awaited<ReturnType<typeof getDbAsync>>,
+  agentId: string,
+  window: string,
+  windowStart: string
+) {
+  return db.insert(mcpRateLimits)
     .values({
       agentId,
       window,
@@ -197,6 +229,11 @@ export async function updateRateLimit(agentId: string, window: string, windowSta
         windowStart
       }
     });
+}
+
+export async function updateRateLimit(agentId: string, window: string, windowStart: string): Promise<void> {
+  const db = await getDbAsync();
+  await buildRateLimitUpsert(db, agentId, window, windowStart);
 }
 
 export async function createAgent(agentData: {

@@ -22,6 +22,7 @@
 
 import { execFileSync } from "node:child_process";
 import { sanitizeBlogHtmlServer } from "../lib/utils/sanitize-html-core";
+import { sqlString } from "./lib/sql-escape.mjs";
 
 interface Flags {
   [key: string]: string | boolean;
@@ -48,10 +49,6 @@ function resolveDb(flags: Flags): { dbName: string; remoteArgs: string[] } {
         : "beauteas-db-dev";
   const remoteArgs = flags.local ? [] : ["--remote"];
   return { dbName, remoteArgs };
-}
-
-function sqlString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function execD1(sql: string, dbName: string, remoteArgs: string[]): unknown {

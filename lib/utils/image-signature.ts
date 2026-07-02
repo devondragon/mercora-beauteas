@@ -25,7 +25,7 @@
  * helper — callers that key their allowlist off this map (e.g. the
  * admin upload route) must continue to reject GIF uploads.
  */
-export const EXT_BY_MIME: Record<string, string> = {
+export const EXT_BY_MIME: Partial<Record<string, string>> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg", // non-standard but occasionally sent by clients; treat as JPEG
   "image/png": "png",

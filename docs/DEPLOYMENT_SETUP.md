@@ -304,7 +304,7 @@ npm run deploy
 curl -X GET "https://yourdomain.com/api/admin/vectorize"
 
 # For production with admin token:
-curl -X GET "https://yourdomain.com/api/admin/vectorize?token=your-admin-token"
+curl -X GET "https://yourdomain.com/api/admin/vectorize" -H "Authorization: Bearer your-admin-token"
 ```
 
 ### **Step 3: Verify AI System**

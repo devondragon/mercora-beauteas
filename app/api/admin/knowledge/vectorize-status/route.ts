@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
-    const key = `knowledge_md/${filename}`;
+    // Trim surrounding whitespace so it can't slip into the stored R2 key
+    const safe = filename.trim();
+    const key = `knowledge_md/${safe}`;
 
     // Get the existing object to preserve content
     const existingObj = await MEDIA.get(key);

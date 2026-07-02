@@ -70,6 +70,16 @@ export async function POST(request: NextRequest) {
     return createHttpErrorResponse(auth.error?.message || 'Authentication failed', 401);
   }
 
+  // Anti-spoof: agent_context arrives inside the client-controlled request body
+  // on this dispatcher path, so its agentId must be forced to the authenticated
+  // agent before any tool request is built. Otherwise a caller could forge
+  // attribution onto response context and — for place_order — onto the
+  // persisted order (see lib/mcp/tools/order.ts).
+  if (params && typeof params === 'object' && params.agent_context &&
+      typeof params.agent_context === 'object') {
+    params.agent_context.agentId = auth.agentId!;
+  }
+
   try {
     // Route to appropriate tool handler
     switch (tool) {

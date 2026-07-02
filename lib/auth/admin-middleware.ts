@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { isUserAdmin, updateAdminLastLogin } from "../models/admin";
-import { timingSafeEqual } from "./unified-auth";
+import { timingSafeEqual } from "./crypto";
 
 export interface AdminAuthResult {
   success: boolean;

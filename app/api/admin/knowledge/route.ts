@@ -4,6 +4,48 @@ import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { isSafeKnowledgeFilename } from "@/lib/utils/safe-filename";
 import { errorDetails } from "@/lib/utils/error-response";
 
+/**
+ * Trigger a full re-vectorization by calling the internal /api/admin/vectorize
+ * endpoint. `fetch` does not throw on 4xx/5xx, so we must inspect the response
+ * and log failures explicitly — otherwise a stale vector index would go
+ * unnoticed while the caller still reports success.
+ */
+async function triggerVectorization(request: NextRequest): Promise<void> {
+  try {
+    // Use the same token pattern as vectorize endpoint
+    const adminToken = process.env.ADMIN_VECTORIZE_TOKEN;
+
+    if (!adminToken) {
+      console.warn("ADMIN_VECTORIZE_TOKEN not configured, skipping vectorization");
+      return;
+    }
+
+    const vectorizeUrl = new URL('/api/admin/vectorize', request.url);
+
+    const res = await fetch(vectorizeUrl.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${adminToken}`
+      }
+    });
+
+    if (!res.ok) {
+      let body = '';
+      try {
+        body = await res.text();
+      } catch {
+        // ignore body read errors
+      }
+      console.error(
+        `Vectorization trigger failed with status ${res.status}${body ? `: ${body}` : ''}`
+      );
+    }
+  } catch (vectorError) {
+    console.error("Error triggering vectorization:", vectorError);
+    // Continue anyway - vectorization can be done manually
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Check admin permissions
@@ -116,8 +158,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
+    // Trim surrounding whitespace so it can't slip into the stored R2 key
+    const safe = filename.trim();
+
     // Ensure filename ends with .md
-    const mdFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
+    const mdFilename = safe.endsWith('.md') ? safe : `${safe}.md`;
     const key = `knowledge_md/${mdFilename}`;
 
     // Add title as first heading if not present
@@ -140,29 +185,10 @@ export async function POST(request: NextRequest) {
     });
 
     // Trigger vectorization
-    try {
-      // Use the same token pattern as vectorize endpoint
-      const adminToken = process.env.ADMIN_VECTORIZE_TOKEN;
+    await triggerVectorization(request);
 
-      if (!adminToken) {
-        console.warn("ADMIN_VECTORIZE_TOKEN not configured, skipping vectorization");
-      } else {
-        const vectorizeUrl = new URL('/api/admin/vectorize', request.url);
-
-        await fetch(vectorizeUrl.toString(), {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${adminToken}`
-          }
-        });
-      }
-    } catch (vectorError) {
-      console.error("Error triggering vectorization:", vectorError);
-      // Continue anyway - vectorization can be done manually
-    }
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       filename: mdFilename,
       message: "Article saved and vectorization triggered" 
     });
@@ -203,33 +229,17 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
-    const key = `knowledge_md/${filename}`;
+    // Trim surrounding whitespace so it can't slip into the stored R2 key
+    const safe = filename.trim();
+    const key = `knowledge_md/${safe}`;
 
     // Delete from R2
     await MEDIA.delete(key);
 
     // Trigger vectorization to update index
-    try {
-      // Use the same token pattern as vectorize endpoint
-      const adminToken = process.env.ADMIN_VECTORIZE_TOKEN;
+    await triggerVectorization(request);
 
-      if (!adminToken) {
-        console.warn("ADMIN_VECTORIZE_TOKEN not configured, skipping vectorization");
-      } else {
-        const vectorizeUrl = new URL('/api/admin/vectorize', request.url);
-
-        await fetch(vectorizeUrl.toString(), {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${adminToken}`
-          }
-        });
-      }
-    } catch (vectorError) {
-      console.error("Error triggering vectorization:", vectorError);
-    }
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true, 
       message: "Article deleted and vectorization triggered" 
     });

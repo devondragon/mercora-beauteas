@@ -9,6 +9,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: authResult.error }, { status: 401 });
     }
 
+    // The ADMIN_VECTORIZE_TOKEN service credential authenticates
+    // server-to-server automation (e.g. vectorize) but is not a
+    // DB-verified, interactive Clerk admin session. Never let it
+    // enumerate the admin_users roster. (BMC-145)
+    if (authResult.isServiceToken) {
+      return NextResponse.json({
+        error: 'Admin user management requires an interactive admin session.'
+      }, { status: 403 });
+    }
+
     // Get admin users from database
     const adminUsers = await getAllAdminUsers();
     

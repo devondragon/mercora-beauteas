@@ -3,6 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { isUserAdmin } from "../models/admin";
 import { getApiTokenByHash, updateApiTokenLastUsed } from "../models/auth";
+import { sha256Hex, timingSafeEqual } from "./crypto";
+
+// Re-exported so existing importers of `@/lib/auth/unified-auth` keep working;
+// the implementations now live in the dependency-free `./crypto` module.
+export { sha256Hex, timingSafeEqual };
 
 export interface AuthResult {
   success: boolean;
@@ -39,29 +44,6 @@ export const PERMISSIONS = {
 /** Build a denial result with an HTTP response (callers do `return authResult.response!`). */
 function deny(status: number, error: string): AuthResult {
   return { success: false, response: NextResponse.json({ error }, { status }) };
-}
-
-/** SHA-256 hex digest using Web Crypto (Workers-compatible). */
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/**
- * Constant-time string comparison, so verifying a presented secret against
- * ADMIN_VECTORIZE_TOKEN doesn't leak its bytes via response timing.
- * Hashing both sides first reduces the comparison to fixed-length digests.
- */
-export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
-  const [ah, bh] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
-  let mismatch = 0;
-  for (let i = 0; i < ah.length; i++) {
-    mismatch |= ah.charCodeAt(i) ^ bh.charCodeAt(i);
-  }
-  return mismatch === 0;
 }
 
 /** Schedule fire-and-forget work so the Worker runtime doesn't cancel it after the response. */

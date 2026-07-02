@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json() as any;
-    const agentContext = parseAgentContext(request);
+    const agentContext = parseAgentContext(request, auth.agentId);
     
     // Validate required fields
     if (!body.agentId) {

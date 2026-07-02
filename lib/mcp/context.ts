@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server';
 import { AgentContext } from './types';
 
-export function parseAgentContext(request: NextRequest): AgentContext | null {
+export function parseAgentContext(
+  request: NextRequest,
+  authenticatedAgentId?: string
+): AgentContext | null {
   try {
     const contextHeader = request.headers.get('X-Agent-Context');
     if (!contextHeader) {
@@ -9,7 +12,7 @@ export function parseAgentContext(request: NextRequest): AgentContext | null {
     }
 
     const context: AgentContext = JSON.parse(contextHeader);
-    
+
     // Validate required fields
     if (!context.agentId || typeof context.agentId !== 'string') {
       throw new Error('agentId is required and must be a string');
@@ -24,6 +27,14 @@ export function parseAgentContext(request: NextRequest): AgentContext | null {
     const contextSize = new TextEncoder().encode(contextHeader).length;
     if (contextSize > 1024) {
       throw new Error(`Agent context too large: ${contextSize} bytes (max 1024)`);
+    }
+
+    // Anti-spoof: the X-Agent-Context header is fully client-controlled, so its
+    // agentId must never be trusted for attribution. Once the caller has been
+    // authenticated, force the context's agentId to the authenticated agent so
+    // it can't be forged onto response context or persisted onto orders.
+    if (authenticatedAgentId) {
+      context.agentId = authenticatedAgentId;
     }
 
     return context;

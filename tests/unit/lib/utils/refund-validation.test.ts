@@ -51,6 +51,10 @@ describe('computeRefundedTotal', () => {
   it('ignores entries with a non-numeric amount', () => {
     expect(computeRefundedTotal({ refunds: [{ amount: 500 }, { amount: undefined }, { amount: 'oops' as unknown as number }] })).toBe(500);
   });
+
+  it('ignores negative and fractional entries (defense-in-depth)', () => {
+    expect(computeRefundedTotal({ refunds: [{ amount: 500 }, { amount: -200 }, { amount: 10.5 }] })).toBe(500);
+  });
 });
 
 describe('assertRefundWithinRemaining', () => {
@@ -93,6 +97,30 @@ describe('assertRefundWithinRemaining', () => {
     const alreadyRefunded = computeRefundedTotal({ refunds: [{ amount: 5000 }, { amount: 4000 }] });
     const result = assertRefundWithinRemaining(10000, alreadyRefunded, 1000);
     expect(result.ok).toBe(true);
+  });
+
+  it('rejects a negative refund amount', () => {
+    const result = assertRefundWithinRemaining(10000, 0, -1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Refund amount must be a positive whole number');
+    }
+  });
+
+  it('rejects a zero refund amount', () => {
+    const result = assertRefundWithinRemaining(10000, 0, 0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Refund amount must be a positive whole number');
+    }
+  });
+
+  it('rejects a non-integer refund amount', () => {
+    const result = assertRefundWithinRemaining(10000, 0, 10.5);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('Refund amount must be a positive whole number');
+    }
   });
 });
 

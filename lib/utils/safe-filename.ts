@@ -16,7 +16,8 @@
 /**
  * Returns true when `name` is safe to use as (or to derive) an R2 key
  * segment: non-empty, not just whitespace, and free of path separators
- * or ".." traversal segments.
+ * or any ".." sequence (rejected wherever it appears, not only as a
+ * standalone path segment).
  */
 export function isSafeKnowledgeFilename(name: unknown): name is string {
   if (typeof name !== 'string') {

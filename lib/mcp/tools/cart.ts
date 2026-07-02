@@ -98,7 +98,7 @@ export async function addToCart(
       },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       recommendations: {
@@ -119,7 +119,7 @@ export async function addToCart(
       data: { cart: [], total_items: 0, estimated_total: 0 },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       metadata: {
@@ -206,7 +206,7 @@ export async function bulkAddToCart(
       },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       recommendations: failedItems.length > 0 ? {
@@ -232,7 +232,7 @@ export async function bulkAddToCart(
       data: { cart: [], total_items: 0, estimated_total: 0 },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       metadata: {
@@ -343,7 +343,7 @@ export async function updateCart(
       },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       metadata: {
@@ -360,7 +360,7 @@ export async function updateCart(
       data: { cart: [], total_items: 0, estimated_total: 0 },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       metadata: {
