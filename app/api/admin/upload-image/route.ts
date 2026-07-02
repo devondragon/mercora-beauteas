@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
-import { uploadToR2, generateR2Path, getContentTypeFromFilename, R2_FOLDERS } from "@/lib/utils/r2";
+import { uploadToR2, generateR2Path, R2_FOLDERS } from "@/lib/utils/r2";
+import { EXT_BY_MIME, matchesImageSignature } from "@/lib/utils/image-signature";
 
 /**
  * POST /api/admin/upload-image
@@ -46,9 +47,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    // Validate file type against the MIME allowlist (file.type is client-supplied)
+    const fileExtension = EXT_BY_MIME[file.type];
+    if (!fileExtension) {
       return NextResponse.json(
         { error: "Invalid file type. Only JPEG, PNG, and WebP are allowed." },
         { status: 400 }
@@ -64,10 +65,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate R2 path
-    const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    // Convert file to array buffer
+    const arrayBuffer = await file.arrayBuffer();
+
+    // Verify the file's actual bytes match the declared MIME type (magic-byte
+    // check) — file.type alone is attacker-controlled and cannot be trusted.
+    if (!matchesImageSignature(new Uint8Array(arrayBuffer), file.type)) {
+      return NextResponse.json(
+        { error: "File content does not match the declared image type." },
+        { status: 400 }
+      );
+    }
+
+    // Generate R2 path. The extension is derived from the validated MIME type
+    // above, never from the client-supplied file.name.
     const fullFilename = `${filename}.${fileExtension}`;
     const r2Path = generateR2Path(folder, fullFilename);
+
+    // Normalize the non-standard "image/jpg" alias to the standard
+    // "image/jpeg" before it's stored as the object's Content-Type, so
+    // served objects always carry a standard image content-type.
+    const storedContentType = file.type === "image/jpg" ? "image/jpeg" : file.type;
 
     // Get R2 bucket from environment
     const env = process.env as any;
@@ -80,12 +98,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to array buffer
-    const arrayBuffer = await file.arrayBuffer();
-
-    // Upload to R2 using consolidated utility
+    // Upload to R2 using consolidated utility. contentType comes from the
+    // validated file.type (normalized above) — never re-derived from the filename.
     await uploadToR2(bucket, r2Path, arrayBuffer, {
-      contentType: file.type || getContentTypeFromFilename(fullFilename),
+      contentType: storedContentType,
       customMetadata: {
         originalName: file.name,
         folder: folder,
