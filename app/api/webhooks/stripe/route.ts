@@ -23,7 +23,10 @@
  *
  * === Security ===
  * - Async webhook signature verification via verifyWebhookSignature (HMAC-SHA256)
- * - Event ID dedup via processed_webhook_events table
+ * - Event ID dedup via an atomic PK-insert claim on processed_webhook_events
+ *   (BMC-153): the insert itself is the gate, attempted before the handler
+ *   runs, so concurrent duplicate deliveries can't both slip past a
+ *   read-then-write check.
  * - HTTP 500 on processing failure triggers Stripe retry
  */
 
@@ -31,8 +34,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { verifyWebhookSignature, getWebhookSecret } from '@/lib/stripe';
 import {
-  isWebhookEventProcessed,
-  recordWebhookEvent,
+  claimWebhookEvent,
+  releaseWebhookEventClaim,
   cleanupOldWebhookEvents,
 } from '@/lib/models/mach/subscriptions';
 import {
@@ -78,9 +81,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Dedup check
-  const isDuplicate = await isWebhookEventProcessed(event.id);
-  if (isDuplicate) {
+  // 4. Claim the event via PK insert BEFORE running the handler. This is the
+  // atomic dedup gate (BMC-153): the first delivery to insert wins the claim;
+  // a UNIQUE/PK violation means another delivery (concurrent or prior)
+  // already claimed this event id, so this delivery is a duplicate and skips
+  // processing entirely.
+  const claimed = await claimWebhookEvent(event.id, event.type);
+  if (!claimed) {
     console.log('[webhook] Duplicate event skipped:', event.id);
     return NextResponse.json({ received: true, duplicate: true });
   }
@@ -136,14 +143,20 @@ export async function POST(req: NextRequest) {
         console.log(`[webhook] Unhandled event type: ${event.type}`);
     }
 
-    // 7. Record successful processing in dedup table
-    await recordWebhookEvent(event.id, event.type);
+    // 7. The claim in step 4 already recorded this event as processed —
+    // nothing more to persist here.
 
     // 8. Return success
     return NextResponse.json({ received: true });
   } catch (error) {
-    // 9. Processing error: return 500 for Stripe retry
-    // Do NOT record in dedup table so retry will reprocess
+    // 9. Processing error: release the claim so it doesn't permanently block
+    // Stripe's legitimate retry (which would otherwise see the PK row from
+    // this failed attempt and be skipped as a "duplicate" forever). This is
+    // safe because every downstream side effect is idempotent and keyed on
+    // the domain object, not the webhook event id — see
+    // releaseWebhookEventClaim's doc comment for detail. Return 500 so
+    // Stripe retries.
+    await releaseWebhookEventClaim(event.id);
     console.error('[webhook] Processing error:', error);
     return NextResponse.json(
       { error: 'Processing failed' },

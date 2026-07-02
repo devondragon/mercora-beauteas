@@ -498,23 +498,82 @@ export async function getSubscriptionStats() {
 
 // ─── Webhook Dedup ────────────────────────────────────────────────
 
-export async function isWebhookEventProcessed(eventId: string): Promise<boolean> {
-  const db = await getDbAsync();
-  const [existing] = await db
-    .select()
-    .from(processed_webhook_events)
-    .where(eq(processed_webhook_events.event_id, eventId))
-    .limit(1);
-  return !!existing;
+/**
+ * True when an error (or any error in its `cause` chain) is a SQLite UNIQUE /
+ * PRIMARY KEY constraint violation. Drizzle's D1 driver wraps the underlying
+ * error as `"Failed query: …"` and tucks the original `SQLITE_CONSTRAINT_*`
+ * text into `cause`, so matching only the top-level message can miss it. Walk
+ * the chain and match the constraint text wherever it surfaces. (Mirrors the
+ * same helper in lib/models/mach/giftCard.ts.)
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current && !seen.has(current); depth++) {
+    seen.add(current);
+    const message =
+      current instanceof Error ? current.message : typeof current === 'string' ? current : '';
+    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)|\bunique\b/i.test(message)) {
+      return true;
+    }
+    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
 }
 
-export async function recordWebhookEvent(eventId: string, eventType: string) {
+/**
+ * Atomically claim a webhook event for processing by inserting its id into
+ * processed_webhook_events (event_id is the PRIMARY KEY). Returns true when
+ * this call won the claim (first delivery of this event id) and false when a
+ * UNIQUE/PK violation shows the event was already claimed — by a prior
+ * delivery or a concurrent one that raced ahead — so the caller must treat
+ * this delivery as a duplicate and skip processing. Any other error (e.g. a
+ * genuine DB failure) propagates.
+ *
+ * This is the fix for BMC-153: the previous flow did a `SELECT` dedup check
+ * and only recorded the event *after* the handler finished, which is a
+ * read-then-write race — two concurrent deliveries of the same event could
+ * both pass the "not yet processed" read before either write landed. Making
+ * the PK insert itself the gate (attempted before the handler runs) removes
+ * the race: SQLite/D1 serializes the two inserts and only one can succeed.
+ */
+export async function claimWebhookEvent(eventId: string, eventType: string): Promise<boolean> {
   const db = await getDbAsync();
-  await db.insert(processed_webhook_events).values({
-    event_id: eventId,
-    event_type: eventType,
-    processed_at: new Date().toISOString(),
-  });
+  try {
+    await db.insert(processed_webhook_events).values({
+      event_id: eventId,
+      event_type: eventType,
+      processed_at: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Best-effort release of a webhook event's claim row. Used when a handler
+ * throws AFTER successfully claiming the event (claimWebhookEvent returned
+ * true), so the resulting 500 doesn't permanently block Stripe's legitimate
+ * retry — without this, the retry's claim attempt would hit the same PK and
+ * be (wrongly) treated as an already-processed duplicate forever.
+ *
+ * Never throws: a failure here just means a retry gets skipped as a
+ * duplicate instead of reprocessed, which is safe because every downstream
+ * side effect (markOrderPaid, gift card fulfillment, subscription/invoice
+ * handlers) is idempotent and keyed on the domain object, not the webhook
+ * event id — at worst a retry no-ops instead of re-running cleanly.
+ */
+export async function releaseWebhookEventClaim(eventId: string): Promise<void> {
+  try {
+    const db = await getDbAsync();
+    await db.delete(processed_webhook_events).where(eq(processed_webhook_events.event_id, eventId));
+  } catch (err) {
+    console.error('[webhook] Failed to release event claim after handler error:', eventId, err);
+  }
 }
 
 export async function cleanupOldWebhookEvents() {
