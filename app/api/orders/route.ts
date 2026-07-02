@@ -422,14 +422,31 @@ export async function PUT(request: NextRequest) {
     }
 
     const currentOrder = existingOrder[0];
-    
+
+
+    // SECURITY (BMC-140): payment_status is intentionally NOT accepted from this
+    // client-driven PUT. A caller holding only ORDERS_UPDATE (e.g. a webhook/
+    // automation token) could otherwise flip an unpaid order to 'paid' (or
+    // 'refunded') with zero Stripe verification. payment_status has exactly two
+    // legitimate writers, both of which verify against Stripe first:
+    //   - order creation (POST /api/orders) via retrievePaymentIntent
+    //   - the Stripe webhook's markOrderPaid()
+    // Refunds also go through their own route (/api/orders/refund), which only
+    // sets payment_status after actually creating a Stripe refund. This PUT
+    // handler is for fulfillment/tracking updates only, so any client-supplied
+    // payment_status is logged and silently dropped rather than applied.
+    if (payment_status) {
+      console.warn(
+        `Order ${orderId}: ignoring client-supplied payment_status="${payment_status}" on PUT ` +
+          `(payment_status can only be set via verified payment or the /refund route)`
+      );
+    }
 
     // Build update data (MACH-compliant).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
     const updateData: any = {
       ...(status && { status }),
-      ...(payment_status && { payment_status }),
       ...(shipping_method && { shipping_method }),
       ...(tracking_number && { tracking_number }),
       ...(shipped_at && { shipped_at }),
