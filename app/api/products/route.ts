@@ -3,12 +3,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  listProducts, 
-  createProduct, 
+import {
+  listProducts,
+  createProduct,
   updateProduct,
   getProductsByCategory
 } from "@/lib/models/mach/products";
+import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
 
 /**
@@ -74,6 +75,11 @@ export async function GET(request: NextRequest) {
  * POST /api/products - Create product
  */
 export async function POST(request: NextRequest) {
+  const adminAuth = await checkAdminPermissions(request);
+  if (!adminAuth.success) {
+    return NextResponse.json({ error: adminAuth.error }, { status: 401 });
+  }
+
   try {
     const body = await request.json() as any;
     
