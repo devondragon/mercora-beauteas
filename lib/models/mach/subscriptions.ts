@@ -16,6 +16,7 @@ import { eq, and, desc, lt, sql, count, like, gte } from 'drizzle-orm';
 import { customers } from '@/lib/db/schema/customer';
 import { products, product_variants } from '@/lib/db/schema/products';
 import type { SubscriptionStatus } from '@/lib/types/subscription';
+import { isUniqueViolation } from '@/lib/utils/db-errors';
 
 // ─── Subscription Plans ───────────────────────────────────────────
 
@@ -497,29 +498,6 @@ export async function getSubscriptionStats() {
 }
 
 // ─── Webhook Dedup ────────────────────────────────────────────────
-
-/**
- * True when an error (or any error in its `cause` chain) is a SQLite UNIQUE /
- * PRIMARY KEY constraint violation. Drizzle's D1 driver wraps the underlying
- * error as `"Failed query: …"` and tucks the original `SQLITE_CONSTRAINT_*`
- * text into `cause`, so matching only the top-level message can miss it. Walk
- * the chain and match the constraint text wherever it surfaces. (Mirrors the
- * same helper in lib/models/mach/giftCard.ts.)
- */
-function isUniqueViolation(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let current: unknown = err;
-  for (let depth = 0; depth < 5 && current && !seen.has(current); depth++) {
-    seen.add(current);
-    const message =
-      current instanceof Error ? current.message : typeof current === 'string' ? current : '';
-    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)|\bunique\b/i.test(message)) {
-      return true;
-    }
-    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;
-  }
-  return false;
-}
 
 /**
  * Atomically claim a webhook event for processing by inserting its id into
