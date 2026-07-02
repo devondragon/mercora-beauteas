@@ -5,7 +5,7 @@ import { placeOrder } from '../../../../../../lib/mcp/tools/order';
 import { OrderRequest } from '../../../../../../lib/mcp/types';
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticateAgent(request);
+  const auth = await authenticateAgent(request, { isOrderOp: true });
   
   if (!auth.success) {
     return NextResponse.json({
