@@ -35,6 +35,7 @@ import { getDbAsync } from '@/lib/db';
 import { orders } from '@/lib/db/schema/order';
 import { eq } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
+import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmount } from '@/lib/utils/refund-validation';
 
 interface RefundRequest {
   orderId: string;
@@ -104,8 +105,18 @@ export async function POST(request: NextRequest) {
     let newPaymentStatus: string;
 
     if (type === 'full') {
-      // Full refund
-      refundAmount = totalAmount.amount;
+      // Full refund — refund whatever is still outstanding, not the whole
+      // order total again. If a prior refund (partial or full) already
+      // covers the total, reject with a clean 400 instead of calling
+      // Stripe, which would reject the over-refund with a raw 500 (BMC-152).
+      const alreadyRefunded = computeRefundedTotal(extensions);
+      const fullRefundResolution = resolveFullRefundAmount(totalAmount.amount, alreadyRefunded);
+      if (!fullRefundResolution.ok) {
+        return NextResponse.json({
+          error: fullRefundResolution.error
+        }, { status: 400 });
+      }
+      refundAmount = fullRefundResolution.amount;
       newStatus = 'cancelled';
       newPaymentStatus = 'refunded';
     } else {
@@ -114,10 +125,16 @@ export async function POST(request: NextRequest) {
       newStatus = order.status; // Keep same status for partial refunds
       newPaymentStatus = 'paid'; // Still considered paid since it's partial
       
-      // Validate partial refund amount doesn't exceed total
-      if (refundAmount > totalAmount.amount) {
+      // Validate partial refund amount doesn't exceed what's actually left
+      // to refund — i.e. total minus everything already recorded in
+      // extensions.refunds[], not just the order total in isolation.
+      // Stripe would also reject a true over-refund, but we want a clean
+      // 400 here instead of surfacing a raw Stripe error (BMC-152).
+      const alreadyRefunded = computeRefundedTotal(extensions);
+      const refundCheck = assertRefundWithinRemaining(totalAmount.amount, alreadyRefunded, refundAmount);
+      if (!refundCheck.ok) {
         return NextResponse.json({
-          error: 'Refund amount cannot exceed order total'
+          error: refundCheck.error
         }, { status: 400 });
       }
     }
