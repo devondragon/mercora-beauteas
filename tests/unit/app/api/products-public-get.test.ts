@@ -32,7 +32,7 @@ vi.mock('@/lib/models/mach/products', () => ({
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/products/route';
 import { checkAdminPermissions } from '@/lib/auth/admin-middleware';
-import { listProducts } from '@/lib/models/mach/products';
+import { listProducts, getProductsByCategory } from '@/lib/models/mach/products';
 
 const fakeProductWithInternalFields = {
   id: 'prod_1',
@@ -49,6 +49,46 @@ const fakeProductWithInternalFields = {
       cost: { amount: 900, currency: 'USD' },
       barcode: '012345678905',
       inventory: { track_inventory: true, quantity: 42 },
+    },
+  ],
+};
+
+const fakeDraftCategoryProduct = {
+  id: 'prod_draft',
+  name: 'Clearly Calendula — Afternoon Blend (draft)',
+  status: 'draft',
+  categories: ['cat_tea'],
+  variants: [
+    {
+      id: 'var_draft',
+      sku: 'SKU-DRAFT',
+      option_values: [],
+      price: { amount: 2500, currency: 'USD' },
+      status: 'draft',
+      position: 0,
+      cost: { amount: 900, currency: 'USD' },
+      barcode: '012345678905',
+      inventory: { track_inventory: true, quantity: 42 },
+    },
+  ],
+};
+
+const fakeActiveCategoryProduct = {
+  id: 'prod_active',
+  name: 'Clearly Calendula — Evening Blend',
+  status: 'active',
+  categories: ['cat_tea'],
+  variants: [
+    {
+      id: 'var_active',
+      sku: 'SKU-ACTIVE',
+      option_values: [],
+      price: { amount: 2500, currency: 'USD' },
+      status: 'active',
+      position: 0,
+      cost: { amount: 700, currency: 'USD' },
+      barcode: '012345678912',
+      inventory: { track_inventory: true, quantity: 10 },
     },
   ],
 };
@@ -120,5 +160,60 @@ describe('GET /api/products public access (BMC-149 / M6)', () => {
     for (const call of vi.mocked(listProducts).mock.calls) {
       expect(call[0]?.status).toEqual(['active']);
     }
+  });
+});
+
+describe('GET /api/products?category= public access (BMC-149 / M6 review gap)', () => {
+  it('filters out draft products and strips cost/barcode/inventory for non-admin callers on the category branch', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+    vi.mocked(getProductsByCategory).mockResolvedValue([
+      fakeDraftCategoryProduct as any,
+      fakeActiveCategoryProduct as any,
+    ]);
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/products?category=cat_tea&status=draft')
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+
+    // getProductsByCategory itself isn't status-aware — the route's
+    // filterByStatus() post-filter must strip the draft product out.
+    expect(vi.mocked(getProductsByCategory)).toHaveBeenCalledWith('cat_tea');
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].id).toBe('prod_active');
+    expect(body.meta.total).toBe(1);
+
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain('"cost"');
+    expect(serialized).not.toContain('"barcode"');
+    expect(serialized).not.toContain('"inventory"');
+    // Public fields should still be present.
+    expect(body.data[0].variants[0].sku).toBe('SKU-ACTIVE');
+  });
+
+  it('lets admins see all statuses and full fields on the category branch', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({ success: true, userId: 'admin-1' });
+    vi.mocked(getProductsByCategory).mockResolvedValue([
+      fakeDraftCategoryProduct as any,
+      fakeActiveCategoryProduct as any,
+    ]);
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/products?category=cat_tea&status=draft')
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+
+    // Admins pass an explicit status filter through, so only the
+    // requested status (draft) survives the category branch's filter.
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].id).toBe('prod_draft');
+    expect(body.data[0].variants[0]).toHaveProperty('cost');
+    expect(body.data[0].variants[0]).toHaveProperty('barcode');
+    expect(body.data[0].variants[0]).toHaveProperty('inventory');
   });
 });
