@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../lib/mcp/context';
 import { getShippingOptions } from '../../../../../lib/mcp/tools/shipping';
-import { getSessionCart } from '../../../../../lib/mcp/session';
+import { requireOwnedSession } from '../../../../../lib/mcp/session';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -28,10 +28,27 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Get cart from session if not provided
+    // Get cart from session if not provided. A client-supplied session_id must
+    // belong to the calling agent before we read its cart — otherwise an
+    // attacker agent could pass a victim's session_id (omitting body.cart) and
+    // learn that victim's cart size/value via the shipping weight/cost
+    // (BMC-133 review — same disclosure vector already gated for get_cart).
     const sessionId = body.session_id || 'temp';
-    const cart = body.cart || await getSessionCart(sessionId);
-    
+    let cart = body.cart;
+    if (!cart) {
+      const owned = await requireOwnedSession(sessionId, auth.agentId!);
+      if (!owned.ok) {
+        return NextResponse.json({
+          success: false,
+          error: {
+            code: owned.code,
+            message: owned.message
+          }
+        }, { status: 403 });
+      }
+      cart = owned.session.cart;
+    }
+
     const shippingRequest = {
       address: body.address,
       cart,
