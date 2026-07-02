@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProduct, updateProduct, deleteProduct } from "@/lib/models/mach/products";
+import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { Product } from "@/lib/types";
 
 /**
@@ -26,6 +27,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  * PUT /api/products/[id] - Update a specific product
  */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const adminAuth = await checkAdminPermissions(request);
+  if (!adminAuth.success) {
+    return NextResponse.json({ error: adminAuth.error }, { status: 401 });
+  }
+
   try {
     const { id: productId } = await params;
     if (!productId) {
@@ -73,6 +79,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
  * DELETE /api/products/[id] - Delete a specific product
  */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const adminAuth = await checkAdminPermissions(request);
+  if (!adminAuth.success) {
+    return NextResponse.json({ error: adminAuth.error }, { status: 401 });
+  }
+
   try {
     const { id: productId } = await params;
     if (!productId) {
