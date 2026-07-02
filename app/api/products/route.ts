@@ -8,39 +8,62 @@ import {
   createProduct,
   getProductsByCategory
 } from "@/lib/models/mach/products";
+import { toPublicProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
 
+type ProductStatus = 'active' | 'inactive' | 'draft' | 'archived';
+
 /**
  * GET /api/products - List products
+ *
+ * Public route (no auth required) — but only admins may request non-active
+ * statuses. Non-admin callers are forced to status:['active'] regardless of
+ * the `?status=` query param, and their response is projected through
+ * toPublicProduct() to strip internal-only fields (cost/barcode/inventory).
  */
 export async function GET(request: NextRequest) {
   try {
+    // Not a 401 gate — GET stays public. This only determines whether the
+    // caller may see non-active statuses / internal fields.
+    const adminAuth = await checkAdminPermissions(request);
+    const isAdmin = adminAuth.success;
+
     const url = new URL(request.url);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
     const offset = parseInt(url.searchParams.get('offset') || '0');
-    const status = url.searchParams.get('status') as 'active' | 'inactive' | 'draft' | 'archived' | null;
+    const requestedStatus = url.searchParams.get('status') as ProductStatus | null;
     const search = url.searchParams.get('search');
     const category = url.searchParams.get('category');
 
+    const statusFilter: ProductStatus[] | undefined = isAdmin
+      ? (requestedStatus ? [requestedStatus] : undefined)
+      : ['active'];
+
+    const filterByStatus = (list: Product[]): Product[] =>
+      statusFilter ? list.filter(p => statusFilter.includes(p.status as ProductStatus)) : list;
+
     // Get total count first (without limit/offset)
     const allProducts = category && category.trim()
-      ? await getProductsByCategory(category.trim())
-      : await listProducts({ 
-          status: status ? [status] : undefined
+      ? filterByStatus(await getProductsByCategory(category.trim()))
+      : await listProducts({
+          status: statusFilter
         });
     const total = allProducts.length;
-    
+
     // Then get the paginated results
     const products = category && category.trim()
-      ? await getProductsByCategory(category.trim())
-      : await listProducts({ 
-          status: status ? [status] : undefined,
-          limit, 
-          offset 
+      ? filterByStatus(await getProductsByCategory(category.trim()))
+      : await listProducts({
+          status: statusFilter,
+          limit,
+          offset
         });
+
+    const responseProducts = isAdmin ? products : products.map(toPublicProduct);
+
     const response: ApiResponse<Product[]> = {
-      data: products,
+      data: responseProducts,
       meta: {
         total,
         limit,
