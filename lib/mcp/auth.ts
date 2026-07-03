@@ -8,7 +8,26 @@ import { AuthenticationError, RateLimitError, DatabaseError } from './error-hand
 export interface AgentAuthResult {
   success: boolean;
   agentId?: string;
+  /** The authenticated agent's granted permissions (parsed from mcpAgents.permissions). */
+  permissions?: string[];
   error?: MCPError['error'];
+}
+
+/**
+ * Permissions that grant access to the agent-management tier (create/list/
+ * inspect/disable other agents). Agent management must be restricted to
+ * privileged agents — a plain commerce agent must not be able to enumerate
+ * or modify the agent fleet or read other agents' session ids (BMC-133, C7/C8).
+ *
+ * Bootstrap: the first management-capable agent must be seeded with one of
+ * these permissions directly (DB / scripts/manage-tokens), since the create
+ * route is now itself gated.
+ */
+const AGENT_MANAGEMENT_PERMISSIONS = ['admin', '*', 'agents:manage'];
+
+export function hasAgentManagementPermission(permissions: string[] | undefined): boolean {
+  if (!permissions) return false;
+  return permissions.some((p) => AGENT_MANAGEMENT_PERMISSIONS.includes(p));
 }
 
 export async function authenticateAgent(
@@ -63,9 +82,22 @@ export async function authenticateAgent(
       .set({ lastUsed: new Date().toISOString() })
       .where(eq(mcpAgents.agentId, agentData.agentId));
 
+    let permissions: string[] = [];
+    try {
+      const parsed = JSON.parse(agentData.permissions || '[]');
+      if (Array.isArray(parsed)) {
+        permissions = parsed.filter((p): p is string => typeof p === 'string');
+      }
+    } catch {
+      // Malformed permissions column: fail closed to no permissions rather
+      // than throwing — the agent authenticates but is treated as unprivileged.
+      permissions = [];
+    }
+
     return {
       success: true,
-      agentId: agentData.agentId
+      agentId: agentData.agentId,
+      permissions
     };
   } catch (error) {
     return {

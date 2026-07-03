@@ -570,10 +570,22 @@ export async function releaseWebhookEventClaim(eventId: string): Promise<void> {
       return;
     } catch (err) {
       lastError = err;
+      // Back off (with jitter) before retrying: if the DELETE is failing on
+      // transient D1 lock/contention for this row, an immediate retry tends to
+      // just re-collide. Skip the wait after the final attempt.
+      if (attempt < MAX_RELEASE_ATTEMPTS - 1) {
+        const backoffMs = 50 * 2 ** attempt + Math.floor(Math.random() * 50);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
     }
   }
+  // ALERT marker (stable + greppable): an orphaned claim silently drops every
+  // Stripe retry of this event as duplicate:true for up to 7 days (until
+  // cleanupOldWebhookEvents sweeps it), so surface it for log-based alerting
+  // rather than burying it in raw worker logs. A real metric/counter is the
+  // proper long-term signal — see BMC follow-up.
   console.error(
-    '[webhook] Failed to release event claim after handler error (all retries exhausted):',
+    '[webhook][ALERT] orphaned_claim: failed to release event claim after handler error (all retries exhausted):',
     eventId,
     lastError
   );

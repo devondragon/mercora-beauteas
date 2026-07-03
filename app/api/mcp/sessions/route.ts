@@ -16,7 +16,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const agentContext = parseAgentContext(request);
+    // Pass the authenticated agentId so parseAgentContext forces the
+    // client-controlled X-Agent-Context.agentId to the real caller (anti-spoof,
+    // BMC-133) — consistent with all other MCP tool routes.
+    const agentContext = parseAgentContext(request, auth.agentId);
     const session = await createSession(auth.agentId!, agentContext || undefined);
     
     const response: MCPToolResponse<AgentSession> = {

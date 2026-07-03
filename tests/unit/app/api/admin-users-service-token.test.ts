@@ -29,9 +29,9 @@ vi.mock('@/lib/models/admin', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { POST } from '@/app/api/admin/users/route';
+import { GET, POST } from '@/app/api/admin/users/route';
 import { checkAdminPermissions } from '@/lib/auth/admin-middleware';
-import { addAdminUser, getAdminUser } from '@/lib/models/admin';
+import { addAdminUser, getAdminUser, getAllAdminUsers } from '@/lib/models/admin';
 
 const url = 'http://localhost/api/admin/users';
 
@@ -40,6 +40,10 @@ function postRequest(body: unknown) {
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+function getRequest() {
+  return new NextRequest(url, { method: 'GET' });
 }
 
 beforeEach(() => {
@@ -87,5 +91,35 @@ describe('POST /api/admin/users service-token gate (BMC-145 / M2)', () => {
     expect(vi.mocked(addAdminUser)).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user_abc123', role: 'admin', createdBy: 'user_123' })
     );
+  });
+});
+
+describe('GET /api/admin/users service-token gate (BMC-145 / M2)', () => {
+  it('rejects the service-token identity with 403 and never enumerates the roster', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: true,
+      userId: 'admin-service',
+      isServiceToken: true,
+    });
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(403);
+    const json = await res.json() as { error: string };
+    expect(json.error).toMatch(/interactive admin session/i);
+    expect(vi.mocked(getAllAdminUsers)).not.toHaveBeenCalled();
+  });
+
+  it('allows a real, DB-verified Clerk admin session through to getAllAdminUsers', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: true,
+      userId: 'user_123',
+    });
+    vi.mocked(getAllAdminUsers).mockResolvedValue([]);
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(getAllAdminUsers)).toHaveBeenCalled();
   });
 });
