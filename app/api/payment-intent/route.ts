@@ -34,7 +34,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
-import { computeCatalogSubtotalCents, AMOUNT_TOLERANCE_CENTS } from '@/lib/services/order-pricing';
+import { computeCatalogSubtotalCents, AMOUNT_TOLERANCE_CENTS, MAX_ORDER_LINE_ITEMS } from '@/lib/services/order-pricing';
 import type { Address } from '@/lib/types';
 
 // Minimal shape of a cart line needed to price it from the catalog. Accepts
@@ -155,6 +155,16 @@ export async function POST(req: NextRequest) {
     // rejecting an under-priced PaymentIntent here stops a bogus charge from
     // ever being created and gives the shopper an immediate, clear error.
     if (Array.isArray(items) && items.length > 0) {
+      // M6: cap the line count before it drives one catalog lookup per item.
+      if (items.length > MAX_ORDER_LINE_ITEMS) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${items.length} items exceeds the ${MAX_ORDER_LINE_ITEMS} line limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many items in your cart. Please reduce the number of items and try again.', code: 'too_many_items' },
+          { status: 400 }
+        );
+      }
       const normalized = items.map((it) => ({
         product_id: it.product_id ?? it.productId,
         variant_id: it.variant_id ?? it.variantId,
