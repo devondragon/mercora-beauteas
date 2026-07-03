@@ -4,6 +4,7 @@ import { getDbAsync } from "@/lib/db";
 import { orders } from "@/lib/db/schema/order";
 import { eq } from "drizzle-orm";
 import type { Order } from "@/lib/types/order";
+import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 
 function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
   return {
@@ -31,21 +32,35 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { userId } = await auth();
-    const db = await getDbAsync();
     const { id: orderId } = await params;
     if (!orderId) {
       return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
     }
-  const result = await db.select().from(orders).where(eq(orders.id, orderId));
+    const { userId } = await auth();
+    const db = await getDbAsync();
+    const result = await db.select().from(orders).where(eq(orders.id, orderId));
     if (!result.length) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
-    // Optionally, restrict access to the order owner or admin here
     const order = hydrateOrder(result[0]);
-    if (order.customer_id && userId && order.customer_id !== userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+
+    // Authorize: the order's owner, or an admin. Order IDs are guessable/
+    // enumerable (WEB-<user>-<timestamp_ms>), so this endpoint must never leak
+    // PII to an unauthenticated or non-owner caller (BMC-138 IDOR). The prior
+    // guard let anonymous requests (userId null) through and exposed the full
+    // order — shipping/billing address, items, totals, payment_status, tracking.
+    const isOwner = !!userId && order.customer_id === userId;
+    if (!isOwner) {
+      // Fall back to admin credentials (Clerk admin session or ORDERS_READ API
+      // token) via the shared verifier used by the sibling /api/orders route.
+      const adminAuth = await authenticateRequest(request, PERMISSIONS.ORDERS_READ);
+      if (!adminAuth.success) {
+        // Return 404 (not 403) so a guessable order ID can't be used as an
+        // existence oracle — mirrors the account order page's notFound().
+        return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      }
     }
+
     return NextResponse.json({ data: order, meta: { schema: "mach:order" } });
   } catch (error) {
     console.error("Order GET error:", error);
