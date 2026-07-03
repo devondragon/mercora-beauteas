@@ -122,6 +122,7 @@ describe('GET /api/products public access (BMC-149 / M6)', () => {
     vi.mocked(listProducts).mockResolvedValue([fakeProductWithInternalFields as any]);
 
     const res = await GET(new NextRequest('http://localhost/api/products?status=draft'));
+    expect(res.status).toBe(200);
     const body = await res.json() as any;
     const serialized = JSON.stringify(body);
 
@@ -215,5 +216,95 @@ describe('GET /api/products?category= public access (BMC-149 / M6 review gap)', 
     expect(body.data[0].variants[0]).toHaveProperty('cost');
     expect(body.data[0].variants[0]).toHaveProperty('barcode');
     expect(body.data[0].variants[0]).toHaveProperty('inventory');
+  });
+});
+
+describe('GET /api/products pagination + input validation', () => {
+  const makeActiveProduct = (id: string) => ({
+    id,
+    name: `Product ${id}`,
+    status: 'active',
+    categories: ['cat_tea'],
+    variants: [
+      {
+        id: `${id}_var`,
+        sku: `SKU-${id}`,
+        option_values: [],
+        price: { amount: 2500, currency: 'USD' },
+        status: 'active',
+        position: 0,
+        cost: { amount: 700, currency: 'USD' },
+        barcode: '012345678912',
+        inventory: { track_inventory: true, quantity: 10 },
+      },
+    ],
+  });
+
+  it('respects limit/offset on the ?category= branch while reporting the full filtered total', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+    vi.mocked(getProductsByCategory).mockResolvedValue([
+      makeActiveProduct('a') as any,
+      makeActiveProduct('b') as any,
+      makeActiveProduct('c') as any,
+    ]);
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/products?category=cat_tea&limit=1&offset=1')
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+
+    // Fetched once, sliced for the page; total reflects the full filtered list.
+    expect(vi.mocked(getProductsByCategory)).toHaveBeenCalledTimes(1);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].id).toBe('b');
+    expect(body.meta.total).toBe(3);
+    expect(body.meta.limit).toBe(1);
+    expect(body.meta.offset).toBe(1);
+    // Consistent next/prev links derived from the same total.
+    expect(body.links.next).toContain('offset=2');
+    expect(body.links.prev).toContain('offset=0');
+  });
+
+  it('clamps non-finite limit and negative offset instead of producing NaN/negative pagination', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+    vi.mocked(listProducts).mockResolvedValue([]);
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/products?limit=foo&offset=-5')
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+
+    // limit defaults to 20 (finite), offset floors at 0.
+    expect(body.meta.limit).toBe(20);
+    expect(body.meta.offset).toBe(0);
+    for (const call of vi.mocked(listProducts).mock.calls) {
+      if (call[0] && 'limit' in call[0]) {
+        expect(call[0].limit).toBe(20);
+      }
+      if (call[0] && 'offset' in call[0]) {
+        expect(call[0].offset).toBe(0);
+      }
+    }
+  });
+
+  it('returns 400 when an admin supplies an invalid ?status= value', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({ success: true, userId: 'admin-1' });
+
+    const res = await GET(
+      new NextRequest('http://localhost/api/products?status=garbage')
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error).toBe('Validation failed');
+    // No DB query should have run for an invalid status.
+    expect(vi.mocked(listProducts)).not.toHaveBeenCalled();
   });
 });

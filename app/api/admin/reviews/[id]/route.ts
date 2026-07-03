@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { recordReviewFlag, respondToReview, updateReviewStatus } from "@/lib/models/reviews";
+import { errorDetails } from "@/lib/utils/error-response";
 import type { ReviewStatus } from "@/lib/types";
 
 interface PatchPayload {
@@ -62,7 +63,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ success: true, data: review });
   } catch (error) {
     console.error("Failed to update review", error);
-    const message = error instanceof Error ? error.message : "Unable to update review";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Unable to update review", details: errorDetails(error) },
+      { status: 500 }
+    );
   }
 }

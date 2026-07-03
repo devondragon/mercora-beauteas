@@ -34,9 +34,9 @@ vi.mock('@/lib/models/mach/category', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { POST } from '@/app/api/categories/route';
-import { PUT, DELETE } from '@/app/api/categories/[id]/route';
-import { createCategory } from '@/lib/models';
+import { GET, POST } from '@/app/api/categories/route';
+import { GET as GET_BY_ID, PUT, DELETE } from '@/app/api/categories/[id]/route';
+import { createCategory, listCategoriesWithRealTimeCounts } from '@/lib/models';
 import { updateCategory, deleteCategory } from '@/lib/models/mach/category';
 
 const url = 'http://localhost/api/categories';
@@ -63,5 +63,18 @@ describe('/api/categories admin auth gate (BMC-129 / C2)', () => {
     const res = await DELETE(new NextRequest(url, { method: 'DELETE' }), params);
     expect(res.status).toBe(401);
     expect(vi.mocked(deleteCategory)).not.toHaveBeenCalled();
+  });
+});
+
+describe('/api/categories GET stays public even when admin check denies', () => {
+  it('GET /api/categories is not gated (non-401)', async () => {
+    vi.mocked(listCategoriesWithRealTimeCounts).mockResolvedValue([]);
+    const res = await GET(new NextRequest(url, { method: 'GET' }));
+    expect(res.status).not.toBe(401);
+  });
+
+  it('GET /api/categories/[id] is not gated (non-401)', async () => {
+    const res = await GET_BY_ID(new NextRequest(`${url}/c1`, { method: 'GET' }), params);
+    expect(res.status).not.toBe(401);
   });
 });

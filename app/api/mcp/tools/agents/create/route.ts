@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { createAgent } from '../../../../../../lib/mcp/tools/agent';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
-  
+
   if (!auth.success) {
     return NextResponse.json({
       success: false,
@@ -13,9 +13,21 @@ export async function POST(request: NextRequest) {
     }, { status: 401 });
   }
 
+  // Agent management is a privileged tier — a plain commerce agent must not be
+  // able to mint new agents (BMC-133, C7/C8). Fail closed.
+  if (!hasAgentManagementPermission(auth.permissions)) {
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Agent management requires an agent with admin or agents:manage permission'
+      }
+    }, { status: 403 });
+  }
+
   try {
     const body = await request.json() as any;
-    const agentContext = parseAgentContext(request);
+    const agentContext = parseAgentContext(request, auth.agentId);
     
     // Validate required fields
     if (!body.agentId) {

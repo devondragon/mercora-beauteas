@@ -12,7 +12,17 @@ import { toPublicProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
 
-type ProductStatus = 'active' | 'inactive' | 'draft' | 'archived';
+const PRODUCT_STATUSES = ['active', 'inactive', 'draft', 'archived'] as const;
+type ProductStatus = (typeof PRODUCT_STATUSES)[number];
+
+const isProductStatus = (value: string): value is ProductStatus =>
+  (PRODUCT_STATUSES as readonly string[]).includes(value);
+
+/** Parse an int query param defensively, clamping to [min, max] with a default. */
+const clampInt = (raw: string | null, fallback: number, min: number, max: number): number => {
+  const n = parseInt(raw ?? '', 10);
+  return Math.min(Math.max(Number.isFinite(n) ? n : fallback, min), max);
+};
 
 /**
  * GET /api/products - List products
@@ -30,35 +40,48 @@ export async function GET(request: NextRequest) {
     const isAdmin = adminAuth.success;
 
     const url = new URL(request.url);
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
-    const offset = parseInt(url.searchParams.get('offset') || '0');
-    const requestedStatus = url.searchParams.get('status') as ProductStatus | null;
+    const limit = clampInt(url.searchParams.get('limit'), 20, 1, 100);
+    const offset = clampInt(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
+    const requestedStatus = url.searchParams.get('status');
     const search = url.searchParams.get('search');
     const category = url.searchParams.get('category');
 
+    // Only admins may request non-active statuses, and the value must be valid.
+    if (isAdmin && requestedStatus && !isProductStatus(requestedStatus)) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: [`Invalid status: ${requestedStatus}`]
+        },
+        { status: 400 }
+      );
+    }
+
     const statusFilter: ProductStatus[] | undefined = isAdmin
-      ? (requestedStatus ? [requestedStatus] : undefined)
+      ? (requestedStatus ? [requestedStatus as ProductStatus] : undefined)
       : ['active'];
 
     const filterByStatus = (list: Product[]): Product[] =>
       statusFilter ? list.filter(p => statusFilter.includes(p.status as ProductStatus)) : list;
 
-    // Get total count first (without limit/offset)
-    const allProducts = category && category.trim()
-      ? filterByStatus(await getProductsByCategory(category.trim()))
-      : await listProducts({
-          status: statusFilter
-        });
-    const total = allProducts.length;
+    let total: number;
+    let products: Product[];
 
-    // Then get the paginated results
-    const products = category && category.trim()
-      ? filterByStatus(await getProductsByCategory(category.trim()))
-      : await listProducts({
-          status: statusFilter,
-          limit,
-          offset
-        });
+    if (category && category.trim()) {
+      // getProductsByCategory isn't status-/pagination-aware, so fetch once,
+      // apply the status filter, then slice for the page. total/links derive
+      // from the full filtered list so pagination stays consistent.
+      const filtered = filterByStatus(await getProductsByCategory(category.trim()));
+      total = filtered.length;
+      products = filtered.slice(offset, offset + limit);
+    } else {
+      const [all, page] = await Promise.all([
+        listProducts({ status: statusFilter }),
+        listProducts({ status: statusFilter, limit, offset })
+      ]);
+      total = all.length;
+      products = page;
+    }
 
     const responseProducts = isAdmin ? products : products.map(toPublicProduct);
 

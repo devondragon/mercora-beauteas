@@ -23,7 +23,14 @@ export function isUniqueViolation(err: unknown): boolean {
     seen.add(current);
     const message =
       current instanceof Error ? current.message : typeof current === 'string' ? current : '';
-    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)|\bunique\b/i.test(message)) {
+    // Match ONLY the specific D1/SQLite constraint strings. A bare `\bunique\b`
+    // alternative was intentionally removed: it matched the standalone word
+    // "unique" anywhere in the cause chain, so unrelated errors were classified
+    // as unique-constraint violations and (in the webhook dedup path) silently
+    // swallowed as duplicates. SQLite emits "UNIQUE constraint failed: …" and
+    // the driver surfaces "SQLITE_CONSTRAINT_UNIQUE"/"SQLITE_CONSTRAINT_PRIMARYKEY",
+    // both of which these patterns cover (case-insensitive).
+    if (/unique constraint failed|sqlite_constraint_(unique|primarykey)/i.test(message)) {
       return true;
     }
     current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;

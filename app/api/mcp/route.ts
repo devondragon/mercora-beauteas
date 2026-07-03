@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../lib/mcp/auth';
+import { authenticateAgent, hasAgentManagementPermission } from '../../../lib/mcp/auth';
 import { CapabilitiesResponse, MCPToolResponse } from '../../../lib/mcp/types';
 import { getCatalogCapabilities } from '../../../lib/mcp/catalog';
 import { createHttpErrorResponse } from '../../../lib/mcp/error-handler';
@@ -68,6 +68,28 @@ export async function POST(request: NextRequest) {
 
   if (!auth.success) {
     return createHttpErrorResponse(auth.error?.message || 'Authentication failed', 401);
+  }
+
+  // Anti-spoof: agent_context arrives inside the client-controlled request body
+  // on this dispatcher path, so its agentId must be forced to the authenticated
+  // agent before any tool request is built. Otherwise a caller could forge
+  // attribution onto response context and — for place_order — onto the
+  // persisted order (see lib/mcp/tools/order.ts).
+  if (params && typeof params === 'object' && params.agent_context &&
+      typeof params.agent_context === 'object') {
+    params.agent_context.agentId = auth.agentId!;
+  }
+
+  // Agent-management tools (create/list/inspect/disable agents) are a
+  // privileged tier. This dispatcher is the primary path a caller reaches them
+  // by, so the permission gate must live here too — not only on the REST
+  // /tools/agents/* routes (BMC-133, C7/C8). Fail closed.
+  const AGENT_MANAGEMENT_TOOLS = ['create_agent', 'list_agents', 'get_agent_details', 'update_agent_status'];
+  if (AGENT_MANAGEMENT_TOOLS.includes(tool) && !hasAgentManagementPermission(auth.permissions)) {
+    return createHttpErrorResponse(
+      'Agent management requires an agent with admin or agents:manage permission',
+      403
+    );
   }
 
   try {

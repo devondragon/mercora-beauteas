@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { listAgents } from '../../../../../../lib/mcp/tools/agent';
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateAgent(request);
-  
+
   if (!auth.success) {
     return NextResponse.json({
       success: false,
       error: auth.error
     }, { status: 401 });
+  }
+
+  // Listing the agent fleet is a privileged tier — a plain commerce agent must
+  // not be able to enumerate other agents (BMC-133, C7/C8). Fail closed.
+  if (!hasAgentManagementPermission(auth.permissions)) {
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Agent management requires an agent with admin or agents:manage permission'
+      }
+    }, { status: 403 });
   }
 
   try {

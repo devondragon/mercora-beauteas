@@ -7,6 +7,10 @@
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
+import { escapeSqlValue, sqlString } from '../../lib/sql-escape.mjs';
+
+// Re-exported so existing importers of this module keep their entry point.
+export { escapeSqlValue, sqlString };
 
 /**
  * Build the location flags for a `wrangler d1 execute` invocation.
@@ -55,33 +59,6 @@ export function executeQuery(query: string, dbName: string, env: string = 'dev')
     { encoding: 'utf-8' }
   );
   return result;
-}
-
-/**
- * Escape a SQL value for safe insertion.
- * Handles null, number, boolean, string (apostrophe escaping), and JSON objects.
- */
-export function escapeSqlValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return 'NULL';
-  }
-
-  if (typeof value === 'number') {
-    return String(value);
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? '1' : '0';
-  }
-
-  if (typeof value === 'object') {
-    // JSON objects -- stringify then escape the string
-    const json = JSON.stringify(value);
-    return `'${json.replace(/'/g, "''")}'`;
-  }
-
-  // String -- escape single quotes by doubling
-  return `'${String(value).replace(/'/g, "''")}'`;
 }
 
 /**

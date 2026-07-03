@@ -539,19 +539,56 @@ export async function claimWebhookEvent(eventId: string, eventType: string): Pro
  * retry — without this, the retry's claim attempt would hit the same PK and
  * be (wrongly) treated as an already-processed duplicate forever.
  *
- * Never throws: a failure here just means a retry gets skipped as a
- * duplicate instead of reprocessed, which is safe because every downstream
- * side effect (markOrderPaid, gift card fulfillment, subscription/invoice
- * handlers) is idempotent and keyed on the domain object, not the webhook
- * event id — at worst a retry no-ops instead of re-running cleanly.
+ * Retries the DELETE a few times so a transient D1 error doesn't leave the
+ * claim orphaned (which would drop every Stripe retry as `duplicate:true`).
+ * Never throws: if all attempts fail, a retry gets skipped as a duplicate
+ * instead of reprocessed, which is safe because every downstream side effect
+ * (markOrderPaid, gift card fulfillment, subscription/invoice handlers) is
+ * idempotent and keyed on the domain object, not the webhook event id — at
+ * worst a retry no-ops instead of re-running cleanly.
+ *
+ * RESIDUAL ORPHAN WINDOW (known limitation): this only helps when the route's
+ * catch actually runs. If the isolate is killed mid-handler (before the catch),
+ * the claim row sticks and every Stripe retry within the 7-day dedup window is
+ * dropped as a duplicate until cleanupOldWebhookEvents() sweeps it. Fixing that
+ * properly needs a *completion-marker* column on processed_webhook_events (claim
+ * on insert, mark complete after the handler succeeds, and let claimWebhookEvent
+ * reclaim rows that are stale AND not complete). The current schema only has
+ * (event_id, event_type, processed_at) — a completed event and an in-progress
+ * claim are indistinguishable — so reclaim-by-TTL can't be done safely without a
+ * migration and is deferred. See BMC follow-up.
  */
 export async function releaseWebhookEventClaim(eventId: string): Promise<void> {
-  try {
-    const db = await getDbAsync();
-    await db.delete(processed_webhook_events).where(eq(processed_webhook_events.event_id, eventId));
-  } catch (err) {
-    console.error('[webhook] Failed to release event claim after handler error:', eventId, err);
+  const MAX_RELEASE_ATTEMPTS = 3;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_RELEASE_ATTEMPTS; attempt++) {
+    try {
+      const db = await getDbAsync();
+      await db
+        .delete(processed_webhook_events)
+        .where(eq(processed_webhook_events.event_id, eventId));
+      return;
+    } catch (err) {
+      lastError = err;
+      // Back off (with jitter) before retrying: if the DELETE is failing on
+      // transient D1 lock/contention for this row, an immediate retry tends to
+      // just re-collide. Skip the wait after the final attempt.
+      if (attempt < MAX_RELEASE_ATTEMPTS - 1) {
+        const backoffMs = 50 * 2 ** attempt + Math.floor(Math.random() * 50);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
   }
+  // ALERT marker (stable + greppable): an orphaned claim silently drops every
+  // Stripe retry of this event as duplicate:true for up to 7 days (until
+  // cleanupOldWebhookEvents sweeps it), so surface it for log-based alerting
+  // rather than burying it in raw worker logs. A real metric/counter is the
+  // proper long-term signal — see BMC follow-up.
+  console.error(
+    '[webhook][ALERT] orphaned_claim: failed to release event claim after handler error (all retries exhausted):',
+    eventId,
+    lastError
+  );
 }
 
 export async function cleanupOldWebhookEvents() {

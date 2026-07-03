@@ -33,6 +33,7 @@ import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/products/route';
 import { PUT, DELETE } from '@/app/api/products/[id]/route';
 import { createProduct, updateProduct, deleteProduct } from '@/lib/models/mach/products';
+import { checkAdminPermissions } from '@/lib/auth/admin-middleware';
 
 const url = 'http://localhost/api/products';
 const params = { params: Promise.resolve({ id: 'p1' }) };
@@ -58,5 +59,38 @@ describe('/api/products admin auth gate (BMC-128 / C1)', () => {
     const res = await DELETE(new NextRequest(url, { method: 'DELETE' }), params);
     expect(res.status).toBe(401);
     expect(vi.mocked(deleteProduct)).not.toHaveBeenCalled();
+  });
+});
+
+describe('/api/products admin auth gate — success path reaches the model', () => {
+  it('POST creates a product when admin', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValueOnce({ success: true } as any);
+    await POST(
+      new NextRequest(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Morning Blend' }),
+      })
+    );
+    expect(vi.mocked(createProduct)).toHaveBeenCalled();
+  });
+
+  it('PUT updates a product when admin', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValueOnce({ success: true } as any);
+    await PUT(
+      new NextRequest(url, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Morning Blend' }),
+      }),
+      params
+    );
+    expect(vi.mocked(updateProduct)).toHaveBeenCalled();
+  });
+
+  it('DELETE deletes a product when admin', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValueOnce({ success: true } as any);
+    await DELETE(new NextRequest(url, { method: 'DELETE' }), params);
+    expect(vi.mocked(deleteProduct)).toHaveBeenCalled();
   });
 });

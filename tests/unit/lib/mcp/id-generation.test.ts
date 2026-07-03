@@ -17,7 +17,7 @@ describe('generateApiKey', () => {
     expect(apiKey).toMatch(/^mcp_/);
   });
 
-  it('produces a high-entropy suffix (>=32 hex chars, i.e. >=128 bits)', () => {
+  it('produces a high-entropy suffix (>=32 hex chars, i.e. >=122 bits)', () => {
     const apiKey = generateApiKey();
     const suffix = apiKey.replace(/^mcp_/, '');
     expect(suffix.length).toBeGreaterThanOrEqual(32);
@@ -36,7 +36,7 @@ describe('createAgentSessionId', () => {
     expect(sessionId.startsWith('agent-x_')).toBe(true);
   });
 
-  it('produces a high-entropy suffix (>=32 hex chars, i.e. >=128 bits)', () => {
+  it('produces a high-entropy suffix (>=32 hex chars, i.e. >=122 bits)', () => {
     const sessionId = createAgentSessionId('agent-x');
     const suffix = sessionId.slice('agent-x_'.length).replace(/-/g, '');
     expect(suffix.length).toBeGreaterThanOrEqual(32);

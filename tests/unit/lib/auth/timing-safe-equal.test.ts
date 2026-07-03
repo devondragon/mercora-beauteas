@@ -3,12 +3,13 @@
  * compare must be constant-time.
  *
  * timingSafeEqual() is a pure crypto helper (Web Crypto's crypto.subtle.digest,
- * available in the jsdom unit env), so it's imported directly from
- * lib/auth/unified-auth.ts. Nothing here invokes the module's other exports,
- * so the heavier imports they pull in (Clerk, OpenNext, D1 models) never run.
+ * available in the jsdom unit env), so it's imported directly from the
+ * dependency-free lib/auth/crypto.ts module — deliberately NOT from
+ * unified-auth.ts, which transitively pulls in Clerk, OpenNext and D1 models
+ * and would cross the pure-module boundary these unit tests enforce.
  */
 import { describe, it, expect } from 'vitest';
-import { timingSafeEqual } from '@/lib/auth/unified-auth';
+import { timingSafeEqual } from '@/lib/auth/crypto';
 
 describe('timingSafeEqual', () => {
   it('resolves true for equal strings', async () => {

@@ -1,18 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { getAgentDetails, updateAgentStatus } from '../../../../../../lib/mcp/tools/agent';
+
+const FORBIDDEN_RESPONSE = {
+  success: false,
+  error: {
+    code: 'FORBIDDEN',
+    message: 'Agent management requires an agent with admin or agents:manage permission'
+  }
+} as const;
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
 ) {
   const auth = await authenticateAgent(request);
-  
+
   if (!auth.success) {
     return NextResponse.json({
       success: false,
       error: auth.error
     }, { status: 401 });
+  }
+
+  // Inspecting an agent exposes its recent session ids and stats — a plain
+  // commerce agent must not read another agent's details (BMC-133, C7).
+  // Fail closed.
+  if (!hasAgentManagementPermission(auth.permissions)) {
+    return NextResponse.json(FORBIDDEN_RESPONSE, { status: 403 });
   }
 
   try {
@@ -40,12 +55,18 @@ export async function PATCH(
   { params }: { params: Promise<{ agentId: string }> }
 ) {
   const auth = await authenticateAgent(request);
-  
+
   if (!auth.success) {
     return NextResponse.json({
       success: false,
       error: auth.error
     }, { status: 401 });
+  }
+
+  // Enabling/disabling an agent is a privileged operation — a plain commerce
+  // agent must not be able to deactivate other agents (BMC-133, C8). Fail closed.
+  if (!hasAgentManagementPermission(auth.permissions)) {
+    return NextResponse.json(FORBIDDEN_RESPONSE, { status: 403 });
   }
 
   try {

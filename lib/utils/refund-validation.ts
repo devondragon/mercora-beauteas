@@ -30,7 +30,11 @@ export function computeRefundedTotal(extensions: OrderExtensions | null | undefi
   }
   return refunds.reduce((sum, refund) => {
     const amount = refund?.amount;
-    return sum + (typeof amount === 'number' && Number.isFinite(amount) ? amount : 0);
+    // Only count positive, whole-cent amounts. A stored refund entry should
+    // never be negative or fractional; ignoring such values keeps the
+    // cumulative total honest (defense-in-depth) rather than letting a bad
+    // entry shrink or inflate the refunded total.
+    return sum + (typeof amount === 'number' && Number.isInteger(amount) && amount > 0 ? amount : 0);
   }, 0);
 }
 
@@ -45,6 +49,16 @@ export function assertRefundWithinRemaining(
   alreadyRefunded: number,
   requestedAmount: number
 ): { ok: true } | { ok: false; error: string } {
+  // Reject non-positive or fractional amounts up front. Stripe requires a
+  // positive integer (cents); without this a negative/zero/fractional amount
+  // would sail past the upper-bound check below (e.g. -1 is < remaining) and
+  // reach Stripe, which rejects it with a raw 500 instead of a clean 400.
+  if (!Number.isInteger(requestedAmount) || requestedAmount <= 0) {
+    return {
+      ok: false,
+      error: 'Refund amount must be a positive whole number'
+    };
+  }
   const remaining = totalAmount - alreadyRefunded;
   if (requestedAmount > remaining) {
     return {

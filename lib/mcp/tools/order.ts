@@ -13,6 +13,14 @@ export async function placeOrder(
   const startTime = Date.now();
 
   try {
+    // Anti-spoof: agent_context is client-controlled, so normalize its agentId
+    // to the authenticated agent before it is read for attribution or persisted
+    // onto the order below. Access control already relies on the authenticated
+    // `agentId` param (via requireOwnedSession); this closes the attribution gap.
+    if (request.agent_context) {
+      request.agent_context.agentId = agentId;
+    }
+
     // Verify the calling agent owns this session before reading/placing its cart
     const ownership = await requireOwnedSession(sessionId, agentId);
     if (!ownership.ok) {
@@ -57,7 +65,7 @@ export async function placeOrder(
         },
         context: {
           session_id: sessionId,
-          agent_id: request.agent_context?.agentId || 'unknown',
+          agent_id: agentId,
           processing_time_ms: Date.now() - startTime
         },
         metadata: {
@@ -89,7 +97,7 @@ export async function placeOrder(
         },
         context: {
           session_id: sessionId,
-          agent_id: request.agent_context?.agentId || 'unknown',
+          agent_id: agentId,
           processing_time_ms: Date.now() - startTime
         },
         recommendations: {
@@ -126,7 +134,7 @@ export async function placeOrder(
       payment_method: request.paymentMethod || 'agent-processed',
       special_instructions: request.specialInstructions,
       // Agent-specific fields
-      agent_id: request.agent_context?.agentId,
+      agent_id: agentId,
       agent_context: request.agent_context ? JSON.stringify(request.agent_context) : undefined,
       currency_code: 'USD'
     };
@@ -155,7 +163,7 @@ export async function placeOrder(
       data: response,
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       recommendations: {
@@ -182,7 +190,7 @@ export async function placeOrder(
       },
       context: {
         session_id: sessionId,
-        agent_id: request.agent_context?.agentId || 'unknown',
+        agent_id: agentId,
         processing_time_ms: processingTime
       },
       metadata: {

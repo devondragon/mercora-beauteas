@@ -427,14 +427,15 @@ export async function PUT(request: NextRequest) {
     // SECURITY (BMC-140): payment_status is intentionally NOT accepted from this
     // client-driven PUT. A caller holding only ORDERS_UPDATE (e.g. a webhook/
     // automation token) could otherwise flip an unpaid order to 'paid' (or
-    // 'refunded') with zero Stripe verification. payment_status has exactly two
-    // legitimate writers, both of which verify against Stripe first:
+    // 'refunded') with zero Stripe verification. payment_status has exactly
+    // three legitimate writers, each of which verifies against Stripe first and
+    // none of which is client-controllable:
     //   - order creation (POST /api/orders) via retrievePaymentIntent
     //   - the Stripe webhook's markOrderPaid()
-    // Refunds also go through their own route (/api/orders/refund), which only
-    // sets payment_status after actually creating a Stripe refund. This PUT
-    // handler is for fulfillment/tracking updates only, so any client-supplied
-    // payment_status is logged and silently dropped rather than applied.
+    //   - the refund route (/api/orders/refund), which only sets payment_status
+    //     after actually creating a Stripe refund
+    // This PUT handler is for fulfillment/tracking updates only, so any client-
+    // supplied payment_status is logged and silently dropped rather than applied.
     if (payment_status) {
       console.warn(
         `Order ${orderId}: ignoring client-supplied payment_status="${payment_status}" on PUT ` +
