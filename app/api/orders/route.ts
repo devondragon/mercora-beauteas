@@ -28,6 +28,7 @@ import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData 
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
+import { resolveGiftCardTenderCents, verifyOrderChargeSufficient } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
 
 
@@ -231,6 +232,27 @@ export async function POST(request: NextRequest) {
             `Order ${orderId}: PaymentIntent ${paymentIntentId} not confirmed ` +
               `(status=${verifiedPi.status}, boundOrder=${verifiedPi.metadata?.orderId ?? 'none'}); leaving order pending`
           );
+        } else {
+          // BMC-131: a succeeded, order-bound PaymentIntent is necessary but NOT
+          // sufficient. Re-verify that the cash actually collected covers the
+          // catalog value of the goods (never the client-supplied total/unit
+          // prices). Without this a shopper could pay a $0.50 PaymentIntent and
+          // submit an order for expensive items. Use ONLY amount_received (the
+          // captured amount), never the authorized pi.amount. Fail closed to
+          // 'pending' on any shortfall; the webhook re-runs the same check.
+          const paidAmountCents = verifiedPi.amount_received ?? 0;
+          const giftCardTenderCents = await resolveGiftCardTenderCents(body.extensions);
+          const charge = await verifyOrderChargeSufficient({
+            items: body.items as any,
+            paidAmountCents,
+            giftCardTenderCents,
+          });
+          if (!charge.ok) {
+            paymentConfirmed = false;
+            console.warn(
+              `Order ${orderId}: PaymentIntent ${paymentIntentId} amount check failed; leaving order pending — ${charge.reason}`
+            );
+          }
         }
       } catch (piError) {
         console.error(

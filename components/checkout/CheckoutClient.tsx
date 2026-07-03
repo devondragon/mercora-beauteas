@@ -209,6 +209,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           shippingAddress,
           orderId: newOrderId,
           description: `${items.length} item(s) - ${items.map(i => i.name).join(', ')}`,
+          // Let the server recompute the goods subtotal from the catalog and
+          // reject an amount that undercuts it (BMC-131).
+          items: items.map(item => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+          })),
           // Let the server re-verify the gift card's live balance before
           // charging, so a stale client-side balance can't under-collect.
           ...(giftCardApplied > 0 && appliedGiftCard
