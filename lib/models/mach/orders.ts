@@ -134,6 +134,39 @@ export async function markOrderPaid(
   return updated ? hydrateOrder(updated) : null;
 }
 
+/**
+ * Revert an order to unpaid/pending.
+ *
+ * Used to undo a paid decision (BMC-131 / H1) when gift-card tender that the
+ * sufficiency check counted on was not actually redeemed (e.g. a lost balance
+ * race): the cash collected no longer covers the goods, so the order must not
+ * remain paid/processing. Idempotent — re-reverting an already-pending order is
+ * a no-op write.
+ */
+export async function markOrderUnpaid(
+  orderId: string,
+  opts?: { notes?: string }
+): Promise<Order | null> {
+  const db = await getDbAsync();
+
+  const updateData: Record<string, unknown> = {
+    payment_status: 'pending',
+    status: 'pending',
+    updated_at: sql`CURRENT_TIMESTAMP`,
+  };
+  if (opts?.notes) {
+    updateData.notes = opts.notes;
+  }
+
+  const [updated] = await db
+    .update(orders)
+    .set(updateData)
+    .where(eq(orders.id, orderId))
+    .returning();
+
+  return updated ? hydrateOrder(updated) : null;
+}
+
 // Update order with shipping information
 export async function updateOrderShipping(
   orderId: string,
