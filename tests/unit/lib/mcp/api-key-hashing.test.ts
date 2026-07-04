@@ -38,11 +38,14 @@ function makeChain() {
   chain.orderBy = passthrough;
   chain.offset = passthrough;
   chain.limit = () => Promise.resolve(selectResult);
+  // Builder methods return the chain so multi-step calls
+  // (`insert().values().onConflictDoUpdate()`, used by the rate-limit upsert)
+  // keep chaining; awaiting a chain terminal resolves to the (unused) object.
   chain.values = (v: Record<string, unknown>) => {
     insertedValues = v;
-    return Promise.resolve(undefined);
+    return chain;
   };
-  chain.onConflictDoUpdate = () => Promise.resolve(undefined);
+  chain.onConflictDoUpdate = passthrough;
   return chain;
 }
 
@@ -96,5 +99,35 @@ describe('authenticateAgent', () => {
     expect(eqCalls.some(([, val]) => val === presentedKey)).toBe(false);
     // ...and the hash must be what we matched on.
     expect(eqCalls.some(([, val]) => val === expectedHash)).toBe(true);
+  });
+
+  it('authenticates an agent whose stored hash matches the presented key', async () => {
+    const presentedKey = 'test-key-123';
+    // The row the DB would return for a hash match. The lookup filter (hash +
+    // isActive) is applied by the DB, which the passthrough fake does not
+    // evaluate — so we return the matching row directly and separately assert
+    // (below) that the isActive=true predicate is part of the query.
+    selectResult = [
+      {
+        agentId: 'test-agent',
+        isActive: true,
+        rateLimitRpm: 100,
+        rateLimitOph: 10,
+        permissions: JSON.stringify(['read:products', 'write:cart']),
+      },
+    ];
+
+    const req = {
+      headers: { get: (h: string) => (h === 'X-Agent-API-Key' ? presentedKey : null) },
+      nextUrl: { searchParams: { get: () => null } },
+    } as unknown as import('next/server').NextRequest;
+
+    const result = await authenticateAgent(req);
+
+    expect(result.success).toBe(true);
+    expect(result.agentId).toBe('test-agent');
+    expect(result.permissions).toEqual(['read:products', 'write:cart']);
+    // The lookup restricts to active agents (fail-closed on disabled agents).
+    expect(eqCalls.some(([, val]) => val === true)).toBe(true);
   });
 });
