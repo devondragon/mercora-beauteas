@@ -1,4 +1,4 @@
-import { createOrder, markOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
+import { createOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
@@ -259,9 +259,19 @@ export async function placeOrder(
       currency_code: 'USD'
     };
 
-    let createdOrder;
+    // Payment is verified — persist the order AND mark it paid in one atomic
+    // batch (createOrderPaid). A captured payment must never strand a persisted-
+    // but-unpaid order: a two-step create-then-markPaid could fail on the second
+    // step and leave a 'pending' order against real money that neither a retry
+    // (blocked by the replay guard) nor the Stripe webhook (MCP PIs carry no
+    // orderId metadata) could recover. The order still reaches paid/processing
+    // via the canonical markOrderPaid field-set — never a hardcoded status.
+    let order;
     try {
-      createdOrder = await createOrder(orderData);
+      order = await createOrderPaid(orderData, {
+        status: 'processing',
+        notes: `Paid via MCP agent ${agentId} (PaymentIntent ${paymentIntentId})`,
+      });
     } catch (createError) {
       // A PK collision here means another concurrent place_order already created
       // the order for this PaymentIntent — treat as a replay, not a crash, so we
@@ -274,13 +284,6 @@ export async function placeOrder(
       }
       throw createError;
     }
-
-    // Payment is verified — move the order to paid/processing via the same path
-    // the storefront and Stripe webhook use.
-    const order = (await markOrderPaid(createdOrder.id!, {
-      status: 'processing',
-      notes: `Paid via MCP agent ${agentId} (PaymentIntent ${paymentIntentId})`,
-    })) ?? createdOrder;
 
     // Calculate estimated delivery
     const estimatedDelivery = calculateEstimatedDelivery(

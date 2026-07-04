@@ -7,8 +7,9 @@
  * The gate requires a PaymentIntent that (a) succeeded, (b) is bound to this
  * agent+session via metadata, (c) covers the catalog value of the goods, and
  * (d) has not already funded another order. Any failure must return an error and
- * MUST NOT call createOrder(). The happy path must mark the order paid via
- * markOrderPaid() (never a hardcoded 'confirmed').
+ * MUST NOT persist an order. The happy path must persist AND mark the order paid
+ * atomically via createOrderPaid() (never a hardcoded 'confirmed', and never a
+ * non-atomic create-then-markPaid that could strand a paid order).
  *
  * Mocks the session, Stripe, catalog pricing, and orders model so it runs in the
  * jsdom unit env (CI `npm test`) without touching D1/Cloudflare bindings.
@@ -28,15 +29,14 @@ vi.mock('@/lib/services/order-pricing', () => ({
 }));
 
 vi.mock('@/lib/models/mach/orders', () => ({
-  createOrder: vi.fn(),
-  markOrderPaid: vi.fn(),
+  createOrderPaid: vi.fn(),
   getOrderByPaymentIntentId: vi.fn(),
 }));
 
 import { requireOwnedSession } from '@/lib/mcp/session';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
-import { createOrder, markOrderPaid, getOrderByPaymentIntentId } from '@/lib/models/mach/orders';
+import { createOrderPaid, getOrderByPaymentIntentId } from '@/lib/models/mach/orders';
 import { placeOrder } from '@/lib/mcp/tools/order';
 
 const AGENT = 'agent-a';
@@ -74,8 +74,7 @@ beforeEach(() => {
   vi.mocked(requireOwnedSession).mockResolvedValue(ownedSessionWithCart());
   vi.mocked(getOrderByPaymentIntentId).mockResolvedValue(null);
   vi.mocked(verifyOrderChargeSufficient).mockResolvedValue({ ok: true, goodsCents: 2000, requiredCashCents: 2000 } as any);
-  vi.mocked(createOrder).mockResolvedValue({ id: 'ORD-1', status: 'pending', total_amount: { amount: 29.99, currency: 'USD' } } as any);
-  vi.mocked(markOrderPaid).mockResolvedValue({ id: 'ORD-1', status: 'processing', total_amount: { amount: 29.99, currency: 'USD' } } as any);
+  vi.mocked(createOrderPaid).mockResolvedValue({ id: 'ORD-1', status: 'processing', total_amount: { amount: 29.99, currency: 'USD' } } as any);
 });
 
 describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', () => {
@@ -85,8 +84,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_REQUIRED');
     expect(vi.mocked(retrievePaymentIntent)).not.toHaveBeenCalled();
-    expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
-    expect(vi.mocked(markOrderPaid)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
   it('rejects when the PaymentIntent has not succeeded', async () => {
@@ -98,7 +96,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_NOT_COMPLETED');
-    expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
   it('rejects when the PaymentIntent is not bound to this agent+session', async () => {
@@ -110,7 +108,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_NOT_BOUND');
-    expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
   it('rejects (replay guard) when the PaymentIntent already funded an order', async () => {
@@ -123,7 +121,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_ALREADY_USED');
-    expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
   it('treats a PK collision on insert (concurrent double-submit) as a replay, not a crash', async () => {
@@ -132,8 +130,8 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
     } as any);
     // Early lookup sees nothing (the racing order isn't visible yet)...
     vi.mocked(getOrderByPaymentIntentId).mockResolvedValueOnce(null);
-    // ...then createOrder loses the PK race and throws...
-    vi.mocked(createOrder).mockRejectedValueOnce(new Error('UNIQUE constraint failed: orders.id'));
+    // ...then the atomic create+markPaid loses the PK race and throws...
+    vi.mocked(createOrderPaid).mockRejectedValueOnce(new Error('UNIQUE constraint failed: orders.id'));
     // ...and the post-collision re-check now sees the winner's order.
     vi.mocked(getOrderByPaymentIntentId).mockResolvedValueOnce({ id: `MCP-${PI}` } as any);
 
@@ -141,7 +139,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_ALREADY_USED');
-    expect(vi.mocked(markOrderPaid)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).toHaveBeenCalledTimes(1);
   });
 
   it('rejects when the captured amount does not cover the catalog goods', async () => {
@@ -154,10 +152,10 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('PAYMENT_INSUFFICIENT');
-    expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
-  it('creates the order and marks it paid via markOrderPaid on a fully verified payment', async () => {
+  it('persists and marks the order paid atomically via createOrderPaid on a fully verified payment', async () => {
     vi.mocked(retrievePaymentIntent).mockResolvedValue({
       id: PI, status: 'succeeded', amount_received: 2000, metadata: { agentId: AGENT, sessionId: SESSION },
     } as any);
@@ -169,11 +167,12 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
     expect(vi.mocked(verifyOrderChargeSufficient)).toHaveBeenCalledWith(
       expect.objectContaining({ paidAmountCents: 2000 })
     );
-    // Order is persisted, bound to the PI, then marked paid — never hardcoded 'confirmed'.
-    expect(vi.mocked(createOrder)).toHaveBeenCalledWith(
-      expect.objectContaining({ external_references: { payment_intent_id: PI } })
+    // Order is persisted (bound to the PI) AND moved to paid/processing in a single
+    // atomic call — never a hardcoded 'confirmed', never a strandable two-step write.
+    expect(vi.mocked(createOrderPaid)).toHaveBeenCalledWith(
+      expect.objectContaining({ external_references: { payment_intent_id: PI } }),
+      expect.objectContaining({ status: 'processing' })
     );
-    expect(vi.mocked(markOrderPaid)).toHaveBeenCalledWith('ORD-1', expect.objectContaining({ status: 'processing' }));
     expect(result.data.status).toBe('processing');
   });
 });

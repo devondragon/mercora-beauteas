@@ -15,21 +15,19 @@ import { Order, CreateOrderRequest, Money, Address, OrderItem } from "@/lib/type
  * - Handle webhooks and notifications
  */
 
-// Create a new order
-export async function createOrder(orderData: CreateOrderRequest): Promise<Order> {
-  const db = await getDbAsync();
-  
+// Build the raw order row for insert. Shared by createOrder and createOrderPaid
+// so the two paths can never diverge on column shape.
+// Encoding contract: total_amount / shipping_address / billing_address / items /
+// external_references / extensions are `text(..., { mode: "json" })` columns —
+// Drizzle serializes them on write and parses on read. Pass the RAW objects
+// here; a manual JSON.stringify would double-encode (a JSON string inside a JSON
+// string) and break json_extract() in SQL.
+function buildOrderRecord(orderData: CreateOrderRequest) {
   // Use a caller-supplied id when present (its uniqueness is then enforced by the
   // PK on insert — see CreateOrderRequest.id / BMC-132); otherwise generate one.
   const orderId = orderData.id ?? `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  
-  // Prepare order record.
-  // Encoding contract: total_amount / shipping_address / billing_address /
-  // items / external_references / extensions are `text(..., { mode: "json" })`
-  // columns — Drizzle serializes them on write and parses on read. Pass the RAW
-  // objects here; a manual JSON.stringify would double-encode (a JSON string
-  // inside a JSON string) and break json_extract() in SQL.
-  const orderRecord = {
+
+  return {
     id: orderId,
     customer_id: orderData.customer_id,
     status: "pending" as const,
@@ -45,12 +43,62 @@ export async function createOrder(orderData: CreateOrderRequest): Promise<Order>
     external_references: orderData.external_references ?? null,
     extensions: orderData.extensions ?? null,
   };
-  
+}
+
+// Create a new order
+export async function createOrder(orderData: CreateOrderRequest): Promise<Order> {
+  const db = await getDbAsync();
+
+  const orderRecord = buildOrderRecord(orderData);
+
   const [newOrder] = await db.insert(orders).values(orderRecord).returning();
-  
+
   // Items are stored as a JSON array in the orders table per schema; no separate order_items table logic needed.
-  
+
   return hydrateOrder(newOrder);
+}
+
+/**
+ * Create an order AND mark it paid as a single atomic D1 batch (BMC-132).
+ *
+ * The MCP order path funds an order against an already-captured Stripe payment,
+ * so it must never leave a persisted-but-unpaid order stranded: if create and
+ * mark-paid were two separate awaits, a failure on the second one would leave a
+ * `pending` order against real money with no recovery path (the replay guard
+ * blocks a retry, and the Stripe webhook only reconciles orders whose id is in
+ * the PaymentIntent metadata — which MCP PIs do not carry). Running the insert
+ * and the paid-update in one `db.batch` makes them succeed or fail together;
+ * D1 has no interactive transactions, so db.batch is the atomic primitive here
+ * (same pattern as gift-card issuance). The order still reaches its paid state
+ * through the canonical markOrderPaid field-set, never a hardcoded status.
+ */
+export async function createOrderPaid(
+  orderData: CreateOrderRequest,
+  paid?: { status?: Order['status']; notes?: string }
+): Promise<Order> {
+  const db = await getDbAsync();
+
+  const orderRecord = buildOrderRecord(orderData);
+
+  const paidUpdate: Record<string, unknown> = {
+    payment_status: 'paid',
+    status: paid?.status ?? 'processing',
+    updated_at: sql`CURRENT_TIMESTAMP`,
+  };
+  if (paid?.notes) {
+    paidUpdate.notes = paid.notes;
+  }
+
+  const [, updatedRows] = await db.batch([
+    db.insert(orders).values(orderRecord),
+    db
+      .update(orders)
+      .set(paidUpdate)
+      .where(eq(orders.id, orderRecord.id))
+      .returning(),
+  ]);
+
+  return hydrateOrder(updatedRows[0]);
 }
 
 // Get orders for a specific customer
