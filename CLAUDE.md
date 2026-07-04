@@ -85,7 +85,7 @@ npm run token:revoke
 
 ## Cloudflare Configuration (`wrangler.jsonc`)
 
-Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; all 11 migrations applied → ~39 tables in each DB).
+Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; migrations `0001`–`0010` applied → ~39 tables in each DB). ⚠️ `0011_hash_mcp_api_keys` is committed but **not yet applied to the remote DBs** (BMC-141/BMC-155).
 
 | | **dev** (`--env dev`) | **production** (`--env production`) |
 |---|---|---|
@@ -112,7 +112,7 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 - **Drizzle schema** (TypeScript, for queries): `lib/db/schema/` (~22 files; `index.ts` re-exports). `lib/db.ts` exposes cached `getDb()` / `getDbAsync()` via `drizzle(env.DB, { schema })`.
 - **Data access layer:** `lib/models/` (incl. `lib/models/mach/` for MACH Alliance entities).
 
-### Current migrations (11 files → ~39 tables)
+### Current migrations (12 files → ~39 tables)
 | File | Adds |
 |---|---|
 | `0001_initial_schema.sql` | MACH core: addresses, languages, media, customers, categories, product_types, products, product_variants, promotions, coupon_instances, inventory, pricing, orders, api_tokens, chat_sessions/messages, order_webhooks, admin_settings |
@@ -126,8 +126,9 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | `0009_rebrand_cms_pages.sql` | Updates seeded CMS page rows to tea/skincare copy (data-only) |
 | `0010_add_blog_tables.sql` | `blog_categories`, `blog_posts` |
 | `0010_add_gift_cards.sql` | `gift_cards`, `gift_card_transactions` + seeded gift-card product type/product/denomination variants |
+| `0011_hash_mcp_api_keys.sql` | Renames `mcp_agents.api_key` → `api_key_hash` (store SHA-256, not plaintext) + re-seeds the dev `test-agent` hash (BMC-141/BMC-155; no new tables) |
 
-> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0011_*`.
+> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0012_*` (`0011_hash_mcp_api_keys` is taken).
 
 ### Making a schema change
 1. Update the Drizzle schema/types in `lib/db/schema/` (and `lib/models/`) so app code matches.
@@ -240,7 +241,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Built & audited (code-complete):** SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
-**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **All 11 migrations applied (2026-06-29)** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied to all three; gift-card tables and denomination variants verified live in prod.
+**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0010` applied (2026-06-29)** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied to all three; gift-card tables and denomination variants verified live in prod. ⚠️ **`0011_hash_mcp_api_keys` (BMC-141/BMC-155) is committed but still pending remote apply** to all three DBs (validated `--local` only).
 
 **Operational work still remaining before go-live:**
 - Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`).

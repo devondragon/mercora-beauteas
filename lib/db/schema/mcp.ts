@@ -17,7 +17,10 @@ export const mcpAgents = sqliteTable('mcp_agents', {
   agentId: text('agent_id').primaryKey(),
   name: text('name'),
   description: text('description'),
-  apiKey: text('api_key').unique().notNull(),
+  // Stores only the SHA-256 hash of the agent's API key (never the raw key),
+  // mirroring apiTokens.tokenHash. The raw key is shown once at creation and
+  // is unrecoverable thereafter. See BMC-141/BMC-155.
+  apiKeyHash: text('api_key_hash').unique().notNull(),
   permissions: text('permissions'), // JSON string array
   rateLimitRpm: integer('rate_limit_rpm').default(100),
   rateLimitOph: integer('rate_limit_oph').default(10),
