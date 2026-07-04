@@ -48,8 +48,9 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
-import { getOrderById, markOrderPaid } from '@/lib/models/mach/orders';
+import { getOrderById, markOrderPaid, markOrderUnpaid } from '@/lib/models/mach/orders';
 import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
+import { resolveGiftCardTenderCents, verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
 
 /**
  * POST handler for Stripe webhook events.
@@ -190,21 +191,70 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   }
 
   try {
+    // Fetch the order FIRST: we need its line items to verify the amount paid
+    // BEFORE marking it paid. If the order-creation path hasn't persisted it
+    // yet, throw a retryable error so the webhook returns 500 and is NOT
+    // recorded as processed — Stripe redelivers with backoff, by which point
+    // the order should exist. Everything below is idempotent and order-keyed,
+    // so a later retry (or order creation winning the race) is safe.
+    const order = await getOrderById(orderId);
+    if (!order) {
+      throw new WebhookRetryableError(
+        `[webhook] Order ${orderId} not found yet; deferring payment confirmation to a Stripe retry`
+      );
+    }
+
+    // amount_received comes from the signature-verified Stripe event, so it is
+    // a trusted basis for confirming payment / issuing stored value. Use ONLY
+    // the captured amount (never the authorized pi.amount); fail closed at 0.
+    const paidAmountCents = paymentIntent.amount_received ?? 0;
+
+    // BMC-131: verify the cash collected covers the catalog value of the goods
+    // before marking paid. This closes the second bypass — otherwise a $0.50
+    // PaymentIntent succeeding would flip an expensive order to paid here even
+    // when order creation refused to. Underpayment is permanent (not a
+    // transient race), so record the event as processed and leave the order
+    // pending rather than triggering a Stripe retry storm.
+    // H2: an underpayment (charge.ok === false) is PERMANENT and must NOT
+    // trigger a retry, but an *exception* while running the check (e.g. a
+    // transient D1 error inside getProductVariant/getGiftCardByCode) is
+    // TRANSIENT and MUST be retried — otherwise a legitimately-paid order is
+    // stranded pending forever with the event marked processed. Wrap the check
+    // in its own try/catch so only an explicit `ok === false` is treated as
+    // permanent; any thrown error is re-raised as a retryable webhook error.
+    let charge: Awaited<ReturnType<typeof verifyOrderChargeSufficient>>;
+    let giftCardTenderCents: number;
+    try {
+      giftCardTenderCents = await resolveGiftCardTenderCents(order.extensions);
+      charge = await verifyOrderChargeSufficient({
+        items: order.items as any,
+        paidAmountCents,
+        giftCardTenderCents,
+      });
+    } catch (verifyError) {
+      throw new WebhookRetryableError(
+        `[webhook] Order ${orderId}: charge verification errored (${
+          verifyError instanceof Error ? verifyError.message : 'unknown'
+        }); deferring to a Stripe retry`
+      );
+    }
+    if (!charge.ok) {
+      console.error(
+        `[webhook] Order ${orderId}: refusing to mark paid — ${charge.reason}`
+      );
+      return;
+    }
+
     // Mark the order paid directly in D1. This previously self-fetched
     // `${NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/orders`, which on the
     // deployed Worker resolved to localhost (unreachable) and silently left the
     // order 'pending'. Writing to D1 removes that env dependency entirely and
     // is idempotent (re-marking an already-paid order is a no-op).
     try {
-      const updated = await markOrderPaid(orderId, {
+      await markOrderPaid(orderId, {
         status: 'processing',
         notes: `Payment completed via Stripe - Payment Intent: ${paymentIntent.id}`,
       });
-      if (!updated) {
-        // Order not persisted yet — the getOrderById check below throws a
-        // retryable error so Stripe redelivers, by which point it will exist.
-        console.warn(`[webhook] Order ${orderId} not found when marking paid; deferring to retry`);
-      }
     } catch (updateError) {
       console.error('Error updating order status:', updateError);
     }
@@ -212,25 +262,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     // Gift card fulfillment — issue purchased cards + redeem any applied card.
     // Idempotent and keyed on the order, so it is safe even though the
     // order-creation path runs the same step (whichever sees the order wins).
-    // The order must be persisted before we can fulfill. The order-creation
-    // path (POST /api/orders) is the primary fulfiller; if the webhook wins the
-    // race, the order may not exist yet.
-    const order = await getOrderById(orderId);
-    if (!order) {
-      // Don't silently drop fulfillment. Throw a retryable error so the webhook
-      // returns 500 and is NOT recorded as processed — Stripe redelivers with
-      // backoff, by which point the order should exist. Fulfillment is
-      // idempotent and order-keyed, so a later retry (or the order-creation
-      // path winning) is safe and never double-issues/double-redeems.
-      throw new WebhookRetryableError(
-        `[webhook] Order ${orderId} not found yet; deferring gift card fulfillment to a Stripe retry`
-      );
-    }
     try {
-      // amount_received comes from the signature-verified Stripe event, so it
-      // is a trusted basis for issuing/redeeming stored value. Use ONLY the
-      // captured amount (never the authorized pi.amount); fail closed at 0.
-      const paidAmountCents = paymentIntent.amount_received ?? 0;
       const gc = await processGiftCardsForOrder(order, { paidAmountCents });
       if (gc.issued || gc.redeemed) {
         console.log(
@@ -239,6 +271,21 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       }
       if (gc.errors.length) {
         console.error('[webhook] Gift card fulfillment errors:', gc.errors);
+      }
+
+      // H1: the paid decision above credited an UNRESERVED gift-card balance as
+      // tender. If redemption then applied nothing (e.g. a lost balance race),
+      // the tender never materialized, so the order must not stay paid — revert
+      // it to pending. Mirrors the same guard on the order-creation path.
+      const appliedGiftCardCode = (order.extensions as any)?.gift_card?.code;
+      if (appliedGiftCardCode && giftCardTenderCents > 0 && gc.redeemed === 0) {
+        console.error(
+          `[webhook] Order ${orderId}: gift-card tender (${giftCardTenderCents}c) counted toward payment ` +
+            `but redemption applied nothing; reverting order to pending`
+        );
+        await markOrderUnpaid(orderId, {
+          notes: `Reverted to pending: gift-card tender not redeemed (PaymentIntent ${paymentIntent.id})`,
+        });
       }
     } catch (gcError) {
       console.error('Error during gift card fulfillment:', gcError);

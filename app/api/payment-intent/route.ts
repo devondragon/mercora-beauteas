@@ -34,7 +34,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
+import { computeCatalogSubtotalCents, AMOUNT_TOLERANCE_CENTS, MAX_ORDER_LINE_ITEMS } from '@/lib/services/order-pricing';
 import type { Address } from '@/lib/types';
+
+// Minimal shape of a cart line needed to price it from the catalog. Accepts
+// both the cart-store shape (productId/variantId) and the MACH order shape.
+interface PaymentIntentLineItem {
+  productId?: string;
+  product_id?: string;
+  variantId?: string;
+  variant_id?: string;
+  quantity?: number;
+}
 
 interface PaymentIntentRequest {
   amount: number;
@@ -42,6 +53,10 @@ interface PaymentIntentRequest {
   shippingAddress: Address;
   orderId: string;
   description?: string;
+  // Cart lines, used to recompute the goods subtotal from the catalog and
+  // reject an `amount` that undercuts it (BMC-131). Optional for backward
+  // compatibility; the authoritative gate is at order creation + the webhook.
+  items?: PaymentIntentLineItem[];
   // Present when a gift card is applied as tender. The server re-verifies the
   // card's CURRENT balance before charging so a stale client-side balance can't
   // under-collect the amount due.
@@ -57,6 +72,7 @@ export async function POST(req: NextRequest) {
       orderId,
       description,
       giftCard,
+      items,
     }: PaymentIntentRequest = await req.json();
 
     // Validate required fields
@@ -129,6 +145,63 @@ export async function POST(req: NextRequest) {
             code: 'gift_card_balance_changed',
           },
           { status: 409 }
+        );
+      }
+    }
+
+    // BMC-131: fail early if the requested charge doesn't even cover the
+    // catalog value of the goods. The authoritative gate is at order creation
+    // and the Stripe webhook (which re-verify against the CAPTURED amount);
+    // rejecting an under-priced PaymentIntent here stops a bogus charge from
+    // ever being created and gives the shopper an immediate, clear error.
+    if (Array.isArray(items) && items.length > 0) {
+      // M6: cap the line count before it drives one catalog lookup per item.
+      if (items.length > MAX_ORDER_LINE_ITEMS) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${items.length} items exceeds the ${MAX_ORDER_LINE_ITEMS} line limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many items in your cart. Please reduce the number of items and try again.', code: 'too_many_items' },
+          { status: 400 }
+        );
+      }
+      const normalized = items.map((it) => ({
+        product_id: it.product_id ?? it.productId,
+        variant_id: it.variant_id ?? it.variantId,
+        quantity: it.quantity,
+      }));
+      const { subtotalCents, errors } = await computeCatalogSubtotalCents(normalized);
+      if (errors.length) {
+        console.warn(
+          `[payment-intent] order ${orderId}: catalog pricing errors — ${errors.join('; ')}`
+        );
+        return NextResponse.json(
+          {
+            error: 'One or more items are no longer available. Please refresh your cart and try again.',
+            code: 'catalog_price_unavailable',
+          },
+          { status: 409 }
+        );
+      }
+
+      // The gift card was already re-validated above against its live balance,
+      // so appliedCents is a safe (<= balance) tender to credit here.
+      const giftCardTenderCents = giftCard?.code
+        ? Math.max(0, Math.round(giftCard.appliedCents || 0))
+        : 0;
+      const requiredCashCents = Math.max(0, subtotalCents - giftCardTenderCents);
+      const amountCents = Math.round(amount * 100);
+      if (amountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
+        console.warn(
+          `[payment-intent] order ${orderId}: requested amount ${amountCents}c is below ` +
+            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, gift card ${giftCardTenderCents}c)`
+        );
+        return NextResponse.json(
+          {
+            error: 'The payment amount is less than the price of your items. Please refresh your cart and try again.',
+            code: 'amount_below_catalog',
+          },
+          { status: 400 }
         );
       }
     }

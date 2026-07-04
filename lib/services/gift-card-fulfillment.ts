@@ -25,6 +25,7 @@ import {
 } from '@/lib/models/mach/giftCard';
 import { sendGiftCardDeliveryEmail } from '@/lib/utils/email';
 import { BASE_URL } from '@/lib/seo/metadata';
+import { AMOUNT_TOLERANCE_CENTS } from '@/lib/services/order-pricing';
 
 export const GIFT_CARD_PRODUCT_ID = 'gift-card';
 
@@ -34,9 +35,6 @@ export interface GiftCardFulfillmentResult {
   redeemedAmount: number; // cents
   errors: string[];
 }
-
-// Allow a few cents of slack for cent/dollar rounding across the checkout math.
-const AMOUNT_TOLERANCE_CENTS = 5;
 
 // Canonical gift-card denominations (cents). The face value of an issued card
 // MUST be one of these — never a client-supplied price — so a tampered order

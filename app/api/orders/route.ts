@@ -28,6 +28,7 @@ import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData 
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
+import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
 
 
@@ -138,6 +139,14 @@ export async function POST(request: NextRequest) {
         details: ['items array is required and must not be empty']
       }, { status: 400 });
     }
+    // M6: bound the line count before it drives one catalog lookup per item in
+    // the charge-verification step below.
+    if (body.items.length > MAX_ORDER_LINE_ITEMS) {
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: [`items array must not exceed ${MAX_ORDER_LINE_ITEMS} lines`]
+      }, { status: 400 });
+    }
     if (!body.total_amount || typeof body.total_amount.amount !== 'number') {
       return NextResponse.json({
         error: 'Validation failed',
@@ -220,17 +229,62 @@ export async function POST(request: NextRequest) {
     // 'pending' on any doubt; the webhook reconciles later.
     const paymentIntentId = (body.extensions as any)?.payment_intent_id;
     let verifiedPi: Awaited<ReturnType<typeof retrievePaymentIntent>> | null = null;
+    // SECURITY (BMC-131 / C1): paymentConfirmed starts false and is set true
+    // ONLY as the very last step, after every check has passed. It must never be
+    // set true up front and cleared on failure: a throw anywhere in the block
+    // (Stripe retrieval, a transient D1 error while pricing the catalog, a
+    // gift-card lookup) then falls into the catch and leaves it at its default
+    // false — the order fails closed to 'pending' by construction, not by luck.
     let paymentConfirmed = false;
+    // Gift-card tender (cents) that the sufficiency decision counted on. Kept in
+    // the outer scope so the fulfillment step below can detect a tender that was
+    // credited to the paid decision but never actually redeemed (H1).
+    let giftCardTenderCents = 0;
+    // M4: set when a genuinely-captured payment can't be reconciled because the
+    // catalog can't price the order (e.g. a variant was discontinued between
+    // capture and order creation). Distinguishes a legit paid-but-stuck order
+    // from an ordinary abandoned/underpaid 'pending' so ops can triage it.
+    let reviewNote: string | null = null;
     if (paymentIntentId && typeof paymentIntentId === 'string') {
       try {
         verifiedPi = await retrievePaymentIntent(paymentIntentId);
-        paymentConfirmed =
+        const piSucceededAndBound =
           verifiedPi.status === 'succeeded' && verifiedPi.metadata?.orderId === orderId;
-        if (!paymentConfirmed) {
+        if (!piSucceededAndBound) {
           console.warn(
             `Order ${orderId}: PaymentIntent ${paymentIntentId} not confirmed ` +
               `(status=${verifiedPi.status}, boundOrder=${verifiedPi.metadata?.orderId ?? 'none'}); leaving order pending`
           );
+        } else {
+          // BMC-131: a succeeded, order-bound PaymentIntent is necessary but NOT
+          // sufficient. Re-verify that the cash actually collected covers the
+          // catalog value of the goods (never the client-supplied total/unit
+          // prices). Without this a shopper could pay a $0.50 PaymentIntent and
+          // submit an order for expensive items. Use ONLY amount_received (the
+          // captured amount), never the authorized pi.amount. Fail closed to
+          // 'pending' on any shortfall; the webhook re-runs the same check.
+          const paidAmountCents = verifiedPi.amount_received ?? 0;
+          giftCardTenderCents = await resolveGiftCardTenderCents(body.extensions);
+          const charge = await verifyOrderChargeSufficient({
+            items: body.items as any,
+            paidAmountCents,
+            giftCardTenderCents,
+          });
+          if (charge.ok) {
+            paymentConfirmed = true;
+          } else {
+            console.warn(
+              `Order ${orderId}: PaymentIntent ${paymentIntentId} amount check failed; leaving order pending — ${charge.reason}`
+            );
+            // M4: real money was captured but the catalog couldn't price the
+            // order — a legit customer stuck, not an underpayment attack. Flag
+            // for manual review instead of silently parking it as 'pending'.
+            if (paidAmountCents > 0 && charge.reason?.startsWith('cannot price order from catalog')) {
+              reviewNote =
+                `NEEDS REVIEW (BMC-131): captured ${paidAmountCents}c but the catalog could not price ` +
+                `this order — ${charge.reason}`;
+            }
+          }
         }
       } catch (piError) {
         console.error(
@@ -238,6 +292,17 @@ export async function POST(request: NextRequest) {
           piError
         );
       }
+    }
+
+    // M1: overwrite each line's DISPLAY fields (product_name/imageUrl) with
+    // catalog truth before persisting, so a spoofed name/image can't make the
+    // packing slip or confirmation email describe cheap goods as an expensive
+    // product. Never throws (fails soft to the client-supplied display).
+    let canonicalItems = body.items;
+    try {
+      canonicalItems = await canonicalizeOrderItemsDisplay(body.items as any);
+    } catch (canonError) {
+      console.error(`Order ${orderId}: display canonicalization failed; using client display`, canonError);
     }
 
     // Encoding contract: total_amount / shipping_address / billing_address /
@@ -252,11 +317,11 @@ export async function POST(request: NextRequest) {
       currency_code: body.currency_code,
       shipping_address: body.shipping_address ?? null,
       billing_address: body.billing_address ?? null,
-      items: body.items,
+      items: canonicalItems,
       shipping_method: body.shipping_method || null,
       payment_method: body.payment_method || null,
       payment_status: paymentConfirmed ? 'paid' : 'pending',
-      notes: body.notes || null,
+      notes: reviewNote || body.notes || null,
       external_references: body.external_references ?? null,
       extensions: body.extensions ?? null,
       created_at: new Date().toISOString(),
@@ -284,7 +349,7 @@ export async function POST(request: NextRequest) {
         orderNumber: orderId,
         customerName,
         customerEmail,
-        items: body.items.map(item => ({
+        items: canonicalItems.map(item => ({
           productId: item.product_id,
           name: item.product_name,
           price: typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price,
@@ -342,6 +407,27 @@ export async function POST(request: NextRequest) {
           }
           if (gcResult.errors.length) {
             console.error('Gift card fulfillment errors:', gcResult.errors);
+          }
+
+          // SECURITY (BMC-131 / H1): the paid decision above credited an
+          // UNRESERVED gift-card balance snapshot as tender. If the actual
+          // redemption then applied nothing (e.g. two orders raced for the same
+          // card and this one lost the balance CAS), the tender never
+          // materialized — so the cash we collected does NOT cover the goods.
+          // Revert the order to pending rather than fulfilling goods that were
+          // only partially paid for.
+          const appliedGiftCardCode = (body.extensions as any)?.gift_card?.code;
+          if (appliedGiftCardCode && giftCardTenderCents > 0 && gcResult.redeemed === 0) {
+            console.error(
+              `Order ${orderId}: gift-card tender (${giftCardTenderCents}c) was counted toward payment ` +
+                `but redemption applied nothing; reverting order to pending`
+            );
+            await db
+              .update(orders)
+              .set({ status: 'pending', payment_status: 'pending', updated_at: new Date().toISOString() })
+              .where(eq(orders.id, orderId));
+            hydratedOrder.status = 'pending';
+            hydratedOrder.payment_status = 'pending';
           }
         }
       } catch (gcError) {
