@@ -85,7 +85,7 @@ npm run token:revoke
 
 ## Cloudflare Configuration (`wrangler.jsonc`)
 
-Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; migrations `0001`–`0010` applied → ~39 tables in each DB). ⚠️ `0011_hash_mcp_api_keys` is committed but **not yet applied to the remote DBs** (BMC-141/BMC-155).
+Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; all 12 migrations applied → ~39 tables in each DB).
 
 | | **dev** (`--env dev`) | **production** (`--env production`) |
 |---|---|---|
@@ -241,7 +241,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Built & audited (code-complete):** SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
-**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0010` applied (2026-06-29)** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied to all three; gift-card tables and denomination variants verified live in prod. ⚠️ **`0011_hash_mcp_api_keys` (BMC-141/BMC-155) is committed but still pending remote apply** to all three DBs (validated `--local` only).
+**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **All 12 migrations applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live).
 
 **Operational work still remaining before go-live:**
 - Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`).
