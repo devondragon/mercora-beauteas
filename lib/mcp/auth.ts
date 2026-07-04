@@ -4,6 +4,7 @@ import { mcpAgents, mcpRateLimits } from '../db/schema/mcp';
 import { eq, and, gte, sql } from 'drizzle-orm';
 import { MCPError } from './types';
 import { AuthenticationError, RateLimitError, DatabaseError } from './error-handler';
+import { sha256Hex } from '../auth/crypto';
 
 export interface AgentAuthResult {
   success: boolean;
@@ -51,10 +52,16 @@ export async function authenticateAgent(
 
   try {
     const db = await getDbAsync();
+    // Look the agent up by the SHA-256 hash of the presented key rather than the
+    // raw key (BMC-141). The DB stores only the hash, so a D1 read never exposes
+    // usable credentials. Matching on the fixed-length hash via an indexed
+    // equality lookup also removes the plaintext-compare timing concern (BMC-155)
+    // — the same approach getApiTokenByHash() uses for api_tokens.
+    const apiKeyHash = await sha256Hex(apiKey);
     const agent = await db.select()
       .from(mcpAgents)
       .where(and(
-        eq(mcpAgents.apiKey, apiKey),
+        eq(mcpAgents.apiKeyHash, apiKeyHash),
         eq(mcpAgents.isActive, true)
       ))
       .limit(1);
@@ -278,12 +285,15 @@ export async function createAgent(agentData: {
 }): Promise<{ apiKey: string }> {
   const db = await getDbAsync();
   const apiKey = generateApiKey();
-  
+  // Persist only the hash; the raw key is returned to the caller once and is
+  // never stored or recoverable afterward (BMC-141).
+  const apiKeyHash = await sha256Hex(apiKey);
+
   await db.insert(mcpAgents).values({
     agentId: agentData.agentId,
     name: agentData.name,
     description: agentData.description,
-    apiKey,
+    apiKeyHash,
     permissions: JSON.stringify(agentData.permissions || []),
     rateLimitRpm: agentData.rateLimitRpm || 100,
     rateLimitOph: agentData.rateLimitOph || 10,
