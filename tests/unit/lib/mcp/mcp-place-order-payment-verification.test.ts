@@ -24,9 +24,12 @@ vi.mock('@/lib/stripe', () => ({
   retrievePaymentIntent: vi.fn(),
 }));
 
-vi.mock('@/lib/services/order-pricing', () => ({
-  verifyOrderChargeSufficient: vi.fn(),
-}));
+// Preserve real exports (notably AMOUNT_TOLERANCE_CENTS, which the full-total
+// gate in placeOrder reads) and override only the catalog-pricing verifier.
+vi.mock('@/lib/services/order-pricing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/services/order-pricing')>();
+  return { ...actual, verifyOrderChargeSufficient: vi.fn() };
+});
 
 vi.mock('@/lib/models/mach/orders', () => ({
   createOrderPaid: vi.fn(),
@@ -126,7 +129,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
 
   it('treats a PK collision on insert (concurrent double-submit) as a replay, not a crash', async () => {
     vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      id: PI, status: 'succeeded', amount_received: 2000, metadata: { agentId: AGENT, sessionId: SESSION },
+      id: PI, status: 'succeeded', amount_received: 3200, metadata: { agentId: AGENT, sessionId: SESSION },
     } as any);
     // Early lookup sees nothing (the racing order isn't visible yet)...
     vi.mocked(getOrderByPaymentIntentId).mockResolvedValueOnce(null);
@@ -155,9 +158,25 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
     expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
   });
 
-  it('persists and marks the order paid atomically via createOrderPaid on a fully verified payment', async () => {
+  it('rejects when the captured amount covers the goods but not shipping+tax for the destination', async () => {
+    // Goods ($20) pass verifyOrderChargeSufficient, but the full total for CA
+    // (goods + $9.99 shipping + 8.75% tax = $31.74) is not covered — an agent
+    // must not fund a cheap/empty-address PaymentIntent and ship to a costlier one.
     vi.mocked(retrievePaymentIntent).mockResolvedValue({
       id: PI, status: 'succeeded', amount_received: 2000, metadata: { agentId: AGENT, sessionId: SESSION },
+    } as any);
+
+    const result = await placeOrder(baseRequest(), SESSION, AGENT);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('PAYMENT_INSUFFICIENT');
+    expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();
+  });
+
+  it('persists and marks the order paid atomically via createOrderPaid on a fully verified payment', async () => {
+    // $32.00 captured covers the full CA total ($31.74 = goods + shipping + tax).
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({
+      id: PI, status: 'succeeded', amount_received: 3200, metadata: { agentId: AGENT, sessionId: SESSION },
     } as any);
 
     const result = await placeOrder(baseRequest(), SESSION, AGENT);
@@ -165,7 +184,7 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
     expect(result.success).toBe(true);
     // Verification uses ONLY the captured amount, never the client total.
     expect(vi.mocked(verifyOrderChargeSufficient)).toHaveBeenCalledWith(
-      expect.objectContaining({ paidAmountCents: 2000 })
+      expect.objectContaining({ paidAmountCents: 3200 })
     );
     // Order is persisted (bound to the PI) AND moved to paid/processing in a single
     // atomic call — never a hardcoded 'confirmed', never a strandable two-step write.

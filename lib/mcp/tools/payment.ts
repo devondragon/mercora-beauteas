@@ -4,10 +4,9 @@ import {
   PaymentIntentCreateResponse,
 } from '../types';
 import { CartItem } from '../../types/cartitem';
-import { MACHAddress as Address } from '../../types/mach/Address';
 import { requireOwnedSession } from '../session';
 import { computeCatalogSubtotalCents } from '../../services/order-pricing';
-import { computeOrderTotals } from './order';
+import { computeOrderTotals, normalizeAddress } from './order';
 import {
   createPaymentIntent,
   formatAmountForStripe,
@@ -196,7 +195,10 @@ export async function createAgentPaymentIntent(
       return fail('CATALOG_PRICE_UNAVAILABLE', 'One or more items are no longer available. Refresh your cart and try again.', ['Refresh cart', 'Retry']);
     }
 
-    const address = (request.shippingAddress ?? {}) as Address;
+    // Normalize to MACH shape so shipping/tax read `region` (the MCP schema sends
+    // flat `state`/`street`). place_order re-derives and re-verifies this same
+    // total against the destination, so the amount charged here matches the gate.
+    const address = normalizeAddress(request.shippingAddress);
     const { total } = computeOrderTotals(subtotalCents / 100, address);
 
     // Stripe rejects charges under $0.50.

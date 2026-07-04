@@ -30,8 +30,12 @@ vi.mock('@/lib/stripe', () => ({
 
 // computeOrderTotals is exercised elsewhere; mock it here so this test controls
 // the total directly and never loads the real order.ts (and its DB imports).
+// normalizeAddress is mocked as identity — its own behavior is covered via the
+// place_order tests; here we only need the total the (mocked) computeOrderTotals
+// returns.
 vi.mock('@/lib/mcp/tools/order', () => ({
   computeOrderTotals: vi.fn(),
+  normalizeAddress: vi.fn((a) => a ?? {}),
 }));
 
 import { requireOwnedSession } from '@/lib/mcp/session';

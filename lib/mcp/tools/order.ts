@@ -5,7 +5,29 @@ import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
-import { verifyOrderChargeSufficient } from '../../services/order-pricing';
+import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS } from '../../services/order-pricing';
+
+/**
+ * Normalize an inbound MCP address to the MACHAddress shape the pricing and
+ * persistence helpers expect. The MCP tool schemas expose flat `street`/`state`/
+ * `postal_code` keys, but calculateShipping/calculateTax/formatAddressForDB read
+ * MACH fields (`line1`/`region`). Without this, `region` is undefined for every
+ * agent-supplied address, so shipping/tax silently fall back to defaults (5% tax,
+ * no AK/HI surcharge) and get under-collected (PR #51 review / BMC-132). Accepts
+ * either shape and is idempotent for already-MACH addresses.
+ */
+export function normalizeAddress(input: any): Address {
+  const a = input ?? {};
+  return {
+    ...a,
+    line1: a.line1 ?? a.street ?? '',
+    line2: a.line2 ?? a.street2,
+    city: a.city ?? '',
+    region: a.region ?? a.state,
+    postal_code: a.postal_code ?? a.postalCode,
+    country: a.country ?? 'US',
+  } as Address;
+}
 
 /**
  * Compute shipping/tax/total for an order from a goods subtotal (dollars) and a
@@ -120,11 +142,16 @@ export async function placeOrder(
 
     // Enhanced user context for order
     const userContext = enhanceUserContext(request.agent_context || null);
-    
+
+    // Normalize the agent-supplied address(es) to MACH shape up front so pricing
+    // reads `region` and persistence stores the right fields (see normalizeAddress).
+    const shippingAddress = normalizeAddress(request.shippingAddress);
+    const billingAddress = request.billingAddress ? normalizeAddress(request.billingAddress) : shippingAddress;
+
     // Calculate order totals
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const shipping = calculateShipping(request.shippingAddress, subtotal);
-    const tax = calculateTax(subtotal, request.shippingAddress);
+    const shipping = calculateShipping(shippingAddress, subtotal);
+    const tax = calculateTax(subtotal, shippingAddress);
     const total = subtotal + shipping + tax;
 
     // Validate order limits if agent has budget constraints
@@ -225,6 +252,20 @@ export async function placeOrder(
         ['Create a PaymentIntent for the full order total', 'Retry place_order']);
     }
 
+    // (c2) Cash must also cover server-computed shipping + tax for the ACTUAL
+    // destination — not just the goods. Recompute the full total from the CATALOG
+    // goods value and the normalized shipping address, then require the captured
+    // amount to cover it. Without this, an agent could mint a PaymentIntent against
+    // a cheap/empty address (low shipping/tax) and still place an order shipped to
+    // AK/HI or a high-tax state, under-collecting the difference (PR #51 review).
+    const { total: requiredTotal } = computeOrderTotals(charge.goodsCents / 100, shippingAddress);
+    const requiredTotalCents = Math.round(requiredTotal * 100);
+    if ((verifiedPi.amount_received ?? 0) + AMOUNT_TOLERANCE_CENTS < requiredTotalCents) {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_INSUFFICIENT',
+        `Payment does not cover the order total including shipping and tax (required ${requiredTotalCents}c for this destination).`,
+        ['Create a PaymentIntent for the full order total (shipping + tax included)', 'Retry place_order']);
+    }
+
     // Create order using existing order system. createOrder always persists as
     // pending/unpaid; we then mark it paid via the verified-payment path below.
     // The id is DERIVED FROM THE PAYMENTINTENT so a duplicate insert (a concurrent
@@ -234,8 +275,8 @@ export async function placeOrder(
       id: `MCP-${paymentIntentId}`,
       customer_id: userContext.userId || agentId,
       total_amount: { amount: total, currency: 'USD' },
-      shipping_address: request.shippingAddress,
-      billing_address: request.billingAddress || request.shippingAddress,
+      shipping_address: shippingAddress,
+      billing_address: billingAddress,
       items: cart.map(item => ({
         product_id: item.productId,
         variant_id: item.variantId,
@@ -287,7 +328,7 @@ export async function placeOrder(
 
     // Calculate estimated delivery
     const estimatedDelivery = calculateEstimatedDelivery(
-      request.shippingAddress,
+      shippingAddress,
       request.shippingOption || 'standard'
     );
 
