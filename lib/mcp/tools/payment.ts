@@ -1,5 +1,18 @@
-import { MCPToolResponse } from '../types';
+import {
+  MCPToolResponse,
+  PaymentIntentCreateRequest,
+  PaymentIntentCreateResponse,
+} from '../types';
 import { CartItem } from '../../types/cartitem';
+import { MACHAddress as Address } from '../../types/mach/Address';
+import { requireOwnedSession } from '../session';
+import { computeCatalogSubtotalCents } from '../../services/order-pricing';
+import { computeOrderTotals } from './order';
+import {
+  createPaymentIntent,
+  formatAmountForStripe,
+  isStripeConfigured,
+} from '../../stripe';
 
 export interface PaymentMethod {
   id: string;
@@ -114,6 +127,110 @@ export async function validatePayment(
         next_actions: ['Verify payment information', 'Contact support', 'Try alternative payment method']
       }
     };
+  }
+}
+
+/**
+ * Mint a Stripe PaymentIntent for the caller's current MCP cart (BMC-132).
+ *
+ * The amount is computed server-side from the D1 catalog (never from client- or
+ * session-supplied prices) and the PaymentIntent is stamped with
+ * { agentId, sessionId } metadata so place_order can verify the payment is bound
+ * to this exact caller and session before creating an order. The agent completes
+ * payment with the returned client secret, then calls place_order with the
+ * returned paymentIntentId.
+ */
+export async function createAgentPaymentIntent(
+  request: PaymentIntentCreateRequest,
+  sessionId: string,
+  agentId: string
+): Promise<MCPToolResponse<PaymentIntentCreateResponse>> {
+  const startTime = Date.now();
+
+  const fail = (
+    code: string,
+    message: string,
+    nextActions: string[]
+  ): MCPToolResponse<PaymentIntentCreateResponse> => ({
+    success: false,
+    data: { clientSecret: null, paymentIntentId: '', amount: 0, currency: 'USD' },
+    context: { session_id: sessionId, agent_id: agentId, processing_time_ms: Date.now() - startTime },
+    error: { code, message },
+    metadata: { can_fulfill_percentage: 0, estimated_satisfaction: 0, next_actions: nextActions },
+  });
+
+  try {
+    // Verify the calling agent owns this session before pricing/charging its cart.
+    const ownership = await requireOwnedSession(sessionId, agentId);
+    if (!ownership.ok) {
+      return fail(
+        ownership.code,
+        ownership.message,
+        ownership.code === 'SESSION_NOT_FOUND'
+          ? ['Create a new session', 'Verify session ID']
+          : ['Use a session created by this agent']
+      );
+    }
+
+    const cart = ownership.session.cart;
+    if (cart.length === 0) {
+      return fail('EMPTY_CART', 'Cannot create a payment for an empty cart.', ['Add items to cart first']);
+    }
+
+    if (!isStripeConfigured()) {
+      console.error('[mcp create_payment_intent] STRIPE_SECRET_KEY is not configured in this runtime.');
+      return fail('STRIPE_NOT_CONFIGURED', 'Payments are temporarily unavailable. Please try again later.', ['Retry later']);
+    }
+
+    // Price the goods from the catalog — the authoritative amount, immune to any
+    // session cart price tampering.
+    const { subtotalCents, errors } = await computeCatalogSubtotalCents(
+      cart.map(item => ({
+        product_id: item.productId,
+        variant_id: item.variantId,
+        quantity: item.quantity,
+      }))
+    );
+    if (errors.length) {
+      console.warn(`[mcp create_payment_intent] catalog pricing errors: ${errors.join('; ')}`);
+      return fail('CATALOG_PRICE_UNAVAILABLE', 'One or more items are no longer available. Refresh your cart and try again.', ['Refresh cart', 'Retry']);
+    }
+
+    const address = (request.shippingAddress ?? {}) as Address;
+    const { total } = computeOrderTotals(subtotalCents / 100, address);
+
+    // Stripe rejects charges under $0.50.
+    if (total < 0.5) {
+      return fail('AMOUNT_TOO_LOW', 'Order total must be at least $0.50.', ['Add more items to cart']);
+    }
+
+    const paymentIntent = await createPaymentIntent({
+      amount: formatAmountForStripe(total),
+      currency: 'usd',
+      automatic_payment_methods: { enabled: true },
+      // Binding: place_order requires BOTH to match the authenticated caller.
+      metadata: { agentId, sessionId },
+      description: `BeauTeas MCP order — agent ${agentId}`,
+    });
+
+    return {
+      success: true,
+      data: {
+        clientSecret: (paymentIntent as any).client_secret ?? null,
+        paymentIntentId: (paymentIntent as any).id,
+        amount: total,
+        currency: 'USD',
+      },
+      context: { session_id: sessionId, agent_id: agentId, processing_time_ms: Date.now() - startTime },
+      metadata: {
+        can_fulfill_percentage: 100,
+        estimated_satisfaction: 90,
+        next_actions: ['Complete payment with the client secret', 'Call place_order with the paymentIntentId'],
+      },
+    };
+  } catch (error) {
+    console.error('[mcp create_payment_intent] failed:', error);
+    return fail('PAYMENT_INTENT_ERROR', 'Failed to create payment intent.', ['Retry', 'Contact support']);
   }
 }
 

@@ -101,6 +101,26 @@ export interface OrderRequest {
   shippingOption: string;
   specialInstructions?: string;
   agent_context?: AgentContext;
+  // BMC-132 (C5): a placed order must be backed by a server-verified Stripe
+  // PaymentIntent minted for this agent+session via create_payment_intent.
+  // Without it place_order fails closed and no order is created.
+  paymentIntentId?: string;
+}
+
+// BMC-132: request to mint a Stripe PaymentIntent for an MCP order. The amount
+// is derived server-side from the session cart (catalog prices) — never from
+// the caller — and the resulting PI is stamped with { agentId, sessionId } so
+// place_order can verify it is bound to this caller before fulfilling.
+export interface PaymentIntentCreateRequest {
+  shippingAddress?: Address;
+  agent_context?: AgentContext;
+}
+
+export interface PaymentIntentCreateResponse {
+  clientSecret: string | null;
+  paymentIntentId: string;
+  amount: number;
+  currency: string;
 }
 
 // Tool Response Types

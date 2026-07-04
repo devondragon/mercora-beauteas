@@ -19,8 +19,9 @@ import { Order, CreateOrderRequest, Money, Address, OrderItem } from "@/lib/type
 export async function createOrder(orderData: CreateOrderRequest): Promise<Order> {
   const db = await getDbAsync();
   
-  // Generate order ID
-  const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  // Use a caller-supplied id when present (its uniqueness is then enforced by the
+  // PK on insert — see CreateOrderRequest.id / BMC-132); otherwise generate one.
+  const orderId = orderData.id ?? `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   
   // Prepare order record.
   // Encoding contract: total_amount / shipping_address / billing_address /
@@ -79,6 +80,37 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     return null;
   }
   
+  return hydrateOrder(orderRecords[0]);
+}
+
+/**
+ * Find an order by the Stripe PaymentIntent id recorded in its
+ * external_references. Used as the friendly, early replay check (BMC-132): a
+ * succeeded PaymentIntent must fund at most one order, so the MCP place_order
+ * path rejects a PI that already backs an existing order with a clear error.
+ *
+ * This lookup alone is check-then-insert and NOT atomic (D1 has no multi-
+ * statement transactions), so it cannot by itself stop a deliberately
+ * concurrent double-submit — without a hard guard that race would create TWO
+ * paid orders for ONE payment (two shipments, one charge). The atomic guarantee
+ * therefore comes from the DB, not this query: place_order derives the order's
+ * PRIMARY KEY deterministically from the PaymentIntent id, so a second insert
+ * for the same PI fails on the PK. This function is the fast-path UX check; the
+ * PK collision is the backstop.
+ */
+export async function getOrderByPaymentIntentId(paymentIntentId: string): Promise<Order | null> {
+  const db = await getDbAsync();
+
+  const orderRecords = await db
+    .select()
+    .from(orders)
+    .where(sql`json_extract(${orders.external_references}, '$.payment_intent_id') = ${paymentIntentId}`)
+    .limit(1);
+
+  if (orderRecords.length === 0) {
+    return null;
+  }
+
   return hydrateOrder(orderRecords[0]);
 }
 

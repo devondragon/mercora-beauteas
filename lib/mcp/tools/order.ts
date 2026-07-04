@@ -1,9 +1,51 @@
-import { createOrder } from '../../models/mach/orders';
+import { createOrder, markOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
 import { CartItem } from '../../types/cartitem';
+import { retrievePaymentIntent } from '../../stripe';
+import { verifyOrderChargeSufficient } from '../../services/order-pricing';
+
+/**
+ * Compute shipping/tax/total for an order from a goods subtotal (dollars) and a
+ * destination address, using the same rules the MCP order path applies. Shared
+ * so create_payment_intent charges exactly what place_order will expect (BMC-132).
+ */
+export function computeOrderTotals(
+  subtotal: number,
+  address: Address
+): { subtotal: number; shipping: number; tax: number; total: number } {
+  const shipping = calculateShipping(address, subtotal);
+  const tax = calculateTax(subtotal, address);
+  return { subtotal, shipping, tax, total: subtotal + shipping + tax };
+}
+
+// Uniform failed-order response for the payment gate below (BMC-132).
+function orderFailure(
+  sessionId: string,
+  agentId: string,
+  startTime: number,
+  code: string,
+  message: string,
+  nextActions: string[]
+): MCPToolResponse<OrderResponse> {
+  return {
+    success: false,
+    data: { orderId: '', status: 'failed', total: 0, estimated_delivery: '' },
+    context: {
+      session_id: sessionId,
+      agent_id: agentId,
+      processing_time_ms: Date.now() - startTime
+    },
+    error: { code, message },
+    metadata: {
+      can_fulfill_percentage: 0,
+      estimated_satisfaction: 0,
+      next_actions: nextActions
+    }
+  };
+}
 
 export async function placeOrder(
   request: OrderRequest,
@@ -114,11 +156,84 @@ export async function placeOrder(
       };
     }
 
-    // Create order using existing order system
+    // SECURITY (BMC-132 / C5): an MCP order MUST be backed by a real,
+    // server-verified Stripe payment. This path previously called createOrder()
+    // with no Stripe check at all, so any authenticated agent could persist an
+    // order for free. Require a PaymentIntent that we minted for THIS agent+
+    // session (via create_payment_intent) and that:
+    //   (a) actually succeeded,
+    //   (b) is bound to this caller (metadata.agentId + metadata.sessionId),
+    //   (c) collected at least the CATALOG value of the goods (never the
+    //       client/session-supplied prices), and
+    //   (d) has not already funded another order (replay guard).
+    // Any failure is fatal: we return an error and DO NOT create an order. The
+    // order is only ever marked paid via markOrderPaid — the same path the
+    // storefront and Stripe webhook use — never a hardcoded 'confirmed'.
+    const paymentIntentId = request.paymentIntentId;
+    if (!paymentIntentId || typeof paymentIntentId !== 'string') {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_REQUIRED',
+        'A verified paymentIntentId is required to place an order. Create one with create_payment_intent, complete payment, then retry.',
+        ['Call create_payment_intent', 'Complete the payment', 'Retry place_order with the paymentIntentId']);
+    }
+
+    let verifiedPi: Awaited<ReturnType<typeof retrievePaymentIntent>>;
+    try {
+      verifiedPi = await retrievePaymentIntent(paymentIntentId);
+    } catch (piError) {
+      console.error(`place_order: PaymentIntent ${paymentIntentId} retrieval failed`, piError);
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_VERIFICATION_FAILED',
+        'Could not verify the PaymentIntent with Stripe.',
+        ['Verify the paymentIntentId', 'Retry once payment is confirmed']);
+    }
+
+    if (verifiedPi.status !== 'succeeded') {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_NOT_COMPLETED',
+        `PaymentIntent status is '${verifiedPi.status}'; a succeeded payment is required.`,
+        ['Complete the payment', 'Retry place_order once it succeeds']);
+    }
+
+    if (verifiedPi.metadata?.agentId !== agentId || verifiedPi.metadata?.sessionId !== sessionId) {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_NOT_BOUND',
+        'PaymentIntent is not bound to this agent and session.',
+        ['Create a PaymentIntent for this session with create_payment_intent']);
+    }
+
+    // (d) Replay guard: a succeeded PI must fund at most one order. This early
+    // lookup gives a clean error for the ordinary re-submit; the hard guarantee
+    // is the deterministic PK below, which makes a concurrent double-submit fail
+    // atomically at the DB (see orderId derivation).
+    const existingOrder = await getOrderByPaymentIntentId(paymentIntentId);
+    if (existingOrder) {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_ALREADY_USED',
+        'This PaymentIntent has already been used to place an order.',
+        ['Use get_order_status to look up the existing order', 'Create a new PaymentIntent for a new order']);
+    }
+
+    // (c) Cash collected must cover the catalog value of the goods. Use ONLY the
+    // captured amount (amount_received), never the authorized pi.amount.
+    const charge = await verifyOrderChargeSufficient({
+      items: cart.map(item => ({
+        product_id: item.productId,
+        variant_id: item.variantId,
+        quantity: item.quantity,
+      })),
+      paidAmountCents: verifiedPi.amount_received ?? 0,
+    });
+    if (!charge.ok) {
+      return orderFailure(sessionId, agentId, startTime, 'PAYMENT_INSUFFICIENT',
+        `Payment does not cover the order: ${charge.reason}`,
+        ['Create a PaymentIntent for the full order total', 'Retry place_order']);
+    }
+
+    // Create order using existing order system. createOrder always persists as
+    // pending/unpaid; we then mark it paid via the verified-payment path below.
+    // The id is DERIVED FROM THE PAYMENTINTENT so a duplicate insert (a concurrent
+    // double-submit that slips past the early lookup above) collides on the PK and
+    // fails atomically — one payment can fund at most one order (BMC-132).
     const orderData = {
-      user_id: userContext.userId || request.agent_context?.agentId || 'agent-order',
+      id: `MCP-${paymentIntentId}`,
+      customer_id: userContext.userId || agentId,
       total_amount: { amount: total, currency: 'USD' },
-      status: 'confirmed' as const,
       shipping_address: request.shippingAddress,
       billing_address: request.billingAddress || request.shippingAddress,
       items: cart.map(item => ({
@@ -132,15 +247,41 @@ export async function placeOrder(
       })),
       shipping_method: request.shippingOption || 'standard',
       payment_method: request.paymentMethod || 'agent-processed',
-      special_instructions: request.specialInstructions,
-      // Agent-specific fields
-      agent_id: agentId,
-      agent_context: request.agent_context ? JSON.stringify(request.agent_context) : undefined,
+      notes: request.specialInstructions,
+      // Bind the PaymentIntent to the order for the early replay lookup above.
+      external_references: { payment_intent_id: paymentIntentId },
+      // Preserve agent attribution (createOrder does not persist top-level agent
+      // fields; keep them in extensions).
+      extensions: {
+        agent_id: agentId,
+        agent_context: request.agent_context ?? undefined,
+      },
       currency_code: 'USD'
     };
 
-    const order = await createOrder(orderData);
-    
+    let createdOrder;
+    try {
+      createdOrder = await createOrder(orderData);
+    } catch (createError) {
+      // A PK collision here means another concurrent place_order already created
+      // the order for this PaymentIntent — treat as a replay, not a crash, so we
+      // never double-fulfill a single payment.
+      const raced = await getOrderByPaymentIntentId(paymentIntentId);
+      if (raced) {
+        return orderFailure(sessionId, agentId, startTime, 'PAYMENT_ALREADY_USED',
+          'This PaymentIntent has already been used to place an order.',
+          ['Use get_order_status to look up the existing order', 'Create a new PaymentIntent for a new order']);
+      }
+      throw createError;
+    }
+
+    // Payment is verified — move the order to paid/processing via the same path
+    // the storefront and Stripe webhook use.
+    const order = (await markOrderPaid(createdOrder.id!, {
+      status: 'processing',
+      notes: `Paid via MCP agent ${agentId} (PaymentIntent ${paymentIntentId})`,
+    })) ?? createdOrder;
+
     // Calculate estimated delivery
     const estimatedDelivery = calculateEstimatedDelivery(
       request.shippingAddress,
