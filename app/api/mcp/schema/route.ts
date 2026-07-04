@@ -159,8 +159,31 @@ export async function GET(request: NextRequest) {
         }
       },
       {
+        name: "create_payment_intent",
+        description: "Create a Stripe PaymentIntent for the session cart. Amount is computed server-side from the catalog; the PaymentIntent is bound to this agent+session and must be completed before place_order.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            shippingAddress: {
+              type: "object",
+              description: "Optional; used to estimate shipping/tax in the charged amount.",
+              properties: {
+                street: { type: "string" },
+                street2: { type: "string" },
+                city: { type: "string" },
+                state: { type: "string" },
+                postal_code: { type: "string" },
+                country: { type: "string", default: "US" }
+              }
+            },
+            session_id: { type: "string" }
+          },
+          required: ["session_id"]
+        }
+      },
+      {
         name: "place_order",
-        description: "Place order with agent context and budget validation",
+        description: "Place order with a verified Stripe PaymentIntent, agent context, and budget validation",
         inputSchema: {
           type: "object",
           properties: {
@@ -180,20 +203,24 @@ export async function GET(request: NextRequest) {
               type: "object",
               description: "Optional, defaults to shipping address"
             },
-            paymentMethod: { 
-              type: "string", 
+            paymentMethod: {
+              type: "string",
               default: "agent-processed",
               description: "Payment method identifier"
             },
-            shippingOption: { 
-              type: "string", 
+            paymentIntentId: {
+              type: "string",
+              description: "Required. A succeeded Stripe PaymentIntent from create_payment_intent, bound to this agent+session."
+            },
+            shippingOption: {
+              type: "string",
               default: "standard",
               enum: ["standard", "expedited", "overnight"]
             },
             specialInstructions: { type: "string" },
             session_id: { type: "string" }
           },
-          required: ["shippingAddress", "session_id"]
+          required: ["shippingAddress", "session_id", "paymentIntentId"]
         }
       },
       {
@@ -449,8 +476,9 @@ export async function GET(request: NextRequest) {
         "3. get_cart - Validate totals against budget",
         "4. get_shipping_options - Compare shipping methods and costs",
         "5. validate_payment - Verify payment method and calculate fees",
-        "6. place_order - Complete purchase with user address",
-        "7. get_order_status - Monitor delivery progress"
+        "6. create_payment_intent - Mint a Stripe PaymentIntent for the cart, then complete payment",
+        "7. place_order - Complete purchase with the succeeded paymentIntentId and user address",
+        "8. get_order_status - Monitor delivery progress"
       ]
     }
   };

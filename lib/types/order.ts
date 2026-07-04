@@ -78,6 +78,12 @@ export interface Order {
 
 // Order creation request interface
 export interface CreateOrderRequest {
+  // Optional explicit primary key. When supplied (e.g. the MCP order path derives
+  // it deterministically from the funding PaymentIntent), a duplicate insert
+  // collides on the PK and fails at the DB — an atomic dedup guard that D1's
+  // lack of transactions otherwise makes impossible (BMC-132). Omitted for
+  // ordinary callers, which get a generated id.
+  id?: string;
   customer_id?: string;
   items: Omit<OrderItem, 'id' | 'order_id' | 'created_at'>[];
   total_amount: Money;

@@ -147,6 +147,10 @@ export async function POST(request: NextRequest) {
         const { validatePayment } = await import('../../../lib/mcp/tools/payment');
         return NextResponse.json(await validatePayment(params, session_id || 'temp'));
 
+      case 'create_payment_intent':
+        const { createAgentPaymentIntent } = await import('../../../lib/mcp/tools/payment');
+        return NextResponse.json(await createAgentPaymentIntent(params, session_id || 'temp', auth.agentId!));
+
       case 'create_agent':
         const { createAgent } = await import('../../../lib/mcp/tools/agent');
         return NextResponse.json(await createAgent(params, session_id || 'temp', auth.agentId!));
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return createHttpErrorResponse(
-          `Unknown tool: ${tool}. Available tools: search_products, assess_request, get_recommendations, add_to_cart, update_cart, remove_from_cart, get_cart, bulk_add_to_cart, clear_cart, place_order, get_order_status, get_shipping_options, validate_payment, create_agent, list_agents, get_agent_details, update_agent_status`,
+          `Unknown tool: ${tool}. Available tools: search_products, assess_request, get_recommendations, add_to_cart, update_cart, remove_from_cart, get_cart, bulk_add_to_cart, clear_cart, create_payment_intent, place_order, get_order_status, get_shipping_options, validate_payment, create_agent, list_agents, get_agent_details, update_agent_status`,
           400
         );
     }
