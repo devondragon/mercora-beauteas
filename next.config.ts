@@ -1,5 +1,54 @@
 import type { NextConfig } from "next";
 
+// === Content-Security-Policy ===
+// Tuned to the origins the browser actually contacts (see BMC-150). Third parties:
+//   - Stripe.js / Elements  → js.stripe.com (script+frame), api/maps/r.stripe.com (xhr),
+//     hooks.stripe.com (3-D Secure frame)
+//   - Clerk auth            → *.clerk.accounts.dev (dev instance) + clerk.beauteas.com /
+//     *.clerk.com (prod FAPI + img.clerk.com avatars); Turnstile via challenges.cloudflare.com
+//   - Product/media images  → img.beauteas.com (NEXT_PUBLIC_IMAGE_CDN)
+// 'unsafe-inline' is required for script-src (Next.js injects inline bootstrap/hydration
+// scripts; JSON-LD is rendered via dangerouslySetInnerHTML) and style-src (Stripe/Clerk
+// inject inline styles). Nonce-based CSP is a future hardening (tracked separately).
+// NOTE: at cutover, confirm the live Clerk Frontend API host once the pk_live_ key is set
+// and img.beauteas.com is the final NEXT_PUBLIC_IMAGE_CDN.
+const CLERK_HOSTS =
+  "https://*.clerk.accounts.dev https://*.clerk.com https://clerk.beauteas.com";
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline' https://js.stripe.com ${CLERK_HOSTS} https://challenges.cloudflare.com`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://img.beauteas.com https://img.clerk.com",
+  "font-src 'self' data:",
+  `connect-src 'self' https://api.stripe.com https://maps.stripe.com https://r.stripe.com ${CLERK_HOSTS}`,
+  `frame-src https://js.stripe.com https://hooks.stripe.com ${CLERK_HOSTS} https://challenges.cloudflare.com`,
+  "worker-src 'self' blob:",
+  "media-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+// Sent on every response. HSTS is only honored by browsers over HTTPS, so it is inert
+// during local http dev/preview; Cloudflare "Always Use HTTPS" handles the http→https
+// redirect in production. (We deliberately omit `upgrade-insecure-requests` so it does
+// not break the http localhost preview workflow.)
+const SECURITY_HEADERS = [
+  { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
+  },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: 'camera=(), microphone=(), geolocation=(), payment=(self "https://js.stripe.com")',
+  },
+];
+
 const nextConfig: NextConfig = {
   images: {
     loader: "custom",
@@ -49,6 +98,7 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
+          ...SECURITY_HEADERS,
           {
             key: "X-DNS-Prefetch-Control",
             value: "on",
