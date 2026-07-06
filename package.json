@@ -6,7 +6,7 @@
     "predev": "node scripts/db-local-ensure.mjs",
     "dev": "next dev --turbopack",
     "db:local": "node scripts/db-local-ensure.mjs",
-    "db:reset:local": "wrangler d1 migrations apply beauteas-db-dev --local --env dev && wrangler d1 execute beauteas-db-dev --local --env dev --file data/d1/seed.sql",
+    "db:reset:local": "wrangler d1 migrations apply beauteas-db-dev --local --env dev && wrangler d1 execute beauteas-db-dev --local --env dev --file data/d1/seed.sql && wrangler d1 execute beauteas-db-dev --local --env dev --file data/d1/seed-dev.sql",
     "r2:local": "node scripts/r2-local-ensure.mjs",
     "seed:local": "node scripts/db-local-ensure.mjs && node scripts/r2-local-ensure.mjs",
     "enrich:dev": "node scripts/enrich-catalog.mjs --env dev",
