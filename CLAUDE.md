@@ -85,7 +85,7 @@ npm run token:revoke
 
 ## Cloudflare Configuration (`wrangler.jsonc`)
 
-Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; migrations `0001`–`0011` applied → ~39 tables in each DB; `0012_remove_seeded_test_agent` is new and pending application — see [Cutover Status](#cutover-status)).
+Two named environments. **Resources for both dev and prod are provisioned** (D1, R2, Vectorize created; all 12 migrations (`0001`–`0012`) applied → ~39 tables in each DB).
 
 | | **dev** (`--env dev`) | **production** (`--env production`) |
 |---|---|---|
@@ -242,7 +242,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Built & audited (code-complete):** SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
-**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0011` applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live). ⚠️ **`0012_remove_seeded_test_agent` (BMC-136/C9) is not yet applied** — apply it to all three DBs to purge the public `test-agent` credential (`npx wrangler d1 migrations apply beauteas-db --remote --env production`, and the `-dev` / `--preview` variants). Local dev auto-restores the agent from `data/d1/seed-dev.sql`; to keep it on the **deployed dev** Worker for manual testing, re-run that dev-only seed against remote dev (`npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-dev.sql`) — never against prod.
+**Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0011` applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live); `0012_remove_seeded_test_agent` (BMC-136/C9) applied to all three 2026-07-06 — `test-agent` row verified gone from prod + remote dev. Local dev auto-restores the agent from `data/d1/seed-dev.sql`; to keep it on the **deployed dev** Worker for manual testing, re-run that dev-only seed against remote dev (`npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-dev.sql`) — never against prod.
 
 **Operational work still remaining before go-live:**
 - Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`).
