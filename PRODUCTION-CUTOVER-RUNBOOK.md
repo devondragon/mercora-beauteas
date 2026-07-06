@@ -79,7 +79,8 @@ wrangler vectorize create beauteas-index --dimensions=1024 --metric=cosine
   wrangler d1 execute beauteas-db --env production --remote \
     --command="SELECT name FROM sqlite_master WHERE type='table';"
   ```
-- ☐ **Do NOT run `data/d1/seed.sql` on production** — production data comes from the Shopify migration, not the sample seed.
+- ☐ **Do NOT run `data/d1/seed.sql` or `data/d1/seed-dev.sql` on production** — production data comes from the Shopify migration, not the sample seeds. `seed-dev.sql` re-adds the local MCP `test-agent` credential and must stay dev-only (BMC-136).
+- ☐ **Apply migration `0012_remove_seeded_test_agent`** (BMC-136/C9) so the public `test-agent` MCP credential is deleted from prod: `wrangler d1 migrations apply beauteas-db --env production --remote`. Then rotate **all** MCP agent credentials (git history is compromised for MCP keys) and verify the row is gone: `wrangler d1 execute beauteas-db --env production --remote --command="SELECT agent_id FROM mcp_agents WHERE agent_id='test-agent';"`.
 
 ---
 

@@ -10,6 +10,12 @@
  *      migration populates — it is filled exclusively by seed.sql. This keeps
  *      the step non-destructive: local edits made through the admin UI survive
  *      restarts. For an explicit wipe + reload, use `npm run db:reset:local`.
+ *   3. Apply the dev-only seed data/d1/seed-dev.sql every run. Migration 0012
+ *      deletes the 'test-agent' MCP credential (removed from prod for BMC-136);
+ *      this restores it locally so `X-Agent-API-Key: test-key-123` keeps working
+ *      for manual MCP testing. The seed is INSERT OR REPLACE (idempotent), so it
+ *      is safe to re-run and never clobbers unrelated rows. seed-dev.sql, like
+ *      seed.sql, is never run against production.
  *
  * Why this exists: the local `.wrangler/state` D1 starts with zero tables
  * (migrations are normally applied `--remote`), so DB-backed routes 500 with
@@ -20,6 +26,9 @@ import { execFileSync } from "node:child_process";
 const DB = "beauteas-db-dev";
 const ENV = "dev";
 const SEED_FILE = "data/d1/seed.sql";
+// Dev-only MCP seed, applied every run (idempotent). Restores the 'test-agent'
+// credential that migration 0012 removes from prod (BMC-136). Never run on prod.
+const DEV_SEED_FILE = "data/d1/seed-dev.sql";
 // Table populated only by seed.sql (never by a migration) → reliable "seeded?" signal.
 const SENTINEL_TABLE = "categories";
 
@@ -60,3 +69,8 @@ if (seeded > 0) {
   wrangler(["d1", "execute", DB, "--local", "--env", ENV, "--file", SEED_FILE]);
   console.log(`${tag} Seed complete.`);
 }
+
+// Dev-only seed: restore the local MCP 'test-agent' removed by migration 0012.
+// Idempotent (INSERT OR REPLACE), so apply it every run regardless of catalog state.
+console.log(`${tag} Applying dev-only seed ${DEV_SEED_FILE}...`);
+wrangler(["d1", "execute", DB, "--local", "--env", ENV, "--file", DEV_SEED_FILE]);

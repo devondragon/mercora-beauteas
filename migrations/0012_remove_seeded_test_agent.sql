@@ -1,0 +1,20 @@
+-- BMC-136 (C9): remove the hardcoded 'test-agent' MCP credential from every DB.
+--
+-- Migration 0004 seeded a 'test-agent' row with the key 'test-key-123', and 0011
+-- re-seeded that same row with the SHA-256 hash of the same key. Because that key
+-- is committed in the repo (and its migration history), the seeded row is a live,
+-- usable credential — with place:orders + write:cart and 1000 rpm / 100 oph — in
+-- EVERY database the migrations were applied to, including production
+-- (beauteas-db). Hashing (0011) stopped a D1 read from leaking a usable key, but
+-- did nothing about the key already being public. Anyone with repo/history read
+-- access can authenticate as this agent.
+--
+-- Migrations run against production, so seeding a test credential from one was the
+-- root cause. Delete it in all environments. Local development gets the agent back
+-- from the dev-only seed at data/d1/seed-dev.sql, which — like data/d1/seed.sql —
+-- is NEVER run against production. Apply this to prod with:
+--   npx wrangler d1 migrations apply beauteas-db --remote --env production
+--
+-- Rotating any other real MCP credentials (Codex addendum: git history is
+-- compromised for MCP keys) is a separate operational task, not this migration.
+DELETE FROM mcp_agents WHERE agent_id = 'test-agent';
