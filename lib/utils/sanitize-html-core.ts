@@ -9,16 +9,25 @@ import sanitizeHtml from "sanitize-html";
 // from ./sanitize-html-server instead, which adds the bundle guard.
 
 const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
+  // Clearly-safe formatting/semantic tags only. Every tag here is
+  // non-scriptable and has no URL-injection surface. Intentionally NOT allowed:
+  // iframe, object, embed, form, style, script, svg, and any event-handler attrs.
   allowedTags: [
-    "p", "br", "strong", "em", "u", "s", "code", "pre", "blockquote",
+    "p", "br", "strong", "em", "b", "i", "u", "s", "del", "ins",
+    "sub", "sup", "small", "mark", "abbr",
+    "code", "pre", "blockquote",
     "h1", "h2", "h3", "h4", "h5", "h6",
-    "ul", "ol", "li", "a", "img",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "hr", "mark", "span", "div",
+    "ul", "ol", "li", "dl", "dt", "dd",
+    "a", "img", "figure", "figcaption",
+    "table", "caption", "colgroup", "col", "thead", "tbody", "tr", "th", "td",
+    "hr", "span", "div",
   ],
   allowedAttributes: {
     a: ["href", "target", "rel"],
     img: ["src", "alt", "width", "height"],
+    abbr: ["title"],
+    col: ["span"],
+    colgroup: ["span"],
     "*": ["class"],
   },
   // Block javascript:/data: URIs in href and src
