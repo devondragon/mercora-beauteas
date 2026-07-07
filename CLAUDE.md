@@ -97,7 +97,7 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | Stripe publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_STRIPE_KEY` |
 
 - **Shared bindings** (inherited): `ASSETS` (`.open-next/assets`), `AI`, observability enabled, empty `durable_objects`.
-- **Compatibility:** date `2024-12-01`, flags `["nodejs_compat", "global_fetch_strictly_public"]`.
+- **Compatibility:** date `2026-06-25`, flags `["nodejs_compat", "global_fetch_strictly_public"]`.
 - **Secrets** are per-env via `wrangler secret put … --env <dev|production>` (NOT in config):
   `CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`.
 - Binding types are generated to `cloudflare-env.d.ts` (committed) via `npm run cf-typegen`.

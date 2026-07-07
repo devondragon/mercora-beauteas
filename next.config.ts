@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+// Security headers (CSP/HSTS/nosniff/frame-options) live in their own module so the
+// CSP can be built from env-driven values (image CDN) and unit tested. See BMC-150.
+import { buildSecurityHeaders } from "./lib/security-headers";
+
+const SECURITY_HEADERS = buildSecurityHeaders();
 
 const nextConfig: NextConfig = {
   images: {
@@ -49,6 +54,7 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
+          ...SECURITY_HEADERS,
           {
             key: "X-DNS-Prefetch-Control",
             value: "on",
