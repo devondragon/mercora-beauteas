@@ -279,6 +279,11 @@ export async function placeOrder(
       unit_price: { amount: item.price, currency: 'USD' },
       total_price: { amount: item.price * item.quantity, currency: 'USD' },
       product_name: item.name,
+      // Seed the session image so the fail-soft path (canonicalization error or
+      // unresolved product) still persists a display image rather than dropping
+      // it; canonicalizeOrderItemsDisplay overwrites it with catalog truth on
+      // success.
+      imageUrl: item.primaryImageUrl,
     }));
     let canonicalItems = rawItems;
     try {
@@ -296,11 +301,13 @@ export async function placeOrder(
       id: `MCP-${paymentIntentId}`,
       customer_id: userContext.userId || agentId,
       // M1 (BMC-161): persist the catalog-derived total, not the session-cart
-      // total. requiredTotal is computed from charge.goodsCents (catalog) plus
-      // server-computed shipping/tax — the same components the payment gate
-      // verified against. Using it here means the persisted record, admin views,
-      // and packing slip all reflect catalog truth.
-      total_amount: { amount: requiredTotal, currency: 'USD' },
+      // total. requiredTotalCents is derived from charge.goodsCents (catalog)
+      // plus server-computed shipping/tax — the same components the payment gate
+      // verified against. Persist it in CENTS (Money.amount is cents throughout
+      // the order record — item.unit_price above, and the admin UI renders
+      // total_amount.amount / 100); requiredTotal itself is in dollars, so using
+      // it directly here would store an amount 100x too small.
+      total_amount: { amount: requiredTotalCents, currency: 'USD' },
       shipping_address: shippingAddress,
       billing_address: billingAddress,
       items: canonicalItems,
