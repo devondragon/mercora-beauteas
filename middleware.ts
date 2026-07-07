@@ -86,8 +86,16 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     const isMaintenanceMode = systemSettings['system.maintenance_mode'] || false;
     
     if (isMaintenanceMode) {
-      const maintenanceMessage = systemSettings['system.maintenance_message'] || 
+      const rawMessage = systemSettings['system.maintenance_message'] ||
         "We're making some improvements! We'll be back soon.";
+      // Escape as plain text — the message is stored in admin settings (not a
+      // rich-text field) so HTML is never intentional here.
+      const maintenanceMessage = rawMessage
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#x27;");
       
       // Return maintenance page for all non-admin routes
       return new NextResponse(

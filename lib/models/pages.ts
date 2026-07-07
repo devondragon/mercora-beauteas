@@ -7,6 +7,7 @@
 
 import { desc, eq, and, or, isNull, count, like, inArray } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
+import { sanitizePageHtmlServer } from "@/lib/utils/sanitize-html-server";
 import { 
   pages, 
   page_versions, 
@@ -170,7 +171,12 @@ export async function createPage(data: Omit<PageInsert, 'id' | 'created_at' | 'u
     const existingSlugs = await getExistingSlugs();
     data.slug = generatePageSlug(data.title, existingSlugs);
   }
-  
+
+  // Sanitize HTML content before persisting (authoritative server-side gate)
+  if (data.content) {
+    data.content = sanitizePageHtmlServer(data.content);
+  }
+
   // Set timestamps
   const now = Math.floor(Date.now() / 1000); // Unix timestamp in seconds
   const pageData: PageInsert = {
@@ -240,7 +246,12 @@ export async function updatePage(
       const existingSlugs = await getExistingSlugs();
       cleanData.slug = generatePageSlug(cleanData.title, existingSlugs);
     }
-    
+
+    // Sanitize HTML content before persisting (authoritative server-side gate)
+    if (cleanData.content !== undefined) {
+      cleanData.content = sanitizePageHtmlServer(cleanData.content);
+    }
+
     // Increment version if content changed
     const contentChanged = cleanData.content && cleanData.content !== currentPage.content;
     const newVersion = contentChanged ? currentPage.version + 1 : currentPage.version;

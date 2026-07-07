@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { PageSelect } from "@/lib/db/schema/pages";
 import { Calendar, User } from "lucide-react";
+import { sanitizeBlogHtml } from "@/lib/utils/sanitize-html";
 
 interface PageRendererProps {
   page: PageSelect;
@@ -133,9 +134,9 @@ export default function PageRenderer({ page }: PageRendererProps) {
             </div>
 
             {/* Page Content */}
-            <div 
+            <div
               className={templateClasses.content}
-              dangerouslySetInnerHTML={{ __html: page.content }}
+              dangerouslySetInnerHTML={{ __html: sanitizeBlogHtml(page.content) }}
             />
 
             {/* Page Footer */}
