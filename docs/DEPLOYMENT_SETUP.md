@@ -103,7 +103,7 @@ Update `wrangler.jsonc` with the database IDs from the creation output:
 {
   "name": "beauteas",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2024-12-01",
+  "compatibility_date": "2026-06-25",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   // Shared configuration
