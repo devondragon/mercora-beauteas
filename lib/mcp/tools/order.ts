@@ -5,7 +5,7 @@ import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
-import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS } from '../../services/order-pricing';
+import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS, canonicalizeOrderItemsDisplay } from '../../services/order-pricing';
 
 /**
  * Normalize an inbound MCP address to the MACHAddress shape the pricing and
@@ -266,6 +266,32 @@ export async function placeOrder(
         ['Create a PaymentIntent for the full order total (shipping + tax included)', 'Retry place_order']);
     }
 
+    // M1 (BMC-161): overwrite each line's display fields (product_name, imageUrl)
+    // with catalog truth before persisting, so a spoofed name can't make the
+    // packing slip or admin view describe the wrong product. Mirrors the storefront
+    // POST /api/orders path. Fails soft — canonicalization errors keep the
+    // session-supplied display rather than blocking a legitimately-paid order.
+    const rawItems = cart.map(item => ({
+      product_id: item.productId,
+      variant_id: item.variantId,
+      sku: item.variantId || `${item.productId}-default`,
+      quantity: item.quantity,
+      unit_price: { amount: item.price, currency: 'USD' },
+      total_price: { amount: item.price * item.quantity, currency: 'USD' },
+      product_name: item.name,
+      // Seed the session image so the fail-soft path (canonicalization error or
+      // unresolved product) still persists a display image rather than dropping
+      // it; canonicalizeOrderItemsDisplay overwrites it with catalog truth on
+      // success.
+      imageUrl: item.primaryImageUrl,
+    }));
+    let canonicalItems = rawItems;
+    try {
+      canonicalItems = await canonicalizeOrderItemsDisplay(rawItems);
+    } catch (canonError) {
+      console.error(`place_order: display canonicalization failed; using session display`, canonError);
+    }
+
     // Create order using existing order system. createOrder always persists as
     // pending/unpaid; we then mark it paid via the verified-payment path below.
     // The id is DERIVED FROM THE PAYMENTINTENT so a duplicate insert (a concurrent
@@ -274,18 +300,17 @@ export async function placeOrder(
     const orderData = {
       id: `MCP-${paymentIntentId}`,
       customer_id: userContext.userId || agentId,
-      total_amount: { amount: total, currency: 'USD' },
+      // M1 (BMC-161): persist the catalog-derived total, not the session-cart
+      // total. requiredTotalCents is derived from charge.goodsCents (catalog)
+      // plus server-computed shipping/tax — the same components the payment gate
+      // verified against. Persist it in CENTS (Money.amount is cents throughout
+      // the order record — item.unit_price above, and the admin UI renders
+      // total_amount.amount / 100); requiredTotal itself is in dollars, so using
+      // it directly here would store an amount 100x too small.
+      total_amount: { amount: requiredTotalCents, currency: 'USD' },
       shipping_address: shippingAddress,
       billing_address: billingAddress,
-      items: cart.map(item => ({
-        product_id: item.productId,
-        variant_id: item.variantId,
-        sku: item.variantId || `${item.productId}-default`,
-        quantity: item.quantity,
-        unit_price: { amount: item.price, currency: 'USD' },
-        total_price: { amount: item.price * item.quantity, currency: 'USD' },
-        product_name: item.name
-      })),
+      items: canonicalItems,
       shipping_method: request.shippingOption || 'standard',
       payment_method: request.paymentMethod || 'agent-processed',
       notes: request.specialInstructions,

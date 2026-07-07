@@ -36,10 +36,21 @@ vi.mock('@/lib/models/mach/orders', () => ({
   getOrderByPaymentIntentId: vi.fn(),
 }));
 
+// canonicalizeOrderItemsDisplay (real, not mocked above) resolves each line's
+// display fields via getProduct. Mock the catalog read so it runs in the jsdom
+// unit env — WITHOUT this mock the real getProduct calls getDb() (no D1 binding
+// here), throws, and every test silently exercises the fail-soft catch instead
+// of the intended canonicalization path (BMC-161 review).
+vi.mock('@/lib/models/mach/products', () => ({
+  getProduct: vi.fn(),
+  getProductVariant: vi.fn(),
+}));
+
 import { requireOwnedSession } from '@/lib/mcp/session';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
 import { createOrderPaid, getOrderByPaymentIntentId } from '@/lib/models/mach/orders';
+import { getProduct } from '@/lib/models/mach/products';
 import { placeOrder } from '@/lib/mcp/tools/order';
 
 const AGENT = 'agent-a';
@@ -77,7 +88,10 @@ beforeEach(() => {
   vi.mocked(requireOwnedSession).mockResolvedValue(ownedSessionWithCart());
   vi.mocked(getOrderByPaymentIntentId).mockResolvedValue(null);
   vi.mocked(verifyOrderChargeSufficient).mockResolvedValue({ ok: true, goodsCents: 2000, requiredCashCents: 2000 } as any);
-  vi.mocked(createOrderPaid).mockResolvedValue({ id: 'ORD-1', status: 'processing', total_amount: { amount: 29.99, currency: 'USD' } } as any);
+  vi.mocked(createOrderPaid).mockResolvedValue({ id: 'ORD-1', status: 'processing', total_amount: { amount: 3174, currency: 'USD' } } as any);
+  // Catalog truth for the single cart line (p1): a canonical name + image that
+  // differ from the session-supplied display so canonicalization is observable.
+  vi.mocked(getProduct).mockResolvedValue({ id: 'p1', name: 'Morning Blend', primary_image: 'https://cdn/catalog-p1.jpg' } as any);
 });
 
 describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', () => {
@@ -193,5 +207,76 @@ describe('place_order requires a verified Stripe PaymentIntent (BMC-132 / C5)', 
       expect.objectContaining({ status: 'processing' })
     );
     expect(result.data.status).toBe('processing');
+  });
+});
+
+describe('place_order persists catalog-canonicalized display + total (BMC-161)', () => {
+  const succeededPi = {
+    id: PI, status: 'succeeded', amount_received: 3200, metadata: { agentId: AGENT, sessionId: SESSION },
+  } as any;
+
+  it('persists total_amount as the catalog-derived total in CENTS, not the session-cart total', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue(succeededPi);
+
+    const result = await placeOrder(baseRequest(), SESSION, AGENT);
+
+    expect(result.success).toBe(true);
+    // goods $20 (from goodsCents 2000) + $9.99 shipping + 8.75% CA tax ($1.75)
+    // = $31.74 → 3174 cents. Must be cents (Money.amount convention), never the
+    // dollars value 31.74 that would render 100x too small in the admin UI.
+    expect(vi.mocked(createOrderPaid)).toHaveBeenCalledWith(
+      expect.objectContaining({ total_amount: { amount: 3174, currency: 'USD' } }),
+      expect.anything()
+    );
+  });
+
+  it('overwrites each line\'s display fields with catalog truth before persisting', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue(succeededPi);
+    // Session cart claims a spoofed name/image; catalog says otherwise.
+    vi.mocked(requireOwnedSession).mockResolvedValue({
+      ok: true as const,
+      session: {
+        sessionId: SESSION,
+        agentId: AGENT,
+        userContext: { agentId: AGENT },
+        cart: [
+          { productId: 'p1', variantId: 'v1', name: 'Free Sample', price: 20, quantity: 1, primaryImageUrl: 'https://evil/spoof.jpg' },
+        ],
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    } as any);
+
+    await placeOrder(baseRequest(), SESSION, AGENT);
+
+    const persisted = vi.mocked(createOrderPaid).mock.calls[0][0] as any;
+    expect(persisted.items[0].product_name).toBe('Morning Blend');
+    expect(persisted.items[0].imageUrl).toBe('https://cdn/catalog-p1.jpg');
+  });
+
+  it('falls back to session display (name + image) without blocking the order when canonicalization fails', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue(succeededPi);
+    vi.mocked(getProduct).mockRejectedValue(new Error('D1 unavailable'));
+    vi.mocked(requireOwnedSession).mockResolvedValue({
+      ok: true as const,
+      session: {
+        sessionId: SESSION,
+        agentId: AGENT,
+        userContext: { agentId: AGENT },
+        cart: [
+          { productId: 'p1', variantId: 'v1', name: 'Session Name', price: 20, quantity: 1, primaryImageUrl: 'https://cdn/session.jpg' },
+        ],
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    } as any);
+
+    const result = await placeOrder(baseRequest(), SESSION, AGENT);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(createOrderPaid)).toHaveBeenCalledTimes(1);
+    const persisted = vi.mocked(createOrderPaid).mock.calls[0][0] as any;
+    expect(persisted.items[0].product_name).toBe('Session Name');
+    expect(persisted.items[0].imageUrl).toBe('https://cdn/session.jpg');
   });
 });
