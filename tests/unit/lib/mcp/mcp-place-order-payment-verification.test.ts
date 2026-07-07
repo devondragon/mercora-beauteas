@@ -50,8 +50,8 @@ import { requireOwnedSession } from '@/lib/mcp/session';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
 import { createOrderPaid, getOrderByPaymentIntentId } from '@/lib/models/mach/orders';
-import { getProduct } from '@/lib/models/mach/products';
-import { placeOrder } from '@/lib/mcp/tools/order';
+import { getProduct, getProductVariant } from '@/lib/models/mach/products';
+import { placeOrder, computeOrderTotals } from '@/lib/mcp/tools/order';
 
 const AGENT = 'agent-a';
 const SESSION = 's1';
@@ -278,5 +278,122 @@ describe('place_order persists catalog-canonicalized display + total (BMC-161)',
     const persisted = vi.mocked(createOrderPaid).mock.calls[0][0] as any;
     expect(persisted.items[0].product_name).toBe('Session Name');
     expect(persisted.items[0].imageUrl).toBe('https://cdn/session.jpg');
+  });
+});
+
+// Defect 1 (BMC-161 follow-up): the free-shipping threshold + tax are computed in
+// DOLLARS, but the MCP cart carries prices in CENTS. computeOrderTotals is the
+// shared shipping/tax helper; its callers pass a dollars subtotal (`…Cents / 100`).
+describe('free-shipping threshold uses dollars, not cents (BMC-161 follow-up)', () => {
+  it('charges standard shipping below the $100 threshold', () => {
+    // $50 goods → under the free-shipping threshold → $9.99 standard shipping.
+    const { shipping } = computeOrderTotals(50, { region: 'CA' } as any);
+    expect(shipping).toBe(9.99);
+  });
+
+  it('gives free shipping at/above the $100 threshold', () => {
+    // $150 goods → at/above threshold → free shipping.
+    const { shipping } = computeOrderTotals(150, { region: 'CA' } as any);
+    expect(shipping).toBe(0);
+  });
+
+  it('does not falsely trip the budget gate for a $20 (2000c) cart under a $100 budget', async () => {
+    // Regression for the cents/dollars bug in placeOrder's budget block: with the
+    // old code a 2000-cent subtotal made `subtotal >= 100` true (free shipping) AND
+    // computed tax as 2000 * rate, so `total` was ~$2175 and blew any real budget.
+    // With the fix the cart is treated as $20 → total $31.74 → well under $100.
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({
+      id: PI, status: 'succeeded', amount_received: 3200, metadata: { agentId: AGENT, sessionId: SESSION },
+    } as any);
+    vi.mocked(requireOwnedSession).mockResolvedValue({
+      ok: true as const,
+      session: {
+        sessionId: SESSION,
+        agentId: AGENT,
+        userContext: { agentId: AGENT },
+        // price in CENTS, as the real MCP cart carries it (variant.price.amount).
+        cart: [
+          { productId: 'p1', variantId: 'v1', name: 'Morning Blend', price: 2000, quantity: 1, primaryImageUrl: '' },
+        ],
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    } as any);
+
+    const result = await placeOrder(
+      baseRequest({ agent_context: { userPreferences: { budget: 100 } } }),
+      SESSION,
+      AGENT,
+    );
+
+    // Fix: order proceeds. Bug: it would return status 'budget_exceeded'.
+    expect(result.success).toBe(true);
+    expect(result.data.status).toBe('processing');
+  });
+});
+
+// Defect 2 (BMC-161 follow-up): each line's unit_price/total_price must be derived
+// from the catalog variant, never the session/client-supplied price.
+describe('place_order canonicalizes per-line unit_price/total_price from the catalog (BMC-161 follow-up)', () => {
+  const succeededPi = {
+    id: PI, status: 'succeeded', amount_received: 3200, metadata: { agentId: AGENT, sessionId: SESSION },
+  } as any;
+
+  it('persists catalog-derived unit_price/total_price even when the session supplies spoofed prices', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue(succeededPi);
+    // Catalog variant price is $20.00 (2000c) and belongs to product p1.
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'v1', product_id: 'p1', price: { amount: 2000, currency: 'USD' },
+    } as any);
+    // Session claims a spoofed $0.01 unit price for qty 2.
+    vi.mocked(requireOwnedSession).mockResolvedValue({
+      ok: true as const,
+      session: {
+        sessionId: SESSION,
+        agentId: AGENT,
+        userContext: { agentId: AGENT },
+        cart: [
+          { productId: 'p1', variantId: 'v1', name: 'Morning Blend', price: 1, quantity: 2, primaryImageUrl: '' },
+        ],
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    } as any);
+
+    await placeOrder(baseRequest(), SESSION, AGENT);
+
+    const persisted = vi.mocked(createOrderPaid).mock.calls[0][0] as any;
+    // unit_price is the catalog cents value, NOT the spoofed 1c; total_price is
+    // recomputed server-side as unit_price * quantity (2000 * 2 = 4000c).
+    expect(persisted.items[0].unit_price).toEqual({ amount: 2000, currency: 'USD' });
+    expect(persisted.items[0].total_price).toEqual({ amount: 4000, currency: 'USD' });
+  });
+
+  it('fails soft to the session price for a line when the catalog lookup throws', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue(succeededPi);
+    // Catalog read blows up — pricing canonicalization must not block the paid order.
+    vi.mocked(getProductVariant).mockRejectedValue(new Error('D1 unavailable'));
+    vi.mocked(requireOwnedSession).mockResolvedValue({
+      ok: true as const,
+      session: {
+        sessionId: SESSION,
+        agentId: AGENT,
+        userContext: { agentId: AGENT },
+        cart: [
+          { productId: 'p1', variantId: 'v1', name: 'Morning Blend', price: 1500, quantity: 1, primaryImageUrl: '' },
+        ],
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    } as any);
+
+    const result = await placeOrder(baseRequest(), SESSION, AGENT);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(createOrderPaid)).toHaveBeenCalledTimes(1);
+    const persisted = vi.mocked(createOrderPaid).mock.calls[0][0] as any;
+    // Falls back to the session-supplied price (in cents) rather than dropping the line.
+    expect(persisted.items[0].unit_price).toEqual({ amount: 1500, currency: 'USD' });
+    expect(persisted.items[0].total_price).toEqual({ amount: 1500, currency: 'USD' });
   });
 });

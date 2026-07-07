@@ -5,7 +5,7 @@ import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
-import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS, canonicalizeOrderItemsDisplay } from '../../services/order-pricing';
+import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS, canonicalizeOrderItemsDisplay, canonicalizeOrderItemsPricing } from '../../services/order-pricing';
 
 /**
  * Normalize an inbound MCP address to the MACHAddress shape the pricing and
@@ -148,8 +148,18 @@ export async function placeOrder(
     const shippingAddress = normalizeAddress(request.shippingAddress);
     const billingAddress = request.billingAddress ? normalizeAddress(request.billingAddress) : shippingAddress;
 
-    // Calculate order totals
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    // Calculate order totals for the budget gate + post-order recommendations.
+    // Cart `item.price` is the catalog variant price in CENTS (see the cart tool /
+    // variant.price.amount), but calculateShipping/calculateTax expect DOLLARS —
+    // the same convention computeOrderTotals relies on (its callers pass
+    // `…Cents / 100`). Convert cents→dollars at this boundary. Without it, the
+    // free-shipping threshold `subtotal >= 100` compares a cents value, so any
+    // cart over $1.00 gets free shipping and tax is inflated 100x. (The
+    // authoritative payment total is still recomputed from catalog cents below via
+    // computeOrderTotals(charge.goodsCents / 100, …); this block only feeds the
+    // budget check and the savings copy.)
+    const subtotalCents = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const subtotal = subtotalCents / 100;
     const shipping = calculateShipping(shippingAddress, subtotal);
     const tax = calculateTax(subtotal, shippingAddress);
     const total = subtotal + shipping + tax;
@@ -290,6 +300,20 @@ export async function placeOrder(
       canonicalItems = await canonicalizeOrderItemsDisplay(rawItems);
     } catch (canonError) {
       console.error(`place_order: display canonicalization failed; using session display`, canonError);
+    }
+
+    // BMC-161 follow-up: overwrite each line's unit_price/total_price with catalog
+    // truth too. M1 fixed name/image + the order-level total_amount, but per-line
+    // prices were still session/client-supplied, so a spoofed unit_price would be
+    // persisted verbatim onto a paid order. Derive unit_price from the same catalog
+    // variant the charge gate priced against and recompute total_price =
+    // unit_price * quantity server-side (all in CENTS, like total_amount). Fails
+    // soft per line — a line whose catalog price can't be resolved keeps its
+    // session price rather than blocking a legitimately-paid order.
+    try {
+      canonicalItems = await canonicalizeOrderItemsPricing(canonicalItems);
+    } catch (priceError) {
+      console.error(`place_order: price canonicalization failed; using session prices`, priceError);
     }
 
     // Create order using existing order system. createOrder always persists as
