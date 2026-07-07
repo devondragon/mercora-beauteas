@@ -285,6 +285,74 @@ export async function canonicalizeOrderItemsDisplay<T extends { product_id?: str
   );
 }
 
+/**
+ * Overwrite each order line's PRICE fields (`unit_price`, `total_price`) with
+ * catalog truth before the order is persisted (BMC-161 follow-up).
+ *
+ * BMC-161 canonicalized the display fields (`product_name`/`imageUrl`) and the
+ * order-level `total_amount`, but each LINE's `unit_price`/`total_price` were
+ * still whatever the session/client supplied. A malicious MCP agent could
+ * therefore persist attacker-chosen per-line prices (e.g. a $0.01 unit price)
+ * onto an otherwise-valid paid order — corrupting the admin/fulfillment view,
+ * refunds, analytics, and any downstream that trusts the stored line price, even
+ * though the CHARGE gate (`verifyOrderChargeSufficient`) already stopped them
+ * being UNDER-charged.
+ *
+ * For each line we resolve the authoritative catalog unit price (cents) via the
+ * SAME variant/product resolution the charge gate uses (`catalogUnitPriceCents`),
+ * then set:
+ *   unit_price  = { amount: catalogCents,            currency }
+ *   total_price = { amount: catalogCents * quantity, currency }
+ * Amounts are CENTS, matching the `Money` convention used across the order record
+ * (and identical to how `total_amount` is derived from `goodsCents`).
+ *
+ * Fails soft PER LINE: a line whose catalog price can't be resolved (unknown/
+ * mismatched/unpriceable variant, untrusted quantity, gift card, or a catalog
+ * read that throws) keeps its session-supplied price rather than blocking a
+ * legitimately-paid order — mirroring `canonicalizeOrderItemsDisplay`. An
+ * unresolved *goods* line already forces a pre-persist failure via the charge
+ * gate, so in practice this only preserves legitimately un-catalogable lines
+ * (e.g. gift cards, priced/validated separately).
+ */
+export async function canonicalizeOrderItemsPricing<
+  T extends {
+    product_id?: string;
+    variant_id?: string;
+    quantity?: number;
+    unit_price?: Money;
+    total_price?: Money;
+  }
+>(items: T[]): Promise<T[]> {
+  const list = Array.isArray(items) ? items : [];
+  return Promise.all(
+    list.map(async (item) => {
+      try {
+        if (!item || typeof item !== 'object') return item;
+        // Gift-card lines are validated/priced separately — never re-price here.
+        if (item.product_id === GIFT_CARD_PRODUCT_ID) return item;
+
+        const quantity = normalizeQuantity(item.quantity);
+        if (quantity == null) return item; // untrusted qty → keep session price
+
+        const priced = await catalogUnitPriceCents(item);
+        if ('reason' in priced) return item; // unresolved → fail soft to session
+
+        const currency = item.unit_price?.currency ?? item.total_price?.currency ?? 'USD';
+        return {
+          ...item,
+          unit_price: { amount: priced.cents, currency },
+          total_price: { amount: priced.cents * quantity, currency },
+        };
+      } catch {
+        // A catalog read that throws must never block a paid order — keep the
+        // session-supplied price for this line (same fail-soft contract as
+        // canonicalizeOrderItemsDisplay).
+        return item;
+      }
+    })
+  );
+}
+
 export interface ChargeVerification {
   ok: boolean;
   reason?: string;
