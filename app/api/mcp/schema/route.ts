@@ -168,10 +168,10 @@ export async function GET(request: NextRequest) {
               type: "object",
               description: "Optional; used to estimate shipping/tax in the charged amount.",
               properties: {
-                street: { type: "string" },
-                street2: { type: "string" },
+                line1: { type: "string" },
+                line2: { type: "string" },
                 city: { type: "string" },
-                state: { type: "string" },
+                region: { type: "string", description: "State or province code (e.g. CA, NY)" },
                 postal_code: { type: "string" },
                 country: { type: "string", default: "US" }
               }
@@ -190,14 +190,14 @@ export async function GET(request: NextRequest) {
             shippingAddress: {
               type: "object",
               properties: {
-                street: { type: "string" },
-                street2: { type: "string" },
+                line1: { type: "string" },
+                line2: { type: "string" },
                 city: { type: "string" },
-                state: { type: "string" },
+                region: { type: "string", description: "State or province code (e.g. CA, NY)" },
                 postal_code: { type: "string" },
                 country: { type: "string", default: "US" }
               },
-              required: ["street", "city", "state", "postal_code"]
+              required: ["line1", "city", "region"]
             },
             billingAddress: { 
               type: "object",
@@ -243,14 +243,14 @@ export async function GET(request: NextRequest) {
             address: {
               type: "object",
               properties: {
-                street: { type: "string" },
-                street2: { type: "string" },
+                line1: { type: "string" },
+                line2: { type: "string" },
                 city: { type: "string" },
-                state: { type: "string" },
+                region: { type: "string", description: "State or province code (e.g. CA, NY)" },
                 postal_code: { type: "string" },
                 country: { type: "string", default: "US" }
               },
-              required: ["street", "city", "state", "postal_code"]
+              required: ["line1", "city", "region"]
             },
             cart: {
               type: "array",
@@ -285,10 +285,10 @@ export async function GET(request: NextRequest) {
             billing_address: {
               type: "object",
               properties: {
-                street: { type: "string" },
-                street2: { type: "string" },
+                line1: { type: "string" },
+                line2: { type: "string" },
                 city: { type: "string" },
-                state: { type: "string" },
+                region: { type: "string", description: "State or province code (e.g. CA, NY)" },
                 postal_code: { type: "string" },
                 country: { type: "string", default: "US" }
               }
