@@ -26,11 +26,11 @@ export interface PaymentMethod {
 export interface PaymentValidationRequest {
   payment_method: string;
   billing_address?: {
-    street: string;
-    street2?: string;
-    city: string;
-    state: string;
-    postal_code: string;
+    line1?: string;
+    line2?: string;
+    city?: string;
+    region?: string;
+    postal_code?: string;
     country?: string;
   };
   cart: CartItem[];

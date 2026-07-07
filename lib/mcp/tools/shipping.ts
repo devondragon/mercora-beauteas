@@ -1,5 +1,6 @@
 import { MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
+import { normalizeAddress } from './order';
 
 export interface ShippingOption {
   id: string;
@@ -12,11 +13,11 @@ export interface ShippingOption {
 
 export interface ShippingRequest {
   address: {
-    street: string;
-    street2?: string;
+    line1: string;
+    line2?: string;
     city: string;
-    state: string;
-    postal_code: string;
+    region: string;
+    postal_code?: string;
     country?: string;
   };
   cart?: CartItem[];
@@ -37,14 +38,17 @@ export async function getShippingOptions(
   const startTime = Date.now();
   
   try {
-    const { address, cart = [] } = request;
-    
+    const { cart = [] } = request;
+    // Normalize to MACH shape so both old (street/state) and new (line1/region)
+    // agent inputs are handled correctly.
+    const address = normalizeAddress(request.address);
+
     // Calculate total weight and shipping cost factors
     const totalWeight = cart.reduce((sum, item) => sum + (item.quantity * 2), 0); // Assume 2lbs per item average
     const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
-    // Determine shipping zone based on state
-    const zone = getShippingZone(address.state, address.country || 'US');
+
+    // Determine shipping zone based on region
+    const zone = getShippingZone(address.region ?? '', address.country || 'US');
     
     // Generate shipping options based on zone and cart
     const shippingOptions: ShippingOption[] = [];

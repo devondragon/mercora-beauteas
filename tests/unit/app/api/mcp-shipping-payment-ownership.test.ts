@@ -71,7 +71,7 @@ describe('POST /api/mcp/tools/shipping session-ownership gate (BMC-133 review)',
     vi.mocked(requireOwnedSession).mockResolvedValue(DENIED);
 
     const res = await shippingPOST(jsonRequest(url, {
-      address: { street: '1 Main St', city: 'Austin', state: 'TX', postal_code: '78701' },
+      address: { line1: '1 Main St', city: 'Austin', region: 'TX', postal_code: '78701' },
       session_id: 'victim-session',
     }));
     const body = await res.json() as any;
@@ -86,7 +86,7 @@ describe('POST /api/mcp/tools/shipping session-ownership gate (BMC-133 review)',
     vi.mocked(requireOwnedSession).mockResolvedValue(NOT_FOUND);
 
     const res = await shippingPOST(jsonRequest(url, {
-      address: { street: '1 Main St', city: 'Austin', state: 'TX', postal_code: '78701' },
+      address: { line1: '1 Main St', city: 'Austin', region: 'TX', postal_code: '78701' },
       // no session_id -> defaults to 'temp', which must still fail closed
     }));
     const body = await res.json() as any;
@@ -98,7 +98,7 @@ describe('POST /api/mcp/tools/shipping session-ownership gate (BMC-133 review)',
 
   it('allows the body.cart-provided path without reading the session at all', async () => {
     const res = await shippingPOST(jsonRequest(url, {
-      address: { street: '1 Main St', city: 'Austin', state: 'TX', postal_code: '78701' },
+      address: { line1: '1 Main St', city: 'Austin', region: 'TX', postal_code: '78701' },
       session_id: 'victim-session',
       cart: [{ productId: 'p1', variantId: 'v1', quantity: 1, name: 'Evening Blend', price: 20 }],
     }));
@@ -113,7 +113,7 @@ describe('POST /api/mcp/tools/shipping session-ownership gate (BMC-133 review)',
     vi.mocked(requireOwnedSession).mockResolvedValue(OWNED_SESSION);
 
     const res = await shippingPOST(jsonRequest(url, {
-      address: { street: '1 Main St', city: 'Austin', state: 'TX', postal_code: '78701' },
+      address: { line1: '1 Main St', city: 'Austin', region: 'TX', postal_code: '78701' },
       session_id: 'victim-session',
     }));
     const body = await res.json() as any;
