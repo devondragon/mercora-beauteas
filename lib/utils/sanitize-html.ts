@@ -27,14 +27,22 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 
 export function sanitizeBlogHtml(html: string): string {
   return DOMPurify.sanitize(html, {
+    // Mirrors the server allowlist in sanitize-html-core.ts — keep in sync.
+    // Clearly-safe, non-scriptable formatting/semantic tags only.
     ALLOWED_TAGS: [
-      "p", "br", "strong", "em", "u", "s", "code", "pre", "blockquote",
+      "p", "br", "strong", "em", "b", "i", "u", "s", "del", "ins",
+      "sub", "sup", "small", "mark", "abbr",
+      "code", "pre", "blockquote",
       "h1", "h2", "h3", "h4", "h5", "h6",
-      "ul", "ol", "li", "a", "img",
-      "table", "thead", "tbody", "tr", "th", "td",
-      "hr", "mark", "span", "div",
+      "ul", "ol", "li", "dl", "dt", "dd",
+      "a", "img", "figure", "figcaption",
+      "table", "caption", "colgroup", "col", "thead", "tbody", "tr", "th", "td",
+      "hr", "span", "div",
     ],
-    ALLOWED_ATTR: ["href", "src", "alt", "class", "target", "rel", "width", "height"],
+    ALLOWED_ATTR: [
+      "href", "src", "alt", "class", "target", "rel", "width", "height",
+      "title", "span",
+    ],
     ALLOW_DATA_ATTR: false,
     FORBID_ATTR: ["onerror", "onload", "onclick"],
   });

@@ -98,4 +98,89 @@ describe.each(sanitizers)('%s', (_name, sanitize) => {
     const out = sanitize('<script>alert(1)</script>').trim();
     expect(out).toBe('');
   });
+
+  // BMC-143 follow-up: safe formatting/semantic tags were being silently
+  // dropped on save (data loss). They must now survive sanitization.
+  it('preserves figure/figcaption', () => {
+    const out = sanitize(
+      '<figure><img src="/a.png" alt="tea"><figcaption>A cup</figcaption></figure>',
+    );
+    expect(out).toContain('<figure>');
+    expect(out).toContain('<figcaption>');
+  });
+
+  it('preserves sub/sup', () => {
+    const out = sanitize('<p>H<sub>2</sub>O and E=mc<sup>2</sup></p>');
+    expect(out).toContain('<sub>');
+    expect(out).toContain('<sup>');
+  });
+
+  it('preserves del/ins/s strikethrough + edit markup', () => {
+    const out = sanitize('<p><del>old</del><ins>new</ins><s>gone</s></p>');
+    expect(out).toContain('<del>');
+    expect(out).toContain('<ins>');
+    expect(out).toContain('<s>');
+  });
+
+  it('preserves small/mark/b/i inline formatting', () => {
+    const out = sanitize('<p><small>fine</small> <mark>hi</mark> <b>b</b> <i>i</i></p>');
+    expect(out).toContain('<small>');
+    expect(out).toContain('<mark>');
+    expect(out).toContain('<b>');
+    expect(out).toContain('<i>');
+  });
+
+  it('preserves abbr with its title attribute', () => {
+    const out = sanitize('<abbr title="United States Department of Agriculture">USDA</abbr>');
+    expect(out).toContain('<abbr');
+    expect(out).toContain('title="United States Department of Agriculture"');
+  });
+
+  it('preserves definition lists (dl/dt/dd)', () => {
+    const out = sanitize('<dl><dt>Term</dt><dd>Definition</dd></dl>');
+    expect(out).toContain('<dl>');
+    expect(out).toContain('<dt>');
+    expect(out).toContain('<dd>');
+  });
+
+  it('preserves table caption/colgroup/col', () => {
+    const out = sanitize(
+      '<table><caption>Blends</caption><colgroup><col span="2"></colgroup>' +
+        '<tbody><tr><td>a</td><td>b</td></tr></tbody></table>',
+    );
+    expect(out).toContain('<caption>');
+    expect(out).toContain('<colgroup>');
+    expect(out).toContain('<col');
+    expect(out).toContain('span="2"');
+  });
+
+  // Dangerous embeds/scriptable tags must still be stripped — expanding the
+  // allowlist for safe formatting must NOT open an injection surface.
+  it('still strips iframe/object/embed/form/style/svg', () => {
+    const out = sanitize(
+      '<iframe src="https://evil.com"></iframe>' +
+        '<object data="x.swf"></object>' +
+        '<embed src="x.swf">' +
+        '<form action="/steal"><input></form>' +
+        '<style>body{display:none}</style>' +
+        '<svg onload="alert(1)"></svg>' +
+        '<p>ok</p>',
+    );
+    expect(out.toLowerCase()).not.toContain('<iframe');
+    expect(out.toLowerCase()).not.toContain('<object');
+    expect(out.toLowerCase()).not.toContain('<embed');
+    expect(out.toLowerCase()).not.toContain('<form');
+    expect(out.toLowerCase()).not.toContain('<style');
+    expect(out.toLowerCase()).not.toContain('<svg');
+    expect(out.toLowerCase()).not.toContain('alert(1)');
+    expect(out).toContain('<p>ok</p>');
+  });
+
+  it('still strips event-handler attributes on newly-allowed tags', () => {
+    const out = sanitize('<figure onclick="steal()"><sup onmouseover="x()">2</sup></figure>');
+    expect(out.toLowerCase()).not.toContain('onclick');
+    expect(out.toLowerCase()).not.toContain('onmouseover');
+    expect(out).toContain('<figure>');
+    expect(out).toContain('<sup>');
+  });
 });
