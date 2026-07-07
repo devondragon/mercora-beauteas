@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { validatePayment } from '../../../../../../lib/mcp/tools/payment';
 import { requireOwnedSession } from '../../../../../../lib/mcp/session';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'PAYMENT_VALIDATION_ERROR',
         message: 'Failed to validate payment method',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

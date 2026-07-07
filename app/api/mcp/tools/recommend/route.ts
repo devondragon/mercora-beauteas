@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../lib/mcp/context';
 import { getRecommendations } from '../../../../../lib/mcp/tools/recommend';
 import { RecommendRequest } from '../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'RECOMMEND_ERROR',
         message: 'Product recommendations failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

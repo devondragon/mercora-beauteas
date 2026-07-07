@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { listAgents } from '../../../../../../lib/mcp/tools/agent';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
       error: {
         code: 'AGENT_LIST_ERROR',
         message: 'Failed to list agents',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

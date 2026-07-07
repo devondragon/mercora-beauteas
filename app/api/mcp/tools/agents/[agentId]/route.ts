@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { getAgentDetails, updateAgentStatus } from '../../../../../../lib/mcp/tools/agent';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 const FORBIDDEN_RESPONSE = {
   success: false,
@@ -44,7 +45,7 @@ export async function GET(
       error: {
         code: 'AGENT_DETAILS_ERROR',
         message: 'Failed to get agent details',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -99,7 +100,7 @@ export async function PATCH(
       error: {
         code: 'AGENT_UPDATE_ERROR',
         message: 'Failed to update agent',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

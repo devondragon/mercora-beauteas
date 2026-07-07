@@ -3,6 +3,7 @@ import { createSession, getActiveSessionsForAgent, cleanupExpiredSessions } from
 import { authenticateAgent } from '../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../lib/mcp/context';
 import { MCPToolResponse, AgentSession } from '../../../../lib/mcp/types';
+import { errorDetails } from '../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   // Create new agent session
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'SESSION_CREATE_ERROR',
         message: 'Failed to create session',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
       error: {
         code: 'SESSION_LIST_ERROR',
         message: 'Failed to list sessions',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

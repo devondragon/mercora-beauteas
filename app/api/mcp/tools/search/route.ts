@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../lib/mcp/context';
 import { searchProductsWithContext } from '../../../../../lib/mcp/tools/search';
 import { SearchRequest } from '../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'SEARCH_ERROR',
         message: 'Product search failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

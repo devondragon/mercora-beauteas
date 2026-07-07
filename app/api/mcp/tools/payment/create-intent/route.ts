@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { createAgentPaymentIntent } from '../../../../../../lib/mcp/tools/payment';
 import { PaymentIntentCreateRequest } from '../../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'PAYMENT_INTENT_ERROR',
         message: 'Failed to create payment intent',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

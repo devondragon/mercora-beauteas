@@ -36,6 +36,7 @@ import { orders } from '@/lib/db/schema/order';
 import { eq } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
 import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmount } from '@/lib/utils/refund-validation';
+import { errorDetails } from '@/lib/utils/error-response';
 
 interface RefundRequest {
   orderId: string;
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
       console.error('Stripe refund failed:', stripeError);
       return NextResponse.json({
         error: 'Failed to process refund with Stripe',
-        details: stripeError.message
+        details: errorDetails(stripeError)
       }, { status: 500 });
     }
 
@@ -252,7 +253,7 @@ export async function POST(request: NextRequest) {
     console.error('Refund processing error:', error);
     return NextResponse.json({
       error: 'Failed to process refund',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: errorDetails(error)
     }, { status: 500 });
   }
 }
