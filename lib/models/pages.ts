@@ -175,6 +175,12 @@ export async function createPage(data: Omit<PageInsert, 'id' | 'created_at' | 'u
   // Sanitize HTML content before persisting (authoritative server-side gate)
   if (data.content) {
     data.content = sanitizePageHtmlServer(data.content);
+    // Reject content that survives the "Content is required" check above but
+    // sanitizes away to nothing (e.g. `<script></script>` or only-disallowed
+    // tags) — otherwise we'd persist an empty page body.
+    if (!data.content || data.content.trim().length === 0) {
+      throw new Error("Content is empty after sanitization");
+    }
   }
 
   // Set timestamps
@@ -250,6 +256,12 @@ export async function updatePage(
     // Sanitize HTML content before persisting (authoritative server-side gate)
     if (cleanData.content !== undefined) {
       cleanData.content = sanitizePageHtmlServer(cleanData.content);
+      // Reject content that sanitizes away to nothing so we neither persist an
+      // empty body nor let the truthiness-based `contentChanged` check below
+      // silently skip the version bump / history insert on a real change.
+      if (!cleanData.content || cleanData.content.trim().length === 0) {
+        throw new Error("Content is empty after sanitization");
+      }
     }
 
     // Increment version if content changed

@@ -86,8 +86,15 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     const isMaintenanceMode = systemSettings['system.maintenance_mode'] || false;
     
     if (isMaintenanceMode) {
-      const rawMessage = systemSettings['system.maintenance_message'] ||
-        "We're making some improvements! We'll be back soon.";
+      const defaultMessage = "We're making some improvements! We'll be back soon.";
+      // Settings values are JSON.parse'd, so a mis-saved message could come back
+      // as a non-string. Fall back to the default unless it's a non-empty string
+      // — otherwise the .replace() chain below would throw on a non-string.
+      const rawSetting = systemSettings['system.maintenance_message'];
+      const rawMessage =
+        typeof rawSetting === "string" && rawSetting.trim().length > 0
+          ? rawSetting
+          : defaultMessage;
       // Escape as plain text — the message is stored in admin settings (not a
       // rich-text field) so HTML is never intentional here.
       const maintenanceMessage = rawMessage
