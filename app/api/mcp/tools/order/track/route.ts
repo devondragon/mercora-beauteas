@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { MCPToolResponse } from '../../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 interface TrackingResponse {
   orderId: string;
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
       error: {
         code: 'TRACKING_ERROR',
         message: 'Failed to get tracking information',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'TRACKING_ERROR',
         message: 'Failed to get tracking information',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

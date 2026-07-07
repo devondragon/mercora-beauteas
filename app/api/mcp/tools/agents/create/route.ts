@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent, hasAgentManagementPermission } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { createAgent } from '../../../../../../lib/mcp/tools/agent';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'AGENT_CREATE_ERROR',
         message: 'Failed to create agent',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

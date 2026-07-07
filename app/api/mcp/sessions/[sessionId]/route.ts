@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, updateSession, deleteSession } from '../../../../../lib/mcp/session';
 import { authenticateAgent } from '../../../../../lib/mcp/auth';
 import { MCPToolResponse, AgentSession } from '../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../lib/utils/error-response';
 
 export async function GET(
   request: NextRequest,
@@ -64,7 +65,7 @@ export async function GET(
       error: {
         code: 'SESSION_GET_ERROR',
         message: 'Failed to get session',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -140,7 +141,7 @@ export async function PUT(
       error: {
         code: 'SESSION_UPDATE_ERROR',
         message: 'Failed to update session',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -201,7 +202,7 @@ export async function DELETE(
       error: {
         code: 'SESSION_DELETE_ERROR',
         message: 'Failed to delete session',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

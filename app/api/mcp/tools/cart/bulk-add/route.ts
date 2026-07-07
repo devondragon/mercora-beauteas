@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { bulkAddToCart } from '../../../../../../lib/mcp/tools/cart';
 import { CartRequest } from '../../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'BULK_ADD_ERROR',
         message: 'Failed to bulk add items to cart',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

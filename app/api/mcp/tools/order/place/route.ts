@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { placeOrder } from '../../../../../../lib/mcp/tools/order';
 import { OrderRequest } from '../../../../../../lib/mcp/types';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request, { isOrderOp: true });
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'ORDER_PLACE_ERROR',
         message: 'Failed to place order',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

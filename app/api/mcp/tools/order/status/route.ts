@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { getOrderStatus } from '../../../../../../lib/mcp/tools/order';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
       error: {
         code: 'ORDER_STATUS_ERROR',
         message: 'Failed to get order status',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'ORDER_STATUS_ERROR',
         message: 'Failed to get order status',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

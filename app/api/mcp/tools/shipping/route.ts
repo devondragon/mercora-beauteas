@@ -3,6 +3,7 @@ import { authenticateAgent } from '../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../lib/mcp/context';
 import { getShippingOptions } from '../../../../../lib/mcp/tools/shipping';
 import { requireOwnedSession } from '../../../../../lib/mcp/session';
+import { errorDetails } from '../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'SHIPPING_ERROR',
         message: 'Failed to get shipping options',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

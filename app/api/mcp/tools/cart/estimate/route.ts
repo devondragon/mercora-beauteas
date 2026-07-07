@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { getCartEstimate } from '../../../../../../lib/mcp/tools/cart';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
       error: {
         code: 'CART_ESTIMATE_ERROR',
         message: 'Failed to get cart estimate',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'CART_ESTIMATE_ERROR',
         message: 'Failed to get cart estimate',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }

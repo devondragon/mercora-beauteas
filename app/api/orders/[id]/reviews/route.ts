@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getReviewsForOrder, submitReviewForOrderItem } from '@/lib/models';
+import { errorDetails } from '@/lib/utils/error-response';
 import type { ReviewSubmissionPayload } from '@/lib/types';
 
 function resolveStatusFromError(message: string): number {
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     console.error('Failed to submit review', error);
     const message = error instanceof Error ? error.message : 'Unable to submit review.';
-    return NextResponse.json({ error: message }, { status: resolveStatusFromError(message) });
+    return NextResponse.json(
+      { error: 'Unable to submit review.', details: errorDetails(error) },
+      { status: resolveStatusFromError(message) }
+    );
   }
 }

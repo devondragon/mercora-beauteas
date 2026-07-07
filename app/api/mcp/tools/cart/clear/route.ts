@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { clearCart } from '../../../../../../lib/mcp/tools/cart';
+import { errorDetails } from '../../../../../../lib/utils/error-response';
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
       error: {
         code: 'CART_CLEAR_ERROR',
         message: 'Failed to clear cart',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorDetails(error)
       }
     }, { status: 500 });
   }
