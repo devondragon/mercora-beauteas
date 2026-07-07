@@ -15,6 +15,28 @@ function resolveStatusFromError(message: string): number {
   return 400;
 }
 
+/**
+ * Vetted, human-authored validation messages thrown by
+ * `submitReviewForOrderItem()`. These are intentional user-facing copy (they
+ * tell the customer *why* their submission was rejected), so they are echoed
+ * back verbatim. Any other error — e.g. a raw DB/driver failure — is masked to
+ * a generic message so internal detail never leaks in production (BMC-159).
+ * Keep this in sync with the `throw new Error(...)` sites in
+ * `lib/models/reviews.ts`.
+ */
+const KNOWN_REVIEW_ERROR_MESSAGES = new Set<string>([
+  'Order ID is required.',
+  'Product ID is required.',
+  'Rating must be an integer between 1 and 5.',
+  'Review body must be at least 30 characters long.',
+  'Order not found.',
+  'You can only review products from your own orders.',
+  'You can only review items after the order has been delivered or returned.',
+  'Order item could not be found for review.',
+  'You have already submitted a review for this item.',
+  'Review contains prohibited content.',
+]);
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) {
@@ -57,10 +79,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ data: review });
   } catch (error) {
     console.error('Failed to submit review', error);
-    const message = error instanceof Error ? error.message : 'Unable to submit review.';
+    const message = error instanceof Error ? error.message : '';
+    // Only echo back vetted validation copy; mask anything unexpected so raw
+    // DB/internal errors don't leak in production (BMC-159).
+    if (message && KNOWN_REVIEW_ERROR_MESSAGES.has(message)) {
+      return NextResponse.json({ error: message }, { status: resolveStatusFromError(message) });
+    }
     return NextResponse.json(
       { error: 'Unable to submit review.', details: errorDetails(error) },
-      { status: resolveStatusFromError(message) }
+      { status: 500 }
     );
   }
 }
