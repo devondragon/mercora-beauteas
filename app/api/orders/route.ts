@@ -26,7 +26,7 @@ import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
 import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
-import { toWireMoney } from "@/lib/money";
+import { Money, toWireMoney } from "@/lib/money";
 import type { MachMoney } from "@/lib/money";
 
 
@@ -146,10 +146,14 @@ export async function POST(request: NextRequest) {
         details: [`items array must not exceed ${MAX_ORDER_LINE_ITEMS} lines`]
       }, { status: 400 });
     }
-    if (!body.total_amount || typeof body.total_amount.amount !== 'number') {
+    if (
+      !body.total_amount ||
+      typeof body.total_amount.amount !== 'number' ||
+      !Number.isInteger(body.total_amount.amount)
+    ) {
       return NextResponse.json({
         error: 'Validation failed',
-        details: ['total_amount is required and must be a Money object']
+        details: ['total_amount is required and must be a Money object with an integer minor-unit amount']
       }, { status: 400 });
     }
     if (!body.currency_code) {
@@ -312,7 +316,10 @@ export async function POST(request: NextRequest) {
       id: orderId,
       customer_id: customerId,
       status: paymentConfirmed ? 'processing' : 'pending',
-      total_amount: body.total_amount,
+      // Guarantee the persisted value is a clean integer-minor-unit Money
+      // shape, regardless of what the client sent (already validated above,
+      // but this also normalizes currency casing / strips extra fields).
+      total_amount: Money.fromStored(body.total_amount).toJSON(),
       currency_code: body.currency_code,
       shipping_address: body.shipping_address ?? null,
       billing_address: body.billing_address ?? null,

@@ -38,6 +38,28 @@ import OrderSummary from './OrderSummary';
 import ProgressBar from './ProgressBar';
 import OrderConfirmationModal from './OrderConfirmationModal';
 import type { Address, ShippingOption } from '@/lib/types';
+import type { CartItem } from '@/lib/types/cartitem';
+import { Money } from '@/lib/money';
+
+/**
+ * `/api/shipping-options`, `/api/tax`, and `/api/payment-intent` are not part
+ * of the BMC-164 minor-units conversion (out of scope for this task) and
+ * still speak MAJOR-unit dollars. The cart store (and everything read from
+ * it) holds integer MINOR units. These two helpers are the bridge at that
+ * boundary — convert to dollars right before the request, convert back to
+ * minor units right after the response.
+ */
+function cartItemsToMajorUnits(items: CartItem[]): Array<Omit<CartItem, 'price'> & { price: number }> {
+  return items.map((item) => ({ ...item, price: Money.fromMinor(item.price, 'USD').toMach().amount }));
+}
+
+function minorToMajor(minorUnits: number): number {
+  return Money.fromMinor(minorUnits, 'USD').toMach().amount;
+}
+
+function majorToMinor(majorUnits: number): number {
+  return Money.fromMajor(majorUnits, 'USD').toMinorUnits();
+}
 
 interface CheckoutClientProps {
   userId: string | null;
@@ -56,6 +78,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     setShippingOption,
     setTaxAmount,
     updateShippingDiscounts,
+    calculateTotals,
     clearCart,
   } = useCartStore();
 
@@ -91,11 +114,12 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     setError('');
 
     try {
-      // Get shipping options
+      // Get shipping options. This endpoint still speaks major-unit dollars
+      // (BMC-164 out of scope) — bridge cart items to dollars for the request.
       const res = await fetch('/api/shipping-options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, items }),
+        body: JSON.stringify({ address, items: cartItemsToMajorUnits(items) }),
       });
 
       if (!res.ok) {
@@ -104,7 +128,11 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       }
 
       const data = await res.json() as { options: ShippingOption[] };
-      setShippingOptions(data.options);
+      // Response costs are dollars; convert to minor units immediately so
+      // everything downstream (cart store, display) is consistently minor units.
+      setShippingOptions(
+        data.options.map((option) => ({ ...option, cost: majorToMinor(option.cost) }))
+      );
       
       // Save address to store
       setShippingAddress({
@@ -138,14 +166,15 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       // Update shipping discounts based on new shipping cost
       updateShippingDiscounts();
 
-      // Calculate tax with shipping address and cost
+      // Calculate tax with shipping address and cost. /api/tax still speaks
+      // major-unit dollars (BMC-164 out of scope) — bridge at this boundary.
       const taxRes = await fetch('/api/tax', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items,
+          items: cartItemsToMajorUnits(items),
           shippingAddress,
-          shippingCost: option.cost || 0,
+          shippingCost: minorToMajor(option.cost || 0),
         }),
       });
 
@@ -155,7 +184,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       }
 
       const taxData = await taxRes.json() as { amount: number };
-      setTaxAmount(taxData.amount);
+      // Response amount is dollars; convert to minor units for the store.
+      setTaxAmount(majorToMinor(taxData.amount));
 
       // Create order and payment intent
       await createPaymentIntent(option);
@@ -180,32 +210,32 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       const newOrderId = `WEB-${safeUserId}-${timestamp}`;
       setOrderId(newOrderId);
 
-      // Calculate total amount (subtotal + shipping + tax)
-      const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const totalBeforeGiftCard = subtotal + (selectedShippingOption.cost || 0) + (taxAmount || 0);
-
-      // Apply gift card as a payment tender to reduce the amount charged
-      const giftCardApplied = appliedGiftCard
-        ? Math.min(appliedGiftCard.balance, totalBeforeGiftCard)
-        : 0;
-      const amountDue = Math.max(0, totalBeforeGiftCard - giftCardApplied);
+      // The caller (handleShippingSelected) just wrote selectedShippingOption
+      // and the freshly-computed tax to the store (setShippingOption +
+      // setTaxAmount, both synchronous) — calculateTotals() reads that fresh
+      // state via get(), so it's the canonical source (integer minor units).
+      // (The destructured `taxAmount` above is a stale render-time closure at
+      // this point — setTaxAmount() hasn't triggered a re-render yet.)
+      const { tax, giftCardApplied, total } = calculateTotals();
+      const amountDue = total;
 
       // First cut: gift cards that fully cover the order aren't supported yet
       // (a $0 Stripe charge needs a separate zero-payment flow). Leave a payable
       // remainder above Stripe's $0.50 minimum.
-      if (giftCardApplied > 0 && amountDue < 0.5) {
+      if (giftCardApplied > 0 && Money.fromMinor(amountDue, 'USD').lt(Money.fromMajor('0.50', 'USD'))) {
         throw new Error(
           'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet — please reduce the gift card or add another item.'
         );
       }
 
-      // Create payment intent
+      // Create payment intent. /api/payment-intent still speaks major-unit
+      // dollars (BMC-164 out of scope) — bridge at this boundary.
       const res = await fetch('/api/payment-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: amountDue,
-          taxAmount: taxAmount || 0,
+          amount: minorToMajor(amountDue),
+          taxAmount: minorToMajor(tax),
           shippingAddress,
           orderId: newOrderId,
           description: `${items.length} item(s) - ${items.map(i => i.name).join(', ')}`,
@@ -218,8 +248,9 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           })),
           // Let the server re-verify the gift card's live balance before
           // charging, so a stale client-side balance can't under-collect.
+          // giftCardApplied is already integer minor units (cents) — no *100.
           ...(giftCardApplied > 0 && appliedGiftCard
-            ? { giftCard: { code: appliedGiftCard.code, appliedCents: Math.round(giftCardApplied * 100) } }
+            ? { giftCard: { code: appliedGiftCard.code, appliedCents: giftCardApplied } }
             : {}),
         }),
       });
@@ -241,14 +272,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   // Handle successful payment
   const handlePaymentSuccess = async (paymentIntentId: string) => {
     try {
-      // Gift card tender applied to this order (recompute against final totals)
-      const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const totalBeforeGiftCard = subtotal + (shippingOption?.cost || 0) + (taxAmount || 0);
-      const giftCardApplied = appliedGiftCard
-        ? Math.min(appliedGiftCard.balance, totalBeforeGiftCard)
-        : 0;
+      // Cart store totals are canonical (integer minor units) — recompute
+      // against final state rather than re-deriving from scratch here.
+      const { subtotal, shippingCost, tax, giftCardApplied, total } = calculateTotals();
 
-      // Submit order with payment intent ID to unified orders endpoint
+      // Submit order with payment intent ID to unified orders endpoint.
+      // Every money field below is integer minor units (Money.toJSON() shape) —
+      // no *100, values are already cents from the cart store.
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -259,22 +289,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             variant_id: item.variantId,
             sku: `${item.productId}-${item.variantId || 'default'}`, // Generate a simple SKU
             quantity: item.quantity,
-            unit_price: {
-              amount: Math.round(item.price * 100), // Convert to cents
-              currency: 'USD'
-            },
-            total_price: {
-              amount: Math.round(item.price * item.quantity * 100), // Convert to cents
-              currency: 'USD'
-            },
+            unit_price: Money.fromMinor(item.price, 'USD').toJSON(),
+            total_price: Money.fromMinor(item.price, 'USD').times(item.quantity).toJSON(),
             product_name: item.name, // This now includes variant info like "Vivid Mission Pack - Regular"
             // Carry gift-card recipient details through to fulfillment
             ...(item.giftCard ? { gift_card: item.giftCard } : {}),
           })),
-          total_amount: {
-            amount: Math.round((subtotal + (shippingOption?.cost || 0) + (taxAmount || 0)) * 100), // Order value (cents)
-            currency: 'USD'
-          },
+          total_amount: Money.fromMinor(total, 'USD').toJSON(),
           currency_code: 'USD',
           shipping_address: shippingAddress,
           billing_address: shippingAddress, // Use same as shipping for now
@@ -283,15 +304,19 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           payment_status: 'paid', // Payment succeeded since we reached this point
           extensions: {
             payment_intent_id: paymentIntentId,
-            shipping_cost: shippingOption?.cost || 0,
-            tax_amount: Math.round((taxAmount || 0) * 100), // Convert to cents
-            subtotal: Math.round(subtotal * 100), // Convert to cents
+            // BMC-164: shipping_cost is now MINOR units like subtotal/tax_amount
+            // (previously dollars — a mixed-unit bug). The admin order-detail
+            // reader still assumes shipping_cost is dollars; fixing that reader
+            // is Task 13, tracked separately.
+            shipping_cost: shippingCost,
+            tax_amount: tax,
+            subtotal: subtotal,
             // Gift card redeemed against this order (server enforces the balance)
             ...(giftCardApplied > 0 && appliedGiftCard
               ? {
                   gift_card: {
                     code: appliedGiftCard.code,
-                    amount: Math.round(giftCardApplied * 100), // cents
+                    amount: giftCardApplied, // integer minor units (cents)
                   },
                 }
               : {}),
@@ -416,7 +441,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
               </div>
               <div className="text-sm text-text-muted">
                 <p>{shippingOption.label}</p>
-                <p className="text-text-muted">${shippingOption.cost?.toFixed(2) || '0.00'} - {shippingOption.estimatedDays ? `${shippingOption.estimatedDays} business days` : 'Standard delivery'}</p>
+                <p className="text-text-muted">{Money.fromMinor(shippingOption.cost || 0, 'USD').format()} - {shippingOption.estimatedDays ? `${shippingOption.estimatedDays} business days` : 'Standard delivery'}</p>
               </div>
             </div>
           )}

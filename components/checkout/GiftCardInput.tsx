@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Loader2, Gift, X } from "lucide-react";
+import { Money } from "@/lib/money";
 
 interface GiftCardValidationResponse {
   valid: boolean;
@@ -41,7 +42,11 @@ export default function GiftCardInput() {
       const result: GiftCardValidationResponse = await response.json();
 
       if (result.valid && result.code && typeof result.balance === "number") {
-        applyGiftCard({ code: result.code, balance: result.balance / 100 });
+        // /api/gift-cards/validate returns balance in integer minor units
+        // (cents) — the card's stored balance, straight from the DB. Route
+        // through Money.fromStored for a defensive integer coercion rather
+        // than assuming the response is already a clean integer.
+        applyGiftCard({ code: result.code, balance: Money.fromStored(result.balance).toMinorUnits() });
         setCode("");
         setError(null);
       } else {
@@ -70,7 +75,7 @@ export default function GiftCardInput() {
               {appliedGiftCard.code}
             </span>
             <span className="text-xs text-secondary-600">
-              (${appliedGiftCard.balance.toFixed(2)} available)
+              ({Money.fromMinor(appliedGiftCard.balance, "USD").format()} available)
             </span>
           </div>
           <Button

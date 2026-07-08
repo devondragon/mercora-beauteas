@@ -45,15 +45,18 @@ export default function DiscountCodeInput() {
     setError(null);
 
     try {
-      // Calculate cart subtotal for validation
+      // Calculate cart subtotal for validation. Cart store items already hold
+      // integer minor units (cents) — /api/validate-discount also operates in
+      // cents (its promotion conditions/amounts are stored that way), so no
+      // conversion is needed at this boundary.
       const cartSubtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
+
       // Prepare cart items for validation
       const cartItems = items.map(item => ({
         productId: item.productId,
         categories: [], // We'd need to fetch product details for this, skipping for now
         quantity: item.quantity,
-        price: item.price * 100, // Convert to cents
+        price: item.price, // already integer minor units (cents)
       }));
 
       const response = await fetch("/api/validate-discount", {
@@ -63,7 +66,7 @@ export default function DiscountCodeInput() {
         },
         body: JSON.stringify({
           code: code.trim(),
-          cartSubtotal: cartSubtotal * 100, // Convert to cents
+          cartSubtotal, // already integer minor units (cents)
           cartItems,
         }),
       });
@@ -71,7 +74,8 @@ export default function DiscountCodeInput() {
       const result: DiscountValidationResponse = await response.json();
 
       if (result.valid && result.promotion) {
-        let discountAmount = result.promotion.discountAmount / 100; // Convert back to dollars
+        // discountAmount is already integer minor units (cents); AppliedDiscount.amount is documented as such.
+        let discountAmount = result.promotion.discountAmount;
         
         // Handle special case for free shipping (100% shipping discount)
         if (result.promotion.type === 'shipping' && result.promotion.discountValue === 100) {

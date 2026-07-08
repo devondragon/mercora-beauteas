@@ -5,10 +5,12 @@ import DiscountCodeInput from "./DiscountCodeInput";
 import GiftCardInput from "./GiftCardInput";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { stateStyles } from "@/lib/ui/state-styles";
+import { Money } from "@/lib/money";
 
 interface Props {
   items: CartItem[];
   shippingOption?: ShippingOption;
+  /** integer minor units (e.g. cents) */
   taxAmount: number;
   showDiscountInput?: boolean;
 }
@@ -65,40 +67,40 @@ export default function OrderSummary({
 
       <div className="flex justify-between text-sm">
         <span>Subtotal</span>
-        <span>${subtotal.toFixed(2)}</span>
+        <span>{Money.fromMinor(subtotal, "USD").format()}</span>
       </div>
-      
+
       {/* Cart Discounts */}
       {cartDiscounts.map((discount) => (
         <div key={discount.promotionId} className={`flex justify-between text-sm ${stateStyles.savings}`}>
           <span>{discount.displayName}</span>
-          <span>-${discount.amount.toFixed(2)}</span>
+          <span>-{Money.fromMinor(discount.amount, "USD").format()}</span>
         </div>
       ))}
-      
+
       <div className="flex justify-between text-sm">
         <span>Shipping</span>
-        <span>${shippingCost.toFixed(2)}</span>
+        <span>{Money.fromMinor(shippingCost, "USD").format()}</span>
       </div>
-      
+
       {/* Shipping Discounts */}
       {shippingDiscounts.map((discount) => (
         <div key={discount.promotionId} className={`flex justify-between text-sm ${stateStyles.savings}`}>
           <span>{discount.displayName}</span>
-          <span>-${discount.amount.toFixed(2)}</span>
+          <span>-{Money.fromMinor(discount.amount, "USD").format()}</span>
         </div>
       ))}
-      
+
       <div className="flex justify-between text-sm">
         <span>Tax</span>
-        <span>${taxAmount.toFixed(2)}</span>
+        <span>{Money.fromMinor(taxAmount, "USD").format()}</span>
       </div>
 
       {/* Gift card tender */}
       {giftCardApplied > 0 && appliedGiftCard && (
         <div className="flex justify-between text-sm text-secondary-600">
           <span>Gift Card ({appliedGiftCard.code})</span>
-          <span>-${giftCardApplied.toFixed(2)}</span>
+          <span>-{Money.fromMinor(giftCardApplied, "USD").format()}</span>
         </div>
       )}
 
@@ -106,7 +108,7 @@ export default function OrderSummary({
 
       <div className="flex justify-between font-semibold">
         <span>{giftCardApplied > 0 ? "Total Due" : "Total"}</span>
-        <span>${total.toFixed(2)}</span>
+        <span>{Money.fromMinor(total, "USD").format()}</span>
       </div>
     </div>
   );

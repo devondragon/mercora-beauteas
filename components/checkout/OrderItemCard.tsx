@@ -1,5 +1,6 @@
 import Image from "next/image";
 import type { CartItem } from "@/lib/types/cartitem";
+import { Money } from "@/lib/money";
 
 interface OrderItemCardProps {
   item: CartItem;
@@ -23,12 +24,12 @@ export default function OrderItemCard({ item }: OrderItemCardProps) {
       <div className="flex-1">
         <div className="font-medium text-sm leading-tight">{item.name}</div>
         <div className="text-xs text-text-muted">
-          {item.quantity} × ${item.price.toFixed(2)}
+          {item.quantity} × {Money.fromMinor(item.price, "USD").format()}
         </div>
       </div>
 
       <div className="text-sm font-medium text-right min-w-[64px]">
-        ${(item.price * item.quantity).toFixed(2)}
+        {Money.fromMinor(item.price * item.quantity, "USD").format()}
       </div>
     </div>
   );
