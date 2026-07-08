@@ -223,7 +223,7 @@ export class CloudflareStripe {
   async createPaymentIntent(params: {
     amount: number;
     currency: string;
-    automatic_payment_methods?: { enabled: boolean };
+    automatic_payment_methods?: { enabled: boolean; allow_redirects?: 'always' | 'never' };
     metadata?: Record<string, string>;
     shipping?: any;
     description?: string;
@@ -308,7 +308,7 @@ export const getStripeClient = (): StripeServer | CloudflareStripe => {
 export const createPaymentIntent = async (params: {
   amount: number;
   currency: string;
-  automatic_payment_methods?: { enabled: boolean };
+  automatic_payment_methods?: { enabled: boolean; allow_redirects?: 'always' | 'never' };
   metadata?: Record<string, string>;
   shipping?: any;
   description?: string;
