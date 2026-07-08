@@ -193,7 +193,30 @@ export async function POST(request: NextRequest) {
     const orderId = providedId || `WEB-${safeUserId}-${now}`;
 
     const db = await getDbAsync();
-    
+
+    // Idempotency (BMC-165): an order id is created exactly once. A redirect
+    // payment-method customer returning to /checkout/success (and possibly
+    // refreshing), or an inline double-submit, can POST the same order_id again.
+    // Return success instead of failing on the primary-key insert — and
+    // short-circuit before re-sending the confirmation email or re-running
+    // gift-card fulfillment. Payment state is owned by the original creation +
+    // the Stripe webhook, so we never re-touch it here.
+    const alreadyCreated = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (alreadyCreated.length > 0) {
+      // SECURITY: authenticated ids are already namespace-bound to the caller
+      // above, but guest orders share the WEB-GUEST-<ts> namespace, so a
+      // guessed id must NOT hand back another guest's order. Confirm ownership
+      // before responding, and never echo the persisted order (it carries the
+      // shipping address / email / line items) — return only the id.
+      if (!callerOwnsExistingOrder(alreadyCreated[0], userId, body)) {
+        return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
+      }
+      return NextResponse.json(
+        { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
+        { status: 200 }
+      );
+    }
+
     // Handle customer_id - ensure there's a valid customer record or null for guest orders
     let customerId = userId || body.customer_id || null;
     if (customerId === "guest") {
@@ -335,8 +358,30 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString()
     };
 
-    // Create the order
-    const [newOrder] = await db.insert(orders).values(machOrder).returning();
+    // Create the order. The pre-check above handles the common idempotent case;
+    // this catch closes the concurrent-insert race (two redirect returns, or a
+    // return racing a refresh) where both pass the pre-check and one loses the
+    // primary-key insert. On a duplicate-id violation, return the row the winner
+    // wrote rather than a spurious 400.
+    let newOrder: typeof orders.$inferSelect;
+    try {
+      [newOrder] = await db.insert(orders).values(machOrder).returning();
+    } catch (insertError) {
+      const raced = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      // Reaching here means the pre-check found no order but the insert lost a
+      // PK race — i.e. this same request's id was concurrently created. Same
+      // ownership + no-PII-echo rules as the pre-check apply.
+      if (raced.length > 0 && callerOwnsExistingOrder(raced[0], userId, body)) {
+        return NextResponse.json(
+          { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
+          { status: 200 }
+        );
+      }
+      if (raced.length > 0) {
+        return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
+      }
+      throw insertError;
+    }
 
 
     // Send order confirmation email (MACH-compliant)
@@ -619,6 +664,49 @@ export async function PUT(request: NextRequest) {
       { error: 'Failed to update order' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Ownership gate for the idempotent-create path (BMC-165 security follow-up).
+ *
+ * An existing order is only returned to a re-POST if the caller can prove they
+ * own it — never on id-guess alone (guest orders share the WEB-GUEST-<ts>
+ * namespace). Ownership is proven by EITHER:
+ *   - the authenticated Clerk user matching the order's customer_id, OR
+ *   - possession of the order's PaymentIntent id (a long, unguessable `pi_...`
+ *     the legitimate /checkout/success snapshot always carries) matching the
+ *     one stored on the order.
+ * Guest orders have no customer_id, so the PaymentIntent-id proof is what makes
+ * a guest's own redirect-return re-POST succeed while a guessed id fails.
+ */
+function callerOwnsExistingOrder(
+  existing: typeof orders.$inferSelect,
+  userId: string | null,
+  body: CreateOrderRequest
+): boolean {
+  if (userId && existing.customer_id === userId) return true;
+
+  const incomingPi = (body.extensions as any)?.payment_intent_id;
+  if (typeof incomingPi !== 'string' || incomingPi.length === 0) return false;
+
+  const rawExt = existing.extensions;
+  const existingExt = rawExt
+    ? (typeof rawExt === 'string' ? safeParse(rawExt) : rawExt)
+    : null;
+  const existingPi = existingExt && typeof existingExt === 'object'
+    ? (existingExt as any).payment_intent_id
+    : undefined;
+
+  return typeof existingPi === 'string' && existingPi.length > 0 && existingPi === incomingPi;
+}
+
+/** JSON.parse that returns null instead of throwing on malformed input. */
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 

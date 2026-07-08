@@ -40,6 +40,12 @@ import OrderConfirmationModal from './OrderConfirmationModal';
 import type { Address, ShippingOption } from '@/lib/types';
 import type { CartItem } from '@/lib/types/cartitem';
 import { Money } from '@/lib/money';
+import { buildCreateOrderBody, savePendingOrder, clearPendingOrder } from '@/lib/checkout/order-payload';
+
+/** Derive the PaymentIntent id from its client secret (`pi_x_secret_y` → `pi_x`). */
+function paymentIntentIdFromSecret(clientSecret: string): string {
+  return clientSecret.split('_secret')[0];
+}
 
 /**
  * `/api/shipping-options`, `/api/tax`, and `/api/payment-intent` are not part
@@ -264,69 +270,51 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       setClientSecret(data.clientSecret);
       setCurrentStep('payment');
 
+      // Stash the exact order body BEFORE the customer can start a redirect-based
+      // payment (Klarna / Cash App Pay / Amazon Pay). Those methods navigate away
+      // from this page, so handlePaymentSuccess never runs — /checkout/success
+      // reads this snapshot back and creates the order on return. Card / Link pay
+      // inline (redirect: 'if_required') and clear this snapshot in
+      // handlePaymentSuccess, so it's only ever consumed by an actual redirect.
+      const snapshotTotals = calculateTotals();
+      savePendingOrder(
+        buildCreateOrderBody({
+          orderId: newOrderId,
+          paymentIntentId: paymentIntentIdFromSecret(data.clientSecret),
+          items,
+          shippingAddress,
+          shippingOption: selectedShippingOption,
+          appliedGiftCard,
+          totals: snapshotTotals,
+        })
+      );
+
     } catch (err: unknown) {
       throw err;
     }
   };
 
-  // Handle successful payment
+  // Handle successful payment (inline card / Link path — redirect: 'if_required'
+  // resolved on the page). Redirect methods finalize on /checkout/success instead.
   const handlePaymentSuccess = async (paymentIntentId: string) => {
     try {
       // Cart store totals are canonical (integer minor units) — recompute
-      // against final state rather than re-deriving from scratch here.
-      const { subtotal, shippingCost, tax, giftCardApplied, totalBeforeGiftCard } = calculateTotals();
-
-      // Submit order with payment intent ID to unified orders endpoint.
-      // Every money field below is integer minor units (Money.toJSON() shape) —
-      // no *100, values are already cents from the cart store.
+      // against final state rather than re-deriving from scratch here. The
+      // shared builder shapes the identical body used by the redirect path.
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_id: orderId, // keep order id consistent with payment-intent metadata
-          items: items.map(item => ({
-            product_id: item.productId,
-            variant_id: item.variantId,
-            sku: `${item.productId}-${item.variantId || 'default'}`, // Generate a simple SKU
-            quantity: item.quantity,
-            unit_price: Money.fromMinor(item.price, 'USD').toJSON(),
-            total_price: Money.fromMinor(item.price, 'USD').times(item.quantity).toJSON(),
-            product_name: item.name, // This now includes variant info like "Vivid Mission Pack - Regular"
-            // Carry gift-card recipient details through to fulfillment
-            ...(item.giftCard ? { gift_card: item.giftCard } : {}),
-          })),
-          // Server contract (lib/services/gift-card-fulfillment.ts): order
-          // total_amount is the PRE-gift-card value — the server subtracts
-          // the gift card itself when computing the expected Stripe charge.
-          // The actual amount charged to the card is the POST-gift-card
-          // `amountDue` sent to /api/payment-intent above.
-          total_amount: Money.fromMinor(totalBeforeGiftCard, 'USD').toJSON(),
-          currency_code: 'USD',
-          shipping_address: shippingAddress,
-          billing_address: shippingAddress, // Use same as shipping for now
-          shipping_method: shippingOption?.label || 'standard',
-          payment_method: 'stripe',
-          payment_status: 'paid', // Payment succeeded since we reached this point
-          extensions: {
-            payment_intent_id: paymentIntentId,
-            // BMC-164: shipping_cost is MINOR units like subtotal/tax_amount
-            // (previously dollars — a mixed-unit bug). The admin order-detail
-            // reader parses these via Money.fromMinor/fromStored (minor units),
-            // so writer and reader now agree.
-            shipping_cost: shippingCost,
-            tax_amount: tax,
-            subtotal: subtotal,
-            // Gift card redeemed against this order (server enforces the balance)
-            ...(giftCardApplied > 0 && appliedGiftCard
-              ? {
-                  gift_card: {
-                    code: appliedGiftCard.code,
-                    amount: giftCardApplied, // integer minor units (cents)
-                  },
-                }
-              : {}),
-          }
-        }),
+        body: JSON.stringify(
+          buildCreateOrderBody({
+            orderId,
+            paymentIntentId,
+            items,
+            shippingAddress,
+            shippingOption,
+            appliedGiftCard,
+            totals: calculateTotals(),
+          })
+        ),
       });
 
       if (!res.ok) {
@@ -336,9 +324,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
       await res.json();
 
+      // Order created inline — the redirect snapshot is now moot; drop it so a
+      // later /checkout/success visit can't re-post a stale body.
+      clearPendingOrder();
+
       // Clear cart immediately after successful order creation
       clearCart();
-      
+
       // Show confirmation
       setCurrentStep('confirmation');
 

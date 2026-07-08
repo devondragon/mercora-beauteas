@@ -216,7 +216,10 @@ export async function createAgentPaymentIntent(
     const paymentIntent = await createPaymentIntent({
       amount: formatAmountForStripe(total),
       currency: 'usd',
-      automatic_payment_methods: { enabled: true },
+      // Headless agent flow: no browser is present to complete a redirect, so
+      // restrict Stripe to non-redirect methods. Enabling redirect methods
+      // would require a return_url at confirmation that an agent can't satisfy.
+      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
       // Binding: place_order requires BOTH to match the authenticated caller.
       metadata: { agentId, sessionId },
       description: `BeauTeas MCP order — agent ${agentId}`,

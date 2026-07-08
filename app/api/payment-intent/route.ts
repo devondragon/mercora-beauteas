@@ -212,6 +212,12 @@ export async function POST(req: NextRequest) {
       currency: 'usd',
       automatic_payment_methods: {
         enabled: true,
+        // Redirect-based methods (Klarna, Cash App Pay, Amazon Pay) are allowed:
+        // PaymentForm confirms with a real return_url (/checkout/success) that
+        // finalizes the order on return (BMC-165). Card / Link still pay inline
+        // via redirect: 'if_required'. (The MCP/agent flow stays 'never' — a
+        // headless agent has no browser to complete a redirect.)
+        allow_redirects: 'always',
       },
       metadata: {
         orderId,

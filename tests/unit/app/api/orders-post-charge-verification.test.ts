@@ -84,9 +84,20 @@ const ORDER_ID = 'WEB-GUEST-1000';
 let insertedRows: any[] = [];
 // Captures every db.update(orders).set(row) payload (used to detect H1 revert).
 let updatedRows: any[] = [];
+// Rows the idempotency pre-check (select ... where id = orderId) should return.
+// Default empty: the order does not exist yet, so POST proceeds to insert.
+let existingOrderRows: any[] = [];
 
 function makeDb() {
   return {
+    // BMC-165 idempotency pre-check: db.select().from(orders).where(id).limit(1).
+    select: vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockImplementation(() => ({
+          limit: vi.fn().mockResolvedValue(existingOrderRows),
+        })),
+      })),
+    })),
     insert: vi.fn().mockImplementation(() => ({
       values: vi.fn().mockImplementation((row: any) => {
         insertedRows.push(row);
@@ -134,6 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   insertedRows = [];
   updatedRows = [];
+  existingOrderRows = [];
   vi.mocked(getDbAsync).mockResolvedValue(makeDb() as any);
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
@@ -217,5 +229,68 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
     // materialized — it is reverted to pending via a follow-up update.
     const revert = updatedRows.find((r) => r.payment_status === 'pending' || r.status === 'pending');
     expect(revert).toBeTruthy();
+  });
+
+  it('BMC-165 idempotency: an owner re-POST (matching PaymentIntent id) returns 200, id only, no insert/re-verify', async () => {
+    // The redirect (Klarna/Cash App/Amazon Pay) return page can POST the same
+    // order_id again — e.g. the shopper refreshes /checkout/success, or the
+    // return races the Stripe webhook. Ownership is proven here by the matching
+    // PaymentIntent id (orderBody() default extensions.payment_intent_id).
+    existingOrderRows = [
+      {
+        id: ORDER_ID,
+        customer_id: null, // guest order
+        status: 'processing',
+        payment_status: 'paid',
+        total_amount: { amount: 2500, currency: 'USD' },
+        currency_code: 'USD',
+        items: [],
+        shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
+        billing_address: null,
+        extensions: { payment_intent_id: 'pi_test_1' },
+      },
+    ];
+
+    const res = await POST(postRequest(orderBody()));
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as any;
+    expect(json.meta.idempotent).toBe(true);
+    // Response echoes ONLY the id — never the persisted order's PII.
+    expect(json.data).toEqual({ id: ORDER_ID });
+    expect(JSON.stringify(json)).not.toContain('Private Rd');
+    expect(JSON.stringify(json)).not.toContain('jane@example.com');
+    // No second row written, and payment state is never re-touched.
+    expect(insertedRows).toHaveLength(0);
+    expect(retrievePaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('BMC-165 IDOR: a guessed order id from a non-owner returns 409 and leaks no order PII', async () => {
+    // Guest orders share the WEB-GUEST-<ts> namespace, so a guessed id must not
+    // hand back someone else's order. Caller is a guest (userId null) whose
+    // PaymentIntent id does NOT match the stored order's.
+    existingOrderRows = [
+      {
+        id: ORDER_ID,
+        customer_id: 'user_victim',
+        status: 'processing',
+        payment_status: 'paid',
+        total_amount: { amount: 2500, currency: 'USD' },
+        currency_code: 'USD',
+        items: [{ product_name: 'Secret Item' }],
+        shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
+        billing_address: null,
+        extensions: { payment_intent_id: 'pi_victim_secret' },
+      },
+    ];
+
+    const res = await POST(postRequest(orderBody({ extensions: { payment_intent_id: 'pi_attacker_guess' } })));
+    expect(res.status).toBe(409);
+
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain('Private Rd');
+    expect(body).not.toContain('jane@example.com');
+    expect(body).not.toContain('Secret Item');
+    expect(insertedRows).toHaveLength(0);
   });
 });
