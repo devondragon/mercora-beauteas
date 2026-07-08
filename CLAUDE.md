@@ -234,6 +234,9 @@ docs/                   # architecture & integration docs
 - **Secrets:** `.dev.vars` / `.env.local` locally; `wrangler secret put … --env <env>` for deployed envs. Never commit secrets or pass them as CLI args.
 - **Run `npm run lint`** before considering work done. There is **no automated test framework** yet (manual verification only).
 
+### Money & Pricing
+All monetary values flow through `lib/money` (`Money`). Internal unit is **integer minor units**; use `Money.fromMinor/fromMajor/fromStored`. Emit MACH `{amount, currency, precision}` via `.toMach()` ONLY at API/MCP/JSON-LD boundaries; use `.toMinorUnits()` at the Stripe boundary; persist via `.toJSON()` (minor units); display via `.format()`. Never write raw `*100`/`/100`. See [`docs/money.md`](docs/money.md).
+
 ---
 
 ## Cutover Status
