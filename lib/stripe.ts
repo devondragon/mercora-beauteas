@@ -30,6 +30,7 @@
 
 import { loadStripe as loadStripeLib, Stripe } from '@stripe/stripe-js';
 import StripeServer from 'stripe';
+import { Money } from '@/lib/money';
 
 // Workers-compatible crypto provider for webhook signature verification
 const cryptoProvider = StripeServer.createSubtleCryptoProvider();
@@ -382,17 +383,26 @@ export const stripeConfig = {
 /**
  * Utility function to format amounts for Stripe
  * Stripe requires amounts in cents (smallest currency unit)
+ *
+ * Callers currently operate in major units (dollars); this stays a
+ * dollars-in/cents-out helper, but the conversion arithmetic is routed
+ * through Money instead of a raw `* 100` so it can't drift from the
+ * Money type's rounding rules.
  */
 export const formatAmountForStripe = (amount: number): number => {
-  return Math.round(amount * 100);
+  return Money.fromMajor(amount, 'USD').toMinorUnits();
 };
 
 /**
  * Utility function to format amounts from Stripe
  * Converts cents back to dollars
+ *
+ * Callers currently operate in major units (dollars); this stays a
+ * cents-in/dollars-out helper, but the conversion arithmetic is routed
+ * through Money instead of a raw `/ 100`.
  */
 export const formatAmountFromStripe = (amount: number): number => {
-  return amount / 100;
+  return Money.fromMinor(Math.round(amount), 'USD').toMach().amount;
 };
 
 /**
