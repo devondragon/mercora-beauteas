@@ -19,10 +19,12 @@ application), so multiplications and divisions never accumulate IEEE-754
 float error. Rounding is **half-up** to the nearest minor unit everywhere
 (`Big.roundHalfUp`), including in `Money.fromMajor()` and `Money.applyRate()`.
 
-`Money` instances are currency-aware: `add`/`subtract`/comparisons all throw
-`Currency mismatch: X vs Y` if the two operands don't share a currency
-(`#assertSameCurrency`), so a subtotal in USD can never be silently summed
-with a tax line accidentally tagged EUR.
+`Money` instances are currency-aware: `add`, `subtract`, and the comparison
+operators (`gte`, `gt`, `lte`, `lt`) all throw `Currency mismatch: X vs Y` if
+the two operands don't share a currency (`#assertSameCurrency`), so a subtotal
+in USD can never be silently summed with a tax line accidentally tagged EUR.
+**Note:** `.equals()` does NOT throw on currency mismatch — it simply returns
+`false` if currencies differ, comparing both currency and amount.
 
 ## The four boundaries
 
@@ -85,6 +87,8 @@ BHD/KWD, defaulting to 2) and drives both `fromMajor()`'s scaling and
 `toMach()`'s `precision` field.
 
 ## Type-safety: `Money` (DB) vs `MachMoney` (wire) can't cross
+
+**Note:** This section discusses the `Money` stored-shape **TYPE** in `lib/types/money.ts`, which is distinct from the `Money` value-object **CLASS** imported from `@/lib/money` (see [The core rule](#the-core-rule) above).
 
 `lib/types/money.ts` declares the persisted/DB-facing shape:
 
