@@ -102,6 +102,11 @@ export type CreateOrderBody = ReturnType<typeof buildCreateOrderBody>;
 const PENDING_ORDER_PREFIX = 'beauteas.pendingOrder.';
 // Cap retained snapshots so abandoned redirect attempts don't grow unbounded.
 const MAX_PENDING_ORDERS = 10;
+// A snapshot carries PII (shipping address / name / email). A redirect
+// round-trip completes in minutes, so expire snapshots well before then in
+// wall-clock terms — this bounds how long abandoned PII lingers on a shared
+// machine rather than relying on the count cap alone.
+const PENDING_ORDER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 /**
  * A stashed order body plus the payment-intent id it belongs to. `orderId` is
@@ -159,6 +164,15 @@ export function loadPendingOrder(paymentIntentId: string): PendingOrder | null {
     if (parsed?.paymentIntentId !== paymentIntentId) return null;
     if (parsed?.body?.extensions?.payment_intent_id !== paymentIntentId) return null;
     if (!parsed?.body?.order_id) return null;
+    // Expire stale snapshots (bounds how long abandoned PII persists).
+    if (typeof parsed.savedAt === 'number' && Date.now() - parsed.savedAt > PENDING_ORDER_TTL_MS) {
+      try {
+        window.localStorage.removeItem(pendingKey(paymentIntentId));
+      } catch {
+        // ignore
+      }
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -175,9 +189,13 @@ export function clearPendingOrder(paymentIntentId: string): void {
   }
 }
 
-/** Drop the oldest snapshots beyond MAX_PENDING_ORDERS (abandoned attempts). */
+/**
+ * Best-effort hygiene: drop snapshots past the TTL (bounds abandoned-PII
+ * lifetime) and then the oldest beyond MAX_PENDING_ORDERS (bounds count).
+ */
 function prunePendingOrders(): void {
   try {
+    const now = Date.now();
     const entries: Array<{ key: string; savedAt: number }> = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
@@ -187,6 +205,11 @@ function prunePendingOrders(): void {
         savedAt = (JSON.parse(window.localStorage.getItem(key) || '{}') as PendingOrder).savedAt || 0;
       } catch {
         // Unparseable entry — treat as oldest so it's pruned first.
+      }
+      // Expired: remove immediately and don't count it toward the cap.
+      if (savedAt && now - savedAt > PENDING_ORDER_TTL_MS) {
+        window.localStorage.removeItem(key);
+        continue;
       }
       entries.push({ key, savedAt });
     }

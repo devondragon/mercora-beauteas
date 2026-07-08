@@ -92,15 +92,28 @@ describe('pending-order snapshot (keyed by PaymentIntent id)', () => {
   });
 
   it('prunes the oldest snapshots beyond the retention cap', () => {
-    let t = 1_000;
+    let t = 1_700_000_000_000; // realistic epoch ms so TTL logic stays sane
     const spy = vi.spyOn(Date, 'now').mockImplementation(() => (t += 1000));
     for (let i = 0; i < 12; i++) {
       savePendingOrder(buildCreateOrderBody(baseArgs({ paymentIntentId: `pi_${i}`, orderId: `WEB-GUEST-${i}` }) as any));
     }
-    spy.mockRestore();
+    // Freeze "now" just after the last save (well within TTL) for the loads.
+    spy.mockReturnValue(t);
     // 12 saved, cap 10 → the two oldest evicted, newest retained.
     expect(loadPendingOrder('pi_0')).toBeNull();
     expect(loadPendingOrder('pi_1')).toBeNull();
     expect(loadPendingOrder('pi_11')).not.toBeNull();
+    spy.mockRestore();
+  });
+
+  it('expires and purges a snapshot past its TTL (bounds abandoned PII)', () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    savePendingOrder(buildCreateOrderBody(baseArgs({ paymentIntentId: 'pi_old' }) as any));
+    // Advance past the 6h TTL.
+    spy.mockReturnValue(1_000_000 + 7 * 60 * 60 * 1000);
+    expect(loadPendingOrder('pi_old')).toBeNull();
+    // Stale entry is removed, not merely hidden.
+    expect(localStorage.getItem('beauteas.pendingOrder.pi_old')).toBeNull();
+    spy.mockRestore();
   });
 });

@@ -385,10 +385,15 @@ export async function POST(request: NextRequest) {
     try {
       [newOrder] = await db.insert(orders).values(machOrder).returning();
     } catch (insertError) {
+      // Only a duplicate-primary-key violation means the id was created
+      // concurrently (the idempotency race). Any other insert failure — e.g. a
+      // transient D1 error — must surface as a real error, never be masked as a
+      // duplicate just because some unrelated row happens to share this id.
+      if (!isUniqueConstraintError(insertError)) {
+        throw insertError;
+      }
       const raced = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-      // Reaching here means the pre-check found no order but the insert lost a
-      // PK race — i.e. this same request's id was concurrently created. Same
-      // ownership + no-PII-echo rules as the pre-check apply.
+      // Same ownership + no-PII-echo rules as the idempotency pre-check apply.
       if (raced.length > 0 && callerOwnsExistingOrder(raced[0], userId, body)) {
         return NextResponse.json(
           { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
@@ -717,6 +722,16 @@ function callerOwnsExistingOrder(
     : undefined;
 
   return typeof existingPi === 'string' && existingPi.length > 0 && existingPi === incomingPi;
+}
+
+/**
+ * True for a SQLite/D1 primary-key or unique-constraint violation. Used to
+ * distinguish an idempotency PK race (recoverable) from an unrelated insert
+ * failure (must propagate) in the order-create catch.
+ */
+function isUniqueConstraintError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /UNIQUE constraint failed|SQLITE_CONSTRAINT|constraint failed: orders\.id/i.test(msg);
 }
 
 /** JSON.parse that returns null instead of throwing on malformed input. */
