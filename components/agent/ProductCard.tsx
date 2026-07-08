@@ -3,17 +3,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { stateStyles } from "@/lib/ui/state-styles";
+import { Money } from "@/lib/money";
 
 export default function ProductCard({ product }: { product: any }) {
   // Extract primary image URL from the new product structure
   const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.svg";
-  
-  // Get price from first variant
+
+  // Get price from first variant (amount is integer minor units)
   const variant = product.variants?.[0];
   const price = variant?.price?.amount || 0;
+  const currency = variant?.price?.currency || "USD";
   const compareAtPrice = variant?.compare_at_price?.amount;
   const isOnSale = compareAtPrice && compareAtPrice > price;
-  const displayPrice = price / 100;
 
   // Get description from the new structure
   const description = typeof product.description === 'string' ? 
@@ -42,13 +43,13 @@ export default function ProductCard({ product }: { product: any }) {
           {isOnSale ? (
             <p className="text-xs mt-0.5">
               <span className={`${stateStyles.priceOriginal} mr-1`}>
-                ${(compareAtPrice / 100).toFixed(2)}
+                {Money.fromMinor(compareAtPrice, currency).format()}
               </span>
-              <span className={stateStyles.priceSale}>${displayPrice.toFixed(2)}</span>
+              <span className={stateStyles.priceSale}>{Money.fromMinor(price, currency).format()}</span>
             </p>
           ) : (
             <p className="text-xs font-medium text-text-primary mt-0.5">
-              ${displayPrice.toFixed(2)}
+              {Money.fromMinor(price, currency).format()}
             </p>
           )}
         </div>

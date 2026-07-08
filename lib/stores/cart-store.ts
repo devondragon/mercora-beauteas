@@ -43,6 +43,7 @@ import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
 import type { BillingInfo } from "@/lib/types/billing";
 import type { ShippingOption } from "@/lib/types/shipping";
+import { Money } from "@/lib/money";
 
 /**
  * Interface for applied discount information
@@ -52,18 +53,18 @@ export interface AppliedDiscount {
   code: string;
   type: "cart" | "product" | "shipping";
   description: string;
-  amount: number;
+  amount: number; // integer minor units (e.g. cents)
   displayName: string; // e.g., "20% Off", "Free Shipping", "$10 Off"
 }
 
 /**
  * A gift card applied as a payment tender at checkout.
- * `balance` is the full remaining balance (dollars, from the server); the amount
- * actually applied is computed dynamically against the order total.
+ * `balance` is the full remaining balance (integer minor units, from the server);
+ * the amount actually applied is computed dynamically against the order total.
  */
 export interface AppliedGiftCard {
   code: string;
-  balance: number; // dollars, full remaining balance
+  balance: number; // integer minor units, full remaining balance
 }
 
 /**
@@ -93,7 +94,7 @@ interface CartState {
   shippingOption?: ShippingOption;
   /** Payment and billing information */
   billingInfo?: BillingInfo;
-  /** Calculated tax amount for the order */
+  /** Calculated tax amount for the order, in integer minor units */
   taxAmount?: number;
 
   // === Cart Management Actions ===
@@ -105,7 +106,7 @@ interface CartState {
   updateQuantity: (variantId: string, quantity: number) => void;
   /** Clear all items from the cart */
   clearCart: () => void;
-  /** Calculate total price of all items in cart */
+  /** Calculate total price of all items in cart, in integer minor units */
   get total(): number;
 
   // === Discount Management Actions ===
@@ -124,14 +125,14 @@ interface CartState {
   /** Remove the applied gift card */
   removeGiftCard: () => void;
 
-  /** Calculate order totals with discounts and gift card applied */
+  /** Calculate order totals with discounts and gift card applied (all integer minor units) */
   calculateTotals: () => {
     subtotal: number;
     cartDiscount: number;
     shippingCost: number;
     shippingDiscount: number;
     tax: number;
-    /** Amount of the gift card applied against this order (dollars) */
+    /** Amount of the gift card applied against this order (integer minor units) */
     giftCardApplied: number;
     /** Order value before gift card tender (goods - discounts + shipping + tax) */
     totalBeforeGiftCard: number;
@@ -228,7 +229,7 @@ export const useCartStore = create<CartState>()(
       },
 
       /**
-       * Calculate total price of all items in cart
+       * Calculate total price of all items in cart, in integer minor units
        */
       get total() {
         const items = get().items;
@@ -319,10 +320,10 @@ export const useCartStore = create<CartState>()(
                 return { ...discount, amount: shippingCost * (percentage / 100) };
               }
             } else if (discount.displayName.includes('$')) {
-              // Fixed amount discount
+              // Fixed amount discount — displayName encodes a major-unit dollar figure (e.g. "$10 Off")
               const match = discount.displayName.match(/\$(\d+)/);
               if (match) {
-                const fixedAmount = parseInt(match[1]);
+                const fixedAmount = Money.fromMajor(match[1], 'USD').toMinorUnits();
                 return { ...discount, amount: Math.min(fixedAmount, shippingCost) };
               }
             }
@@ -352,7 +353,7 @@ export const useCartStore = create<CartState>()(
 
       /**
        * Calculate order totals with discounts and gift card applied
-       * Returns breakdown of all pricing components
+       * Returns breakdown of all pricing components, in integer minor units
        */
       calculateTotals: () => {
         const state = get();

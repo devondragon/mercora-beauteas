@@ -10,18 +10,20 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Gift } from "lucide-react";
+import { Money } from "@/lib/money";
 
-// Denominations mirror the seeded gift-card product variants.
+// Denominations mirror the seeded gift-card product variants. `amount` is
+// integer minor units (cents) — the cart store holds minor units end-to-end.
 const DENOMINATIONS = [
-  { variantId: "gift-card-25", amount: 25 },
-  { variantId: "gift-card-50", amount: 50 },
-  { variantId: "gift-card-100", amount: 100 },
+  { variantId: "gift-card-25", amount: Money.fromMajor(25, "USD").toMinorUnits() },
+  { variantId: "gift-card-50", amount: Money.fromMajor(50, "USD").toMinorUnits() },
+  { variantId: "gift-card-100", amount: Money.fromMajor(100, "USD").toMinorUnits() },
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function GiftCardPurchaseForm() {
-  const [amount, setAmount] = useState<number>(50);
+  const [amount, setAmount] = useState<number>(DENOMINATIONS[1].amount);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [message, setMessage] = useState("");
@@ -43,7 +45,7 @@ export default function GiftCardPurchaseForm() {
       // Use the stable seeded variant id so order/admin/analytics can join on it.
       // Non-merging is handled in the cart store (gift cards are never merged).
       variantId: denom.variantId,
-      name: `BeauTeas Gift Card - $${denom.amount}`,
+      name: `BeauTeas Gift Card - ${Money.fromMinor(denom.amount, "USD").format()}`,
       price: denom.amount,
       quantity: 1,
       primaryImageUrl: "/placeholder.svg",
@@ -55,7 +57,7 @@ export default function GiftCardPurchaseForm() {
     });
 
     toast("Gift card added to cart", {
-      description: `A $${denom.amount} gift card for ${recipientEmail.trim()} is ready at checkout.`,
+      description: `A ${Money.fromMinor(denom.amount, "USD").format()} gift card for ${recipientEmail.trim()} is ready at checkout.`,
       icon: "🎁",
       action: {
         label: "View Cart",
@@ -86,7 +88,7 @@ export default function GiftCardPurchaseForm() {
                   : "border-border-default text-text-secondary hover:border-secondary-400"
               }`}
             >
-              ${d.amount}
+              {Money.fromMinor(d.amount, "USD").format()}
             </button>
           ))}
         </div>

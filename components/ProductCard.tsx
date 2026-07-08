@@ -44,6 +44,7 @@ import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
+import { Money } from "@/lib/money";
 
 /**
  * Props interface for ProductCard component
@@ -77,8 +78,9 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   const defaultVariant: ProductVariant | undefined =
     variants.find((v) => v.id === product.default_variant_id) || variants[0];
 
-  // Price logic
+  // Price logic (amounts are integer minor units)
   const price = defaultVariant?.price?.amount ?? null;
+  const currency = defaultVariant?.price?.currency ?? "USD";
   const compareAt = defaultVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > (price ?? 0);
 
@@ -178,10 +180,10 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               {onSale && compareAt != null ? (
                 <div>
                   <span className={`${stateStyles.priceOriginal} mr-2`}>
-                    ${(compareAt / 100).toFixed(2)}
+                    {Money.fromMinor(compareAt, currency).format()}
                   </span>
                   <span className={stateStyles.priceSale}>
-                    ${(price / 100).toFixed(2)}
+                    {Money.fromMinor(price, currency).format()}
                   </span>
                   <span className={`ml-2 text-xs ${stateStyles.priceSale}`}>
                     On Sale
@@ -189,7 +191,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
                 </div>
               ) : (
                 <div className="text-text-primary font-semibold">
-                  ${(price / 100).toFixed(2)}
+                  {Money.fromMinor(price, currency).format()}
                 </div>
               )}
             </div>
