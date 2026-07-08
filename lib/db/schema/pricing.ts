@@ -130,14 +130,24 @@ export function serializePricing(pricing: Pricing): PricingInsert {
  */
 
 /**
- * Validate Money object structure
+ * Validate Money object structure.
+ *
+ * Guards the *stored* minor-unit shape (`{ amount, currency }`, as persisted
+ * in `pricing.list_price`/`sale_price` JSON columns and read back via
+ * `Money.fromStored`) — not the MACH wire shape (`MachMoney`), which also
+ * carries a required `precision` field and is validated separately at API/
+ * MCP boundaries (see `lib/money/money.ts`). `amount` must be a finite
+ * number (rejects `NaN`/`Infinity`, which `Money.fromStored`/`Money`'s
+ * integer invariant would otherwise choke on downstream) and `currency`
+ * must be a 3-character ISO 4217-shaped string.
  */
-export function isValidMoney(money: any): money is Money {
-  return typeof money === 'object' && 
-         money !== null && 
-         typeof money.amount === 'number' && 
-         typeof money.currency === 'string' &&
-         money.currency.length === 3;
+export function isValidMoney(money: unknown): money is Money {
+  return !!money &&
+         typeof money === 'object' &&
+         typeof (money as any).amount === 'number' &&
+         Number.isFinite((money as any).amount) &&
+         typeof (money as any).currency === 'string' &&
+         (money as any).currency.length === 3;
 }
 
 /**
