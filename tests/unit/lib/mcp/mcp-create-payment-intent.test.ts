@@ -13,6 +13,7 @@
  * runs in the jsdom unit env (CI `npm test`) without touching D1/Cloudflare.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Money } from '@/lib/money';
 
 vi.mock('@/lib/mcp/session', () => ({
   requireOwnedSession: vi.fn(),
@@ -75,7 +76,12 @@ beforeEach(() => {
   vi.mocked(requireOwnedSession).mockResolvedValue(ownedSessionWithCart());
   vi.mocked(computeCatalogSubtotalCents).mockResolvedValue({ subtotalCents: 2000, errors: [] } as any);
   vi.mocked(isStripeConfigured).mockReturnValue(true);
-  vi.mocked(computeOrderTotals).mockReturnValue({ subtotal: 20, shipping: 5, tax: 2, total: 27 });
+  vi.mocked(computeOrderTotals).mockReturnValue({
+    subtotal: Money.fromMajor(20, 'USD'),
+    shipping: Money.fromMajor(5, 'USD'),
+    tax: Money.fromMajor(2, 'USD'),
+    total: Money.fromMajor(27, 'USD'),
+  });
   vi.mocked(createPaymentIntent).mockResolvedValue({ id: 'pi_new', client_secret: 'cs_123' } as any);
 });
 
@@ -127,7 +133,12 @@ describe('create_payment_intent (BMC-132 / C5)', () => {
   });
 
   it('rejects a sub-$0.50 total (below the Stripe minimum)', async () => {
-    vi.mocked(computeOrderTotals).mockReturnValue({ subtotal: 0.2, shipping: 0, tax: 0, total: 0.2 });
+    vi.mocked(computeOrderTotals).mockReturnValue({
+      subtotal: Money.fromMajor(0.2, 'USD'),
+      shipping: Money.zero('USD'),
+      tax: Money.zero('USD'),
+      total: Money.fromMajor(0.2, 'USD'),
+    });
 
     const result = await createAgentPaymentIntent(baseRequest(), SESSION, AGENT);
 

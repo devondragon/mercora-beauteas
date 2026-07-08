@@ -48,6 +48,7 @@ import { ShoppingCart, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { Money } from "@/lib/money";
 
 /**
  * CartDrawer component providing shopping cart functionality
@@ -66,7 +67,7 @@ export default function CartDrawer() {
     setHasMounted(true);
   }, []);
 
-  // Calculate total price for all items in cart with safety checks
+  // Calculate total price for all items in cart with safety checks (integer minor units)
   const total = items.reduce(
     (acc, item) => acc + (item?.price || 0) * (item?.quantity || 0),
     0
@@ -135,7 +136,7 @@ export default function CartDrawer() {
 
               <div className="border-t border-border-default pt-4">
                 <div className="flex justify-between items-center text-lg font-bold">
-                  <span>Total: ${total.toFixed(2)}</span>
+                  <span>Total: {Money.fromMinor(total, "USD").format()}</span>
                 </div>
 
                 <Button

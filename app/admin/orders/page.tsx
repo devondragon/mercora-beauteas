@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { orderStatusConfig } from "@/lib/ui/status-styles";
+import { Money } from "@/lib/money";
 
 interface Order {
   id: string;
@@ -85,7 +86,9 @@ interface Order {
     product_id: string;
     product_name: string;
     quantity: number;
-    unit_price: number | { amount: number };
+    // BMC-164: post-Task 8, /api/orders always returns MACH wire money here —
+    // amount is in MAJOR units and currency is always present.
+    unit_price: number | { amount: number; currency?: string };
   }>;
   payment_method?: string;
   payment_status?: string;
@@ -97,9 +100,13 @@ interface Order {
   notes?: string;
   extensions?: {
     subtotal?: number;
-    shippingCost?: number;
-    taxAmount?: number;
-    discountAmount?: number;
+    // BMC-164 (final review fix): persisted key is snake_case, matching the
+    // CheckoutClient writer and app/admin/orders/[id]/page.tsx reader — the
+    // prior camelCase field names here never matched a real key, so these
+    // rows silently never rendered.
+    shipping_cost?: number;
+    tax_amount?: number;
+    discount_amount?: number;
     carrier?: string;
     trackingUrl?: string;
     email?: string;
@@ -247,13 +254,6 @@ export default function AdminOrdersPage() {
   const pendingOrdersCount = orders.filter(o => o.status === 'pending').length; // This is just for current page
   const shippedOrdersCount = orders.filter(o => o.status === 'shipped').length; // This is just for current page
 
-  const formatCurrency = (amount: number, currency: string = "USD") => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-    }).format(amount / 100);
-  };
-
   const generateTrackingUrl = (trackingNumber: string, carrier?: string) => {
     if (!trackingNumber) return null;
 
@@ -358,9 +358,9 @@ export default function AdminOrdersPage() {
             <div>
               <p className="text-sm text-text-secondary">Revenue</p>
               <p className="text-2xl font-bold text-text-primary">
-                {formatCurrency(orders.reduce((sum, order) =>
+                {Money.fromMajor(orders.reduce((sum, order) =>
                   sum + (order.total_amount?.amount || 0), 0
-                ))}
+                )).format()}
               </p>
             </div>
           </div>
@@ -455,7 +455,7 @@ export default function AdminOrdersPage() {
                     <div className="flex items-center space-x-3">
                       {getStatusBadge(order.status)}
                       <span className="text-lg font-semibold text-text-primary">
-                        {formatCurrency(order.total_amount.amount, order.currency_code)}
+                        {Money.fromMajor(order.total_amount.amount, order.total_amount.currency || order.currency_code).format()}
                       </span>
                       <div className="flex items-center space-x-2">
                         <Button
@@ -508,19 +508,17 @@ export default function AdminOrdersPage() {
                                 <div className="flex-1">
                                   <p className="text-text-primary text-sm">{item.product_name}</p>
                                   <p className="text-xs text-text-secondary">
-                                    {item.quantity} × {formatCurrency(
-                                      typeof item.unit_price === 'number'
-                                        ? item.unit_price
-                                        : item.unit_price.amount
-                                    )}
+                                    {item.quantity} × {Money.fromMajor(
+                                      typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount,
+                                      (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency
+                                    ).format()}
                                   </p>
                                 </div>
                                 <p className="text-text-primary font-medium text-sm">
-                                  {formatCurrency(
-                                    (typeof item.unit_price === 'number'
-                                      ? item.unit_price
-                                      : item.unit_price.amount) * item.quantity
-                                  )}
+                                  {Money.fromMajor(
+                                    typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount,
+                                    (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency
+                                  ).times(item.quantity).format()}
                                 </p>
                               </div>
                             ))}
@@ -531,30 +529,30 @@ export default function AdminOrdersPage() {
                             {order.extensions?.subtotal && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Subtotal:</span>
-                                <span className="text-text-primary">{formatCurrency(order.extensions.subtotal)}</span>
+                                <span className="text-text-primary">{Money.fromStored(order.extensions.subtotal).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.shippingCost && (
+                            {order.extensions?.shipping_cost && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Shipping:</span>
-                                <span className="text-text-primary">{formatCurrency(order.extensions.shippingCost)}</span>
+                                <span className="text-text-primary">{Money.fromStored(order.extensions.shipping_cost).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.taxAmount && (
+                            {order.extensions?.tax_amount && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Tax:</span>
-                                <span className="text-text-primary">{formatCurrency(order.extensions.taxAmount)}</span>
+                                <span className="text-text-primary">{Money.fromStored(order.extensions.tax_amount).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.discountAmount && (
+                            {order.extensions?.discount_amount && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Discount:</span>
-                                <span className="text-state-success">-{formatCurrency(order.extensions.discountAmount)}</span>
+                                <span className="text-state-success">-{Money.fromStored(order.extensions.discount_amount).format()}</span>
                               </div>
                             )}
                             <div className="flex justify-between text-base font-semibold border-t border-border-default pt-2">
                               <span className="text-text-primary">Total:</span>
-                              <span className="text-primary-600">{formatCurrency(order.total_amount.amount)}</span>
+                              <span className="text-primary-600">{Money.fromMajor(order.total_amount.amount, order.total_amount.currency).format()}</span>
                             </div>
                           </div>
                         </div>

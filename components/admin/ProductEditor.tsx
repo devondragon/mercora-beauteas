@@ -13,6 +13,26 @@ import { Checkbox } from "@/components/ui/checkbox";
 import Image from "next/image";
 import type { Product } from "@/lib/types";
 import { getImageDisplayPath, generateR2Filename } from "@/lib/utils/r2";
+import { Money } from "@/lib/money";
+
+/**
+ * Normalize a product variant's money fields from the API's MACH wire shape
+ * (decimal MAJOR units, emitted by toWireProduct) to the editor's internal
+ * stored/cents shape. The editor edits in cents (loadVariantData/
+ * saveCurrentVariantData) and the product write API persists cents, so the
+ * wire read-boundary value is converted exactly once on load — otherwise a
+ * major-unit amount is read as cents and every save corrupts the price 100x
+ * (BMC-164).
+ */
+function toStoredVariant(variant: any) {
+  if (!variant) return variant;
+  const toStored = (m: any) =>
+    m && m.amount != null ? Money.fromMajor(m.amount, m.currency ?? "USD").toJSON() : m;
+  const next = { ...variant, price: toStored(variant.price) };
+  if (variant.compare_at_price != null) next.compare_at_price = toStored(variant.compare_at_price);
+  if (variant.cost != null) next.cost = toStored(variant.cost);
+  return next;
+}
 
 interface ProductEditorProps {
   product: Product | null;
@@ -112,9 +132,11 @@ export default function ProductEditor({
 
   // Helper function to load variant data into form fields
   const loadVariantData = (variant: any) => {
-    setPrice(variant?.price?.amount ? (variant.price.amount / 100).toString() : "");
-    setCompareAtPrice(variant?.compare_at_price?.amount ? (variant.compare_at_price.amount / 100).toString() : "");
-    setCost(variant?.cost?.amount ? (variant.cost.amount / 100).toString() : "");
+    // Internal variant state is stored/cents shape (see toStoredVariant); the
+    // dollar input fields show major units via Money — never a raw /100.
+    setPrice(variant?.price?.amount ? String(Money.fromStored(variant.price).toMach().amount) : "");
+    setCompareAtPrice(variant?.compare_at_price?.amount ? String(Money.fromStored(variant.compare_at_price).toMach().amount) : "");
+    setCost(variant?.cost?.amount ? String(Money.fromStored(variant.cost).toMach().amount) : "");
     setSku(variant?.sku || "");
     setInventory(variant?.inventory?.quantity?.toString() || "");
     setWeight(variant?.weight?.value?.toString() || "");
@@ -200,9 +222,9 @@ export default function ProductEditor({
     
     updatedVariants[selectedVariantIndex] = {
       ...currentVariant,
-      price: price ? { amount: Math.round(parseFloat(price) * 100), currency: "USD" } : undefined,
-      compare_at_price: compareAtPrice ? { amount: Math.round(parseFloat(compareAtPrice) * 100), currency: "USD" } : undefined,
-      cost: cost ? { amount: Math.round(parseFloat(cost) * 100), currency: "USD" } : undefined,
+      price: price ? Money.fromMajor(price, "USD").toJSON() : undefined,
+      compare_at_price: compareAtPrice ? Money.fromMajor(compareAtPrice, "USD").toJSON() : undefined,
+      cost: cost ? Money.fromMajor(cost, "USD").toJSON() : undefined,
       sku: sku || undefined,
       inventory: inventory ? { quantity: parseInt(inventory) } : undefined,
       weight: weight ? { value: parseFloat(weight), unit: "lb" } : undefined,
@@ -350,13 +372,18 @@ export default function ProductEditor({
       const extensionsJson = product.extensions ? JSON.stringify(product.extensions, null, 2) : "";
       setExtensions(extensionsJson);
       
-      // Initialize variants
-      setVariants(product.variants || []);
+      // Initialize variants. Incoming variants carry MACH wire money (major
+      // units) from the API's toWireProduct boundary; normalize to the editor's
+      // internal cents shape once so loadVariantData / saveCurrentVariantData
+      // (and the cents-shaped PUT write path) stay consistent across variant
+      // switches (BMC-164 review fix).
+      const storedVariants = (product.variants || []).map(toStoredVariant);
+      setVariants(storedVariants);
       setSelectedVariantIndex(0);
-      
+
       // Load first variant data
-      if (product.variants && product.variants.length > 0) {
-        loadVariantData(product.variants[0]);
+      if (storedVariants.length > 0) {
+        loadVariantData(storedVariants[0]);
       } else {
         // No variants, reset variant fields
         resetVariantFields();
@@ -738,7 +765,7 @@ export default function ProductEditor({
         const defaultVariant = {
           id: `variant_${Date.now()}`,
           sku: sku || `SKU_${Date.now()}`,
-          price: price ? { amount: Math.round(parseFloat(price) * 100), currency: "USD" } : { amount: 0, currency: "USD" },
+          price: price ? Money.fromMajor(price, "USD").toJSON() : { amount: 0, currency: "USD" },
           option_values: [],
           inventory: inventory ? { quantity: parseInt(inventory) || 0, status: "in_stock" } : { quantity: 0, status: "out_of_stock" },
           status: "active" as const,

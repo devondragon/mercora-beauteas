@@ -1,6 +1,7 @@
 import { Product } from '../types';
 import { CartItem } from '../types/cartitem';
 import { MACHAddress as Address } from '../types/mach/Address';
+import type { MachMoney } from '../money';
 
 // Agent Context
 export interface AgentContext {
@@ -135,20 +136,24 @@ export interface AssessResponse {
   can_fulfill: string[];
   cannot_fulfill: string[];
   recommendations: Product[];
-  estimated_cost: number;
+  // MACH wire shape (BMC-164) — see lib/money/wire.ts toWireMoney.
+  estimated_cost: MachMoney;
   estimated_delivery: string;
 }
 
 export interface CartResponse {
   cart: CartItem[];
   total_items: number;
-  estimated_total: number;
+  // MACH wire shape (BMC-164) — see lib/money/wire.ts toWireMoney. CartItem.price
+  // stays cents internally; only this aggregate is wire-converted.
+  estimated_total: MachMoney;
 }
 
 export interface OrderResponse {
   orderId: string;
   status: string;
-  total: number;
+  // MACH wire shape (BMC-164) — see lib/money/wire.ts toWireMoney.
+  total: MachMoney;
   tracking_number?: string;
   estimated_delivery: string;
 }

@@ -4,7 +4,8 @@ import { getOrderById } from "@/lib/models/mach/orders";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { OrderItem } from "@/lib/types/order";
-import { formatDate, formatAddress, formatMoney } from "@/lib/utils/account";
+import { formatDate, formatAddress } from "@/lib/utils/account";
+import { Money } from "@/lib/money";
 
 export const metadata = {
   title: "Order Details - BeauTeas",
@@ -115,14 +116,14 @@ export default async function OrderDetailPage({
                 </p>
               </div>
               <p className="text-text-primary">
-                {formatMoney(item.unit_price || item.total_price)}
+                {Money.fromStored(item.unit_price || item.total_price).format()}
               </p>
             </div>
           ))}
         </div>
         <div className="mt-4 pt-3 border-t border-border-default flex justify-between font-semibold">
           <span>Total</span>
-          <span className="text-state-success">{formatMoney(order.total_amount)}</span>
+          <span className="text-state-success">{Money.fromStored(order.total_amount).format()}</span>
         </div>
       </div>
 

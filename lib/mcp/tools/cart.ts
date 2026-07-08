@@ -3,6 +3,12 @@ import { getProductBySlug } from '../../models/mach/products';
 import { CartRequest, CartResponse, MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
 import { ritualBundleSuggestions } from '../catalog';
+import { Money, toWireMoney } from '../../money';
+
+// Wire-shaped zero total, reused for every failure/empty-cart response
+// (BMC-164) — CartResponse.estimated_total is MACH { amount, currency,
+// precision }, not a bare cents number.
+const ZERO_ESTIMATED_TOTAL = toWireMoney(0);
 
 function cartOwnershipError(
   ownership: { code: 'SESSION_NOT_FOUND' | 'SESSION_ACCESS_DENIED'; message: string },
@@ -12,7 +18,7 @@ function cartOwnershipError(
 ): MCPToolResponse<CartResponse> {
   return {
     success: false,
-    data: { cart: [], total_items: 0, estimated_total: 0 },
+    data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
     context: {
       session_id: sessionId,
       agent_id: agentId,
@@ -94,7 +100,7 @@ export async function addToCart(
       data: {
         cart: updatedCart,
         total_items: totalItems,
-        estimated_total: estimatedTotal
+        estimated_total: toWireMoney(estimatedTotal)
       },
       context: {
         session_id: sessionId,
@@ -116,7 +122,7 @@ export async function addToCart(
     
     return {
       success: false,
-      data: { cart: [], total_items: 0, estimated_total: 0 },
+      data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
       context: {
         session_id: sessionId,
         agent_id: agentId,
@@ -202,7 +208,7 @@ export async function bulkAddToCart(
       data: {
         cart: currentCart,
         total_items: totalItems,
-        estimated_total: estimatedTotal
+        estimated_total: toWireMoney(estimatedTotal)
       },
       context: {
         session_id: sessionId,
@@ -229,7 +235,7 @@ export async function bulkAddToCart(
     
     return {
       success: false,
-      data: { cart: [], total_items: 0, estimated_total: 0 },
+      data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
       context: {
         session_id: sessionId,
         agent_id: agentId,
@@ -265,7 +271,7 @@ export async function clearCart(
       data: {
         cart: [],
         total_items: 0,
-        estimated_total: 0
+        estimated_total: ZERO_ESTIMATED_TOTAL
       },
       context: {
         session_id: sessionId,
@@ -283,7 +289,7 @@ export async function clearCart(
     
     return {
       success: false,
-      data: { cart: [], total_items: 0, estimated_total: 0 },
+      data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
       context: {
         session_id: sessionId,
         agent_id: agentId,
@@ -339,7 +345,7 @@ export async function updateCart(
       data: {
         cart: updatedCart,
         total_items: totalItems,
-        estimated_total: estimatedTotal
+        estimated_total: toWireMoney(estimatedTotal)
       },
       context: {
         session_id: sessionId,
@@ -357,7 +363,7 @@ export async function updateCart(
     
     return {
       success: false,
-      data: { cart: [], total_items: 0, estimated_total: 0 },
+      data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
       context: {
         session_id: sessionId,
         agent_id: agentId,
@@ -402,7 +408,7 @@ export async function getCartEstimate(
       data: {
         cart,
         total_items: totalItems,
-        estimated_total: estimatedTotal
+        estimated_total: toWireMoney(estimatedTotal)
       },
       context: {
         session_id: sessionId,
@@ -420,7 +426,7 @@ export async function getCartEstimate(
     
     return {
       success: false,
-      data: { cart: [], total_items: 0, estimated_total: 0 },
+      data: { cart: [], total_items: 0, estimated_total: ZERO_ESTIMATED_TOTAL },
       context: {
         session_id: sessionId,
         agent_id: agentId,
@@ -444,18 +450,25 @@ function generateCartBundlingOpportunities(cart: CartItem[]): string[] {
 
 function generateCartOptimizations(cart: CartItem[], budget?: number): string[] {
   if (!budget) return [];
-  
+
   const optimizations: string[] = [];
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  
-  if (total > budget) {
-    optimizations.push(`Cart total $${total} exceeds budget $${budget}`);
+  // cart item prices are CENTS; budget (agent_context.userPreferences.budget)
+  // is a plain major-unit (dollars) number — compare/format both through
+  // Money instead of mixing units directly (BMC-164; this used to print
+  // cents with a "$" prefix, e.g. "Cart total $2999").
+  const total = Money.fromStored(
+    cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+  );
+  const budgetMoney = Money.fromMajor(budget);
+
+  if (total.gt(budgetMoney)) {
+    optimizations.push(`Cart total ${total.format()} exceeds budget ${budgetMoney.format()}`);
     optimizations.push('Consider reducing quantities or choosing our sample-size blends');
-  } else if (total < budget * 0.9) {
-    optimizations.push(`Budget allows for $${budget - total} in additional blends`);
+  } else if (total.lt(budgetMoney.applyRate(0.9))) {
+    optimizations.push(`Budget allows for ${budgetMoney.subtract(total).format()} in additional blends`);
     optimizations.push('Consider adding a premium blend or gift set within remaining budget');
   }
-  
+
   return optimizations;
 }
 

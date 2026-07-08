@@ -42,13 +42,6 @@ export function formatAddressInline(addr: { address?: MACHAddress | null } | nul
     .join(", ");
 }
 
-/** Format monetary amount. Expects `amount` in minor units (cents). */
-export function formatMoney(money?: { amount: number; currency_code?: string } | null): string {
-  if (!money) return "\u2014";
-  const symbol = money.currency_code === "USD" || !money.currency_code ? "$" : money.currency_code + " ";
-  return `${symbol}${(money.amount / 100).toFixed(2)}`;
-}
-
 export function getMediaUrl(media: { file?: { url?: string } } | string | null | undefined): string {
   if (!media) return "/placeholder.svg";
   if (typeof media === "string") return media;

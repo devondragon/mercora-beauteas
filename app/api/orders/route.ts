@@ -18,18 +18,17 @@ import {
   updateOrderStatus,
   updateOrderShipping 
 } from "@/lib/models/mach/orders";
-import { 
-  getOrdersByCustomerId, 
-  insertOrder
-} from "@/lib/models/order";
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData } from "@/lib/utils/email";
-import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
+import type { Order, OrderItem, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
 import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
+import { Money, toWireMoney } from "@/lib/money";
+import type { MachMoney } from "@/lib/money";
+import { buildOrderEmailTotals } from "@/lib/utils/order-email-totals";
 
 
 
@@ -90,9 +89,10 @@ export async function GET(request: NextRequest) {
     const total = filteredOrders.length;
     const paginatedOrders = filteredOrders.slice(offset, offset + limit);
     const hydratedOrders = paginatedOrders.map(hydrateOrder);
-    
+
     const response = {
-      data: hydratedOrders,
+      // BMC-164: MACH wire shape at the response boundary only.
+      data: hydratedOrders.map(toWireOrder),
       meta: {
         total,
         limit,
@@ -147,10 +147,14 @@ export async function POST(request: NextRequest) {
         details: [`items array must not exceed ${MAX_ORDER_LINE_ITEMS} lines`]
       }, { status: 400 });
     }
-    if (!body.total_amount || typeof body.total_amount.amount !== 'number') {
+    if (
+      !body.total_amount ||
+      typeof body.total_amount.amount !== 'number' ||
+      !Number.isInteger(body.total_amount.amount)
+    ) {
       return NextResponse.json({
         error: 'Validation failed',
-        details: ['total_amount is required and must be a Money object']
+        details: ['total_amount is required and must be a Money object with an integer minor-unit amount']
       }, { status: 400 });
     }
     if (!body.currency_code) {
@@ -313,7 +317,10 @@ export async function POST(request: NextRequest) {
       id: orderId,
       customer_id: customerId,
       status: paymentConfirmed ? 'processing' : 'pending',
-      total_amount: body.total_amount,
+      // Guarantee the persisted value is a clean integer-minor-unit Money
+      // shape, regardless of what the client sent (already validated above,
+      // but this also normalizes currency casing / strips extra fields).
+      total_amount: Money.fromStored(body.total_amount).toJSON(),
       currency_code: body.currency_code,
       shipping_address: body.shipping_address ?? null,
       billing_address: body.billing_address ?? null,
@@ -345,21 +352,44 @@ export async function POST(request: NextRequest) {
         customerName = shippingAddr.company;
       }
       const customerEmail = body.extensions?.email || shippingAddr?.email || '';
+      // BMC-143: every field below is MINOR units (cents), same contract as
+      // the persisted order (Money.toJSON() shape) — format through Money
+      // once here, then the email templates just render pre-formatted
+      // strings. Never .toFixed() a minor-unit number as if it were dollars.
+      const emailCurrency = body.currency_code || 'USD';
+      const orderTotalMinor = typeof body.total_amount === 'object' ? body.total_amount.amount : body.total_amount;
+      // BMC-164: checkout (components/checkout/CheckoutClient.tsx) writes
+      // extensions.shipping_cost / extensions.tax_amount (snake_case, minor
+      // units) — the previous camelCase shippingCost/taxAmount keys here
+      // never matched, so shipping/tax always rendered as $0.00.
+      const emailTotals = buildOrderEmailTotals({
+        subtotal: body.extensions?.subtotal || 0,
+        shipping: body.extensions?.shipping_cost || 0,
+        tax: body.extensions?.tax_amount || 0,
+        total: orderTotalMinor,
+        currency: emailCurrency,
+        // giftCardTenderCents is the server-verified (balance-capped) tender
+        // bound to a confirmed PaymentIntent, computed above — not the raw
+        // client-supplied extensions.gift_card.amount.
+        giftCardAmount: giftCardTenderCents,
+      });
       const orderData: OrderData = {
         orderNumber: orderId,
         customerName,
         customerEmail,
-        items: canonicalItems.map(item => ({
-          productId: item.product_id,
-          name: item.product_name,
-          price: typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price,
-          quantity: item.quantity,
-          imageUrl: (item as any).imageUrl || '',
-        })),
-        subtotal: body.extensions?.subtotal || 0,
-        shipping: body.extensions?.shippingCost || 0,
-        tax: body.extensions?.taxAmount || 0,
-        total: typeof body.total_amount === 'object' ? body.total_amount.amount : body.total_amount,
+        items: canonicalItems.map(item => {
+          const unitPriceMinor = typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price;
+          const unitPrice = Money.fromMinor(unitPriceMinor, emailCurrency);
+          return {
+            productId: item.product_id,
+            name: item.product_name,
+            price: unitPrice.format(),
+            lineTotal: unitPrice.times(item.quantity).format(),
+            quantity: item.quantity,
+            imageUrl: (item as any).imageUrl || '',
+          };
+        }),
+        ...emailTotals,
         shippingAddress: shippingAddr ? {
           street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
           city: typeof shippingAddr.city === 'string' ? shippingAddr.city : (shippingAddr.city ? Object.values(shippingAddr.city)[0] : ''),
@@ -436,7 +466,9 @@ export async function POST(request: NextRequest) {
     }
 
     const response = {
-      data: hydratedOrder,
+      // BMC-164: MACH wire shape at the response boundary only — gift-card
+      // fulfillment above already read/mutated hydratedOrder in cents.
+      data: toWireOrder(hydratedOrder),
       meta: {
         schema: "mach:order"
       }
@@ -573,7 +605,8 @@ export async function PUT(request: NextRequest) {
     });
 
     const response = {
-      data: hydrateOrder(updatedOrder),
+      // BMC-164: MACH wire shape at the response boundary only.
+      data: toWireOrder(hydrateOrder(updatedOrder)),
       meta: {
         schema: "mach:order"
       }
@@ -597,7 +630,11 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     id: dbOrder.id ?? undefined,
     customer_id: dbOrder.customer_id || undefined,
     status: dbOrder.status,
-    total_amount: typeof dbOrder.total_amount === 'string' ? JSON.parse(dbOrder.total_amount) : { amount: 0, currency: dbOrder.currency_code },
+    // dbOrder.total_amount is already parsed to an object by Drizzle's
+    // mode:"json" column — Money.fromStored handles object | JSON string |
+    // bare number so this reads the real persisted total instead of
+    // silently falling back to 0 (BMC-164 review follow-up).
+    total_amount: Money.fromStored(dbOrder.total_amount, dbOrder.currency_code).toJSON(),
     currency_code: dbOrder.currency_code,
     shipping_address: dbOrder.shipping_address ? (typeof dbOrder.shipping_address === 'string' ? JSON.parse(dbOrder.shipping_address) : dbOrder.shipping_address) : undefined,
     billing_address: dbOrder.billing_address ? (typeof dbOrder.billing_address === 'string' ? JSON.parse(dbOrder.billing_address) : dbOrder.billing_address) : undefined,
@@ -613,6 +650,44 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     extensions: dbOrder.extensions ? (typeof dbOrder.extensions === 'string' ? JSON.parse(dbOrder.extensions) : dbOrder.extensions) : undefined,
     created_at: dbOrder.created_at ?? undefined,
     updated_at: dbOrder.updated_at ?? undefined
+  };
+}
+
+/**
+ * MACH wire-shaped order line item / order (BMC-164 review follow-up).
+ * Structurally distinct from `OrderItem`/`Order` — money fields are
+ * `MachMoney` (decimal major units + required precision), not the internal
+ * cents-shaped `Money`. This lets `tsc` catch a wire value being fed back
+ * into a cents-typed sink (e.g. priceToCents() in lib/services/order-pricing.ts),
+ * which reusing `Order` as the return type could not.
+ */
+type WireOrderItem = Omit<OrderItem, 'unit_price' | 'total_price'> & {
+  unit_price: MachMoney;
+  total_price: MachMoney;
+};
+
+type WireOrder = Omit<Order, 'total_amount' | 'items'> & {
+  total_amount: MachMoney;
+  items: WireOrderItem[];
+};
+
+/**
+ * Convert a hydrated (internal, minor-unit/cents) Order to the MACH wire
+ * shape for API responses (BMC-164): total_amount and each line's
+ * unit_price/total_price become {amount, currency, precision} in major
+ * units via toWireMoney. Internal callers (gift-card fulfillment, email)
+ * keep reading the cents-based hydrateOrder() output untouched — this
+ * conversion is applied last, immediately before NextResponse.json().
+ */
+function toWireOrder(order: Order): WireOrder {
+  return {
+    ...order,
+    total_amount: toWireMoney(order.total_amount),
+    items: order.items?.map(item => ({
+      ...item,
+      unit_price: toWireMoney(item.unit_price),
+      total_price: toWireMoney(item.total_price),
+    })),
   };
 }
 

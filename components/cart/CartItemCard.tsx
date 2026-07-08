@@ -5,6 +5,7 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import type { CartItem } from "@/lib/types/cartitem";
 import { Button } from "@/components/ui/button";
 import { usePathname } from "next/navigation";
+import { Money } from "@/lib/money";
 
 interface CartItemCardProps {
   item: CartItem;
@@ -54,8 +55,8 @@ export default function CartItemCard({ item }: CartItemCardProps) {
           )}
         </div>
         <p className="text-xs sm:text-sm text-text-muted mt-1">
-          ${item.price.toFixed(2)} × {item.quantity} : $
-          {(item.price * item.quantity).toFixed(2)}
+          {Money.fromMinor(item.price, "USD").format()} × {item.quantity} : {" "}
+          {Money.fromMinor(item.price * item.quantity, "USD").format()}
         </p>
         {!isCheckoutPage && (
           <Button

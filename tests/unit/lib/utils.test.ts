@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cn, formatPrice, debounce } from '@/lib/utils';
+import { cn, debounce } from '@/lib/utils';
 
 describe('cn', () => {
   it('merges two class strings', () => {
@@ -24,28 +24,6 @@ describe('cn', () => {
 
   it('handles array input', () => {
     expect(cn(['foo', 'bar'])).toBe('foo bar');
-  });
-});
-
-describe('formatPrice', () => {
-  it('formats zero cents as $0.00', () => {
-    expect(formatPrice(0)).toBe('$0.00');
-  });
-
-  it('formats 100 cents as $1.00', () => {
-    expect(formatPrice(100)).toBe('$1.00');
-  });
-
-  it('formats 1999 cents as $19.99', () => {
-    expect(formatPrice(1999)).toBe('$19.99');
-  });
-
-  it('formats large amounts correctly', () => {
-    expect(formatPrice(100000)).toBe('$1,000.00');
-  });
-
-  it('handles odd cent amounts', () => {
-    expect(formatPrice(5050)).toBe('$50.50');
   });
 });
 

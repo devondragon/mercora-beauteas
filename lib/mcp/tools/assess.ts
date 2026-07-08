@@ -3,6 +3,7 @@ import { listCategories } from '../../models/mach/category';
 import { AssessRequest, AssessResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { ritualBundleSuggestions } from '../catalog';
+import { Money, toWireMoney } from '../../money';
 
 export async function assessFulfillmentCapability(
   request: AssessRequest,
@@ -61,12 +62,15 @@ export async function assessFulfillmentCapability(
       .flatMap(result => result.products)
       .slice(0, 10); // Limit recommendations
     
-    // Calculate estimated cost and delivery
-    const estimatedCost = recommendations.reduce((sum, product) => {
-      const price = product.variants?.[0]?.price || 0;
-      return sum + price;
-    }, 0);
-    
+    // Calculate estimated cost and delivery. product.variants[0].price is a
+    // stored Money object ({amount in cents, currency}) — summing it with `+`
+    // directly (the old code) coerced the object to NaN/string concatenation
+    // instead of adding amounts. Route through Money instead (BMC-164).
+    const estimatedCost = recommendations.reduce(
+      (sum, product) => sum.add(Money.fromStored(product.variants?.[0]?.price ?? 0)),
+      Money.zero('USD')
+    );
+
     const estimatedDelivery = calculateDeliveryEstimate(requirements.location, requirements.timeline);
     
     // Generate alternative site suggestions for items we can't fulfill
@@ -81,7 +85,7 @@ export async function assessFulfillmentCapability(
         can_fulfill: canFulfill,
         cannot_fulfill: cannotFulfill,
         recommendations,
-        estimated_cost: estimatedCost,
+        estimated_cost: estimatedCost.toMach(),
         estimated_delivery: estimatedDelivery
       },
       context: {
@@ -109,7 +113,7 @@ export async function assessFulfillmentCapability(
         can_fulfill: [],
         cannot_fulfill: request.requirements?.items || [],
         recommendations: [],
-        estimated_cost: 0,
+        estimated_cost: toWireMoney(0),
         estimated_delivery: 'Unknown'
       },
       context: {
@@ -175,18 +179,28 @@ function generateBundlingOpportunities(results: Array<{item: string, products: a
 
 function generateCostOptimizations(results: Array<{item: string, products: any[]}>, budget?: number): string[] {
   if (!budget) return [];
-  
+
   const optimizations: string[] = [];
+  // Budget is a plain major-unit (dollars) number; product prices are stored
+  // Money objects (cents). The old code took Math.min() over raw Money
+  // objects (always NaN) and compared it to a dollars budget — route both
+  // sides through Money instead (BMC-164).
+  const budgetMoney = Money.fromMajor(budget);
   const totalEstimated = results.reduce((sum, result) => {
-    const minPrice = Math.min(...result.products.map(p => p.variants?.[0]?.price || Infinity));
-    return sum + (minPrice === Infinity ? 0 : minPrice);
-  }, 0);
-  
-  if (totalEstimated > budget) {
+    const prices = result.products
+      .map(p => p.variants?.[0]?.price)
+      .filter((price: unknown) => price != null)
+      .map((price: unknown) => Money.fromStored(price));
+    if (prices.length === 0) return sum;
+    const minPrice = prices.reduce((min, p) => (p.lt(min) ? p : min));
+    return sum.add(minPrice);
+  }, Money.zero('USD'));
+
+  if (totalEstimated.gt(budgetMoney)) {
     optimizations.push('Consider base models instead of premium versions to stay within budget');
     optimizations.push('Look for bundle deals to reduce overall cost');
   }
-  
+
   return optimizations;
 }
 

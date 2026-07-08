@@ -33,6 +33,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
+import { Money } from "@/lib/money";
 
 // ---------- Types ----------
 
@@ -99,11 +100,6 @@ const EVENT_DESCRIPTIONS: Record<string, string> = {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function formatDiscountedPrice(priceAmountCents: number, discountPercent: number): string {
-  const discounted = (priceAmountCents * (1 - discountPercent / 100)) / 100;
-  return `$${discounted.toFixed(2)}`;
 }
 
 function parseEventDetails(details: string | null): string {
@@ -299,10 +295,9 @@ export default function AdminSubscriptionDetailPage() {
             <div>
               <p className="text-sm text-text-secondary mb-1">Price</p>
               <p className="text-sm text-text-primary">
-                {formatDiscountedPrice(
-                  subscription.variant_price_amount,
-                  subscription.plan_discount_percent
-                )}
+                {Money.fromStored(subscription.variant_price_amount)
+                  .applyRate(1 - subscription.plan_discount_percent / 100)
+                  .format()}
               </p>
             </div>
 

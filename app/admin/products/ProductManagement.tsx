@@ -9,6 +9,7 @@ import { Search, Plus, Edit, Trash2, Bot, RefreshCw, Tag } from "lucide-react";
 import Image from "next/image";
 import ProductEditor from "@/components/admin/ProductEditor";
 import type { Product } from "@/lib/types/";
+import { Money } from "@/lib/money";
 
 interface ProductTableProps {
   products: Product[];
@@ -119,7 +120,7 @@ function ProductTable({ products, onEdit, onDelete }: ProductTableProps) {
                   </div>
                 </td>
                 <td className="p-4 text-text-primary">
-                  {price ? `$${(price / 100).toFixed(2)}` : "N/A"}
+                  {price ? Money.fromMajor(price, defaultVariant?.price?.currency ?? "USD").format() : "N/A"}
                 </td>
                 <td className="p-4">
                   <Badge variant={stock > 0 ? "default" : "destructive"}>

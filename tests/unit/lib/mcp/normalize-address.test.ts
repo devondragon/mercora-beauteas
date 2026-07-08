@@ -11,7 +11,9 @@
  * address shapes.
  */
 import { describe, it, expect } from 'vitest';
-import { normalizeAddress, computeOrderTotals } from '@/lib/mcp/tools/order';
+import { normalizeAddress } from '@/lib/mcp/tools/order';
+import { computeOrderTotals } from '@/lib/services/order-pricing';
+import { Money } from '@/lib/money';
 
 describe('normalizeAddress — legacy street/state keys (backward compat)', () => {
   it('maps street → line1 and state → region', () => {
@@ -53,38 +55,38 @@ describe('normalizeAddress — legacy street/state keys (backward compat)', () =
 describe('computeOrderTotals — region-dependent pricing via legacy keys', () => {
   it('applies AK surcharge when state: AK is supplied (legacy shape)', () => {
     const addr = normalizeAddress({ street: '1 Arctic Way', state: 'AK', city: 'Anchorage', country: 'US' });
-    const { shipping } = computeOrderTotals(50, addr); // under $100 → not free
-    expect(shipping).toBe(19.99);
+    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), addr); // under $100 → not free
+    expect(shipping.toMach().amount).toBe(19.99);
   });
 
   it('applies HI surcharge when state: HI is supplied (legacy shape)', () => {
     const addr = normalizeAddress({ street: '1 Aloha Blvd', state: 'HI', city: 'Honolulu', country: 'US' });
-    const { shipping } = computeOrderTotals(50, addr);
-    expect(shipping).toBe(19.99);
+    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), addr);
+    expect(shipping.toMach().amount).toBe(19.99);
   });
 
   it('uses standard shipping for continental state supplied as legacy key', () => {
     const addr = normalizeAddress({ street: '1 Main St', state: 'TX', city: 'Austin', country: 'US' });
-    const { shipping } = computeOrderTotals(50, addr);
-    expect(shipping).toBe(9.99);
+    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), addr);
+    expect(shipping.toMach().amount).toBe(9.99);
   });
 
   it('applies CA tax rate when state: CA is supplied (legacy shape)', () => {
     const addr = normalizeAddress({ street: '1 Sunset Blvd', state: 'CA', city: 'LA', country: 'US' });
-    const { tax } = computeOrderTotals(100, addr);
-    expect(tax).toBeCloseTo(8.75); // 8.75% CA rate
+    const { tax } = computeOrderTotals(Money.fromMajor(100, 'USD'), addr);
+    expect(tax.toMach().amount).toBeCloseTo(8.75); // 8.75% CA rate
   });
 
   it('applies CA tax rate identically when region: CA is supplied (MACH shape)', () => {
     const addr = normalizeAddress({ line1: '1 Sunset Blvd', region: 'CA', city: 'LA', country: 'US' });
-    const { tax } = computeOrderTotals(100, addr);
-    expect(tax).toBeCloseTo(8.75);
+    const { tax } = computeOrderTotals(Money.fromMajor(100, 'USD'), addr);
+    expect(tax.toMach().amount).toBeCloseTo(8.75);
   });
 
   it('free shipping over $100 regardless of address shape', () => {
     const legacyAddr = normalizeAddress({ street: '1 St', state: 'CA', city: 'LA', country: 'US' });
     const machAddr = normalizeAddress({ line1: '1 St', region: 'CA', city: 'LA', country: 'US' });
-    expect(computeOrderTotals(100, legacyAddr).shipping).toBe(0);
-    expect(computeOrderTotals(100, machAddr).shipping).toBe(0);
+    expect(computeOrderTotals(Money.fromMajor(100, 'USD'), legacyAddr).shipping.isZero()).toBe(true);
+    expect(computeOrderTotals(Money.fromMajor(100, 'USD'), machAddr).shipping.isZero()).toBe(true);
   });
 });

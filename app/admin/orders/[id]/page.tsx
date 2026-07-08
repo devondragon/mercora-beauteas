@@ -32,6 +32,7 @@ import {
   Calendar, User, MapPin, CreditCard
 } from "lucide-react";
 import { orderStatusConfig } from "@/lib/ui/status-styles";
+import { Money } from "@/lib/money";
 
 interface Order {
   id: string;
@@ -55,8 +56,10 @@ interface Order {
     variant_id?: string;
     product_name: string;
     quantity: number;
-    unit_price: number | { amount: number };
-    list_price?: number | { amount: number }; // Original price before discount
+    // BMC-164: post-Task 8, /api/orders always returns MACH wire money here —
+    // amount is in MAJOR units and currency is always present.
+    unit_price: number | { amount: number; currency?: string };
+    list_price?: number | { amount: number; currency?: string }; // Original price before discount
     discount_amount?: number; // Discount applied to this item
   }>;
   payment_method?: string;
@@ -68,10 +71,13 @@ interface Order {
   delivered_at?: string;
   notes?: string;
   extensions?: {
+    // snake_case matches the CheckoutClient writer, the readers below, and the
+    // sibling app/admin/orders/page.tsx interface — the prior camelCase keys
+    // never matched a real persisted key (BMC-164 review fix).
     subtotal?: number;
-    shippingCost?: number;
-    taxAmount?: number;
-    discountAmount?: number;
+    shipping_cost?: number;
+    tax_amount?: number;
+    discount_amount?: number;
     carrier?: string;
     trackingUrl?: string;
     email?: string;
@@ -166,13 +172,6 @@ export default function OrderDetailPage() {
     }
   }, []);
 
-  const formatCurrency = (amount: number, currency: string = "USD") => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-    }).format(amount / 100);
-  };
-
   const getStatusBadge = (status: Order["status"]) => {
     const config = orderStatusConfig[status];
     const Icon = config.icon;
@@ -249,7 +248,7 @@ export default function OrderDetailPage() {
           orderId: order.id,
           type: 'partial',
           reason: reason.trim(),
-          amount: Math.round(returnCalculation.total * 100), // Convert to cents
+          amount: returnCalculation.totalMoney.toMinorUnits(),
           items: selectedItemsArray,
           notes: `Return: ${selectedItemsArray.length} item(s) - Subtotal: $${(returnCalculation.subtotal/100).toFixed(2)}, Tax: $${(returnCalculation.tax/100).toFixed(2)}, Discount: -$${(returnCalculation.discount/100).toFixed(2)}, Shipping: $${(returnCalculation.shipping/100).toFixed(2)}${(returnCalculation.restockingFee || 0) > 0 ? `, Restocking Fee: -$${((returnCalculation.restockingFee || 0)/100).toFixed(2)}` : ''}`
         })
@@ -279,69 +278,83 @@ export default function OrderDetailPage() {
   };
 
   const calculateReturnAmount = (selectedItemIds: string[]) => {
-    if (!order) return { subtotal: 0, tax: 0, discount: 0, shipping: 0, total: 0 };
+    const zero = Money.zero(order?.total_amount.currency ?? 'USD');
+    if (!order) {
+      return { subtotal: 0, tax: 0, discount: 0, shipping: 0, total: 0, totalMoney: zero };
+    }
 
-    // Get order totals - handle unit conversions (some in cents, some in dollars)
-    const orderSubtotal = order.extensions?.subtotal || 0; // in cents
-    const orderTax = order.extensions?.tax_amount || 0; // in cents
-    const orderDiscount = order.extensions?.discount_amount || 0; // in cents
-    const orderShipping = Math.round((order.extensions?.shipping_cost || 0) * 100); // convert dollars to cents
+    const currency = order.total_amount.currency;
+
+    // BMC-164: order.extensions money fields (subtotal/tax_amount/discount_amount/
+    // shipping_cost) are always MINOR units (cents) — Task 9/11. item.unit_price is
+    // MACH wire money — always MAJOR units (Task 8). Build every input as a Money
+    // in its actual unit so nothing gets mixed or double-scaled.
+    const orderSubtotalExt = Money.fromMinor(order.extensions?.subtotal || 0, currency);
+    const orderTax = Money.fromMinor(order.extensions?.tax_amount || 0, currency);
+    const orderDiscount = Money.fromMinor(order.extensions?.discount_amount || 0, currency);
+    const orderShipping = Money.fromMinor(order.extensions?.shipping_cost || 0, currency);
+
+    const lineTotal = (item: Order["items"][number]): Money => {
+      const wirePrice = typeof item.unit_price === 'number'
+        ? { amount: item.unit_price, currency }
+        : item.unit_price;
+      return Money.fromMajor(wirePrice.amount, wirePrice.currency ?? currency).times(item.quantity);
+    };
 
     // Calculate actual order subtotal from items (as verification)
-    const calculatedOrderSubtotal = order.items.reduce((total, item) => {
-      const unitPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-      return total + (unitPrice * item.quantity);
-    }, 0);
+    const calculatedOrderSubtotal = order.items.reduce(
+      (total, item) => total.add(lineTotal(item)),
+      zero
+    );
 
     // Use the calculated subtotal if extensions subtotal doesn't exist or doesn't match
-    const actualOrderSubtotal = orderSubtotal > 0 ? orderSubtotal : calculatedOrderSubtotal;
+    const actualOrderSubtotal = orderSubtotalExt.gt(zero) ? orderSubtotalExt : calculatedOrderSubtotal;
 
-    // Calculate item subtotal for selected items (in cents)
+    // Calculate item subtotal for selected items
     const returnItemsSubtotal = order.items
       .filter(item => {
         const itemKey = `${item.product_id}-${item.variant_id || 'default'}`;
         return selectedItemIds.includes(itemKey);
       })
-      .reduce((total, item) => {
-        const unitPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-        return total + (unitPrice * item.quantity);
-      }, 0);
+      .reduce((total, item) => total.add(lineTotal(item)), zero);
 
     // Calculate proportional amounts
-    const subtotalRatio = actualOrderSubtotal > 0 ? returnItemsSubtotal / actualOrderSubtotal : 0;
+    const subtotalRatio = actualOrderSubtotal.gt(zero)
+      ? returnItemsSubtotal.toMinorUnits() / actualOrderSubtotal.toMinorUnits()
+      : 0;
 
-
-
-    const returnTax = Math.round(orderTax * subtotalRatio);
-    const returnDiscount = Math.round(orderDiscount * subtotalRatio);
+    const returnTax = orderTax.applyRate(subtotalRatio);
+    const returnDiscount = orderDiscount.applyRate(subtotalRatio);
 
     // Shipping refund based on policy
     const isFullReturn = selectedItemIds.length === order.items.length;
     const returnShipping = (isFullReturn && refundPolicy.refundShippingOnFullReturn) ||
-                          (!isFullReturn && refundPolicy.refundShipping) ? orderShipping : 0;
+                          (!isFullReturn && refundPolicy.refundShipping) ? orderShipping : zero;
 
     // Calculate base refund amount
-    let baseRefundAmount = returnItemsSubtotal + returnTax - returnDiscount + returnShipping;
+    const baseRefundAmount = returnItemsSubtotal.add(returnTax).subtract(returnDiscount).add(returnShipping);
 
     // Apply restocking fee if configured
-    let restockingFee = 0;
+    let restockingFee = zero;
     if ((isFullReturn || refundPolicy.applyRestockingFeeOnPartialReturn) && refundPolicy.restockingFeePercent > 0) {
-      restockingFee = Math.round(baseRefundAmount * (refundPolicy.restockingFeePercent / 100));
+      restockingFee = baseRefundAmount.applyRate(refundPolicy.restockingFeePercent / 100);
     }
 
-    const returnTotal = baseRefundAmount - restockingFee;
+    const returnTotal = baseRefundAmount.subtract(restockingFee);
+    const totalMoney = returnTotal.isNegative() ? zero : returnTotal; // Ensure never negative
 
     return {
-      subtotal: returnItemsSubtotal,
-      tax: returnTax,
-      discount: returnDiscount,
-      shipping: returnShipping,
-      restockingFee: restockingFee,
-      baseAmount: baseRefundAmount,
-      total: Math.max(0, returnTotal), // Ensure never negative
+      subtotal: returnItemsSubtotal.toMinorUnits(),
+      tax: returnTax.toMinorUnits(),
+      discount: returnDiscount.toMinorUnits(),
+      shipping: returnShipping.toMinorUnits(),
+      restockingFee: restockingFee.toMinorUnits(),
+      baseAmount: baseRefundAmount.toMinorUnits(),
+      total: totalMoney.toMinorUnits(),
+      totalMoney,
       policy: {
-        shippingRefunded: returnShipping > 0,
-        restockingFeeApplied: restockingFee > 0,
+        shippingRefunded: returnShipping.gt(zero),
+        restockingFeeApplied: restockingFee.gt(zero),
         restockingFeePercent: refundPolicy.restockingFeePercent
       }
     };
@@ -516,19 +529,19 @@ export default function OrderDetailPage() {
             {order.extensions?.subtotal && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Subtotal:</span>
-                <span className="text-text-primary">{formatCurrency(order.extensions.subtotal)}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.subtotal).format()}</span>
               </div>
             )}
             {order.extensions?.shipping_cost && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Shipping:</span>
-                <span className="text-text-primary">{formatCurrency(Math.round((order.extensions.shipping_cost || 0) * 100))}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.shipping_cost).format()}</span>
               </div>
             )}
             {order.extensions?.tax_amount && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Tax:</span>
-                <span className="text-text-primary">{formatCurrency(order.extensions.tax_amount)}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.tax_amount).format()}</span>
               </div>
             )}
             {/* Try multiple discount field names */}
@@ -544,7 +557,7 @@ export default function OrderDetailPage() {
                 return (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Discount:</span>
-                    <span className="text-state-success">-{formatCurrency(discountAmount)}</span>
+                    <span className="text-state-success">-{Money.fromStored(discountAmount).format()}</span>
                   </div>
                 );
               }
@@ -567,6 +580,7 @@ export default function OrderDetailPage() {
 
             {/* Calculate discount from item-level data if available */}
             {(() => {
+              // BMC-164: unit_price/list_price arrive as MACH wire major units.
               const itemLevelDiscount = order.items.reduce((total, item) => {
                 const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
                 const listPrice = item.list_price
@@ -579,7 +593,7 @@ export default function OrderDetailPage() {
                 return (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Discount (from items):</span>
-                    <span className="text-state-success">-{formatCurrency(itemLevelDiscount)}</span>
+                    <span className="text-state-success">-{Money.fromMajor(itemLevelDiscount, order.total_amount.currency).format()}</span>
                   </div>
                 );
               }
@@ -589,7 +603,7 @@ export default function OrderDetailPage() {
 
             <div className="flex justify-between text-base font-semibold border-t border-border-default pt-2">
               <span className="text-text-primary">Total:</span>
-              <span className="text-primary-600">{formatCurrency(order.total_amount.amount)}</span>
+              <span className="text-primary-600">{Money.fromMajor(order.total_amount.amount, order.total_amount.currency).format()}</span>
             </div>
           </div>
         </Card>
@@ -619,6 +633,8 @@ export default function OrderDetailPage() {
                       Quantity: {item.quantity}
                     </p>
                     {(() => {
+                      // BMC-164: unit_price/list_price arrive as MACH wire major units.
+                      const currency = (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency;
                       const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
                       const listPrice = item.list_price
                         ? (typeof item.list_price === 'number' ? item.list_price : item.list_price.amount)
@@ -630,18 +646,18 @@ export default function OrderDetailPage() {
                           {hasDiscount ? (
                             <>
                               <p className="text-text-muted">
-                                List: {formatCurrency(listPrice)} × {item.quantity} = {formatCurrency(listPrice * item.quantity)}
+                                List: {Money.fromMajor(listPrice, currency).format()} × {item.quantity} = {Money.fromMajor(listPrice, currency).times(item.quantity).format()}
                               </p>
                               <p className="text-state-success">
-                                Discounted: {formatCurrency(finalPrice)} × {item.quantity} = {formatCurrency(finalPrice * item.quantity)}
+                                Discounted: {Money.fromMajor(finalPrice, currency).format()} × {item.quantity} = {Money.fromMajor(finalPrice, currency).times(item.quantity).format()}
                               </p>
                               <p className="text-state-sale text-xs">
-                                Item savings: {formatCurrency((listPrice - finalPrice) * item.quantity)}
+                                Item savings: {Money.fromMajor(listPrice - finalPrice, currency).times(item.quantity).format()}
                               </p>
                             </>
                           ) : (
                             <p className="text-text-secondary">
-                              Price: {formatCurrency(finalPrice)} × {item.quantity}
+                              Price: {Money.fromMajor(finalPrice, currency).format()} × {item.quantity}
                             </p>
                           )}
                         </div>
@@ -650,11 +666,10 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
                 <p className="text-text-primary font-semibold">
-                  {formatCurrency(
-                    (typeof item.unit_price === 'number'
-                      ? item.unit_price
-                      : item.unit_price.amount) * item.quantity
-                  )}
+                  {Money.fromMajor(
+                    typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount,
+                    (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency
+                  ).times(item.quantity).format()}
                 </p>
               </div>
             );
@@ -730,7 +745,7 @@ export default function OrderDetailPage() {
                   <span className="font-medium text-state-error">Order Cancellation</span>
                 </div>
                 <p className="text-sm text-text-secondary">
-                  This will cancel the entire order and process a full refund of ${formatCurrency(order.total_amount.amount)}
+                  This will cancel the entire order and process a full refund of {Money.fromMajor(order.total_amount.amount, order.total_amount.currency).format()}
                   to the customer&rsquo;s original payment method via Stripe.
                 </p>
               </div>

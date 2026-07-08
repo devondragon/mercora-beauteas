@@ -130,14 +130,24 @@ export function serializePricing(pricing: Pricing): PricingInsert {
  */
 
 /**
- * Validate Money object structure
+ * Validate Money object structure.
+ *
+ * Guards the *stored* minor-unit shape (`{ amount, currency }`, as persisted
+ * in `pricing.list_price`/`sale_price` JSON columns and read back via
+ * `Money.fromStored`) — not the MACH wire shape (`MachMoney`), which also
+ * carries a required `precision` field and is validated separately at API/
+ * MCP boundaries (see `lib/money/money.ts`). `amount` must be a finite
+ * number (rejects `NaN`/`Infinity`, which `Money.fromStored`/`Money`'s
+ * integer invariant would otherwise choke on downstream) and `currency`
+ * must be a 3-character ISO 4217-shaped string.
  */
-export function isValidMoney(money: any): money is Money {
-  return typeof money === 'object' && 
-         money !== null && 
-         typeof money.amount === 'number' && 
-         typeof money.currency === 'string' &&
-         money.currency.length === 3;
+export function isValidMoney(money: unknown): money is Money {
+  return !!money &&
+         typeof money === 'object' &&
+         typeof (money as any).amount === 'number' &&
+         Number.isFinite((money as any).amount) &&
+         typeof (money as any).currency === 'string' &&
+         (money as any).currency.length === 3;
 }
 
 /**
@@ -295,24 +305,3 @@ export function validatePricingObject(pricing: Partial<Pricing>): string[] {
   return errors;
 }
 
-/**
- * Convert price to different currency (requires exchange rate)
- */
-export function convertPrice(price: Money, targetCurrency: string, exchangeRate: number): Money {
-  return {
-    amount: Math.round(price.amount * exchangeRate * 100) / 100, // Round to 2 decimals
-    currency: targetCurrency
-  };
-}
-
-/**
- * Format price for display
- */
-export function formatPriceDisplay(price: Money, locale = 'en-US'): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: price.currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(price.amount);
-}

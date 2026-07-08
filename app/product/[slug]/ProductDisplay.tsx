@@ -40,6 +40,7 @@ import { StarRating } from "@/components/reviews/StarRating";
 import { ProductReviewsSection } from "@/components/reviews/ProductReviewsSection";
 import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
+import { Money } from "@/lib/money";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -161,8 +162,9 @@ export default function ProductDisplay({
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(defaultVariant?.id);
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || defaultVariant;
 
-  // Price logic (MACH: price is on variant)
+  // Price logic (MACH: price is on variant, amounts are integer minor units)
   const price = selectedVariant?.price?.amount ?? 0;
+  const currency = selectedVariant?.price?.currency ?? "USD";
   const compareAt = selectedVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > price;
 
@@ -356,7 +358,9 @@ export default function ProductDisplay({
                   <SelectContent className="bg-white border border-border-default text-text-primary">
                     {variants.map((variant) => {
                       const optionDisplay = variant.option_values?.map((value) => `${value.value}`).join(", ") || `Variant ${variant.id}`;
-                      const priceDisplay = variant.price ? `$${(variant.price.amount / 100).toFixed(2)}` : "";
+                      const priceDisplay = variant.price
+                        ? Money.fromMinor(variant.price.amount, variant.price.currency).format()
+                        : "";
 
                       return (
                         <SelectItem
@@ -395,7 +399,7 @@ export default function ProductDisplay({
                       productId: product.id,
                       variantId: selectedVariant?.id,
                       name: fullName,
-                      price: price / 100,
+                      price,
                       quantity: 1,
                       primaryImageUrl: (() => {
                         try {
@@ -431,12 +435,12 @@ export default function ProductDisplay({
               <>
                 {onSale ? (
                   <div>
-                    <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>${(compareAt! / 100).toFixed(2)}</p>
-                    <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>${(price / 100).toFixed(2)}</p>
+                    <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>{Money.fromMinor(compareAt!, currency).format()}</p>
+                    <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>{Money.fromMinor(price, currency).format()}</p>
                     <p className="text-xs italic text-primary-600 sm:text-sm">Limited-time offer</p>
                   </div>
                 ) : (
-                  <p className="text-lg font-semibold text-text-primary sm:text-xl">${(price / 100).toFixed(2)}</p>
+                  <p className="text-lg font-semibold text-text-primary sm:text-xl">{Money.fromMinor(price, currency).format()}</p>
                 )}
 
                 {selectedVariant?.inventory && (
@@ -457,7 +461,7 @@ export default function ProductDisplay({
                         productId: product.id,
                         variantId: selectedVariant?.id,
                         name: fullName,
-                        price: price / 100,
+                        price,
                         quantity: 1,
                         primaryImageUrl: (() => {
                           try {

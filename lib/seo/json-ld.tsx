@@ -17,6 +17,7 @@
 import { resolveLocalizedField, resolveImageUrl, BASE_URL } from "@/lib/seo/metadata";
 import { brand } from "@/lib/brand";
 import type { MACHProduct } from "@/lib/types/mach/Product";
+import { toWireMoney } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
 // Internal types for JSON-LD structures (not exported)
@@ -167,8 +168,8 @@ export function buildProductJsonLd(
     if (prices.length > 1 && minPrice !== maxPrice) {
       offers = {
         "@type": "AggregateOffer",
-        lowPrice: (minPrice / 100).toFixed(2),
-        highPrice: (maxPrice / 100).toFixed(2),
+        lowPrice: toWireMoney(minPrice).amount.toFixed(2),
+        highPrice: toWireMoney(maxPrice).amount.toFixed(2),
         priceCurrency: currency,
         offerCount: product.variants.length,
         availability,
@@ -177,7 +178,7 @@ export function buildProductJsonLd(
     } else {
       offers = {
         "@type": "Offer",
-        price: (defaultVariant.price.amount / 100).toFixed(2),
+        price: toWireMoney(defaultVariant.price).amount.toFixed(2),
         priceCurrency: currency,
         availability,
         url,
