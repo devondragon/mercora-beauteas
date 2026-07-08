@@ -245,7 +245,7 @@ export default function OrderDetailPage() {
           orderId: order.id,
           type: 'partial',
           reason: reason.trim(),
-          amount: Math.round(returnCalculation.total * 100), // Convert to cents
+          amount: returnCalculation.totalMoney.toMinorUnits(),
           items: selectedItemsArray,
           notes: `Return: ${selectedItemsArray.length} item(s) - Subtotal: $${(returnCalculation.subtotal/100).toFixed(2)}, Tax: $${(returnCalculation.tax/100).toFixed(2)}, Discount: -$${(returnCalculation.discount/100).toFixed(2)}, Shipping: $${(returnCalculation.shipping/100).toFixed(2)}${(returnCalculation.restockingFee || 0) > 0 ? `, Restocking Fee: -$${((returnCalculation.restockingFee || 0)/100).toFixed(2)}` : ''}`
         })
@@ -275,69 +275,83 @@ export default function OrderDetailPage() {
   };
 
   const calculateReturnAmount = (selectedItemIds: string[]) => {
-    if (!order) return { subtotal: 0, tax: 0, discount: 0, shipping: 0, total: 0 };
+    const zero = Money.zero(order?.total_amount.currency ?? 'USD');
+    if (!order) {
+      return { subtotal: 0, tax: 0, discount: 0, shipping: 0, total: 0, totalMoney: zero };
+    }
 
-    // Get order totals - handle unit conversions (some in cents, some in dollars)
-    const orderSubtotal = order.extensions?.subtotal || 0; // in cents
-    const orderTax = order.extensions?.tax_amount || 0; // in cents
-    const orderDiscount = order.extensions?.discount_amount || 0; // in cents
-    const orderShipping = Math.round((order.extensions?.shipping_cost || 0) * 100); // convert dollars to cents
+    const currency = order.total_amount.currency;
+
+    // BMC-164: order.extensions money fields (subtotal/tax_amount/discount_amount/
+    // shipping_cost) are always MINOR units (cents) — Task 9/11. item.unit_price is
+    // MACH wire money — always MAJOR units (Task 8). Build every input as a Money
+    // in its actual unit so nothing gets mixed or double-scaled.
+    const orderSubtotalExt = Money.fromMinor(order.extensions?.subtotal || 0, currency);
+    const orderTax = Money.fromMinor(order.extensions?.tax_amount || 0, currency);
+    const orderDiscount = Money.fromMinor(order.extensions?.discount_amount || 0, currency);
+    const orderShipping = Money.fromMinor(order.extensions?.shipping_cost || 0, currency);
+
+    const lineTotal = (item: Order["items"][number]): Money => {
+      const wirePrice = typeof item.unit_price === 'number'
+        ? { amount: item.unit_price, currency }
+        : item.unit_price;
+      return Money.fromMajor(wirePrice.amount, wirePrice.currency ?? currency).times(item.quantity);
+    };
 
     // Calculate actual order subtotal from items (as verification)
-    const calculatedOrderSubtotal = order.items.reduce((total, item) => {
-      const unitPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-      return total + (unitPrice * item.quantity);
-    }, 0);
+    const calculatedOrderSubtotal = order.items.reduce(
+      (total, item) => total.add(lineTotal(item)),
+      zero
+    );
 
     // Use the calculated subtotal if extensions subtotal doesn't exist or doesn't match
-    const actualOrderSubtotal = orderSubtotal > 0 ? orderSubtotal : calculatedOrderSubtotal;
+    const actualOrderSubtotal = orderSubtotalExt.gt(zero) ? orderSubtotalExt : calculatedOrderSubtotal;
 
-    // Calculate item subtotal for selected items (in cents)
+    // Calculate item subtotal for selected items
     const returnItemsSubtotal = order.items
       .filter(item => {
         const itemKey = `${item.product_id}-${item.variant_id || 'default'}`;
         return selectedItemIds.includes(itemKey);
       })
-      .reduce((total, item) => {
-        const unitPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
-        return total + (unitPrice * item.quantity);
-      }, 0);
+      .reduce((total, item) => total.add(lineTotal(item)), zero);
 
     // Calculate proportional amounts
-    const subtotalRatio = actualOrderSubtotal > 0 ? returnItemsSubtotal / actualOrderSubtotal : 0;
+    const subtotalRatio = actualOrderSubtotal.gt(zero)
+      ? returnItemsSubtotal.toMinorUnits() / actualOrderSubtotal.toMinorUnits()
+      : 0;
 
-
-
-    const returnTax = Math.round(orderTax * subtotalRatio);
-    const returnDiscount = Math.round(orderDiscount * subtotalRatio);
+    const returnTax = orderTax.applyRate(subtotalRatio);
+    const returnDiscount = orderDiscount.applyRate(subtotalRatio);
 
     // Shipping refund based on policy
     const isFullReturn = selectedItemIds.length === order.items.length;
     const returnShipping = (isFullReturn && refundPolicy.refundShippingOnFullReturn) ||
-                          (!isFullReturn && refundPolicy.refundShipping) ? orderShipping : 0;
+                          (!isFullReturn && refundPolicy.refundShipping) ? orderShipping : zero;
 
     // Calculate base refund amount
-    let baseRefundAmount = returnItemsSubtotal + returnTax - returnDiscount + returnShipping;
+    const baseRefundAmount = returnItemsSubtotal.add(returnTax).subtract(returnDiscount).add(returnShipping);
 
     // Apply restocking fee if configured
-    let restockingFee = 0;
+    let restockingFee = zero;
     if ((isFullReturn || refundPolicy.applyRestockingFeeOnPartialReturn) && refundPolicy.restockingFeePercent > 0) {
-      restockingFee = Math.round(baseRefundAmount * (refundPolicy.restockingFeePercent / 100));
+      restockingFee = baseRefundAmount.applyRate(refundPolicy.restockingFeePercent / 100);
     }
 
-    const returnTotal = baseRefundAmount - restockingFee;
+    const returnTotal = baseRefundAmount.subtract(restockingFee);
+    const totalMoney = returnTotal.isNegative() ? zero : returnTotal; // Ensure never negative
 
     return {
-      subtotal: returnItemsSubtotal,
-      tax: returnTax,
-      discount: returnDiscount,
-      shipping: returnShipping,
-      restockingFee: restockingFee,
-      baseAmount: baseRefundAmount,
-      total: Math.max(0, returnTotal), // Ensure never negative
+      subtotal: returnItemsSubtotal.toMinorUnits(),
+      tax: returnTax.toMinorUnits(),
+      discount: returnDiscount.toMinorUnits(),
+      shipping: returnShipping.toMinorUnits(),
+      restockingFee: restockingFee.toMinorUnits(),
+      baseAmount: baseRefundAmount.toMinorUnits(),
+      total: totalMoney.toMinorUnits(),
+      totalMoney,
       policy: {
-        shippingRefunded: returnShipping > 0,
-        restockingFeeApplied: restockingFee > 0,
+        shippingRefunded: returnShipping.gt(zero),
+        restockingFeeApplied: restockingFee.gt(zero),
         restockingFeePercent: refundPolicy.restockingFeePercent
       }
     };
@@ -518,7 +532,7 @@ export default function OrderDetailPage() {
             {order.extensions?.shipping_cost && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Shipping:</span>
-                <span className="text-text-primary">{Money.fromMajor(order.extensions.shipping_cost || 0).format()}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.shipping_cost).format()}</span>
               </div>
             )}
             {order.extensions?.tax_amount && (
