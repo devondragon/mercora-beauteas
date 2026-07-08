@@ -32,6 +32,7 @@ import {
   Calendar, User, MapPin, CreditCard
 } from "lucide-react";
 import { orderStatusConfig } from "@/lib/ui/status-styles";
+import { Money } from "@/lib/money";
 
 interface Order {
   id: string;
@@ -55,8 +56,10 @@ interface Order {
     variant_id?: string;
     product_name: string;
     quantity: number;
-    unit_price: number | { amount: number };
-    list_price?: number | { amount: number }; // Original price before discount
+    // BMC-164: post-Task 8, /api/orders always returns MACH wire money here —
+    // amount is in MAJOR units and currency is always present.
+    unit_price: number | { amount: number; currency?: string };
+    list_price?: number | { amount: number; currency?: string }; // Original price before discount
     discount_amount?: number; // Discount applied to this item
   }>;
   payment_method?: string;
@@ -165,13 +168,6 @@ export default function OrderDetailPage() {
       // Keep default values on error
     }
   }, []);
-
-  const formatCurrency = (amount: number, currency: string = "USD") => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-    }).format(amount / 100);
-  };
 
   const getStatusBadge = (status: Order["status"]) => {
     const config = orderStatusConfig[status];
@@ -516,19 +512,19 @@ export default function OrderDetailPage() {
             {order.extensions?.subtotal && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Subtotal:</span>
-                <span className="text-text-primary">{formatCurrency(order.extensions.subtotal)}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.subtotal).format()}</span>
               </div>
             )}
             {order.extensions?.shipping_cost && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Shipping:</span>
-                <span className="text-text-primary">{formatCurrency(Math.round((order.extensions.shipping_cost || 0) * 100))}</span>
+                <span className="text-text-primary">{Money.fromMajor(order.extensions.shipping_cost || 0).format()}</span>
               </div>
             )}
             {order.extensions?.tax_amount && (
               <div className="flex justify-between">
                 <span className="text-text-secondary">Tax:</span>
-                <span className="text-text-primary">{formatCurrency(order.extensions.tax_amount)}</span>
+                <span className="text-text-primary">{Money.fromStored(order.extensions.tax_amount).format()}</span>
               </div>
             )}
             {/* Try multiple discount field names */}
@@ -544,7 +540,7 @@ export default function OrderDetailPage() {
                 return (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Discount:</span>
-                    <span className="text-state-success">-{formatCurrency(discountAmount)}</span>
+                    <span className="text-state-success">-{Money.fromStored(discountAmount).format()}</span>
                   </div>
                 );
               }
@@ -567,6 +563,7 @@ export default function OrderDetailPage() {
 
             {/* Calculate discount from item-level data if available */}
             {(() => {
+              // BMC-164: unit_price/list_price arrive as MACH wire major units.
               const itemLevelDiscount = order.items.reduce((total, item) => {
                 const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
                 const listPrice = item.list_price
@@ -579,7 +576,7 @@ export default function OrderDetailPage() {
                 return (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Discount (from items):</span>
-                    <span className="text-state-success">-{formatCurrency(itemLevelDiscount)}</span>
+                    <span className="text-state-success">-{Money.fromMajor(itemLevelDiscount, order.total_amount.currency).format()}</span>
                   </div>
                 );
               }
@@ -589,7 +586,7 @@ export default function OrderDetailPage() {
 
             <div className="flex justify-between text-base font-semibold border-t border-border-default pt-2">
               <span className="text-text-primary">Total:</span>
-              <span className="text-primary-600">{formatCurrency(order.total_amount.amount)}</span>
+              <span className="text-primary-600">{Money.fromMajor(order.total_amount.amount, order.total_amount.currency).format()}</span>
             </div>
           </div>
         </Card>
@@ -619,6 +616,8 @@ export default function OrderDetailPage() {
                       Quantity: {item.quantity}
                     </p>
                     {(() => {
+                      // BMC-164: unit_price/list_price arrive as MACH wire major units.
+                      const currency = (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency;
                       const finalPrice = typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount;
                       const listPrice = item.list_price
                         ? (typeof item.list_price === 'number' ? item.list_price : item.list_price.amount)
@@ -630,18 +629,18 @@ export default function OrderDetailPage() {
                           {hasDiscount ? (
                             <>
                               <p className="text-text-muted">
-                                List: {formatCurrency(listPrice)} × {item.quantity} = {formatCurrency(listPrice * item.quantity)}
+                                List: {Money.fromMajor(listPrice, currency).format()} × {item.quantity} = {Money.fromMajor(listPrice, currency).times(item.quantity).format()}
                               </p>
                               <p className="text-state-success">
-                                Discounted: {formatCurrency(finalPrice)} × {item.quantity} = {formatCurrency(finalPrice * item.quantity)}
+                                Discounted: {Money.fromMajor(finalPrice, currency).format()} × {item.quantity} = {Money.fromMajor(finalPrice, currency).times(item.quantity).format()}
                               </p>
                               <p className="text-state-sale text-xs">
-                                Item savings: {formatCurrency((listPrice - finalPrice) * item.quantity)}
+                                Item savings: {Money.fromMajor(listPrice - finalPrice, currency).times(item.quantity).format()}
                               </p>
                             </>
                           ) : (
                             <p className="text-text-secondary">
-                              Price: {formatCurrency(finalPrice)} × {item.quantity}
+                              Price: {Money.fromMajor(finalPrice, currency).format()} × {item.quantity}
                             </p>
                           )}
                         </div>
@@ -650,11 +649,10 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
                 <p className="text-text-primary font-semibold">
-                  {formatCurrency(
-                    (typeof item.unit_price === 'number'
-                      ? item.unit_price
-                      : item.unit_price.amount) * item.quantity
-                  )}
+                  {Money.fromMajor(
+                    typeof item.unit_price === 'number' ? item.unit_price : item.unit_price.amount,
+                    (typeof item.unit_price === 'object' && item.unit_price.currency) || order.total_amount.currency
+                  ).times(item.quantity).format()}
                 </p>
               </div>
             );
@@ -730,7 +728,7 @@ export default function OrderDetailPage() {
                   <span className="font-medium text-state-error">Order Cancellation</span>
                 </div>
                 <p className="text-sm text-text-secondary">
-                  This will cancel the entire order and process a full refund of ${formatCurrency(order.total_amount.amount)}
+                  This will cancel the entire order and process a full refund of {Money.fromMajor(order.total_amount.amount, order.total_amount.currency).format()}
                   to the customer&rsquo;s original payment method via Stripe.
                 </p>
               </div>

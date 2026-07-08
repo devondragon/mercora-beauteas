@@ -295,24 +295,3 @@ export function validatePricingObject(pricing: Partial<Pricing>): string[] {
   return errors;
 }
 
-/**
- * Convert price to different currency (requires exchange rate)
- */
-export function convertPrice(price: Money, targetCurrency: string, exchangeRate: number): Money {
-  return {
-    amount: Math.round(price.amount * exchangeRate * 100) / 100, // Round to 2 decimals
-    currency: targetCurrency
-  };
-}
-
-/**
- * Format price for display
- */
-export function formatPriceDisplay(price: Money, locale = 'en-US'): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: price.currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(price.amount);
-}

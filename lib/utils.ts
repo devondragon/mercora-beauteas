@@ -95,16 +95,6 @@ export function debounce<T extends (...args: any[]) => any>(
 }
 
 /**
- * Format price for display with proper currency formatting
- */
-export function formatPrice(priceInCents: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(priceInCents / 100);
-}
-
-/**
  * Lazy load component utility for code splitting
  */
 export function lazy<T extends React.ComponentType<any>>(

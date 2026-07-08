@@ -43,6 +43,7 @@ import {
   ChevronsRight,
 } from "lucide-react";
 import { subscriptionStatusConfig, defaultSubscriptionStatusStyle } from "@/lib/ui/status-styles";
+import { Money } from "@/lib/money";
 
 // ---------- Types ----------
 
@@ -92,11 +93,6 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function formatDiscountedPrice(priceAmountCents: number, discountPercent: number): string {
-  const discounted = priceAmountCents * (1 - discountPercent / 100) / 100;
-  return `$${discounted.toFixed(2)}`;
 }
 
 // ---------- Component ----------
@@ -451,7 +447,7 @@ export default function AdminSubscriptionsPage() {
                         : "--"}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-primary">
-                      {formatDiscountedPrice(sub.variant_price_amount, sub.plan_discount_percent)}
+                      {Money.fromStored(sub.variant_price_amount).applyRate(1 - sub.plan_discount_percent / 100).format()}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-primary">
                       {sub.created_at ? new Date(sub.created_at).toLocaleDateString() : "--"}
