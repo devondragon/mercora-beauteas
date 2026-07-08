@@ -28,6 +28,7 @@ import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOr
 import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money, toWireMoney } from "@/lib/money";
 import type { MachMoney } from "@/lib/money";
+import { buildOrderEmailTotals } from "@/lib/utils/order-email-totals";
 
 
 
@@ -351,21 +352,44 @@ export async function POST(request: NextRequest) {
         customerName = shippingAddr.company;
       }
       const customerEmail = body.extensions?.email || shippingAddr?.email || '';
+      // BMC-143: every field below is MINOR units (cents), same contract as
+      // the persisted order (Money.toJSON() shape) — format through Money
+      // once here, then the email templates just render pre-formatted
+      // strings. Never .toFixed() a minor-unit number as if it were dollars.
+      const emailCurrency = body.currency_code || 'USD';
+      const orderTotalMinor = typeof body.total_amount === 'object' ? body.total_amount.amount : body.total_amount;
+      // BMC-164: checkout (components/checkout/CheckoutClient.tsx) writes
+      // extensions.shipping_cost / extensions.tax_amount (snake_case, minor
+      // units) — the previous camelCase shippingCost/taxAmount keys here
+      // never matched, so shipping/tax always rendered as $0.00.
+      const emailTotals = buildOrderEmailTotals({
+        subtotal: body.extensions?.subtotal || 0,
+        shipping: body.extensions?.shipping_cost || 0,
+        tax: body.extensions?.tax_amount || 0,
+        total: orderTotalMinor,
+        currency: emailCurrency,
+        // giftCardTenderCents is the server-verified (balance-capped) tender
+        // bound to a confirmed PaymentIntent, computed above — not the raw
+        // client-supplied extensions.gift_card.amount.
+        giftCardAmount: giftCardTenderCents,
+      });
       const orderData: OrderData = {
         orderNumber: orderId,
         customerName,
         customerEmail,
-        items: canonicalItems.map(item => ({
-          productId: item.product_id,
-          name: item.product_name,
-          price: typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price,
-          quantity: item.quantity,
-          imageUrl: (item as any).imageUrl || '',
-        })),
-        subtotal: body.extensions?.subtotal || 0,
-        shipping: body.extensions?.shippingCost || 0,
-        tax: body.extensions?.taxAmount || 0,
-        total: typeof body.total_amount === 'object' ? body.total_amount.amount : body.total_amount,
+        items: canonicalItems.map(item => {
+          const unitPriceMinor = typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price;
+          const unitPrice = Money.fromMinor(unitPriceMinor, emailCurrency);
+          return {
+            productId: item.product_id,
+            name: item.product_name,
+            price: unitPrice.format(),
+            lineTotal: unitPrice.times(item.quantity).format(),
+            quantity: item.quantity,
+            imageUrl: (item as any).imageUrl || '',
+          };
+        }),
+        ...emailTotals,
         shippingAddress: shippingAddr ? {
           street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
           city: typeof shippingAddr.city === 'string' ? shippingAddr.city : (shippingAddr.city ? Object.values(shippingAddr.city)[0] : ''),

@@ -13,10 +13,17 @@ import {
 } from '@react-email/components';
 import * as React from 'react';
 
+// BMC-143/BMC-164: money fields are pre-formatted display strings (via
+// Money.format(), see lib/utils/order-email-totals.ts), never raw numbers —
+// that ambiguity (minor units rendered with .toFixed(2) as if they were
+// dollars) previously inflated the total 100x in this email.
 interface OrderItem {
   productId: string;
   name: string;
-  price: number;
+  /** Formatted unit price, e.g. "$12.50". */
+  price: string;
+  /** Formatted line total (unit price x quantity), e.g. "$25.00". */
+  lineTotal: string;
   quantity: number;
   imageUrl?: string;
 }
@@ -26,10 +33,15 @@ interface OrderData {
   customerName: string;
   customerEmail: string;
   items: OrderItem[];
-  subtotal: number;
-  shipping: number;
-  tax: number;
-  total: number;
+  subtotal: string;
+  shipping: string;
+  tax: string;
+  /** PRE-gift-card order total (matches the persisted order total_amount). */
+  total: string;
+  /** Gift-card amount tendered against this order, if any (formatted). */
+  giftCard?: string;
+  /** Post-gift-card amount actually charged, if a gift card was applied (formatted). */
+  amountCharged?: string;
   shippingAddress: {
     street: string;
     city: string;
@@ -104,12 +116,12 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <Column style={itemDetailsCol}>
                   <Text style={itemName}>{item.name}</Text>
                   <Text style={itemDetails}>
-                    Quantity: {item.quantity} × ${item.price.toFixed(2)}
+                    Quantity: {item.quantity} × {item.price}
                   </Text>
                 </Column>
                 <Column style={itemPriceCol}>
                   <Text style={itemPrice}>
-                    ${(item.price * item.quantity).toFixed(2)}
+                    {item.lineTotal}
                   </Text>
                 </Column>
               </Row>
@@ -123,7 +135,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <Text style={summaryLabel}>Subtotal:</Text>
               </Column>
               <Column style={summaryValueCol}>
-                <Text style={summaryValue}>${orderData.subtotal.toFixed(2)}</Text>
+                <Text style={summaryValue}>{orderData.subtotal}</Text>
               </Column>
             </Row>
             <Row style={summaryRow}>
@@ -131,7 +143,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <Text style={summaryLabel}>Shipping:</Text>
               </Column>
               <Column style={summaryValueCol}>
-                <Text style={summaryValue}>${orderData.shipping.toFixed(2)}</Text>
+                <Text style={summaryValue}>{orderData.shipping}</Text>
               </Column>
             </Row>
             <Row style={summaryRow}>
@@ -139,7 +151,7 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <Text style={summaryLabel}>Tax:</Text>
               </Column>
               <Column style={summaryValueCol}>
-                <Text style={summaryValue}>${orderData.tax.toFixed(2)}</Text>
+                <Text style={summaryValue}>{orderData.tax}</Text>
               </Column>
             </Row>
             <Row style={totalRow}>
@@ -147,9 +159,29 @@ export const OrderConfirmationEmail: React.FC<OrderConfirmationEmailProps> = ({
                 <Text style={totalLabel}>Total:</Text>
               </Column>
               <Column style={summaryValueCol}>
-                <Text style={totalValue}>${orderData.total.toFixed(2)}</Text>
+                <Text style={totalValue}>{orderData.total}</Text>
               </Column>
             </Row>
+            {orderData.giftCard && (
+              <>
+                <Row style={summaryRow}>
+                  <Column>
+                    <Text style={summaryLabel}>Gift card:</Text>
+                  </Column>
+                  <Column style={summaryValueCol}>
+                    <Text style={summaryValue}>-{orderData.giftCard}</Text>
+                  </Column>
+                </Row>
+                <Row style={totalRow}>
+                  <Column>
+                    <Text style={totalLabel}>Amount charged:</Text>
+                  </Column>
+                  <Column style={summaryValueCol}>
+                    <Text style={totalValue}>{orderData.amountCharged}</Text>
+                  </Column>
+                </Row>
+              </>
+            )}
           </Section>
 
           {/* Shipping Address */}

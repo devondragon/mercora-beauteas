@@ -14,17 +14,29 @@ export interface OrderData {
   orderNumber: string;
   customerName: string;
   customerEmail: string;
+  // BMC-143/BMC-164: money fields are pre-formatted display strings (via
+  // Money.format(), see lib/utils/order-email-totals.ts), never raw numbers —
+  // that ambiguity (minor units rendered with .toFixed(2) as if they were
+  // dollars) previously inflated the total 100x in this email.
   items: Array<{
     productId: string;
     name: string;
-    price: number;
+    /** Formatted unit price, e.g. "$12.50". */
+    price: string;
+    /** Formatted line total (unit price x quantity), e.g. "$25.00". */
+    lineTotal: string;
     quantity: number;
     imageUrl?: string;
   }>;
-  subtotal: number;
-  shipping: number;
-  tax: number;
-  total: number;
+  subtotal: string;
+  shipping: string;
+  tax: string;
+  /** PRE-gift-card order total (matches the persisted order total_amount). */
+  total: string;
+  /** Gift-card amount tendered against this order, if any (formatted). */
+  giftCard?: string;
+  /** Post-gift-card amount actually charged, if a gift card was applied (formatted). */
+  amountCharged?: string;
   shippingAddress: {
     street: string;
     city: string;
@@ -117,10 +129,10 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
       </td>
       <td style="padding: 12px 0 12px 16px; vertical-align: top;">
         <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 4px;">${item.name}</div>
-        <div style="color: #64748b; font-size: 14px; margin: 0;">Quantity: ${item.quantity} × $${item.price.toFixed(2)}</div>
+        <div style="color: #64748b; font-size: 14px; margin: 0;">Quantity: ${item.quantity} × ${item.price}</div>
       </td>
       <td style="padding: 12px 0; text-align: right; vertical-align: top;">
-        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0;">$${(item.price * item.quantity).toFixed(2)}</div>
+        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0;">${item.lineTotal}</div>
       </td>
     </tr>
   `;
@@ -168,20 +180,30 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
           <table style="width: 100%;">
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Subtotal:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">$${orderData.subtotal.toFixed(2)}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.subtotal}</td>
             </tr>
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Shipping:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">$${orderData.shipping.toFixed(2)}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.shipping}</td>
             </tr>
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Tax:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">$${orderData.tax.toFixed(2)}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.tax}</td>
             </tr>
             <tr style="border-top: 2px solid #e2e8f0; padding: 12px 0 0; margin: 12px 0 0;">
               <td style="color: #1e293b; font-size: 16px; font-weight: bold; padding-top: 12px;">Total:</td>
-              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">$${orderData.total.toFixed(2)}</td>
+              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${orderData.total}</td>
             </tr>
+            ${orderData.giftCard ? `
+            <tr style="padding: 4px 0;">
+              <td style="color: #64748b; font-size: 14px;">Gift card:</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">-${orderData.giftCard}</td>
+            </tr>
+            <tr style="border-top: 2px solid #e2e8f0; padding: 12px 0 0; margin: 12px 0 0;">
+              <td style="color: #1e293b; font-size: 16px; font-weight: bold; padding-top: 12px;">Amount charged:</td>
+              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${orderData.amountCharged}</td>
+            </tr>
+            ` : ''}
           </table>
         </div>
 
