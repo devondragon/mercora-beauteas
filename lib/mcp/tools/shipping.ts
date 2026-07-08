@@ -1,13 +1,18 @@
 import { MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
 import { normalizeAddress } from './order';
+import { Money, toWireMoney } from '../../money';
+import type { MachMoney } from '../../money';
 
 export interface ShippingOption {
   id: string;
   name: string;
   description: string;
   estimated_days: string;
-  price: number;
+  // MACH wire shape (BMC-164 final review fix) — see lib/money/wire.ts
+  // toWireMoney, consistent with estimated_cost/estimated_total/total in
+  // assess.ts/cart.ts/order.ts.
+  price: MachMoney;
   carrier: string;
 }
 
@@ -43,16 +48,24 @@ export async function getShippingOptions(
     // agent inputs are handled correctly.
     const address = normalizeAddress(request.address);
 
-    // Calculate total weight and shipping cost factors
+    // Calculate total weight and shipping cost factors. cart item prices are
+    // CENTS (lib/types/cartitem.ts) — cartTotal is built as a Money in minor
+    // units so every downstream comparison/threshold goes through Money
+    // instead of a raw cents number compared against a dollar literal
+    // (BMC-164 final review fix — was `cartTotal >= 75`, i.e. "free shipping
+    // over $0.75").
     const totalWeight = cart.reduce((sum, item) => sum + (item.quantity * 2), 0); // Assume 2lbs per item average
-    const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const cartTotal = Money.fromMinor(
+      cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+      'USD'
+    );
 
     // Determine shipping zone based on region
     const zone = getShippingZone(address.region ?? '', address.country || 'US');
-    
+
     // Generate shipping options based on zone and cart
     const shippingOptions: ShippingOption[] = [];
-    
+
     // Standard shipping
     const standardCost = calculateStandardShipping(zone, totalWeight, cartTotal);
     shippingOptions.push({
@@ -60,21 +73,21 @@ export async function getShippingOptions(
       name: 'Standard Shipping',
       description: 'USPS Ground - 5-7 business days',
       estimated_days: '5-7 business days',
-      price: standardCost,
+      price: toWireMoney(standardCost.toMinorUnits(), standardCost.currency),
       carrier: 'USPS'
     });
-    
+
     // Expedited shipping
     const expeditedCost = calculateExpeditedShipping(zone, totalWeight);
     shippingOptions.push({
       id: 'expedited',
       name: 'Expedited Shipping',
       description: 'UPS 2-Day - 2-3 business days',
-      estimated_days: '2-3 business days', 
-      price: expeditedCost,
+      estimated_days: '2-3 business days',
+      price: toWireMoney(expeditedCost.toMinorUnits(), expeditedCost.currency),
       carrier: 'UPS'
     });
-    
+
     // Overnight shipping (only for continental US)
     if (zone === 'continental') {
       const overnightCost = calculateOvernightShipping(totalWeight);
@@ -83,7 +96,7 @@ export async function getShippingOptions(
         name: 'Overnight Shipping',
         description: 'FedEx Next Day - 1 business day',
         estimated_days: '1 business day',
-        price: overnightCost,
+        price: toWireMoney(overnightCost.toMinorUnits(), overnightCost.currency),
         carrier: 'FedEx'
       });
     }
@@ -154,64 +167,65 @@ function getShippingZone(state: string, country: string): string {
   return 'continental';
 }
 
-function calculateStandardShipping(zone: string, weight: number, cartTotal: number): number {
+function calculateStandardShipping(zone: string, weight: number, cartTotal: Money): Money {
   // Free shipping over $75
-  if (cartTotal >= 75) {
-    return 0;
+  const freeShippingThreshold = Money.fromMajor(75, cartTotal.currency);
+  if (cartTotal.gte(freeShippingThreshold)) {
+    return Money.zero(cartTotal.currency);
   }
-  
-  let baseCost = 0;
+
+  let baseCost = Money.zero(cartTotal.currency);
   switch (zone) {
     case 'continental':
-      baseCost = 8.99;
+      baseCost = Money.fromMajor(8.99, cartTotal.currency);
       break;
     case 'extended':
-      baseCost = 19.99;
+      baseCost = Money.fromMajor(19.99, cartTotal.currency);
       break;
     case 'international':
-      baseCost = 29.99;
+      baseCost = Money.fromMajor(29.99, cartTotal.currency);
       break;
   }
-  
+
   // Add weight-based surcharge for heavy orders
   if (weight > 10) {
-    baseCost += Math.ceil((weight - 10) / 5) * 5;
+    baseCost = baseCost.add(Money.fromMajor(Math.ceil((weight - 10) / 5) * 5, cartTotal.currency));
   }
-  
-  return Math.round(baseCost * 100) / 100;
+
+  return baseCost;
 }
 
-function calculateExpeditedShipping(zone: string, weight: number): number {
-  let baseCost = 0;
+function calculateExpeditedShipping(zone: string, weight: number): Money {
+  let baseCost = Money.zero();
   switch (zone) {
     case 'continental':
-      baseCost = 19.99;
+      baseCost = Money.fromMajor(19.99);
       break;
     case 'extended':
-      baseCost = 39.99;
+      baseCost = Money.fromMajor(39.99);
       break;
     case 'international':
-      baseCost = 59.99;
+      baseCost = Money.fromMajor(59.99);
       break;
   }
-  
+
   // Weight surcharge
   if (weight > 5) {
-    baseCost += Math.ceil((weight - 5) / 3) * 8;
+    baseCost = baseCost.add(Money.fromMajor(Math.ceil((weight - 5) / 3) * 8));
   }
-  
-  return Math.round(baseCost * 100) / 100;
+
+  return baseCost;
 }
 
-function calculateOvernightShipping(weight: number): number {
-  let baseCost = 39.99;
-  
+function calculateOvernightShipping(weight: number): Money {
+  let baseCost = Money.fromMajor(39.99);
+
   // Higher weight surcharge for overnight
   if (weight > 3) {
-    baseCost += Math.ceil((weight - 3) / 2) * 12;
+    baseCost = baseCost.add(Money.fromMajor(Math.ceil((weight - 3) / 2) * 12));
   }
-  
-  return Math.round(baseCost * 100) / 100;
+
+  return baseCost;
 }
 
 function checkShippingRestrictions(address: any, _cart: CartItem[]): string[] {
@@ -226,19 +240,24 @@ function checkShippingRestrictions(address: any, _cart: CartItem[]): string[] {
   return restrictions;
 }
 
-function generateShippingRecommendations(options: ShippingOption[], cartTotal: number, budget?: number): string[] {
+function generateShippingRecommendations(options: ShippingOption[], cartTotal: Money, budget?: number): string[] {
   const recommendations: string[] = [];
-  
+
   // Free shipping threshold
-  if (cartTotal < 75 && cartTotal >= 60) {
-    recommendations.push(`Add $${75 - cartTotal} to cart for free standard shipping`);
+  const freeShippingThreshold = Money.fromMajor(75, cartTotal.currency);
+  const nearFreeShippingThreshold = Money.fromMajor(60, cartTotal.currency);
+  if (cartTotal.lt(freeShippingThreshold) && cartTotal.gte(nearFreeShippingThreshold)) {
+    recommendations.push(`Add ${freeShippingThreshold.subtract(cartTotal).format()} to cart for free standard shipping`);
   }
-  
+
   // Budget-based recommendations
   if (budget) {
-    const affordableOptions = options.filter(opt => opt.price <= budget * 0.1); // 10% of budget for shipping
+    const shippingBudget = Money.fromMajor(budget).applyRate(0.1); // 10% of budget for shipping
+    const affordableOptions = options.filter(opt =>
+      Money.fromMajor(opt.price.amount, opt.price.currency).lte(shippingBudget)
+    );
     if (affordableOptions.length > 0) {
-      const fastest = affordableOptions.reduce((prev, curr) => 
+      const fastest = affordableOptions.reduce((prev, curr) =>
         parseInt(prev.estimated_days) < parseInt(curr.estimated_days) ? prev : curr
       );
       recommendations.push(`Within shipping budget: ${fastest.name} recommended`);
@@ -246,7 +265,7 @@ function generateShippingRecommendations(options: ShippingOption[], cartTotal: n
       recommendations.push('Consider standard shipping to stay within budget');
     }
   }
-  
+
   return recommendations;
 }
 
@@ -261,7 +280,7 @@ function calculateShippingSatisfaction(options: ShippingOption[], restrictions: 
     satisfaction += 10; // Bonus for having multiple options
   }
   
-  if (options.some(opt => opt.price === 0)) {
+  if (options.some(opt => opt.price.amount === 0)) {
     satisfaction += 10; // Bonus for free shipping
   }
   

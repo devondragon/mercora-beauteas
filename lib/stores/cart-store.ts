@@ -313,11 +313,15 @@ export const useCartStore = create<CartState>()(
               // Free shipping (100% off)
               return { ...discount, amount: shippingCost };
             } else if (discount.displayName.includes('%')) {
-              // Percentage discount
+              // Percentage discount — applyRate() rounds half-up to an integer
+              // minor unit (e.g. 999 * 0.5 = 499.5 -> 500), avoiding a
+              // fractional-cent amount that later throws in Money.fromMinor()
+              // during checkout (BMC-164).
               const match = discount.displayName.match(/(\d+)%/);
               if (match) {
                 const percentage = parseInt(match[1]);
-                return { ...discount, amount: shippingCost * (percentage / 100) };
+                const amount = Money.fromMinor(shippingCost, 'USD').applyRate(percentage / 100).toMinorUnits();
+                return { ...discount, amount };
               }
             } else if (discount.displayName.includes('$')) {
               // Fixed amount discount — displayName encodes a major-unit dollar figure (e.g. "$10 Off")

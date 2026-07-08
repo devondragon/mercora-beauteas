@@ -57,6 +57,7 @@ import {
 import Link from "next/link";
 import { marked } from "marked";
 import { sanitizeBlogHtml } from "@/lib/utils/sanitize-html";
+import { Money } from "@/lib/money";
 
 interface DashboardStats {
   totalProducts: number;
@@ -69,6 +70,10 @@ interface DashboardStats {
   shippedOrders: number;
   deliveredOrders: number;
   cancelledOrders: number;
+  // Integer minor units (cents) — GET /api/orders?admin=true returns
+  // total_amount.amount in MAJOR units via toWireOrder (BMC-164), so this is
+  // built by summing Money.fromMajor(...).toMinorUnits() per order, never a
+  // raw decimal dollar sum. Convert to Money before displaying.
   totalRevenue: number;
   totalCustomers: number;
   lowStockAlerts: number;
@@ -200,12 +205,17 @@ export default function AdminDashboard() {
         deliveredOrders = filteredOrders.filter((o: any) => o.status === 'delivered').length;
         cancelledOrders = filteredOrders.filter((o: any) => o.status === 'cancelled').length;
         
-        // Calculate total revenue from delivered orders in time range
+        // Calculate total revenue from delivered orders in time range.
+        // GET /api/orders?admin=true emits total_amount.amount in MAJOR units
+        // (toWireOrder, BMC-164) — convert each order via Money.fromMajor and
+        // accumulate in MINOR units (cents) to avoid float drift, matching
+        // the totalRevenue field's documented cents representation.
         totalRevenue = filteredOrders
           .filter((o: any) => o.status === 'delivered')
-          .reduce((sum: number, order: any) => {
-            const amount = order.total_amount?.amount || 0;
-            return sum + amount;
+          .reduce((sumCents: number, order: any) => {
+            const amount = order.total_amount?.amount ?? 0;
+            const currency = order.total_amount?.currency ?? 'USD';
+            return sumCents + Money.fromMajor(amount, currency).toMinorUnits();
           }, 0);
       }
 
@@ -317,6 +327,16 @@ export default function AdminDashboard() {
     );
   }
 
+  // Derived Money values for display + progress-bar math (BMC-164 final
+  // review fix) — stats.totalRevenue is minor units (cents); route every
+  // display and ratio through Money instead of raw *100/100 arithmetic.
+  const totalRevenueMoney = Money.fromMinor(stats.totalRevenue, 'USD');
+  const totalRevenueDollars = totalRevenueMoney.toMach().amount;
+  const avgOrderMoney = stats.totalOrders > 0
+    ? Money.fromMinor(Math.round(stats.totalRevenue / stats.totalOrders), 'USD')
+    : Money.zero('USD');
+  const avgOrderDollars = avgOrderMoney.toMach().amount;
+
   return (
     <div className="space-y-8 px-4">
       {/* Welcome Header */}
@@ -356,7 +376,7 @@ export default function AdminDashboard() {
             <div>
               <p className="text-sm text-text-secondary">Total Revenue ({timeRange})</p>
               <p className="text-2xl font-bold text-state-success">
-                ${(stats.totalRevenue / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {totalRevenueMoney.format()}
               </p>
               <p className="text-xs text-text-muted mt-1">From delivered orders</p>
             </div>
@@ -609,13 +629,13 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <span className="text-text-secondary text-sm">Total Revenue</span>
               <span className="text-text-primary font-semibold">
-                ${(stats.totalRevenue / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {totalRevenueMoney.format()}
               </span>
             </div>
             <div className="w-full bg-surface rounded-full h-2">
               <div
                 className="bg-state-success h-2 rounded-full"
-                style={{ width: `${Math.min(100, (stats.totalRevenue / 10000))}%` }}
+                style={{ width: `${Math.min(100, totalRevenueDollars)}%` }}
               ></div>
             </div>
             <p className="text-xs text-text-muted">Target: $100.00</p>
@@ -625,14 +645,14 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <span className="text-text-secondary text-sm">Average Order Value</span>
               <span className="text-text-primary font-semibold">
-                ${stats.totalOrders > 0 ? ((stats.totalRevenue / stats.totalOrders) / 100).toFixed(2) : '0.00'}
+                {avgOrderMoney.format()}
               </span>
             </div>
             <div className="w-full bg-surface rounded-full h-2">
               <div
                 className="bg-state-info h-2 rounded-full"
                 style={{
-                  width: `${Math.min(100, stats.totalOrders > 0 ? ((stats.totalRevenue / stats.totalOrders) / 100) * 2 : 0)}%`
+                  width: `${Math.min(100, avgOrderDollars * 2)}%`
                 }}
               ></div>
             </div>

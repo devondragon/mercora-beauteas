@@ -100,9 +100,13 @@ interface Order {
   notes?: string;
   extensions?: {
     subtotal?: number;
-    shippingCost?: number;
-    taxAmount?: number;
-    discountAmount?: number;
+    // BMC-164 (final review fix): persisted key is snake_case, matching the
+    // CheckoutClient writer and app/admin/orders/[id]/page.tsx reader — the
+    // prior camelCase field names here never matched a real key, so these
+    // rows silently never rendered.
+    shipping_cost?: number;
+    tax_amount?: number;
+    discount_amount?: number;
     carrier?: string;
     trackingUrl?: string;
     email?: string;
@@ -528,22 +532,22 @@ export default function AdminOrdersPage() {
                                 <span className="text-text-primary">{Money.fromStored(order.extensions.subtotal).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.shippingCost && (
+                            {order.extensions?.shipping_cost && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Shipping:</span>
-                                <span className="text-text-primary">{Money.fromStored(order.extensions.shippingCost).format()}</span>
+                                <span className="text-text-primary">{Money.fromStored(order.extensions.shipping_cost).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.taxAmount && (
+                            {order.extensions?.tax_amount && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Tax:</span>
-                                <span className="text-text-primary">{Money.fromStored(order.extensions.taxAmount).format()}</span>
+                                <span className="text-text-primary">{Money.fromStored(order.extensions.tax_amount).format()}</span>
                               </div>
                             )}
-                            {order.extensions?.discountAmount && (
+                            {order.extensions?.discount_amount && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-text-secondary">Discount:</span>
-                                <span className="text-state-success">-{Money.fromStored(order.extensions.discountAmount).format()}</span>
+                                <span className="text-state-success">-{Money.fromStored(order.extensions.discount_amount).format()}</span>
                               </div>
                             )}
                             <div className="flex justify-between text-base font-semibold border-t border-border-default pt-2">
