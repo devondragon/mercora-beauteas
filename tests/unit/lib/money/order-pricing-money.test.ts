@@ -15,3 +15,15 @@ describe('Stripe boundary', () => {
     expect(Money.fromMinor(2999, 'USD').toMach().amount).toBe(29.99);
   });
 });
+
+describe('Stripe boundary rounding', () => {
+  it('half-cent exact-decimal rounds half-up to next minor unit', () => {
+    expect(Money.fromMajor('1.005', 'USD').toMinorUnits()).toBe(101);
+  });
+  it('standard major unit converts exactly', () => {
+    expect(Money.fromMajor('29.99', 'USD').toMinorUnits()).toBe(2999);
+  });
+  it('minor -> major round-trips without loss', () => {
+    expect(Money.fromMinor(2999, 'USD').toMach().amount).toBe(29.99);
+  });
+});

@@ -388,6 +388,10 @@ export const stripeConfig = {
  * dollars-in/cents-out helper, but the conversion arithmetic is routed
  * through Money instead of a raw `* 100` so it can't drift from the
  * Money type's rounding rules.
+ *
+ * Assumes non-negative, well-formed numeric dollar amounts. Uses exact-decimal
+ * big.js rounding (half-up), which is more accurate than the previous float-based
+ * `Math.round(amount*100)` at half-cent ties.
  */
 export const formatAmountForStripe = (amount: number): number => {
   return Money.fromMajor(amount, 'USD').toMinorUnits();
@@ -400,6 +404,9 @@ export const formatAmountForStripe = (amount: number): number => {
  * Callers currently operate in major units (dollars); this stays a
  * cents-in/dollars-out helper, but the conversion arithmetic is routed
  * through Money instead of a raw `/ 100`.
+ *
+ * Assumes non-negative, well-formed numeric cent amounts. Uses exact-decimal
+ * big.js rounding (half-up) for round-trip accuracy.
  */
 export const formatAmountFromStripe = (amount: number): number => {
   return Money.fromMinor(Math.round(amount), 'USD').toMach().amount;
