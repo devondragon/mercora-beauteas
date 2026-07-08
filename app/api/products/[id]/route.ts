@@ -20,7 +20,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // BMC-164 review follow-up: emit the same MACH wire shape (major-unit
     // money) as the list endpoint (GET /api/products) — previously this
     // route returned the raw cents-shaped product, a cross-endpoint
-    // inconsistency for identical data.
+    // inconsistency for identical data. Consumers MUST parse via
+    // Money.fromMach/fromMajor (major units), never treat `amount` as cents.
     return NextResponse.json({ data: toWireProduct(product), meta: { schema: "mach:product" } });
   } catch (error) {
     console.error("Product GET error:", error);

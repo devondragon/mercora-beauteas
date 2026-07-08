@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { Product, Category } from "@/lib/types";
+import { Money } from "@/lib/money";
 
 interface CategoryDetailProps {
   categoryId: string;
@@ -310,7 +311,7 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
                     {stock} in stock
                   </div>
                   <div className="text-text-primary font-medium">
-                    {price ? `$${(price / 100).toFixed(2)}` : "N/A"}
+                    {price ? Money.fromMajor(price, product.variants?.[0]?.price?.currency ?? "USD").format() : "N/A"}
                   </div>
                 </div>
                 

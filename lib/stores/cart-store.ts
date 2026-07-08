@@ -416,6 +416,29 @@ export const useCartStore = create<CartState>()(
     {
       name: 'cart-storage',
       skipHydration: true,
+      // BMC-164: persisted money fields switched from major units (dollars) to
+      // integer minor units (cents) — item prices, gift-card balance, discount
+      // amounts, tax, and shipping cost. A pre-v1 cart rehydrated as-is would
+      // feed dollar/non-integer values into Money.fromMinor(), crashing the
+      // cart drawer or under-pricing checkout 100x. Rescaling every nested
+      // money field risks missing one, and no real customer carts exist
+      // pre-cutover — so drop stale pre-v1 cart contents on upgrade. Non-money
+      // checkout fields (addresses, billing info) are preserved.
+      version: 1,
+      migrate: (persisted: any, fromVersion: number) => {
+        if (fromVersion < 1 && persisted && typeof persisted === 'object') {
+          return {
+            ...persisted,
+            items: [],
+            appliedDiscounts: [],
+            totalDiscount: 0,
+            appliedGiftCard: undefined,
+            shippingOption: undefined,
+            taxAmount: undefined,
+          };
+        }
+        return persisted;
+      },
     }
   )
 );

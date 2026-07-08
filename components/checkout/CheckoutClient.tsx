@@ -309,10 +309,10 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           payment_status: 'paid', // Payment succeeded since we reached this point
           extensions: {
             payment_intent_id: paymentIntentId,
-            // BMC-164: shipping_cost is now MINOR units like subtotal/tax_amount
+            // BMC-164: shipping_cost is MINOR units like subtotal/tax_amount
             // (previously dollars — a mixed-unit bug). The admin order-detail
-            // reader still assumes shipping_cost is dollars; fixing that reader
-            // is Task 13, tracked separately.
+            // reader parses these via Money.fromMinor/fromStored (minor units),
+            // so writer and reader now agree.
             shipping_cost: shippingCost,
             tax_amount: tax,
             subtotal: subtotal,

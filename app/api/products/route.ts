@@ -86,6 +86,9 @@ export async function GET(request: NextRequest) {
 
     // BMC-164: emit MACH wire-shaped money ({amount, currency, precision} in
     // major units) at this API boundary — internal storage stays cents.
+    // Consumers MUST parse these via Money.fromMach/fromMajor (major units) —
+    // never treat `amount` as cents. The admin editor + product/category list
+    // views do; a raw `/100` here silently corrupts prices 100x on save.
     const responseProducts = (isAdmin ? products : products.map(toPublicProduct)).map(toWireProduct);
 
     const response: ApiResponse<WireProduct[]> = {

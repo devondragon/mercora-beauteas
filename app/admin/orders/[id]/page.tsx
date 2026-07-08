@@ -71,10 +71,13 @@ interface Order {
   delivered_at?: string;
   notes?: string;
   extensions?: {
+    // snake_case matches the CheckoutClient writer, the readers below, and the
+    // sibling app/admin/orders/page.tsx interface — the prior camelCase keys
+    // never matched a real persisted key (BMC-164 review fix).
     subtotal?: number;
-    shippingCost?: number;
-    taxAmount?: number;
-    discountAmount?: number;
+    shipping_cost?: number;
+    tax_amount?: number;
+    discount_amount?: number;
     carrier?: string;
     trackingUrl?: string;
     email?: string;
