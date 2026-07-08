@@ -12,7 +12,13 @@ import {
   canonicalizeOrderItemsPricing,
   computeOrderTotals,
 } from '../../services/order-pricing';
-import { Money } from '../../money';
+import { Money, toWireMoney } from '../../money';
+
+// Wire-shaped zero total, reused for every failure response (BMC-164) —
+// OrderResponse.total is MACH { amount, currency, precision }, not a bare
+// number that silently swaps between cents (success path) and dollars
+// (failure paths) depending on which branch built it.
+const ZERO_TOTAL = toWireMoney(0);
 
 // Re-exported for existing callers (lib/mcp/tools/payment.ts, and unit tests
 // that import it directly from this module) — the actual pure math now lives
@@ -53,7 +59,7 @@ function orderFailure(
 ): MCPToolResponse<OrderResponse> {
   return {
     success: false,
-    data: { orderId: '', status: 'failed', total: 0, estimated_delivery: '' },
+    data: { orderId: '', status: 'failed', total: ZERO_TOTAL, estimated_delivery: '' },
     context: {
       session_id: sessionId,
       agent_id: agentId,
@@ -92,7 +98,7 @@ export async function placeOrder(
         data: {
           orderId: '',
           status: 'failed',
-          total: 0,
+          total: ZERO_TOTAL,
           estimated_delivery: ''
         },
         context: {
@@ -123,7 +129,7 @@ export async function placeOrder(
         data: {
           orderId: '',
           status: 'failed',
-          total: 0,
+          total: ZERO_TOTAL,
           estimated_delivery: ''
         },
         context: {
@@ -175,7 +181,7 @@ export async function placeOrder(
         data: {
           orderId: '',
           status: 'budget_exceeded',
-          total: totalMajor,
+          total: total.toMach(),
           estimated_delivery: ''
         },
         context: {
@@ -393,7 +399,7 @@ export async function placeOrder(
     const response: OrderResponse = {
       orderId: order.id!.toString(),
       status: order.status,
-      total: typeof order.total_amount === 'object' ? (order.total_amount as any).amount : order.total_amount,
+      total: toWireMoney(order.total_amount),
       tracking_number: order.tracking_number || undefined,
       estimated_delivery: estimatedDelivery
     };
@@ -427,7 +433,7 @@ export async function placeOrder(
       data: {
         orderId: '',
         status: 'failed',
-        total: 0,
+        total: ZERO_TOTAL,
         estimated_delivery: ''
       },
       context: {
@@ -456,7 +462,7 @@ export async function getOrderStatus(
     const response: OrderResponse = {
       orderId,
       status: 'confirmed',
-      total: 299.99,
+      total: Money.fromMajor(299.99, 'USD').toMach(),
       tracking_number: `BT${Date.now()}`,
       estimated_delivery: '3-5 business days'
     };
@@ -481,7 +487,7 @@ export async function getOrderStatus(
       data: {
         orderId: '',
         status: 'error',
-        total: 0,
+        total: ZERO_TOTAL,
         estimated_delivery: ''
       },
       context: {

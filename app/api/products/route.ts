@@ -8,7 +8,7 @@ import {
   createProduct,
   getProductsByCategory
 } from "@/lib/models/mach/products";
-import { toPublicProduct } from "@/lib/models/mach/product-serializer";
+import { toPublicProduct, toWireProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
 
@@ -83,7 +83,9 @@ export async function GET(request: NextRequest) {
       products = page;
     }
 
-    const responseProducts = isAdmin ? products : products.map(toPublicProduct);
+    // BMC-164: emit MACH wire-shaped money ({amount, currency, precision} in
+    // major units) at this API boundary — internal storage stays cents.
+    const responseProducts = (isAdmin ? products : products.map(toPublicProduct)).map(toWireProduct);
 
     const response: ApiResponse<Product[]> = {
       data: responseProducts,
@@ -137,7 +139,7 @@ export async function POST(request: NextRequest) {
     // Optionally, add more MACH spec validation here
   const product = await createProduct(body as Product);
     const response: ApiResponse<Product> = {
-      data: product,
+      data: toWireProduct(product),
       meta: {
         schema: "mach:product"
       }

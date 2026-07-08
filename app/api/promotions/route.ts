@@ -13,6 +13,7 @@ import { promotions } from '@/lib/db/schema/promotions';
 import { eq } from 'drizzle-orm';
 import type { Promotion, CouponInstance } from '@/lib/types';
 import { checkAdminPermissions } from '@/lib/auth/admin-middleware';
+import { Money } from '@/lib/money';
 
 type InsertPromotion = typeof promotions.$inferInsert;
 
@@ -55,9 +56,9 @@ function convertToAdminFormat(promotion: Promotion, couponInstance?: CouponInsta
         break;
       case 'fixed_discount':
         type = "fixed_amount";
-        value = typeof action.value === 'object' && action.value?.amount 
-          ? action.value.amount / 100 // Convert cents to dollars
-          : (action.value as number) / 100;
+        // Stored in cents; the admin form works in dollars (BMC-164: route
+        // through Money instead of a raw /100).
+        value = Money.fromStored(action.value ?? 0).toMach().amount;
         break;
       case 'shipping_percentage_discount':
         if (action.value === 100) {
@@ -70,9 +71,7 @@ function convertToAdminFormat(promotion: Promotion, couponInstance?: CouponInsta
         break;
       case 'shipping_fixed_discount':
         type = "fixed_amount";
-        value = typeof action.value === 'object' && action.value?.amount 
-          ? action.value.amount / 100
-          : (action.value as number) / 100;
+        value = Money.fromStored(action.value ?? 0).toMach().amount;
         break;
     }
   }
@@ -82,9 +81,7 @@ function convertToAdminFormat(promotion: Promotion, couponInstance?: CouponInsta
   if (promotion.rules.conditions) {
     for (const condition of promotion.rules.conditions) {
       if (condition.type === 'cart_subtotal' && condition.operator === 'gte') {
-        minimumAmount = typeof condition.value === 'object' && condition.value?.amount 
-          ? condition.value.amount / 100
-          : (condition.value as number) / 100;
+        minimumAmount = Money.fromStored(condition.value ?? 0).toMach().amount;
         break;
       }
     }
@@ -130,7 +127,9 @@ function convertFromAdminFormat(admin: Partial<AdminPromotion>): { promotion: Pa
     case 'fixed_amount':
       rules.actions.push({
         type: 'fixed_discount',
-        value: (admin.value || 0) * 100, // Convert dollars to cents
+        // Admin form works in dollars; rules store cents (BMC-164: route
+        // through Money instead of a raw *100).
+        value: Money.fromMajor(admin.value || 0).toMinorUnits(),
         apply_to: 'cart_subtotal'
       });
       break;
@@ -148,7 +147,7 @@ function convertFromAdminFormat(admin: Partial<AdminPromotion>): { promotion: Pa
     rules.conditions.push({
       type: 'cart_subtotal',
       operator: 'gte',
-      value: admin.minimumAmount * 100 // Convert dollars to cents
+      value: Money.fromMajor(admin.minimumAmount).toMinorUnits() // dollars -> cents
     });
   }
   

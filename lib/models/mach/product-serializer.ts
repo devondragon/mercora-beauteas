@@ -8,6 +8,7 @@
  * (cost, barcode, raw inventory/stock counts) to storefront/public callers.
  */
 import type { Product, ProductVariant } from '@/lib/types';
+import { toWireMoney } from '@/lib/money';
 
 /**
  * Strips internal-only fields from a single variant: cost (COGS), barcode,
@@ -27,5 +28,36 @@ export function toPublicProduct(product: Product): Product {
   return {
     ...product,
     variants: product.variants?.map(toPublicVariant),
+  };
+}
+
+/**
+ * Converts every stored (minor-unit) money field on a variant — price,
+ * compare_at_price, cost — to the MACH wire shape (decimal major units +
+ * precision) at the API response boundary (BMC-164). Internal callers keep
+ * working with cents; only the serialized response emits `.toMach()`.
+ */
+function toWireVariant(variant: ProductVariant): ProductVariant {
+  return {
+    ...variant,
+    price: toWireMoney(variant.price),
+    ...(variant.compare_at_price !== undefined && variant.compare_at_price !== null
+      ? { compare_at_price: toWireMoney(variant.compare_at_price) }
+      : {}),
+    ...(variant.cost !== undefined && variant.cost !== null
+      ? { cost: toWireMoney(variant.cost) }
+      : {}),
+  };
+}
+
+/**
+ * Converts every variant's money fields on a Product to the MACH wire shape.
+ * Apply this last, immediately before serializing an API response — it does
+ * not touch any other field and is safe to compose with toPublicProduct.
+ */
+export function toWireProduct(product: Product): Product {
+  return {
+    ...product,
+    variants: product.variants?.map(toWireVariant),
   };
 }

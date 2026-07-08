@@ -12,6 +12,7 @@ import { listCategories, getCategoryDisplayName } from '../models/mach/category'
 import { listProducts } from '../models/mach/products';
 import { CapabilitiesResponse } from './types';
 import type { Product } from '../types';
+import { Money } from '../money';
 
 /**
  * Merchandising/collection categories that describe how products are grouped
@@ -36,12 +37,10 @@ const FALLBACK_SPECIALTIES = ['Organic skincare teas', 'Calendula wellness blend
 
 function variantPrice(product: Product): number[] {
   // Variant prices are stored in minor units (cents); capabilities are
-  // reported in dollars to match the rest of the storefront.
+  // reported in major units (dollars) via Money.toMach() instead of a raw
+  // /100, matching the rest of the storefront (BMC-164).
   return (product.variants || [])
-    .map((v) => {
-      const minorUnits = typeof v.price === 'number' ? v.price : v.price?.amount ?? 0;
-      return minorUnits / 100;
-    })
+    .map((v) => Money.fromStored(v.price ?? 0).toMach().amount)
     .filter((amount) => amount > 0);
 }
 
@@ -84,9 +83,11 @@ export async function getCatalogCapabilities(): Promise<CapabilitiesResponse> {
       .flatMap(variantPrice);
 
     if (prices.length > 0) {
+      // Math.min/max operate on already-rounded major-unit amounts from
+      // Money.toMach() above, so no further rounding is needed here.
       priceRanges[name] = {
-        min: Math.round(Math.min(...prices) * 100) / 100,
-        max: Math.round(Math.max(...prices) * 100) / 100,
+        min: Math.min(...prices),
+        max: Math.max(...prices),
       };
     }
   }

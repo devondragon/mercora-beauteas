@@ -4,6 +4,7 @@ import { RecommendRequest, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { distinctCategoryCount, ritualBundleSuggestions } from '../catalog';
 import { Product } from '../../types';
+import { Money } from '../../money';
 
 export async function getRecommendations(
   request: RecommendRequest,
@@ -35,12 +36,17 @@ export async function getRecommendations(
       recommendations = await getGeneralRecommendations(userContext);
     }
     
-    // Filter by budget if provided
+    // Filter by budget if provided. Product variant prices are stored Money
+    // objects (cents); budget is a plain major-unit (dollars) number — the
+    // old `price <= budget` compared a Money object to a number (always
+    // false, silently dropping every recommendation once a budget was set).
+    // Route both sides through Money (BMC-164).
     if (context.budget || userContext.budget) {
       const budget = context.budget || userContext.budget;
+      const budgetMoney = Money.fromMajor(budget!);
       recommendations = recommendations.filter(product => {
-        const price = product.variants?.[0]?.price || 0;
-        return price <= budget!;
+        const price = Money.fromStored(product.variants?.[0]?.price ?? 0);
+        return price.lte(budgetMoney);
       });
     }
     
@@ -178,13 +184,14 @@ function sortRecommendations(products: Product[], userContext: any): Product[] {
       }
     }
     
-    // Consider price within budget
-    const aPrice = a.variants?.[0]?.price || 0;
-    const bPrice = b.variants?.[0]?.price || 0;
-    
+    // Consider price within budget (Money-typed on both sides — BMC-164).
+    const aPrice = Money.fromStored(a.variants?.[0]?.price ?? 0);
+    const bPrice = Money.fromStored(b.variants?.[0]?.price ?? 0);
+
     if (userContext.budget) {
-      if (aPrice <= userContext.budget) aScore += 2;
-      if (bPrice <= userContext.budget) bScore += 2;
+      const budgetMoney = Money.fromMajor(userContext.budget);
+      if (aPrice.lte(budgetMoney)) aScore += 2;
+      if (bPrice.lte(budgetMoney)) bScore += 2;
     }
     
     return bScore - aScore;
@@ -205,18 +212,24 @@ function generateBundlingRecommendations(products: Product[]): string[] {
 
 function generateCostRecommendations(products: Product[], budget?: number): string[] {
   if (!budget) return [];
-  
+
   const recommendations: string[] = [];
-  const totalCost = products.reduce((sum, p) => sum + (typeof p.variants?.[0]?.price === 'number' ? p.variants[0].price : (p.variants?.[0]?.price as any)?.amount || 0), 0);
-  
-  if (totalCost > budget * 1.2) {
+  // totalCost accumulates stored Money (cents); budget is dollars — compare
+  // through Money instead of mixing units directly (BMC-164).
+  const budgetMoney = Money.fromMajor(budget);
+  const totalCost = products.reduce(
+    (sum, p) => sum.add(Money.fromStored(p.variants?.[0]?.price ?? 0)),
+    Money.zero('USD')
+  );
+
+  if (totalCost.gt(budgetMoney.applyRate(1.2))) {
     recommendations.push('Choose sample-size blends to stay within budget');
     recommendations.push('Look for current tea bundle offers');
-  } else if (totalCost < budget * 0.8) {
+  } else if (totalCost.lt(budgetMoney.applyRate(0.8))) {
     recommendations.push('Budget allows for premium blends or a gift set');
     recommendations.push('Consider adding complementary blends within budget');
   }
-  
+
   return recommendations;
 }
 

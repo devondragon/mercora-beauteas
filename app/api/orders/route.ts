@@ -26,6 +26,7 @@ import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
 import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
+import { toWireMoney } from "@/lib/money";
 
 
 
@@ -86,9 +87,10 @@ export async function GET(request: NextRequest) {
     const total = filteredOrders.length;
     const paginatedOrders = filteredOrders.slice(offset, offset + limit);
     const hydratedOrders = paginatedOrders.map(hydrateOrder);
-    
+
     const response = {
-      data: hydratedOrders,
+      // BMC-164: MACH wire shape at the response boundary only.
+      data: hydratedOrders.map(toWireOrder),
       meta: {
         total,
         limit,
@@ -432,7 +434,9 @@ export async function POST(request: NextRequest) {
     }
 
     const response = {
-      data: hydratedOrder,
+      // BMC-164: MACH wire shape at the response boundary only — gift-card
+      // fulfillment above already read/mutated hydratedOrder in cents.
+      data: toWireOrder(hydratedOrder),
       meta: {
         schema: "mach:order"
       }
@@ -569,7 +573,8 @@ export async function PUT(request: NextRequest) {
     });
 
     const response = {
-      data: hydrateOrder(updatedOrder),
+      // BMC-164: MACH wire shape at the response boundary only.
+      data: toWireOrder(hydrateOrder(updatedOrder)),
       meta: {
         schema: "mach:order"
       }
@@ -609,6 +614,26 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     extensions: dbOrder.extensions ? (typeof dbOrder.extensions === 'string' ? JSON.parse(dbOrder.extensions) : dbOrder.extensions) : undefined,
     created_at: dbOrder.created_at ?? undefined,
     updated_at: dbOrder.updated_at ?? undefined
+  };
+}
+
+/**
+ * Convert a hydrated (internal, minor-unit/cents) Order to the MACH wire
+ * shape for API responses (BMC-164): total_amount and each line's
+ * unit_price/total_price become {amount, currency, precision} in major
+ * units via toWireMoney. Internal callers (gift-card fulfillment, email)
+ * keep reading the cents-based hydrateOrder() output untouched — this
+ * conversion is applied last, immediately before NextResponse.json().
+ */
+function toWireOrder(order: Order): Order {
+  return {
+    ...order,
+    total_amount: toWireMoney(order.total_amount),
+    items: order.items?.map(item => ({
+      ...item,
+      unit_price: toWireMoney(item.unit_price),
+      total_price: toWireMoney(item.total_price),
+    })),
   };
 }
 
