@@ -93,7 +93,15 @@ export type CreateOrderBody = ReturnType<typeof buildCreateOrderBody>;
 
 // ─── Pending-order snapshot (redirect payment-method fallback) ──────────────
 
-const PENDING_ORDER_KEY = 'beauteas.pendingOrder';
+// One snapshot PER PaymentIntent. A single global key would let a second
+// concurrent checkout in the same browser (another tab, or a resumed earlier
+// attempt) overwrite the snapshot for an in-flight redirect — so /checkout/success
+// could POST the WRONG order body for the PaymentIntent that actually succeeded,
+// orphaning the real payment. Keying by PI id keeps concurrent checkouts isolated
+// and lets the return page load the snapshot for exactly the PI it returned for.
+const PENDING_ORDER_PREFIX = 'beauteas.pendingOrder.';
+// Cap retained snapshots so abandoned redirect attempts don't grow unbounded.
+const MAX_PENDING_ORDERS = 10;
 
 /**
  * A stashed order body plus the payment-intent id it belongs to. `orderId` is
@@ -102,35 +110,54 @@ const PENDING_ORDER_KEY = 'beauteas.pendingOrder';
 interface PendingOrder {
   orderId: string;
   paymentIntentId: string;
+  /** Epoch ms the snapshot was written — used only for oldest-first pruning. */
+  savedAt: number;
   body: CreateOrderBody;
+}
+
+function pendingKey(paymentIntentId: string): string {
+  return `${PENDING_ORDER_PREFIX}${paymentIntentId}`;
 }
 
 /**
  * Persist the order body before a redirect-based payment so `/checkout/success`
- * can finalize the order when the customer returns. No-op outside the browser.
+ * can finalize the order when the customer returns. Keyed by the PaymentIntent
+ * id it belongs to. No-op outside the browser.
  */
 export function savePendingOrder(body: CreateOrderBody): void {
   if (typeof window === 'undefined') return;
+  const paymentIntentId = body.extensions.payment_intent_id;
+  if (!paymentIntentId) return;
   try {
     const pending: PendingOrder = {
       orderId: body.order_id,
-      paymentIntentId: body.extensions.payment_intent_id,
+      paymentIntentId,
+      savedAt: Date.now(),
       body,
     };
-    window.localStorage.setItem(PENDING_ORDER_KEY, JSON.stringify(pending));
+    window.localStorage.setItem(pendingKey(paymentIntentId), JSON.stringify(pending));
+    prunePendingOrders();
   } catch {
     // localStorage can throw (private mode / quota). A missing snapshot only
     // degrades the redirect fallback; the webhook still reconciles payment.
   }
 }
 
-/** Read the stashed pending order, or null if none / unreadable. */
-export function loadPendingOrder(): PendingOrder | null {
-  if (typeof window === 'undefined') return null;
+/**
+ * Read the snapshot for a specific PaymentIntent, or null if none / unreadable /
+ * mismatched. The `paymentIntentId` MUST be the one the redirect actually
+ * returned for — never post a snapshot that isn't bound to the succeeded PI.
+ */
+export function loadPendingOrder(paymentIntentId: string): PendingOrder | null {
+  if (typeof window === 'undefined' || !paymentIntentId) return null;
   try {
-    const raw = window.localStorage.getItem(PENDING_ORDER_KEY);
+    const raw = window.localStorage.getItem(pendingKey(paymentIntentId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PendingOrder;
+    // Defense in depth: the key already scopes by PI id, but require the stored
+    // body to agree so a corrupted/mis-keyed entry can never be posted.
+    if (parsed?.paymentIntentId !== paymentIntentId) return null;
+    if (parsed?.body?.extensions?.payment_intent_id !== paymentIntentId) return null;
     if (!parsed?.body?.order_id) return null;
     return parsed;
   } catch {
@@ -138,12 +165,37 @@ export function loadPendingOrder(): PendingOrder | null {
   }
 }
 
-/** Clear the stashed pending order once it has been finalized (or abandoned). */
-export function clearPendingOrder(): void {
-  if (typeof window === 'undefined') return;
+/** Clear a PaymentIntent's snapshot once it has been finalized (or abandoned). */
+export function clearPendingOrder(paymentIntentId: string): void {
+  if (typeof window === 'undefined' || !paymentIntentId) return;
   try {
-    window.localStorage.removeItem(PENDING_ORDER_KEY);
+    window.localStorage.removeItem(pendingKey(paymentIntentId));
   } catch {
     // ignore
+  }
+}
+
+/** Drop the oldest snapshots beyond MAX_PENDING_ORDERS (abandoned attempts). */
+function prunePendingOrders(): void {
+  try {
+    const entries: Array<{ key: string; savedAt: number }> = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.startsWith(PENDING_ORDER_PREFIX)) continue;
+      let savedAt = 0;
+      try {
+        savedAt = (JSON.parse(window.localStorage.getItem(key) || '{}') as PendingOrder).savedAt || 0;
+      } catch {
+        // Unparseable entry — treat as oldest so it's pruned first.
+      }
+      entries.push({ key, savedAt });
+    }
+    if (entries.length <= MAX_PENDING_ORDERS) return;
+    entries
+      .sort((a, b) => a.savedAt - b.savedAt)
+      .slice(0, entries.length - MAX_PENDING_ORDERS)
+      .forEach((e) => window.localStorage.removeItem(e.key));
+  } catch {
+    // ignore — pruning is best-effort hygiene
   }
 }

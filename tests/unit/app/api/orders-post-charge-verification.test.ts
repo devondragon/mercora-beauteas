@@ -70,6 +70,7 @@ vi.mock('@/lib/db', () => ({
 }));
 
 import { NextRequest } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { POST } from '@/app/api/orders/route';
 import { getDbAsync } from '@/lib/db';
 import { retrievePaymentIntent } from '@/lib/stripe';
@@ -146,6 +147,9 @@ beforeEach(() => {
   insertedRows = [];
   updatedRows = [];
   existingOrderRows = [];
+  // Default to a guest caller; individual tests override for authenticated cases.
+  // (clearAllMocks keeps implementations, so reset explicitly for isolation.)
+  vi.mocked(auth).mockResolvedValue({ userId: null } as any);
   vi.mocked(getDbAsync).mockResolvedValue(makeDb() as any);
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
@@ -292,5 +296,51 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
     expect(body).not.toContain('jane@example.com');
     expect(body).not.toContain('Secret Item');
     expect(insertedRows).toHaveLength(0);
+  });
+
+  it('BMC-165 idempotency: an authenticated owner (customer_id match) returns 200 id-only, no PI-id needed', async () => {
+    vi.mocked(auth).mockResolvedValue({ userId: 'user_owner' } as any);
+    existingOrderRows = [
+      {
+        id: 'WEB-USEROWNER-1000',
+        customer_id: 'user_owner',
+        status: 'processing',
+        payment_status: 'paid',
+        total_amount: { amount: 2500, currency: 'USD' },
+        currency_code: 'USD',
+        items: [],
+        shipping_address: { line1: '9 Secret Ave' },
+        billing_address: null,
+        // A DIFFERENT PaymentIntent id than the body's — ownership must come from
+        // the customer_id match, not the PI-id proof.
+        extensions: { payment_intent_id: 'pi_stored_owner' },
+      },
+    ];
+
+    const res = await POST(
+      postRequest(orderBody({ order_id: 'WEB-USEROWNER-1000', extensions: { payment_intent_id: 'pi_body_differs' } }))
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.data).toEqual({ id: 'WEB-USEROWNER-1000' });
+    expect(JSON.stringify(json)).not.toContain('Secret Ave');
+    expect(insertedRows).toHaveLength(0);
+  });
+
+  it('BMC-165 auth-transition: an authenticated caller may finalize a WEB-GUEST order id (no namespace 400)', async () => {
+    // A checkout that began as a guest (order_id WEB-GUEST-1000, baked into the
+    // redirect snapshot) whose Clerk session authenticates mid-redirect must
+    // still create the order on return — not 400 on the namespace check.
+    vi.mocked(auth).mockResolvedValue({ userId: 'user_late' } as any);
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({
+      status: 'succeeded',
+      metadata: { orderId: 'WEB-GUEST-1000' },
+      amount_received: 2999,
+    } as any);
+
+    const res = await POST(postRequest(orderBody({ order_id: 'WEB-GUEST-1000' })));
+    expect(res.status).toBe(201);
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0].id).toBe('WEB-GUEST-1000');
   });
 });

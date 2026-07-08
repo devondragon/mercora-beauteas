@@ -326,7 +326,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
       // Order created inline — the redirect snapshot is now moot; drop it so a
       // later /checkout/success visit can't re-post a stale body.
-      clearPendingOrder();
+      clearPendingOrder(paymentIntentId);
 
       // Clear cart immediately after successful order creation
       clearCart();

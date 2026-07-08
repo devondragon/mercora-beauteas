@@ -10,11 +10,11 @@
  * the order on the checkout page itself. For redirect methods that flow never
  * runs, so this page finalizes the order:
  *
- *  1. Retrieve the PaymentIntent status via its client secret.
- *  2. On `succeeded` / `processing`, POST the pending-order snapshot (stashed by
- *     CheckoutClient before the redirect) to `/api/orders`. That endpoint is
- *     idempotent and re-verifies payment against Stripe, so a refresh or a race
- *     with the Stripe webhook can't double-create or mispay the order.
+ *  1. Retrieve the PaymentIntent (status + id) via its client secret.
+ *  2. On `succeeded` / `processing`, POST the pending-order snapshot bound to
+ *     THAT PaymentIntent (stashed by CheckoutClient before the redirect) to
+ *     `/api/orders`. That endpoint is idempotent and re-verifies payment against
+ *     Stripe, so a refresh or a race with the webhook can't double-create.
  *  3. Clear the snapshot + cart and show confirmation.
  *
  * If payment failed, send the customer back to checkout with their cart intact.
@@ -31,12 +31,17 @@ import { loadPendingOrder, clearPendingOrder } from '@/lib/checkout/order-payloa
 import OrderConfirmationModal from '@/components/checkout/OrderConfirmationModal';
 import { Button } from '@/components/ui/button';
 
-type Phase = 'loading' | 'confirmed' | 'processing' | 'failed' | 'error';
+// 'received' = payment went through but we could not finalize the order locally
+// (no snapshot for this PaymentIntent); distinct from 'confirmed' so we never
+// show a fake confirmation. 'error' = couldn't determine status / order POST
+// failed (retryable — snapshot kept, cart preserved).
+type Phase = 'loading' | 'confirmed' | 'processing' | 'received' | 'failed' | 'error';
 
 export default function CheckoutSuccessPage() {
   const { userId } = useAuth();
   const [phase, setPhase] = useState<Phase>('loading');
   const [orderId, setOrderId] = useState<string>('');
+  const [reference, setReference] = useState<string>('');
   const [message, setMessage] = useState<string>('');
   // React runs effects twice in dev StrictMode; guard so we only finalize once.
   const finalizedRef = useRef(false);
@@ -57,12 +62,14 @@ export default function CheckoutSuccessPage() {
       }
 
       let status: string | undefined;
+      let paymentIntentId: string | undefined;
       try {
         const stripe = await loadStripe();
         if (!stripe) throw new Error('Stripe failed to load');
         const { paymentIntent, error } = await stripe.retrievePaymentIntent(clientSecret);
         if (error) throw new Error(error.message || 'Could not retrieve payment status');
         status = paymentIntent?.status;
+        paymentIntentId = paymentIntent?.id;
       } catch (err) {
         console.error('[checkout/success] failed to retrieve PaymentIntent:', err);
         setPhase('error');
@@ -70,28 +77,42 @@ export default function CheckoutSuccessPage() {
           'We could not confirm your payment status. If you completed payment, your order is still being processed and a confirmation email will follow.'
         );
         return;
+      } finally {
+        // Strip the client secret from the URL so it can't leak via the Referer
+        // header, browser history, or same-origin analytics.
+        try {
+          window.history.replaceState({}, '', window.location.pathname);
+        } catch {
+          // ignore — non-critical hardening
+        }
       }
 
-      // Payment did not complete — return the shopper to checkout to retry. The
-      // cart was never cleared, so their items are intact.
-      if (status === 'requires_payment_method' || status === 'canceled') {
+      setReference(paymentIntentId || '');
+
+      // Only an explicitly successful (or async-settling) PaymentIntent proceeds.
+      // Everything else — requires_payment_method, canceled, requires_action,
+      // requires_confirmation, undefined — is a non-success: return to checkout
+      // rather than show a confirmation. (The server re-verifies too.)
+      const succeeded = status === 'succeeded';
+      const processing = status === 'processing';
+      if (!succeeded && !processing) {
         setPhase('failed');
         return;
       }
 
-      // `succeeded` (captured) or `processing` (async capture, e.g. some Klarna/
-      // Cash App flows) — create the order. The server leaves a still-processing
-      // order 'pending' and the Stripe webhook marks it paid once captured.
-      const pending = loadPendingOrder();
+      // Load the snapshot bound to THIS PaymentIntent — never post a body for a
+      // different PI (a concurrent checkout in another tab could hold the key).
+      const pending = paymentIntentId ? loadPendingOrder(paymentIntentId) : null;
       if (!pending) {
-        // No snapshot (returned in a different browser, or localStorage cleared).
-        // We can't reconstruct the order here and the webhook can't create it
-        // from PaymentIntent metadata alone — surface honestly rather than
-        // implying an order exists. (See BMC-165 follow-up: server-side pending
-        // order at PI creation would close this gap.)
-        setPhase(status === 'processing' ? 'processing' : 'confirmed');
+        // No snapshot for this PI (returned in a different browser, localStorage
+        // cleared, or overwritten). We can't rebuild the order and the webhook
+        // can't create it from PaymentIntent metadata alone. Be honest — do NOT
+        // show a confirmation. Payment did go through, so clear the cart to avoid
+        // an accidental re-payment. (BMC-165 follow-up: a server-side pending
+        // order at PI creation would let the webhook reconcile this case.)
+        setPhase('received');
         setMessage(
-          'Your payment was received. If you don’t see a confirmation email shortly, please contact support with your payment reference.'
+          'Your payment was received. If you don’t see a confirmation email shortly, please contact support with your payment reference below.'
         );
         await clearCartSafely();
         return;
@@ -107,10 +128,10 @@ export default function CheckoutSuccessPage() {
           const err = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
           throw new Error(err.message || err.error || 'Failed to create order');
         }
-        clearPendingOrder();
+        clearPendingOrder(paymentIntentId!);
         await clearCartSafely();
         setOrderId(pending.orderId);
-        setPhase(status === 'processing' ? 'processing' : 'confirmed');
+        setPhase(processing ? 'processing' : 'confirmed');
       } catch (err) {
         console.error('[checkout/success] order creation failed:', err);
         // Payment succeeded but order creation failed. Keep the snapshot so a
@@ -180,11 +201,34 @@ export default function CheckoutSuccessPage() {
     );
   }
 
+  // Payment succeeded but the order couldn't be finalized on this device.
+  if (phase === 'received') {
+    return (
+      <CenteredCard>
+        <h1 className="text-2xl font-bold text-text-primary mb-2">Payment received</h1>
+        <p className="text-text-secondary mb-4">{message}</p>
+        {reference && (
+          <p className="text-sm text-text-secondary mb-6">
+            Payment reference: <span className="font-mono text-primary-700 break-all">{reference}</span>
+          </p>
+        )}
+        <Button asChild className="bg-primary-500 text-text-inverse hover:bg-primary-600">
+          <Link href="/">Continue shopping</Link>
+        </Button>
+      </CenteredCard>
+    );
+  }
+
   if (phase === 'error') {
     return (
       <CenteredCard>
         <h1 className="text-2xl font-bold text-text-primary mb-2">Almost there</h1>
-        <p className="text-text-secondary mb-6">{message}</p>
+        <p className="text-text-secondary mb-4">{message}</p>
+        {reference && (
+          <p className="text-sm text-text-secondary mb-6">
+            Payment reference: <span className="font-mono text-primary-700 break-all">{reference}</span>
+          </p>
+        )}
         <Button asChild className="bg-primary-500 text-text-inverse hover:bg-primary-600">
           <Link href="/">Continue shopping</Link>
         </Button>

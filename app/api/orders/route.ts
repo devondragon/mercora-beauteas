@@ -183,8 +183,21 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     // Bind the client-supplied id to this caller's own user segment so a user
-    // can't create orders inside another user's id namespace.
-    if (providedId && !providedId.startsWith(`WEB-${safeUserId}-`)) {
+    // can't create orders inside another user's id namespace. The GUEST segment
+    // is also accepted from an authenticated caller: a redirect checkout
+    // (BMC-165) that began as a guest bakes WEB-GUEST-<ts> into its snapshot,
+    // and the Clerk session can become authenticated during the multi-minute
+    // off-site trip (cookie sync / logging in elsewhere) — rejecting it here
+    // would permanently strand the returning order with a 400. This is safe:
+    // the guest segment carries no other user's identity, the order_id is still
+    // cross-checked against the PaymentIntent metadata before it can be marked
+    // paid, and the idempotent-return path re-proves ownership via
+    // callerOwnsExistingOrder().
+    if (
+      providedId &&
+      !providedId.startsWith(`WEB-${safeUserId}-`) &&
+      !providedId.startsWith('WEB-GUEST-')
+    ) {
       return NextResponse.json({
         error: 'Validation failed',
         details: ['order_id does not match the authenticated user']
@@ -211,6 +224,11 @@ export async function POST(request: NextRequest) {
       if (!callerOwnsExistingOrder(alreadyCreated[0], userId, body)) {
         return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
       }
+      // TODO(BMC-165): this is create-once idempotency, not full request
+      // idempotency — an owner re-POSTing the same id with a DIFFERENT body
+      // silently gets the original order back. Fine for our flows (the redirect
+      // return re-sends the identical snapshot), but if strict idempotency is
+      // ever needed, compare a request fingerprint and 409 on mismatch.
       return NextResponse.json(
         { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
         { status: 200 }
