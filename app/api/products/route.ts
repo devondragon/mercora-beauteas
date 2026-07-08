@@ -9,6 +9,7 @@ import {
   getProductsByCategory
 } from "@/lib/models/mach/products";
 import { toPublicProduct, toWireProduct } from "@/lib/models/mach/product-serializer";
+import type { WireProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
 
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
     // major units) at this API boundary — internal storage stays cents.
     const responseProducts = (isAdmin ? products : products.map(toPublicProduct)).map(toWireProduct);
 
-    const response: ApiResponse<Product[]> = {
+    const response: ApiResponse<WireProduct[]> = {
       data: responseProducts,
       meta: {
         total,
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
     }
     // Optionally, add more MACH spec validation here
   const product = await createProduct(body as Product);
-    const response: ApiResponse<Product> = {
+    const response: ApiResponse<WireProduct> = {
       data: toWireProduct(product),
       meta: {
         schema: "mach:product"

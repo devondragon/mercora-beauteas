@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProduct, updateProduct, deleteProduct } from "@/lib/models/mach/products";
+import { toWireProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { Product } from "@/lib/types";
 
@@ -16,7 +17,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!product) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
-    return NextResponse.json({ data: product, meta: { schema: "mach:product" } });
+    // BMC-164 review follow-up: emit the same MACH wire shape (major-unit
+    // money) as the list endpoint (GET /api/products) — previously this
+    // route returned the raw cents-shaped product, a cross-endpoint
+    // inconsistency for identical data.
+    return NextResponse.json({ data: toWireProduct(product), meta: { schema: "mach:product" } });
   } catch (error) {
     console.error("Product GET error:", error);
     return NextResponse.json({ error: "Failed to retrieve product" }, { status: 500 });
@@ -56,9 +61,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ 
-      data: updatedProduct, 
-      meta: { schema: "mach:product" } 
+    // BMC-164 review follow-up: same MACH wire shape as GET/list (see above).
+    return NextResponse.json({
+      data: toWireProduct(updatedProduct),
+      meta: { schema: "mach:product" }
     });
 
   } catch (error) {
