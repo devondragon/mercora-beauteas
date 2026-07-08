@@ -606,7 +606,11 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     id: dbOrder.id ?? undefined,
     customer_id: dbOrder.customer_id || undefined,
     status: dbOrder.status,
-    total_amount: typeof dbOrder.total_amount === 'string' ? JSON.parse(dbOrder.total_amount) : { amount: 0, currency: dbOrder.currency_code },
+    // dbOrder.total_amount is already parsed to an object by Drizzle's
+    // mode:"json" column — Money.fromStored handles object | JSON string |
+    // bare number so this reads the real persisted total instead of
+    // silently falling back to 0 (BMC-164 review follow-up).
+    total_amount: Money.fromStored(dbOrder.total_amount, dbOrder.currency_code).toJSON(),
     currency_code: dbOrder.currency_code,
     shipping_address: dbOrder.shipping_address ? (typeof dbOrder.shipping_address === 'string' ? JSON.parse(dbOrder.shipping_address) : dbOrder.shipping_address) : undefined,
     billing_address: dbOrder.billing_address ? (typeof dbOrder.billing_address === 'string' ? JSON.parse(dbOrder.billing_address) : dbOrder.billing_address) : undefined,

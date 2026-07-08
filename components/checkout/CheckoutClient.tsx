@@ -274,7 +274,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     try {
       // Cart store totals are canonical (integer minor units) — recompute
       // against final state rather than re-deriving from scratch here.
-      const { subtotal, shippingCost, tax, giftCardApplied, total } = calculateTotals();
+      const { subtotal, shippingCost, tax, giftCardApplied, totalBeforeGiftCard } = calculateTotals();
 
       // Submit order with payment intent ID to unified orders endpoint.
       // Every money field below is integer minor units (Money.toJSON() shape) —
@@ -295,7 +295,12 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             // Carry gift-card recipient details through to fulfillment
             ...(item.giftCard ? { gift_card: item.giftCard } : {}),
           })),
-          total_amount: Money.fromMinor(total, 'USD').toJSON(),
+          // Server contract (lib/services/gift-card-fulfillment.ts): order
+          // total_amount is the PRE-gift-card value — the server subtracts
+          // the gift card itself when computing the expected Stripe charge.
+          // The actual amount charged to the card is the POST-gift-card
+          // `amountDue` sent to /api/payment-intent above.
+          total_amount: Money.fromMinor(totalBeforeGiftCard, 'USD').toJSON(),
           currency_code: 'USD',
           shipping_address: shippingAddress,
           billing_address: shippingAddress, // Use same as shipping for now
