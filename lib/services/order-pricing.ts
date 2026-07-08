@@ -26,7 +26,9 @@
  *     paidCents + giftCardTenderCents + TOLERANCE >= catalogGoodsSubtotalCents
  */
 
-import type { Money } from '@/lib/types';
+import type { Money as StoredMoney } from '@/lib/types';
+import { Money } from '@/lib/money';
+import type { MACHAddress as Address } from '@/lib/types/mach/Address';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
 
@@ -69,7 +71,7 @@ function priceToCents(field: unknown): number | null {
   if (typeof money === 'number') {
     return Number.isFinite(money) && money >= 0 ? Math.round(money) : null;
   }
-  const amount = (money as Money)?.amount;
+  const amount = (money as StoredMoney)?.amount;
   return typeof amount === 'number' && Number.isFinite(amount) && amount >= 0
     ? Math.round(amount)
     : null;
@@ -319,8 +321,8 @@ export async function canonicalizeOrderItemsPricing<
     product_id?: string;
     variant_id?: string;
     quantity?: number;
-    unit_price?: Money;
-    total_price?: Money;
+    unit_price?: StoredMoney;
+    total_price?: StoredMoney;
   }
 >(items: T[]): Promise<T[]> {
   const list = Array.isArray(items) ? items : [];
@@ -406,4 +408,80 @@ export async function verifyOrderChargeSufficient(
   }
 
   return { ok: true, goodsCents, requiredCashCents };
+}
+
+/**
+ * Order shipping/tax/total math (Task 7 / BMC-164).
+ *
+ * Moved here from `lib/mcp/tools/order.ts` so it is pure (no Cloudflare/DB
+ * imports) and unit-testable from `tests/unit/**`, and typed entirely in
+ * `Money` so the cents/dollars mismatch BMC-161 had to point-fix (the
+ * free-shipping threshold silently compared a CENTS subtotal against a
+ * DOLLARS `100` literal) is now impossible at the type level — `Money.gte`
+ * only compares against another `Money` of the same currency, and
+ * `Money.applyRate` does the tax multiply with exact big.js math. `order.ts`
+ * re-exports `computeOrderTotals` for its existing callers (`payment.ts`,
+ * MCP route handlers).
+ */
+
+/** Forward-compatible bag for future per-order pricing options (e.g. promo
+ * free-shipping). Unused today — the MCP order path has no promo/options
+ * input — but keeps the signature stable for callers that pass one. */
+export type OrderTotalsOptions = Record<string, unknown>;
+
+const STANDARD_SHIPPING_MAJOR = 9.99;
+const AK_HI_SHIPPING_MAJOR = 19.99;
+const FREE_SHIPPING_THRESHOLD_MAJOR = 100;
+
+// Simple tax calculation - in production, use proper tax service
+const TAX_RATES: Record<string, number> = {
+  CA: 0.0875, // California
+  NY: 0.08,   // New York
+  TX: 0.0625, // Texas
+  FL: 0.06,   // Florida
+};
+const DEFAULT_TAX_RATE = 0.05;
+
+/**
+ * Shipping for a goods subtotal + destination. `subtotal` is a `Money`, so the
+ * free-shipping threshold compares like-for-like (both minor units of the same
+ * currency) rather than a bare number that could be either cents or dollars
+ * depending on the caller (BMC-161).
+ */
+export function calculateShipping(address: Address, subtotal: Money): Money {
+  // Free shipping over $100
+  if (subtotal.gte(Money.fromMajor(FREE_SHIPPING_THRESHOLD_MAJOR, subtotal.currency))) {
+    return Money.zero(subtotal.currency);
+  }
+
+  // Alaska/Hawaii surcharge
+  if (address?.region === 'AK' || address?.region === 'HI') {
+    return Money.fromMajor(AK_HI_SHIPPING_MAJOR, subtotal.currency);
+  }
+
+  // Standard shipping
+  return Money.fromMajor(STANDARD_SHIPPING_MAJOR, subtotal.currency);
+}
+
+/** Tax for a goods subtotal + destination, computed as an exact `Money.applyRate`. */
+export function calculateTax(subtotal: Money, address: Address): Money {
+  const rate = TAX_RATES[address?.region || ''] ?? DEFAULT_TAX_RATE;
+  return subtotal.applyRate(rate);
+}
+
+/**
+ * Compute shipping/tax/total for an order from a goods subtotal and a
+ * destination address, using the same rules the MCP order path applies.
+ * Shared so create_payment_intent charges exactly what place_order will
+ * expect (BMC-132).
+ */
+export function computeOrderTotals(
+  subtotal: Money,
+  address: Address,
+  _options: OrderTotalsOptions = {}
+): { subtotal: Money; shipping: Money; tax: Money; total: Money } {
+  const shipping = calculateShipping(address, subtotal);
+  const tax = calculateTax(subtotal, address);
+  const total = subtotal.add(shipping).add(tax);
+  return { subtotal, shipping, tax, total };
 }

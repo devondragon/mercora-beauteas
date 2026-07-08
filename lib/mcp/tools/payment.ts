@@ -7,6 +7,7 @@ import { CartItem } from '../../types/cartitem';
 import { requireOwnedSession } from '../session';
 import { computeCatalogSubtotalCents } from '../../services/order-pricing';
 import { computeOrderTotals, normalizeAddress } from './order';
+import { Money } from '../../money';
 import {
   createPaymentIntent,
   formatAmountForStripe,
@@ -198,8 +199,14 @@ export async function createAgentPaymentIntent(
     // Normalize to MACH shape so shipping/tax read `region` (the MCP schema sends
     // flat `state`/`street`). place_order re-derives and re-verifies this same
     // total against the destination, so the amount charged here matches the gate.
+    // subtotalCents is already MINOR units — Money.fromMinor carries it straight
+    // through computeOrderTotals with no /100·*100 boundary conversion (BMC-164).
     const address = normalizeAddress(request.shippingAddress);
-    const { total } = computeOrderTotals(subtotalCents / 100, address);
+    const { total: totalMoney } = computeOrderTotals(Money.fromMinor(subtotalCents, 'USD'), address);
+    // formatAmountForStripe and this tool's response `amount` field operate in
+    // major units (dollars) — unchanged Stripe/response boundary, only the
+    // shipping/tax math upstream of it is now Money-typed.
+    const total = totalMoney.toMach().amount;
 
     // Stripe rejects charges under $0.50.
     if (total < 0.5) {

@@ -51,7 +51,9 @@ import { retrievePaymentIntent } from '@/lib/stripe';
 import { verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
 import { createOrderPaid, getOrderByPaymentIntentId } from '@/lib/models/mach/orders';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
-import { placeOrder, computeOrderTotals } from '@/lib/mcp/tools/order';
+import { placeOrder } from '@/lib/mcp/tools/order';
+import { computeOrderTotals } from '@/lib/services/order-pricing';
+import { Money } from '@/lib/money';
 
 const AGENT = 'agent-a';
 const SESSION = 's1';
@@ -287,14 +289,14 @@ describe('place_order persists catalog-canonicalized display + total (BMC-161)',
 describe('free-shipping threshold uses dollars, not cents (BMC-161 follow-up)', () => {
   it('charges standard shipping below the $100 threshold', () => {
     // $50 goods → under the free-shipping threshold → $9.99 standard shipping.
-    const { shipping } = computeOrderTotals(50, { region: 'CA' } as any);
-    expect(shipping).toBe(9.99);
+    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), { region: 'CA' } as any);
+    expect(shipping.toMach().amount).toBe(9.99);
   });
 
   it('gives free shipping at/above the $100 threshold', () => {
     // $150 goods → at/above threshold → free shipping.
-    const { shipping } = computeOrderTotals(150, { region: 'CA' } as any);
-    expect(shipping).toBe(0);
+    const { shipping } = computeOrderTotals(Money.fromMajor(150, 'USD'), { region: 'CA' } as any);
+    expect(shipping.isZero()).toBe(true);
   });
 
   it('does not falsely trip the budget gate for a $20 (2000c) cart under a $100 budget', async () => {

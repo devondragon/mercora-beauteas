@@ -18,10 +18,6 @@ import {
   updateOrderStatus,
   updateOrderShipping 
 } from "@/lib/models/mach/orders";
-import { 
-  getOrdersByCustomerId, 
-  insertOrder
-} from "@/lib/models/order";
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData } from "@/lib/utils/email";

@@ -5,7 +5,20 @@ import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
-import { verifyOrderChargeSufficient, AMOUNT_TOLERANCE_CENTS, canonicalizeOrderItemsDisplay, canonicalizeOrderItemsPricing } from '../../services/order-pricing';
+import {
+  verifyOrderChargeSufficient,
+  AMOUNT_TOLERANCE_CENTS,
+  canonicalizeOrderItemsDisplay,
+  canonicalizeOrderItemsPricing,
+  computeOrderTotals,
+} from '../../services/order-pricing';
+import { Money } from '../../money';
+
+// Re-exported for existing callers (lib/mcp/tools/payment.ts, and unit tests
+// that import it directly from this module) — the actual pure math now lives
+// in lib/services/order-pricing.ts (Task 7 / BMC-164), so it can be unit
+// tested without pulling in this module's Cloudflare/Stripe/DB dependencies.
+export { computeOrderTotals };
 
 /**
  * Normalize an inbound MCP address to the MACHAddress shape the pricing and
@@ -27,20 +40,6 @@ export function normalizeAddress(input: any): Address {
     postal_code: a.postal_code ?? a.postalCode,
     country: a.country ?? 'US',
   } as Address;
-}
-
-/**
- * Compute shipping/tax/total for an order from a goods subtotal (dollars) and a
- * destination address, using the same rules the MCP order path applies. Shared
- * so create_payment_intent charges exactly what place_order will expect (BMC-132).
- */
-export function computeOrderTotals(
-  subtotal: number,
-  address: Address
-): { subtotal: number; shipping: number; tax: number; total: number } {
-  const shipping = calculateShipping(address, subtotal);
-  const tax = calculateTax(subtotal, address);
-  return { subtotal, shipping, tax, total: subtotal + shipping + tax };
 }
 
 // Uniform failed-order response for the payment gate below (BMC-132).
@@ -150,28 +149,33 @@ export async function placeOrder(
 
     // Calculate order totals for the budget gate + post-order recommendations.
     // Cart `item.price` is the catalog variant price in CENTS (see the cart tool /
-    // variant.price.amount), but calculateShipping/calculateTax expect DOLLARS —
-    // the same convention computeOrderTotals relies on (its callers pass
-    // `…Cents / 100`). Convert cents→dollars at this boundary. Without it, the
-    // free-shipping threshold `subtotal >= 100` compares a cents value, so any
-    // cart over $1.00 gets free shipping and tax is inflated 100x. (The
-    // authoritative payment total is still recomputed from catalog cents below via
-    // computeOrderTotals(charge.goodsCents / 100, …); this block only feeds the
-    // budget check and the savings copy.)
-    const subtotalCents = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const subtotal = subtotalCents / 100;
-    const shipping = calculateShipping(shippingAddress, subtotal);
-    const tax = calculateTax(subtotal, shippingAddress);
-    const total = subtotal + shipping + tax;
+    // variant.price.amount). Money.fromStored treats a bare number as MINOR units,
+    // so this builds the subtotal directly in cents — no cents/dollars conversion
+    // (and no /100 or *100) at this boundary, which is what used to make the
+    // free-shipping threshold silently compare a cents value against a dollars
+    // literal (BMC-161). computeOrderTotals/calculateShipping/calculateTax are now
+    // Money-typed end to end, so that class of bug is impossible at the type level.
+    // (The authoritative payment total is still recomputed from catalog cents below
+    // via computeOrderTotals(Money.fromMinor(charge.goodsCents, …), …); this block
+    // only feeds the budget check and the savings copy.)
+    const subtotal = cart.reduce(
+      (sum, item) => sum.add(Money.fromStored(item.price).times(item.quantity)),
+      Money.zero('USD')
+    );
+    const { shipping, tax, total } = computeOrderTotals(subtotal, shippingAddress);
+    // Budget preferences (agent_context.userPreferences.budget) are a plain
+    // major-unit (dollars) number, not a wire Money value — compare/display the
+    // order total in the same major units.
+    const totalMajor = total.toMach().amount;
 
     // Validate order limits if agent has budget constraints
-    if (userContext.budget && total > userContext.budget) {
+    if (userContext.budget && totalMajor > userContext.budget) {
       return {
         success: false,
         data: {
           orderId: '',
           status: 'budget_exceeded',
-          total: total,
+          total: totalMajor,
           estimated_delivery: ''
         },
         context: {
@@ -181,7 +185,7 @@ export async function placeOrder(
         },
         recommendations: {
           cost_optimization: [
-            `Order total $${total} exceeds budget $${userContext.budget}`,
+            `Order total $${totalMajor} exceeds budget $${userContext.budget}`,
             'Consider removing items or choosing our sample-size blends'
           ]
         },
@@ -268,8 +272,10 @@ export async function placeOrder(
     // amount to cover it. Without this, an agent could mint a PaymentIntent against
     // a cheap/empty address (low shipping/tax) and still place an order shipped to
     // AK/HI or a high-tax state, under-collecting the difference (PR #51 review).
-    const { total: requiredTotal } = computeOrderTotals(charge.goodsCents / 100, shippingAddress);
-    const requiredTotalCents = Math.round(requiredTotal * 100);
+    // charge.goodsCents is already MINOR units (cents), so no /100·*100 boundary
+    // conversion is needed — Money carries cents through to requiredTotal directly.
+    const { total: requiredTotal } = computeOrderTotals(Money.fromMinor(charge.goodsCents, 'USD'), shippingAddress);
+    const requiredTotalCents = requiredTotal.toMinorUnits();
     if ((verifiedPi.amount_received ?? 0) + AMOUNT_TOLERANCE_CENTS < requiredTotalCents) {
       return orderFailure(sessionId, agentId, startTime, 'PAYMENT_INSUFFICIENT',
         `Payment does not cover the order total including shipping and tax (required ${requiredTotalCents}c for this destination).`,
@@ -281,20 +287,23 @@ export async function placeOrder(
     // packing slip or admin view describe the wrong product. Mirrors the storefront
     // POST /api/orders path. Fails soft — canonicalization errors keep the
     // session-supplied display rather than blocking a legitimately-paid order.
-    const rawItems = cart.map(item => ({
-      product_id: item.productId,
-      variant_id: item.variantId,
-      sku: item.variantId || `${item.productId}-default`,
-      quantity: item.quantity,
-      unit_price: { amount: item.price, currency: 'USD' },
-      total_price: { amount: item.price * item.quantity, currency: 'USD' },
-      product_name: item.name,
-      // Seed the session image so the fail-soft path (canonicalization error or
-      // unresolved product) still persists a display image rather than dropping
-      // it; canonicalizeOrderItemsDisplay overwrites it with catalog truth on
-      // success.
-      imageUrl: item.primaryImageUrl,
-    }));
+    const rawItems = cart.map(item => {
+      const unit = Money.fromStored(item.price);
+      return {
+        product_id: item.productId,
+        variant_id: item.variantId,
+        sku: item.variantId || `${item.productId}-default`,
+        quantity: item.quantity,
+        unit_price: unit.toJSON(),
+        total_price: unit.times(item.quantity).toJSON(),
+        product_name: item.name,
+        // Seed the session image so the fail-soft path (canonicalization error or
+        // unresolved product) still persists a display image rather than dropping
+        // it; canonicalizeOrderItemsDisplay overwrites it with catalog truth on
+        // success.
+        imageUrl: item.primaryImageUrl,
+      };
+    });
     let canonicalItems = rawItems;
     try {
       canonicalItems = await canonicalizeOrderItemsDisplay(rawItems);
@@ -325,13 +334,12 @@ export async function placeOrder(
       id: `MCP-${paymentIntentId}`,
       customer_id: userContext.userId || agentId,
       // M1 (BMC-161): persist the catalog-derived total, not the session-cart
-      // total. requiredTotalCents is derived from charge.goodsCents (catalog)
-      // plus server-computed shipping/tax — the same components the payment gate
-      // verified against. Persist it in CENTS (Money.amount is cents throughout
-      // the order record — item.unit_price above, and the admin UI renders
-      // total_amount.amount / 100); requiredTotal itself is in dollars, so using
-      // it directly here would store an amount 100x too small.
-      total_amount: { amount: requiredTotalCents, currency: 'USD' },
+      // total. requiredTotal is derived from charge.goodsCents (catalog) plus
+      // server-computed shipping/tax — the same components the payment gate
+      // verified against. Money.toJSON() persists CENTS (Money.amount is cents
+      // throughout the order record — item.unit_price above, and the admin UI
+      // renders total_amount.amount / 100).
+      total_amount: requiredTotal.toJSON(),
       shipping_address: shippingAddress,
       billing_address: billingAddress,
       items: canonicalItems,
@@ -402,7 +410,7 @@ export async function placeOrder(
       },
       recommendations: {
         bundling_opportunities: generatePostOrderRecommendations(cart),
-        cost_optimization: [`Order saved $${(userContext.budget || total) - total} vs budget`]
+        cost_optimization: [`Order saved $${(userContext.budget || totalMajor) - totalMajor} vs budget`]
       },
       metadata: {
         can_fulfill_percentage: 100,
@@ -488,32 +496,6 @@ export async function getOrderStatus(
       }
     };
   }
-}
-
-function calculateShipping(address: Address, subtotal: number): number {
-  // Free shipping over $100
-  if (subtotal >= 100) return 0;
-  
-  // Alaska/Hawaii surcharge
-  if (address.region === 'AK' || address.region === 'HI') {
-    return 19.99;
-  }
-  
-  // Standard shipping
-  return 9.99;
-}
-
-function calculateTax(subtotal: number, address: Address): number {
-  // Simple tax calculation - in production, use proper tax service
-  const taxRates: Record<string, number> = {
-    'CA': 0.0875, // California
-    'NY': 0.08,   // New York
-    'TX': 0.0625, // Texas
-    'FL': 0.06    // Florida
-  };
-  
-  const rate = taxRates[address.region || ''] || 0.05; // Default 5%
-  return subtotal * rate;
 }
 
 function calculateEstimatedDelivery(address: Address, shippingOption: string): string {
