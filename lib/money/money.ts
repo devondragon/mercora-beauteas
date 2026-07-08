@@ -96,6 +96,51 @@ export class Money {
     return shares.map(s => new Money(s, this.#currency));
   }
 
+  equals(other: Money): boolean {
+    return this.#currency === other.#currency && this.#minor === other.#minor;
+  }
+
+  gte(other: Money): boolean {
+    this.#assertSameCurrency(other);
+    return this.#minor >= other.#minor;
+  }
+
+  gt(other: Money): boolean {
+    this.#assertSameCurrency(other);
+    return this.#minor > other.#minor;
+  }
+
+  lte(other: Money): boolean {
+    this.#assertSameCurrency(other);
+    return this.#minor <= other.#minor;
+  }
+
+  lt(other: Money): boolean {
+    this.#assertSameCurrency(other);
+    return this.#minor < other.#minor;
+  }
+
+  isZero(): boolean {
+    return this.#minor === 0;
+  }
+
+  isNegative(): boolean {
+    return this.#minor < 0;
+  }
+
+  /** MACH Alliance wire shape: decimal MAJOR units + precision. Use at API/MCP/JSON-LD boundaries only. */
+  toMach(): MachMoney {
+    const precision = getPrecision(this.#currency);
+    const amount = Number(Big(this.#minor).div(Big(10).pow(precision)).toFixed(precision));
+    return { amount, currency: this.#currency, precision };
+  }
+
+  /** Localized currency string for display. The single display entry point. */
+  format(locale = 'en-US'): string {
+    const { amount } = this.toMach();
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: this.#currency }).format(amount);
+  }
+
   get currency(): string { return this.#currency; }
 
   toMinorUnits(): number { return this.#minor; }

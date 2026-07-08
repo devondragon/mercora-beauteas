@@ -70,3 +70,23 @@ describe('Money arithmetic', () => {
     expect(parts.reduce((a, p) => a + p.toMinorUnits(), 0)).toBe(1000);
   });
 });
+
+describe('Money comparisons + wire/display', () => {
+  it('compares same-currency', () => {
+    expect(Money.fromMinor(200).gte(Money.fromMinor(100))).toBe(true);
+    expect(Money.fromMinor(100).lt(Money.fromMinor(200))).toBe(true);
+    expect(Money.fromMinor(0).isZero()).toBe(true);
+    expect(Money.fromMinor(-1).isNegative()).toBe(true);
+    expect(Money.fromMinor(100, 'USD').equals(Money.fromMinor(100, 'USD'))).toBe(true);
+  });
+  it('toMach emits decimal major units + precision', () => {
+    expect(Money.fromMinor(2999, 'USD').toMach()).toEqual({ amount: 29.99, currency: 'USD', precision: 2 });
+    expect(Money.fromMinor(1000, 'JPY').toMach()).toEqual({ amount: 1000, currency: 'JPY', precision: 0 });
+  });
+  it('round-trips fromMajor -> toMach', () => {
+    expect(Money.fromMajor('29.99', 'USD').toMach().amount).toBe(29.99);
+  });
+  it('format renders currency', () => {
+    expect(Money.fromMinor(2999, 'USD').format('en-US')).toBe('$29.99');
+  });
+});
