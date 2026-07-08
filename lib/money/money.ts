@@ -52,6 +52,50 @@ export class Money {
     return new Money(0, currency);
   }
 
+  #assertSameCurrency(other: Money): void {
+    if (other.#currency !== this.#currency) {
+      throw new Error(`Currency mismatch: ${this.#currency} vs ${other.#currency}`);
+    }
+  }
+
+  add(other: Money): Money {
+    this.#assertSameCurrency(other);
+    return new Money(this.#minor + other.#minor, this.#currency);
+  }
+
+  subtract(other: Money): Money {
+    this.#assertSameCurrency(other);
+    return new Money(this.#minor - other.#minor, this.#currency);
+  }
+
+  negate(): Money {
+    return new Money(-this.#minor, this.#currency);
+  }
+
+  /** Multiply by an integer quantity (a count of items). */
+  times(qty: number): Money {
+    if (!Number.isInteger(qty)) {
+      throw new Error(`times() expects an integer quantity, got ${qty}`);
+    }
+    return new Money(this.#minor * qty, this.#currency);
+  }
+
+  /** Multiply by a rate (tax %, discount %) with exact big.js math, round half-up to integer minor. */
+  applyRate(rate: number | string): Money {
+    const minor = Big(this.#minor).times(rate).round(0, Big.roundHalfUp);
+    return new Money(Number(minor), this.#currency);
+  }
+
+  /** Split into shares by integer ratios, distributing the remainder so the sum is preserved. */
+  allocate(ratios: number[]): Money[] {
+    const total = ratios.reduce((a, b) => a + b, 0);
+    if (total <= 0) throw new Error('allocate() ratios must sum to a positive number');
+    const shares = ratios.map(r => Math.floor((this.#minor * r) / total));
+    let remainder = this.#minor - shares.reduce((a, b) => a + b, 0);
+    for (let i = 0; remainder > 0; i = (i + 1) % ratios.length) { shares[i]++; remainder--; }
+    return shares.map(s => new Money(s, this.#currency));
+  }
+
   get currency(): string { return this.#currency; }
 
   toMinorUnits(): number { return this.#minor; }

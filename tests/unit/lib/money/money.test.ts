@@ -40,3 +40,33 @@ describe('Money constructors + persistence', () => {
     });
   });
 });
+
+describe('Money arithmetic', () => {
+  it('adds and subtracts same-currency', () => {
+    expect(Money.fromMinor(2999).add(Money.fromMinor(1)).toMinorUnits()).toBe(3000);
+    expect(Money.fromMinor(3000).subtract(Money.fromMinor(1)).toMinorUnits()).toBe(2999);
+  });
+  it('throws on currency mismatch', () => {
+    expect(() => Money.fromMinor(1, 'USD').add(Money.fromMinor(1, 'EUR'))).toThrow(/mismatch/i);
+  });
+  it('times multiplies by an integer quantity', () => {
+    expect(Money.fromMinor(2999).times(3).toMinorUnits()).toBe(8997);
+  });
+  it('times rejects non-integer quantity', () => {
+    expect(() => Money.fromMinor(2999).times(1.5)).toThrow();
+  });
+  it('applyRate multiplies then rounds half-up to integer minor', () => {
+    // 8.25% tax on $29.99 = 247.4175c -> 247c
+    expect(Money.fromMinor(2999).applyRate(0.0825).toMinorUnits()).toBe(247);
+    // half-up boundary: 100c * 0.005 = 0.5 -> 1c
+    expect(Money.fromMinor(100).applyRate(0.005).toMinorUnits()).toBe(1);
+  });
+  it('negate flips sign (for refunds)', () => {
+    expect(Money.fromMinor(2999).negate().toMinorUnits()).toBe(-2999);
+  });
+  it('allocate splits without losing minor units', () => {
+    const parts = Money.fromMinor(1000).allocate([1, 1, 1]);
+    expect(parts.map(p => p.toMinorUnits())).toEqual([334, 333, 333]);
+    expect(parts.reduce((a, p) => a + p.toMinorUnits(), 0)).toBe(1000);
+  });
+});
