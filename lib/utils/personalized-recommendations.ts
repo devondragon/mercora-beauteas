@@ -7,10 +7,11 @@
  */
 
 import type { Product, Order } from "@/lib/types";
-import type { EnhancedUserContext } from "@/lib/hooks/useEnhancedUserContext";
+import type { RecsUserContext } from "@/lib/recommendations/types";
+import { Money } from "@/lib/money";
 
 export interface RecommendationContext {
-  userContext: EnhancedUserContext;
+  userContext: RecsUserContext;
   currentProducts: Product[];
   viewingProduct?: Product;
   category?: string;
@@ -56,7 +57,7 @@ export function getPersonalizedRecommendations(
  */
 function calculatePersonalizationScore(
   product: Product,
-  userContext: EnhancedUserContext,
+  userContext: RecsUserContext,
   viewingProduct?: Product,
   category?: string
 ): number {
@@ -80,7 +81,7 @@ function calculatePersonalizationScore(
   if (userContext.orders.length > 0) {
     // Check if user has bought similar products
     const purchasedProductIds = userContext.orders
-      .flatMap(order => order.items.map(item => String(item.product_id)));
+      .flatMap(order => (order as Order).items.map(item => String(item.product_id)));
     if (purchasedProductIds.includes(String(product.id))) {
       score -= 5; // Don't recommend products user already bought
     }
@@ -90,35 +91,33 @@ function calculatePersonalizationScore(
     score += 1; // Small boost for returning customers
   }
 
-  // Price range matching
+  // Price range matching (Money-safe: variant price is stored Money in minor units)
   if (userContext.preferredPriceRange) {
-    // Use variant price if available, else fallback to product.extensions?.price
-    let productPrice = undefined;
+    let productPrice: number | undefined;
     if (product.variants && product.variants.length > 0) {
-      productPrice = product.variants[0].price?.amount;
+      productPrice = Money.fromStored(product.variants[0].price ?? 0).toMinorUnits();
     } else if (product.extensions?.price) {
-      productPrice = product.extensions.price;
+      productPrice = Money.fromStored(product.extensions.price as any).toMinorUnits();
     }
     const { min, max } = userContext.preferredPriceRange;
-    if (typeof productPrice === 'number') {
+    if (typeof productPrice === "number") {
       if (productPrice >= min && productPrice <= max) {
-        score += 2; // Within user's typical spending range
+        score += 2;
       } else if (productPrice > max) {
-        score -= 1; // Above typical range
+        score -= 1;
       }
     }
   }
 
-  // VIP customer boost
+  // VIP customer boost — recommend premium products ($50+ = 5000 minor units)
   if (userContext.isVipCustomer) {
-    // Recommend premium products to VIP customers
-    let price = undefined;
+    let price: number | undefined;
     if (product.variants && product.variants.length > 0) {
-      price = product.variants[0].price?.amount;
+      price = Money.fromStored(product.variants[0].price ?? 0).toMinorUnits();
     } else if (product.extensions?.price) {
-      price = product.extensions.price;
+      price = Money.fromStored(product.extensions.price as any).toMinorUnits();
     }
-    if (typeof price === 'number' && price > 5000) { // $50+ products
+    if (typeof price === "number" && price > 5000) {
       score += 1;
     }
   }
@@ -142,21 +141,21 @@ function calculatePersonalizationScore(
  */
 export function explainRecommendation(
   product: Product,
-  userContext: EnhancedUserContext,
+  userContext: RecsUserContext,
   viewingProduct?: Product
 ): string {
   const reasons: string[] = [];
 
-  if (viewingProduct && product.tags?.some((tag: string) => 
+  if (viewingProduct && product.tags?.some((tag: string) =>
     viewingProduct.tags?.includes(tag)
   )) {
     reasons.push("similar tags");
   }
-  let price = undefined;
+  let price: number | undefined;
   if (product.variants && product.variants.length > 0) {
-    price = product.variants[0].price?.amount;
+    price = Money.fromStored(product.variants[0].price ?? 0).toMinorUnits();
   } else if (product.extensions?.price) {
-    price = product.extensions.price;
+    price = Money.fromStored(product.extensions.price as any).toMinorUnits();
   }
   if (userContext.isVipCustomer && typeof price === 'number' && price > 5000) {
     reasons.push("premium recommendation for VIP");
