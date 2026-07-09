@@ -81,7 +81,7 @@ function calculatePersonalizationScore(
   if (userContext.orders.length > 0) {
     // Check if user has bought similar products
     const purchasedProductIds = userContext.orders
-      .flatMap(order => (order as Order).items.map(item => String(item.product_id)));
+      .flatMap(order => order?.items?.map(item => String(item.product_id)) ?? []);
     if (purchasedProductIds.includes(String(product.id))) {
       score -= 5; // Don't recommend products user already bought
     }

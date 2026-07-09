@@ -12,11 +12,20 @@ export interface RecommendationSettings {
 }
 
 /**
+ * Minimal shape of an order the scorer actually reads (just enough to pull
+ * purchased product ids out of `items`). `Order` (lib/types) is structurally
+ * assignable to this, so real callers keep working.
+ */
+export interface RecsOrderLike {
+  items?: Array<{ product_id?: string | number; id?: string | number }>;
+}
+
+/**
  * Minimal user context the scorer/blend actually reads. EnhancedUserContext
  * structurally satisfies this, so existing callers keep working.
  */
 export interface RecsUserContext {
-  orders: unknown[];
+  orders: RecsOrderLike[];
   isVipCustomer: boolean;
   preferredPriceRange: { min: number; max: number } | null;
   recentPurchases: string[]; // product ids
