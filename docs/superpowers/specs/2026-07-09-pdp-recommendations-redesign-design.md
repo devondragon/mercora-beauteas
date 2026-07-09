@@ -117,8 +117,8 @@ New table (next free prefix is `0013`; `0011`/`0012` are taken — see CLAUDE.md
 
 ```
 product_recommendations
-  source_product_id   INTEGER NOT NULL   -- the PDP product
-  recommended_product_id INTEGER NOT NULL
+  source_product_id   TEXT NOT NULL      -- the PDP product
+  recommended_product_id TEXT NOT NULL
   rank                INTEGER NOT NULL   -- 0-based order within source
   score               REAL               -- similarity/curation score (nullable)
   reason              TEXT               -- optional label (e.g. "similar")

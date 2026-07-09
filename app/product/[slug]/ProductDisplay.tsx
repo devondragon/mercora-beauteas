@@ -12,7 +12,9 @@
  * - **Responsive Design**: Mobile-first layout with desktop enhancements
  * - **Image Optimization**: Next.js Image component with proper sizing
  * - **Visual Feedback**: Selected thumbnail highlighting and hover states
- * - **AI Recommendations**: Integrated ProductRecommendations component
+ * - **AI Recommendations**: Renders the `ProductRecommendations` component with a
+ *   `recommendations` prop resolved server-side (see `lib/recommendations/`) —
+ *   this component is presentational and does not fetch recommendations itself
  * - **Tabbed Content**: Details and reviews separated for a cleaner layout
  *
  * === Usage ===
