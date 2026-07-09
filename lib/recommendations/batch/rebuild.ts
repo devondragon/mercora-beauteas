@@ -21,7 +21,7 @@ function productText(product: any): string {
 export async function rebuildProductRecommendations(
   env: any,
   opts: { neighbors?: number } = {}
-): Promise<{ productsProcessed: number; rowsWritten: number }> {
+): Promise<{ productsProcessed: number; rowsWritten: number; errors: { productId: string; error: string }[] }> {
   const ai = env.AI;
   const vectorize = env.VECTORIZE;
   if (!ai || !vectorize) {
@@ -34,50 +34,57 @@ export async function rebuildProductRecommendations(
 
   let productsProcessed = 0;
   let rowsWritten = 0;
+  const errors: { productId: string; error: string }[] = [];
 
   for (const product of products) {
     const sourceId = String(product.id);
 
-    // Embed the product's own text, then query nearest neighbors.
-    const embedding = await ai.run(getCurrentEmbeddingModel(), { text: productText(product) });
-    const results = await vectorize.query(embedding.data[0], {
-      topK: neighbors + 5, // over-fetch; self + non-product snippets get filtered
-      returnMetadata: true,
-    });
+    try {
+      // Embed the product's own text, then query nearest neighbors.
+      const embedding = await ai.run(getCurrentEmbeddingModel(), { text: productText(product) });
+      const results = await vectorize.query(embedding.data[0], {
+        topK: neighbors + 5, // over-fetch; self + non-product snippets get filtered
+        returnMetadata: true,
+      });
 
-    const seen = new Set<string>();
-    const ranked: { id: string; score: number }[] = [];
-    for (const match of results?.matches ?? []) {
-      const pid = match.metadata?.productId;
-      if (!pid || String(pid) === sourceId || seen.has(String(pid))) continue;
-      seen.add(String(pid));
-      ranked.push({ id: String(pid), score: typeof match.score === "number" ? match.score : 0 });
-      if (ranked.length >= neighbors) break;
+      const seen = new Set<string>();
+      const ranked: { id: string; score: number }[] = [];
+      for (const match of results?.matches ?? []) {
+        const pid = match.metadata?.productId;
+        if (!pid || String(pid) === sourceId || seen.has(String(pid))) continue;
+        seen.add(String(pid));
+        ranked.push({ id: String(pid), score: typeof match.score === "number" ? match.score : 0 });
+        if (ranked.length >= neighbors) break;
+      }
+
+      // Replace this source product's rows atomically (D1 has no transaction()).
+      const statements: any[] = [
+        db.delete(product_recommendations).where(eq(product_recommendations.source_product_id, sourceId)),
+      ];
+      ranked.forEach((r, rank) => {
+        statements.push(
+          db.insert(product_recommendations).values({
+            source_product_id: sourceId,
+            recommended_product_id: r.id,
+            rank,
+            score: r.score,
+            reason: "vector_similarity",
+          })
+        );
+      });
+      if (statements.length > 0) {
+        // db.batch requires a non-empty tuple.
+        await db.batch(statements as [any, ...any[]]);
+      }
+
+      productsProcessed += 1;
+      rowsWritten += ranked.length;
+    } catch (err) {
+      console.error(`Recommendations rebuild: failed to process product ${sourceId}:`, err);
+      errors.push({ productId: sourceId, error: String(err) });
+      continue;
     }
-
-    // Replace this source product's rows atomically (D1 has no transaction()).
-    const statements: any[] = [
-      db.delete(product_recommendations).where(eq(product_recommendations.source_product_id, sourceId)),
-    ];
-    ranked.forEach((r, rank) => {
-      statements.push(
-        db.insert(product_recommendations).values({
-          source_product_id: sourceId,
-          recommended_product_id: r.id,
-          rank,
-          score: r.score,
-          reason: "vector_similarity",
-        })
-      );
-    });
-    if (statements.length > 0) {
-      // db.batch requires a non-empty tuple.
-      await db.batch(statements as [any, ...any[]]);
-    }
-
-    productsProcessed += 1;
-    rowsWritten += ranked.length;
   }
 
-  return { productsProcessed, rowsWritten };
+  return { productsProcessed, rowsWritten, errors };
 }
