@@ -114,6 +114,19 @@ interface SocialMediaSettings {
   tiktok: string;
 }
 
+interface RecommendationSettings {
+  strategy: 'deterministic' | 'ai_batch';
+  personalize: boolean;
+  exclude_owned: boolean;
+  limit: number;
+}
+
+interface RecommendationsRebuildSummary {
+  productsProcessed: number;
+  rowsWritten: number;
+  durationMs: number;
+}
+
 interface VectorIndexStatus {
   knowledgeBaseSize: number;
   vectorIndexStatus: string;
@@ -121,7 +134,7 @@ interface VectorIndexStatus {
 }
 
 export default function AdminSettingsPage() {
-  const [activeTab, setActiveTab] = useState<"system" | "store" | "shipping" | "refunds" | "promotions" | "social" | "admins">("system");
+  const [activeTab, setActiveTab] = useState<"system" | "store" | "shipping" | "refunds" | "promotions" | "recommendations" | "social" | "admins">("system");
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
@@ -171,6 +184,17 @@ export default function AdminSettingsPage() {
     facebook: '',
     tiktok: ''
   });
+
+  const [recommendationSettings, setRecommendationSettings] = useState<RecommendationSettings>({
+    strategy: 'deterministic',
+    personalize: true,
+    exclude_owned: true,
+    limit: 3
+  });
+
+  // Recommendations rebuild state
+  const [recRebuildLoading, setRecRebuildLoading] = useState(false);
+  const [recRebuildSummary, setRecRebuildSummary] = useState<RecommendationsRebuildSummary | null>(null);
 
   const [vectorStatus, setVectorStatus] = useState<VectorIndexStatus>({
     knowledgeBaseSize: 38,
@@ -230,6 +254,11 @@ export default function AdminSettingsPage() {
             if (setting.key === 'social.twitter') setSocialMediaSettings(prev => ({ ...prev, twitter: value }));
             if (setting.key === 'social.facebook') setSocialMediaSettings(prev => ({ ...prev, facebook: value }));
             if (setting.key === 'social.tiktok') setSocialMediaSettings(prev => ({ ...prev, tiktok: value }));
+          } else if (setting.category === 'recommendations') {
+            if (setting.key === 'recommendations.strategy') setRecommendationSettings(prev => ({ ...prev, strategy: value }));
+            if (setting.key === 'recommendations.personalize') setRecommendationSettings(prev => ({ ...prev, personalize: value }));
+            if (setting.key === 'recommendations.exclude_owned') setRecommendationSettings(prev => ({ ...prev, exclude_owned: value }));
+            if (setting.key === 'recommendations.limit') setRecommendationSettings(prev => ({ ...prev, limit: value }));
           }
         });
       }
@@ -373,6 +402,12 @@ export default function AdminSettingsPage() {
         { key: 'social.twitter', value: socialMediaSettings.twitter, category: 'social' },
         { key: 'social.facebook', value: socialMediaSettings.facebook, category: 'social' },
         { key: 'social.tiktok', value: socialMediaSettings.tiktok, category: 'social' },
+
+        // Recommendations settings
+        { key: 'recommendations.strategy', value: recommendationSettings.strategy, category: 'recommendations', data_type: 'string' },
+        { key: 'recommendations.personalize', value: recommendationSettings.personalize, category: 'recommendations', data_type: 'boolean' },
+        { key: 'recommendations.exclude_owned', value: recommendationSettings.exclude_owned, category: 'recommendations', data_type: 'boolean' },
+        { key: 'recommendations.limit', value: recommendationSettings.limit, category: 'recommendations', data_type: 'number' },
       ];
       
       const response = await fetch('/api/admin/settings', {
@@ -423,12 +458,40 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const triggerRecommendationsRebuild = async () => {
+    try {
+      setRecRebuildLoading(true);
+      const response = await fetch('/api/admin/recommendations/rebuild', {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        const result = await response.json() as RecommendationsRebuildSummary & { success: boolean };
+        setRecRebuildSummary({
+          productsProcessed: result.productsProcessed,
+          rowsWritten: result.rowsWritten,
+          durationMs: result.durationMs
+        });
+        alert(`Recommendations rebuild complete! Processed ${result.productsProcessed} products, wrote ${result.rowsWritten} rows in ${(result.durationMs / 1000).toFixed(1)}s.`);
+      } else {
+        const error = await response.json() as any;
+        alert('Failed to rebuild recommendations: ' + (error?.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Recommendations rebuild error:', error);
+      alert('Error rebuilding recommendations: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setRecRebuildLoading(false);
+    }
+  };
+
   const tabs = [
     { id: "system" as const, label: "System", icon: Settings, description: "Maintenance & debug" },
     { id: "store" as const, label: "Store", icon: Store, description: "Operations & policies" },
     { id: "shipping" as const, label: "Shipping", icon: Zap, description: "Methods & pricing" },
     { id: "refunds" as const, label: "Refunds", icon: RefreshCw, description: "Return policies" },
     { id: "promotions" as const, label: "Promotions", icon: DollarSign, description: "Sales & banners" },
+    { id: "recommendations" as const, label: "Recommendations", icon: Bot, description: "PDP strategy & rebuild" },
     { id: "social" as const, label: "Social Media", icon: Share2, description: "Social links" },
     { id: "admins" as const, label: "Admin Users", icon: Shield, description: "Access management" }
   ];
@@ -909,6 +972,118 @@ export default function AdminSettingsPage() {
                   </div>
                 </>
               )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Recommendations Settings */}
+      {activeTab === "recommendations" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <Bot className="w-5 h-5 text-primary-600" />
+              <h3 className="text-lg font-semibold text-text-primary">Recommendation Strategy</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Strategy</label>
+                <select
+                  value={recommendationSettings.strategy}
+                  onChange={(e) => setRecommendationSettings(prev => ({ ...prev, strategy: e.target.value as 'deterministic' | 'ai_batch' }))}
+                  className="w-full px-3 py-2 admin-input rounded-md"
+                >
+                  <option value="deterministic">Deterministic (rule-based, real-time)</option>
+                  <option value="ai_batch">AI Batch (precomputed via Vectorize)</option>
+                </select>
+                <p className="text-xs text-text-muted mt-1">
+                  {recommendationSettings.strategy === 'ai_batch'
+                    ? 'Uses the precomputed product_recommendations table — rebuild after catalog changes.'
+                    : 'Computed on-the-fly from category, price, and attribute similarity.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Number of Recommendations</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="12"
+                  value={recommendationSettings.limit}
+                  onChange={(e) => setRecommendationSettings(prev => ({ ...prev, limit: Math.min(12, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                  className="admin-input"
+                />
+                <p className="text-xs text-text-muted mt-1">Products shown in the PDP recommendations strip (1–12)</p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium text-text-secondary">Personalize</label>
+                  <p className="text-xs text-text-muted">Reserve a slot for logged-in customers based on order history</p>
+                </div>
+                <Switch
+                  checked={recommendationSettings.personalize}
+                  onCheckedChange={(checked) => setRecommendationSettings(prev => ({ ...prev, personalize: checked }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium text-text-secondary">Exclude Owned Products</label>
+                  <p className="text-xs text-text-muted">Hide products the customer has already purchased</p>
+                </div>
+                <Switch
+                  checked={recommendationSettings.exclude_owned}
+                  onCheckedChange={(checked) => setRecommendationSettings(prev => ({ ...prev, exclude_owned: checked }))}
+                />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <Database className="w-5 h-5 text-state-info" />
+              <h3 className="text-lg font-semibold text-text-primary">AI Batch Recommendations</h3>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-sm text-text-secondary leading-relaxed">
+                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch — rebuild after significant catalog changes.
+              </p>
+
+              {recRebuildSummary && (
+                <div className="bg-surface border border-border-default rounded-lg p-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Products Processed</span>
+                    <span className="text-text-primary font-medium">{recRebuildSummary.productsProcessed}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Rows Written</span>
+                    <span className="text-text-primary font-medium">{recRebuildSummary.rowsWritten}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Duration</span>
+                    <span className="text-text-primary font-medium">{(recRebuildSummary.durationMs / 1000).toFixed(1)}s</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-border-default">
+                <Button
+                  onClick={triggerRecommendationsRebuild}
+                  disabled={recRebuildLoading}
+                  variant="outline"
+                  className="w-full border-secondary-400 text-secondary-600 hover:bg-secondary-500 hover:text-text-inverse"
+                >
+                  {recRebuildLoading ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                  )}
+                  Rebuild Recommendations
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
