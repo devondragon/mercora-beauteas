@@ -60,6 +60,7 @@ interface ProductDisplayProps {
   reviews: Review[];
   reviewEligibility?: ProductReviewEligibility;
   subscriptionPlans?: SubscriptionPlan[];
+  recommendations: Product[];
 }
 
 function getMediaUrl(media: any): string {
@@ -131,6 +132,7 @@ export default function ProductDisplay({
   reviews,
   reviewEligibility,
   subscriptionPlans = [],
+  recommendations,
 }: ProductDisplayProps) {
   const allImages = useMemo(() => {
     try {
@@ -497,8 +499,8 @@ export default function ProductDisplay({
         </div>
       </div>
 
-      {/* AI-Powered Product Recommendations */}
-      <ProductRecommendations product={product} />
+      {/* Product Recommendations */}
+      <ProductRecommendations recommendations={recommendations} />
     </>
   );
 }
