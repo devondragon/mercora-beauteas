@@ -1,0 +1,15 @@
+{
+  "name": "beauteas-recommendations-cron",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    // Daily at 08:00 UTC. Adjust cadence as the catalog's change rate warrants.
+    "crons": ["0 8 * * *"]
+  },
+  "vars": {
+    // Set REBUILD_URL per environment at deploy time.
+    "REBUILD_URL": "https://beauteas.com/api/admin/recommendations/rebuild"
+  }
+  // ADMIN_TOKEN is a secret: `wrangler secret put ADMIN_TOKEN` in this dir.
+}
