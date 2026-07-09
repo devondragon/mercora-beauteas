@@ -39,6 +39,10 @@ export function blendRecommendations(input: BlendInput): Product[] {
 
   if (personalize && userContext && userContext.orders.length > 0) {
     // Reserve one slot for a purchase-history-aware pick.
+    // Over-fetch by 5: gives `.find()` below headroom to land on a pick
+    // outside `baseTop` (and past any owned/source exclusions) without
+    // exhausting the ranked list. Any residual shortfall is still rescued
+    // by the unconditional top-up pass further down.
     const personalized = getPersonalizedRecommendations(
       { userContext, currentProducts: [], viewingProduct: product },
       allProducts,
