@@ -36,6 +36,6 @@ export const aiBatchProvider: RecommendationProvider = {
       })
       .from(product_recommendations)
       .where(eq(product_recommendations.source_product_id, String(product.id)));
-    return hydrateBatchRecommendations(rows as BatchRow[], ctx.allProducts, count);
+    return hydrateBatchRecommendations(rows, ctx.allProducts, count);
   },
 };
