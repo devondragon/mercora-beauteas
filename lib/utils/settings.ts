@@ -20,6 +20,7 @@
 import { getDbAsync } from '@/lib/db';
 import { admin_settings } from '@/lib/db/schema/settings';
 import { eq } from 'drizzle-orm';
+import type { RecommendationSettings, RecommendationStrategy } from "@/lib/recommendations/types";
 
 /**
  * Get a typed settings object for easy use in components
@@ -115,4 +116,30 @@ export interface RefundPolicy {
   restockingFeePercent: number;
   minimumRefundAmount: number;
   applyRestockingFeeOnPartialReturn: boolean;
+}
+
+/**
+ * Pure normalizer for recommendation settings — tolerates missing/invalid values.
+ */
+export function normalizeRecommendationSettings(raw: Record<string, any>): RecommendationSettings {
+  const strategyRaw = raw["recommendations.strategy"];
+  const strategy: RecommendationStrategy = strategyRaw === "ai_batch" ? "ai_batch" : "deterministic";
+
+  const limitRaw = raw["recommendations.limit"];
+  const limit = typeof limitRaw === "number" && limitRaw > 0 ? Math.floor(limitRaw) : 3;
+
+  return {
+    strategy,
+    personalize: raw["recommendations.personalize"] !== false,
+    limit,
+    excludeOwned: raw["recommendations.exclude_owned"] !== false,
+  };
+}
+
+/**
+ * Get recommendation feature settings for the PDP recommendations strip.
+ */
+export async function getRecommendationSettings(): Promise<RecommendationSettings> {
+  const settings = await getSettings("recommendations");
+  return normalizeRecommendationSettings(settings);
 }

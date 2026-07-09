@@ -145,6 +145,13 @@ npx tsx scripts/shopify-migration/migrate-all.ts                       # then fu
   ```
 - ☐ Add custom domain in Cloudflare (Workers → beauteas → Settings → Domains) — but **keep DNS pointed at Shopify** for now (use the `*.workers.dev` URL or a staging host for validation).
 - ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, admin login (after §0.2), AI chat. **Note:** This deploy uses live Stripe keys — test cards will be rejected. Either run a real low-value checkout + immediate refund, or temporarily swap to Stripe test keys for this smoke-test step only, then re-set the live key before DNS cutover.
+- ☐ **(Optional) Recommendations rebuild cron:** only needed if `recommendations.strategy` is set to `ai_batch` (the default `deterministic` strategy needs no batch job). Deploy the standalone Worker from `workers/recommendations-cron/`:
+  ```bash
+  cd workers/recommendations-cron
+  wrangler secret put ADMIN_TOKEN    # same value as the app's ADMIN_VECTORIZE_TOKEN
+  wrangler deploy
+  ```
+  Confirm `REBUILD_URL` in that dir's `wrangler.jsonc` points at the live host (`https://beauteas.com/api/admin/recommendations/rebuild`) before deploying.
 
 ---
 

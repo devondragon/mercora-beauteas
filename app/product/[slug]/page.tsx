@@ -44,6 +44,8 @@ import type { Metadata } from "next";
 import { auth } from "@clerk/nextjs/server";
 import { getProductBySlug, getProductReviews, getProductReviewEligibility } from "@/lib/models";
 import { listSubscriptionPlans } from "@/lib/models/mach/subscriptions";
+import { getRecommendationsForProduct } from "@/lib/recommendations";
+import { buildServerUserContext } from "@/lib/recommendations/user-context.server";
 import { notFound } from "next/navigation";
 import ProductDisplay from "./ProductDisplay";
 import {
@@ -118,7 +120,9 @@ export default async function ProductPage({
   const product = await getProductBySlug(slug);
   if (!product) return notFound();
 
-  const [reviews, reviewEligibility, subscriptionPlans] = await Promise.all([
+  const userContext = await buildServerUserContext(userId);
+
+  const [reviews, reviewEligibility, subscriptionPlans, recommendations] = await Promise.all([
     getProductReviews({
       productId: product.id,
       status: ["published"],
@@ -129,6 +133,7 @@ export default async function ProductPage({
       customerId: userId,
     }),
     listSubscriptionPlans(product.id),
+    getRecommendationsForProduct(product, { userContext }),
   ]);
 
   // Build JSON-LD structured data for rich results
@@ -145,7 +150,13 @@ export default async function ProductPage({
       <JsonLdScript data={productJsonLd} />
       <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
-        <ProductDisplay product={product} reviews={reviews} reviewEligibility={reviewEligibility} subscriptionPlans={subscriptionPlans} />
+        <ProductDisplay
+          product={product}
+          reviews={reviews}
+          reviewEligibility={reviewEligibility}
+          subscriptionPlans={subscriptionPlans}
+          recommendations={recommendations}
+        />
       </div>
     </main>
   );

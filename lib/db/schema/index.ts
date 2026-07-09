@@ -124,3 +124,6 @@ export * from "./redirect-map";
 
 // Blog system schema (application-specific)
 export * from "./blog";
+
+// Product recommendations schema (application-specific)
+export * from "./product-recommendations";

@@ -112,7 +112,7 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 - **Drizzle schema** (TypeScript, for queries): `lib/db/schema/` (~22 files; `index.ts` re-exports). `lib/db.ts` exposes cached `getDb()` / `getDbAsync()` via `drizzle(env.DB, { schema })`.
 - **Data access layer:** `lib/models/` (incl. `lib/models/mach/` for MACH Alliance entities).
 
-### Current migrations (13 files → ~39 tables)
+### Current migrations (14 files → ~40 tables)
 | File | Adds |
 |---|---|
 | `0001_initial_schema.sql` | MACH core: addresses, languages, media, customers, categories, product_types, products, product_variants, promotions, coupon_instances, inventory, pricing, orders, api_tokens, chat_sessions/messages, order_webhooks, admin_settings |
@@ -128,8 +128,9 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | `0010_add_gift_cards.sql` | `gift_cards`, `gift_card_transactions` + seeded gift-card product type/product/denomination variants |
 | `0011_hash_mcp_api_keys.sql` | Renames `mcp_agents.api_key` → `api_key_hash` (store SHA-256, not plaintext) + re-seeds the dev `test-agent` hash (BMC-141/BMC-155; no new tables) |
 | `0012_remove_seeded_test_agent.sql` | Deletes the seeded `test-agent` MCP row from every DB — its key (`test-key-123`) is public in the repo, so the row was a live prod credential (BMC-136/C9; no new tables). Local dev restores it from the dev-only `data/d1/seed-dev.sql` |
+| `0013_add_product_recommendations.sql` | `product_recommendations` (precomputed per-product recs for the `ai_batch` provider) + seeds `recommendations.*` admin settings (`strategy`, `personalize`, `limit`, `exclude_owned`). Applied to local, remote dev, and dev preview; **production applies at cutover** |
 
-> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0013_*` (`0011_hash_mcp_api_keys` and `0012_remove_seeded_test_agent` are taken).
+> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0014_*` (`0011_hash_mcp_api_keys`, `0012_remove_seeded_test_agent`, and `0013_add_product_recommendations` are taken).
 
 ### Making a schema change
 1. Update the Drizzle schema/types in `lib/db/schema/` (and `lib/models/`) so app code matches.
@@ -156,6 +157,7 @@ User query → BGE embeddings → Vectorize search → context → text model �
   - **Embeddings:** `@cf/baai/bge-base-en-v1.5` (**768 dimensions** — must match the Vectorize index dims)
 - **System prompt / chat logic:** `app/api/agent-chat/route.ts` (Clerk-authenticated). Context-aware: user name, order history, geolocation, recent chat history.
 - **Indexing:** `app/api/admin/vectorize` rebuilds the index from the `products` table + knowledge markdown in R2, embedding both with BGE. Content source files live under `data/r2/products_md/` and `data/r2/knowledge_md/`.
+- **PDP recommendations** ("Recommended for you") are a separate seam from Chai: `lib/recommendations/` (`getRecommendationsForProduct`) picks a `deterministic` or `ai_batch` provider (`recommendations.strategy` admin setting), blends in live personalization from order history, and is called **server-side** on the product page — it is no longer routed through `/api/agent-chat`. `ai_batch` reads precomputed rows from the `product_recommendations` table (see [migrations](#database--migrations)), rebuilt via an admin endpoint or the `workers/recommendations-cron/` scheduled Worker.
 
 > ⚠️ **Branding debt:** The assistant's prompt/comments here have been rebranded to **Chai** (skincare-tea voice), but outdoor-gear copy still lingers *outside* the assistant (MCP tools, emails, marketing copy). See [Known Branding Debt](#known-branding-debt).
 
