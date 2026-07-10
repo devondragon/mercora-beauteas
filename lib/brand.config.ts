@@ -117,21 +117,25 @@ export const brand = {
   },
 
   // === Footer Links ===
+  // Every href below must resolve to a real route or a published CMS page —
+  // dead footer links that 404 are a common payment-processor hold trigger
+  // (BMC-173). column1 is auto-populated from CMS pages flagged show_in_nav
+  // (e.g. Privacy Policy, Terms of Service) in components/Footer.tsx.
   footerLinks: {
     column1: [
-      // These are pulled from CMS pages (About, FAQ, etc.)
+      // Auto-populated from published CMS navigation pages — do not hardcode.
     ],
     column2: [
-      { label: "The Ritual", href: "/ritual" },
-      { label: "Gift Guide", href: "/gifts" },
-      { label: "Our Promise", href: "/our-promise" },
-      { label: "Subscriptions", href: "/subscribe" },
+      { label: "Subscriptions", href: "/subscriptions" }, // CMS page (published)
+      { label: "Gift Cards", href: "/gift-cards" },        // /gift-cards route
+      { label: "Brewing Guide", href: "/brewing-directions" }, // CMS page (published)
+      { label: "About Us", href: "/about" },               // CMS page (published)
     ],
     column3: [
-      { label: "How It Works", href: "/how-it-works" },
-      { label: "Brewing Guide", href: "/brewing-directions" },
-      { label: "Contact Us", href: "/contact" },
-      { label: "Shipping", href: "/shipping-returns" },
+      { label: "Contact Us", href: "/contact" },           // CMS page (migration 0014)
+      { label: "Shipping Policy", href: "/shipping-policy" }, // CMS page (migration 0014)
+      { label: "Refund & Returns", href: "/refund-policy" }, // CMS page (migration 0014)
+      { label: "FAQ", href: "/faq" },                      // CMS page (published)
     ],
   },
 } as const;
