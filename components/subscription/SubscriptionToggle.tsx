@@ -137,6 +137,15 @@ export default function SubscriptionToggle({
               </Badge>
             )}
           </div>
+
+          {/* Recurring-billing disclosure (lighter than checkout; binding consent lives at checkout) */}
+          {selectedPlan && (
+            <p className="text-xs text-text-secondary">
+              Auto-renews{" "}
+              {(FREQUENCY_LABELS[selectedPlan.frequency] ?? selectedPlan.frequency).toLowerCase()}
+              . Cancel anytime in your account.
+            </p>
+          )}
         </div>
       )}
 

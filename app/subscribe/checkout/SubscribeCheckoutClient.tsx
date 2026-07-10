@@ -6,11 +6,14 @@ import { useStripe, useElements, PaymentElement } from "@stripe/react-stripe-js"
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
+import Link from "next/link";
 import StripeProvider from "@/components/checkout/StripeProvider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Money } from "@/lib/money";
 import {
   Select,
   SelectContent,
@@ -25,6 +28,14 @@ const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
   biweekly: "Every 2 weeks",
   monthly: "Monthly",
   bimonthly: "Every 2 months",
+};
+
+// Natural-language cadence used in the recurring-billing disclosure
+// (e.g. "You'll be charged $X every 2 weeks").
+const FREQUENCY_CADENCE: Record<SubscriptionFrequency, string> = {
+  biweekly: "every 2 weeks",
+  monthly: "every month",
+  bimonthly: "every 2 months",
 };
 
 interface SubscribeCheckoutClientProps {
@@ -140,6 +151,8 @@ export default function SubscribeCheckoutClient({
               <PaymentFormInner
                 planId={plan.id}
                 address={address}
+                frequency={plan.frequency}
+                subscriptionPriceInCents={subscriptionPriceInCents}
                 onSuccess={() =>
                   router.push(
                     `/subscribe/confirmation?plan=${encodeURIComponent(plan.id)}`
@@ -359,19 +372,40 @@ export default function SubscribeCheckoutClient({
 interface PaymentFormInnerProps {
   planId: string;
   address: ShippingAddress;
+  frequency: SubscriptionFrequency;
+  subscriptionPriceInCents: number;
   onSuccess: () => void;
 }
 
-function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps) {
+function PaymentFormInner({
+  planId,
+  address,
+  frequency,
+  subscriptionPriceInCents,
+  onSuccess,
+}: PaymentFormInnerProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  // Affirmative consent to recurring billing (FTC ROSCA / CA ARL).
+  const [consented, setConsented] = useState(false);
+
+  const priceLabel = Money.fromMinor(subscriptionPriceInCents).format();
+  const cadence = FREQUENCY_CADENCE[frequency] ?? "on each renewal";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (!stripe || !elements) return;
+    // Do not start a recurring subscription without affirmative consent.
+    // Surface an inline error so submitting (e.g. via Enter) isn't a silent no-op.
+    if (!consented) {
+      setErrorMessage(
+        "Please confirm you understand this is a recurring subscription before continuing."
+      );
+      return;
+    }
 
     setIsProcessing(true);
     setErrorMessage("");
@@ -461,9 +495,51 @@ function PaymentFormInner({ planId, address, onSuccess }: PaymentFormInnerProps)
           </div>
         )}
 
+        {/* Recurring-billing disclosure + affirmative consent (FTC ROSCA / CA ARL) */}
+        <div className="space-y-3 rounded-lg border border-border-default bg-surface-light p-4">
+          <p className="text-sm text-text-primary">
+            This is a{" "}
+            <span className="font-semibold">recurring subscription that auto-renews</span>. You&apos;ll
+            be charged{" "}
+            <span className="font-semibold">
+              {priceLabel} {cadence}
+            </span>{" "}
+            until you cancel. You can cancel anytime from your account &mdash; no fees, no commitment. By
+            starting your subscription you agree to our{" "}
+            <Link
+              href="/terms-of-service"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary-600 underline hover:text-primary-700"
+            >
+              Terms of Service
+              <span className="sr-only"> (opens in a new tab)</span>
+            </Link>
+            .
+          </p>
+          <label
+            htmlFor="subscription-consent"
+            className="flex cursor-pointer items-start gap-3"
+          >
+            <Checkbox
+              id="subscription-consent"
+              checked={consented}
+              onCheckedChange={(checked) => {
+                const isChecked = checked === true;
+                setConsented(isChecked);
+                if (isChecked) setErrorMessage("");
+              }}
+              className="mt-0.5 border-border-dark"
+            />
+            <span className="text-sm text-text-secondary">
+              I understand this is a recurring subscription that renews automatically until I cancel.
+            </span>
+          </label>
+        </div>
+
         <Button
           type="submit"
-          disabled={!stripe || !elements || isProcessing}
+          disabled={!stripe || !elements || isProcessing || !consented}
           className="w-full bg-primary-500 text-text-inverse hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isProcessing ? (
