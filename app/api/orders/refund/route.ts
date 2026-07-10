@@ -154,6 +154,17 @@ export async function POST(request: NextRequest) {
     // the retry collides (dedupes to one refund), while a genuinely NEW partial
     // refund lands after a successful prior write (higher count) and so gets a
     // distinct key. Hashed to bound the length (Stripe caps keys at 255 chars).
+    //
+    // KNOWN GAP (out of scope for BMC-172, which targets the Stripe-succeeded /
+    // D1-write-failed retry): because `priorRefundCount` changes once a refund has
+    // been recorded, a PARTIAL refund re-submitted AFTER a fully-successful prior
+    // attempt (e.g. an admin double-clicking after a slow/dropped response) gets a
+    // new key and can issue a second Stripe refund — but only up to the remaining
+    // refundable amount, which `assertRefundWithinRemaining` still bounds. A full
+    // refund is already immune (it flips status to 'cancelled', so the resubmit is
+    // rejected by the "already cancelled or refunded" guard above). `reason`/`notes`
+    // are intentionally excluded from the key, so a same-amount retry that only
+    // changes those still dedupes to the original refund.
     const priorRefundCount = Array.isArray(extensions.refunds) ? extensions.refunds.length : 0;
     const refundLineKeys = (items ?? []).slice().sort().join(',');
     const idempotencyKey = `refund:${await sha256Hex(
@@ -266,8 +277,16 @@ export async function POST(request: NextRequest) {
         isFullRefund: type === 'full',
         refundAmount: refundAmountFormatted,
       });
-      await sendOrderStatusUpdateEmail(emailData);
-      console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
+      // sendOrderStatusUpdateEmail() swallows Resend errors and returns
+      // { success:false } rather than throwing, so inspect the result instead of
+      // logging success unconditionally — otherwise a real delivery failure (e.g.
+      // an order with no email on file) would be masked by a "sent" log line.
+      const emailResult = await sendOrderStatusUpdateEmail(emailData);
+      if (emailResult.success) {
+        console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
+      } else {
+        console.error(`Failed to send refund status email for order ${orderId}: ${emailResult.error}`);
+      }
     } catch (emailError) {
       console.error(`Failed to send refund status email for order ${orderId}:`, emailError);
     }
