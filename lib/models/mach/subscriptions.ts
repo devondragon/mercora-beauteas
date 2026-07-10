@@ -140,11 +140,18 @@ export async function createCustomerSubscriptionWithCreatedEvent(
   } catch (err) {
     // A concurrent redelivery inserted first: the UNIQUE stripe_subscription_id
     // constraint fires. The conflicting row is committed and visible, so return
-    // it as "already processed" rather than 500ing. Any other error propagates.
+    // it as "already processed" rather than 500ing.
     if (isUniqueViolation(err)) {
       const existing = await getSubscriptionByStripeId(data.stripe_subscription_id);
       if (existing) return { subscription: existing, created: false };
+      // UNIQUE fired but the row didn't read back — should not happen on D1,
+      // since the batch conflicts against already-committed state. Falling through
+      // to `throw err` yields a single transient 500; it does NOT reinstate the
+      // BMC-182 loop, because Stripe's retry re-enters handleSubscriptionCreated
+      // whose top-level getSubscriptionByStripeId pre-check will find the
+      // now-visible row and short-circuit cleanly.
     }
+    // Any non-UNIQUE error is a real failure — propagate so Stripe retries.
     throw err;
   }
 }
