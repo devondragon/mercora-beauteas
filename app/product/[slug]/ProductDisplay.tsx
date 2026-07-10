@@ -104,6 +104,8 @@ interface ProductExtensions {
   ingredients?: string;
   caffeine?: string;
   servings?: string;
+  /** What's in the box for multi-box packs, e.g. "3 boxes · 30 tea bags". */
+  contents?: string;
   benefits?: string[];
   certifications?: string[];
   brewing?: { temp?: string; time?: string };
@@ -119,6 +121,7 @@ function titleCase(value: string): string {
 /** Structured "at a glance" facts derived from a product's extensions. */
 function buildProductSpecs(ext: ProductExtensions): Array<{ label: string; value: string }> {
   const specs: Array<{ label: string; value: string }> = [];
+  if (ext.contents) specs.push({ label: "Includes", value: ext.contents });
   if (ext.caffeine) specs.push({ label: "Caffeine", value: titleCase(ext.caffeine) });
   if (ext.servings) specs.push({ label: "Servings", value: ext.servings });
   if (ext.brewing?.temp) specs.push({ label: "Brew temp", value: ext.brewing.temp });

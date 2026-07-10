@@ -69,8 +69,9 @@
     }
   },
   "clearly-calendula-sample-pack": {
-    "description": "Discover the complete Clearly Calendula collection with our sample pack featuring one box (10 tea bags) each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Experience the full day of skincare tea benefits - energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. The perfect introduction to beauty from within or a thoughtful gift for tea and skincare enthusiasts.",
+    "description": "Try the complete Clearly Calendula collection with our Sample Pack — 3 boxes in all, one box each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Every box holds 10 compostable tea bags, so you get 30 servings total. Experience a full day of skincare tea benefits: energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. The perfect introduction to beauty from within, or a thoughtful gift for tea and skincare enthusiasts.",
     "extensions": {
+      "contents": "3 boxes · 30 tea bags",
       "benefits": [
         "100% USDA Certified Organic",
         "Fights and heals acne",
@@ -86,8 +87,9 @@
     }
   },
   "clearly-calendula-full-package": {
-    "description": "Discover the complete Clearly Calendula collection with our sample pack featuring one box (10 tea bags) each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Experience the full day of skincare tea benefits - energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. The perfect introduction to beauty from within or a thoughtful gift for tea and skincare enthusiasts.",
+    "description": "Live the complete Clearly Calendula ritual with our Mega Month — 9 boxes in all, three boxes each of Morning (black tea), Afternoon (green tea), and Evening (herbal tea). Every box holds 10 compostable tea bags, so you get 90 servings total: a full month of the Morning / Afternoon / Evening routine, one cup of each per day. Energize in the morning, maintain focus in the afternoon, and relax in the evening while your skin heals and rejuvenates around the clock. All teas are 100% USDA Certified Organic with compostable tea bags made from sugarcane. Our best value for committing to beauty from within, or a generous gift for tea and skincare enthusiasts.",
     "extensions": {
+      "contents": "9 boxes · 90 tea bags",
       "benefits": [
         "100% USDA Certified Organic",
         "Fights and heals acne",
