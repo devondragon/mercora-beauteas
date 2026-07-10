@@ -14,7 +14,7 @@ import {
   getSubscriptionByStripeId,
   getSubscriptionPlanByStripePriceId,
   getSubscriptionPlanById,
-  createCustomerSubscription,
+  createCustomerSubscriptionWithCreatedEvent,
   updateSubscriptionStatus,
   updateSubscriptionPeriod,
   createSubscriptionEvent,
@@ -39,6 +39,18 @@ export async function handleSubscriptionCreated(
     ? subscription.customer
     : subscription.customer.id;
   const stripePriceId = subscription.items.data[0]?.price?.id;
+
+  // Idempotency (BMC-182): a Stripe redelivery (e.g. after a prior attempt
+  // threw AFTER the insert) must not re-create the row. Because the row and its
+  // `created` audit event are inserted atomically (see
+  // createCustomerSubscriptionWithCreatedEvent), an existing row means both
+  // already landed and the welcome email was already sent — skip cleanly rather
+  // than hit the UNIQUE stripe_subscription_id constraint and 500 into a retry loop.
+  const existing = await getSubscriptionByStripeId(stripeSubscriptionId);
+  if (existing) {
+    console.log('[webhook] subscription.created: already processed, skipping', existing.id);
+    return;
+  }
 
   if (!stripePriceId) {
     console.warn('[webhook] subscription.created: no price ID found on subscription', stripeSubscriptionId);
@@ -72,21 +84,28 @@ export async function handleSubscriptionCreated(
     ? new Date(firstItem.current_period_end * 1000).toISOString()
     : undefined;
 
-  const d1Sub = await createCustomerSubscription({
-    customer_id: customerId,
-    plan_id: plan.id,
-    stripe_subscription_id: stripeSubscriptionId,
-    stripe_customer_id: stripeCustomerId,
-    status: subscription.status as SubscriptionStatus,
-    current_period_start: periodStart,
-    current_period_end: periodEnd,
-  });
+  // Atomically insert the subscription row + its `created` audit event. If a
+  // concurrent redelivery raced past the pre-check above and inserted first,
+  // this returns the existing row with `created: false` (UNIQUE conflict
+  // treated as "already processed") instead of throwing — that delivery already
+  // handled the email, so skip cleanly rather than 500 (BMC-182).
+  const { subscription: d1Sub, created } = await createCustomerSubscriptionWithCreatedEvent(
+    {
+      customer_id: customerId,
+      plan_id: plan.id,
+      stripe_subscription_id: stripeSubscriptionId,
+      stripe_customer_id: stripeCustomerId,
+      status: subscription.status as SubscriptionStatus,
+      current_period_start: periodStart,
+      current_period_end: periodEnd,
+    },
+    stripeEventId
+  );
 
-  await createSubscriptionEvent({
-    subscription_id: d1Sub.id,
-    event_type: 'created',
-    stripe_event_id: stripeEventId,
-  });
+  if (!created) {
+    console.log('[webhook] subscription.created: concurrent delivery already processed', d1Sub.id);
+    return;
+  }
 
   // Send lifecycle email (fire-and-forget)
   const customer = await getCustomerDetails(stripeCustomerId);

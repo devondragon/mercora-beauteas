@@ -5,11 +5,13 @@
  * customer subscriptions, subscription events, and webhook dedup.
  */
 
+import { nanoid } from 'nanoid';
 import { getDbAsync } from '@/lib/db';
 import {
   subscription_plans,
   customer_subscriptions,
   subscription_events,
+  type CustomerSubscriptionRow,
 } from '@/lib/db/schema/subscription';
 import { processed_webhook_events } from '@/lib/db/schema/webhook-events';
 import { eq, and, desc, lt, sql, count, like, gte } from 'drizzle-orm';
@@ -109,6 +111,59 @@ export async function createCustomerSubscription(data: {
     .values(data)
     .returning();
   return sub;
+}
+
+/**
+ * Atomically create a customer subscription row plus its opening `created`
+ * audit event in a single db.batch() — D1's atomic multi-statement primitive
+ * (there is no interactive db.transaction()). Either both land or neither does,
+ * so a later Stripe redelivery can never observe a subscription row that is
+ * missing its `created` event. We pre-generate the subscription id so the event
+ * row can reference it within the same batch.
+ *
+ * Idempotent on redelivery (BMC-182): `stripe_subscription_id` is UNIQUE, so a
+ * concurrent duplicate that races past the caller's pre-existence check hits the
+ * constraint here. That is treated as "already processed" — we return the
+ * existing row with `created: false` instead of throwing, so the webhook route
+ * does not 500 into a permanent retry loop.
+ */
+export async function createCustomerSubscriptionWithCreatedEvent(
+  data: {
+    customer_id: string;
+    plan_id: string;
+    stripe_subscription_id: string;
+    stripe_customer_id: string;
+    status?: SubscriptionStatus;
+    current_period_start?: string;
+    current_period_end?: string;
+  },
+  stripeEventId?: string
+): Promise<{ subscription: CustomerSubscriptionRow; created: boolean }> {
+  const db = await getDbAsync();
+  const subId = `SUB-${nanoid(8).toUpperCase()}`;
+  try {
+    const [subRows] = await db.batch([
+      db
+        .insert(customer_subscriptions)
+        .values({ id: subId, ...data })
+        .returning(),
+      db.insert(subscription_events).values({
+        subscription_id: subId,
+        event_type: 'created',
+        stripe_event_id: stripeEventId,
+      }),
+    ]);
+    return { subscription: subRows[0], created: true };
+  } catch (err) {
+    // A concurrent redelivery inserted first: the UNIQUE stripe_subscription_id
+    // constraint fires. The conflicting row is committed and visible, so return
+    // it as "already processed" rather than 500ing. Any other error propagates.
+    if (isUniqueViolation(err)) {
+      const existing = await getSubscriptionByStripeId(data.stripe_subscription_id);
+      if (existing) return { subscription: existing, created: false };
+    }
+    throw err;
+  }
 }
 
 export async function updateSubscriptionStatus(
