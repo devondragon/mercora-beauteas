@@ -342,6 +342,13 @@ export default function ProductDisplay({
                         <p className="leading-relaxed">{ingredients}</p>
                       </div>
                     )}
+
+                    {benefits.length > 0 && (
+                      <p className="border-t border-border-default pt-4 text-xs leading-relaxed text-text-muted">
+                        These statements have not been evaluated by the Food and Drug Administration. This
+                        product is not intended to diagnose, treat, cure, or prevent any disease.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <ProductReviewsSection
