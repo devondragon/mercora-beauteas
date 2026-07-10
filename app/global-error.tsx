@@ -50,6 +50,7 @@ export default function GlobalError({
             reliable escape hatch. */}
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <button
+            type="button"
             onClick={reset}
             style={{
               display: "inline-flex",
