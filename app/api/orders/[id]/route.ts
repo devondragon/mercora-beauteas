@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Order } from "@/lib/types/order";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { Money } from "@/lib/money";
+import { toWireOrder } from "@/lib/utils/order-wire";
 
 function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
   return {
@@ -68,7 +69,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    return NextResponse.json({ data: order, meta: { schema: "mach:order" } });
+    // BMC-179: emit the MACH wire shape ({amount, currency, precision}, major
+    // units) at the response boundary — identical to the sibling list route
+    // (app/api/orders/route.ts) via the shared toWireOrder helper. The internal
+    // hydrateOrder() output stays in minor units for the auth/ownership check
+    // above; convert only here, immediately before NextResponse.json().
+    return NextResponse.json({ data: toWireOrder(order), meta: { schema: "mach:order" } });
   } catch (error) {
     console.error("Order GET error:", error);
     return NextResponse.json({ error: "Failed to retrieve order" }, { status: 500 });
