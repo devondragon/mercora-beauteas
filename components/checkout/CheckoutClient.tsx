@@ -29,6 +29,7 @@
 "use client";
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useCartStore } from '@/lib/stores/cart-store';
 import StripeProvider from './StripeProvider';
 import PaymentForm from './PaymentForm';
@@ -483,6 +484,19 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Policy links — surfaces our Terms, Privacy, and Refund policies at the
+          point of purchase. Reduces cart abandonment and is a common
+          payment-processor requirement (BMC-173). */}
+      <div className="pt-2 text-center text-xs text-text-muted">
+        <span>By placing your order you agree to our </span>
+        <Link href="/terms-of-service" className="underline hover:text-text-primary transition-colors">Terms of Service</Link>
+        <span> and </span>
+        <Link href="/privacy-policy" className="underline hover:text-text-primary transition-colors">Privacy Policy</Link>
+        <span>. See our </span>
+        <Link href="/refund-policy" className="underline hover:text-text-primary transition-colors">Refund Policy</Link>
+        <span> for returns and refunds.</span>
       </div>
     </div>
   );
