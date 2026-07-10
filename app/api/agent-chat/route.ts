@@ -298,6 +298,7 @@ CRITICAL REQUIREMENTS:
 - Create comprehensive content with multiple sections
 - Ensure content is complete and not truncated
 - Target detailed, informative content appropriate for business use
+- COMPLIANCE: Our teas are food, not medicine. NEVER make medical, disease, cure, or weight-loss claims. Use structure/function and traditional-use language for any health, wellness, or ingredient content (e.g. "supports clear, healthy-looking skin," "botanicals traditionally used in skincare"). When the content makes any wellness or benefit claim, include the FDA disclaimer verbatim: "These statements have not been evaluated by the Food and Drug Administration. This product is not intended to diagnose, treat, cure, or prevent any disease."
 
 Generate complete content based on the user's specifications.`;
 
