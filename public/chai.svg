@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-labelledby="chai-title chai-desc">
+  <title id="chai-title">Chai</title>
+  <desc id="chai-desc">BeauTeas mascot: a teacup with a botanical leaf and rising steam.</desc>
+  <!-- Badge disc: cream fill with a soft rose ring so the mark reads on both cream and rose backgrounds -->
+  <circle cx="24" cy="24" r="22" fill="#fdf8f6" stroke="#cf8577" stroke-width="2" />
+  <!-- Steam wisps -->
+  <path d="M16.5 17c-1.9-1.7-1.9-3.8 0-5.5" stroke="#c4a87c" stroke-width="1.4" stroke-linecap="round" opacity="0.85" />
+  <path d="M31.5 17c1.9-1.7 1.9-3.8 0-5.5" stroke="#c4a87c" stroke-width="1.4" stroke-linecap="round" opacity="0.85" />
+  <!-- Botanical leaf rising from the cup -->
+  <path d="M22 19c-3-5-2-11 2.5-14 3.5 4 2.5 10-2.5 14z" fill="#446b52" />
+  <path d="M23 18c0-4 .6-7 2.2-9.6" stroke="#eef4ee" stroke-width="1" stroke-linecap="round" />
+  <!-- Saucer -->
+  <ellipse cx="24" cy="34" rx="11" ry="2.1" fill="#cf8577" />
+  <ellipse cx="24" cy="33.6" rx="7.6" ry="1" fill="#ebc3bb" />
+  <!-- Cup handle (drawn behind the body) -->
+  <path d="M31 22.5c4.4.4 4.4 5.4-.5 5" stroke="#cf8577" stroke-width="2.4" stroke-linecap="round" />
+  <!-- Cup body -->
+  <path d="M13 20h18l-2 8q0 4-5 4t-5-4z" fill="#cf8577" />
+  <!-- Rim highlight -->
+  <ellipse cx="24" cy="20" rx="8.6" ry="1.7" fill="#ebc3bb" />
+</svg>
