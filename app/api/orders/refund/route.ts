@@ -39,6 +39,7 @@ import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmo
 import { errorDetails } from '@/lib/utils/error-response';
 import { sha256Hex } from '@/lib/auth/crypto';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
+import { Money } from '@/lib/money';
 
 interface RefundRequest {
   orderId: string;
@@ -251,17 +252,22 @@ export async function POST(request: NextRequest) {
       admin: authResult.tokenInfo?.tokenName || 'unknown'
     });
 
-    // BMC-170: notify the customer of the refund/cancellation. Non-blocking and
-    // wrapped so a mail failure can never surface as a 500 or roll back the
-    // already-processed Stripe refund + D1 write (mirrors PUT /api/orders). A full
-    // refund is modeled by this route as a cancellation (status set to 'cancelled'
-    // above) → 'cancelled' template; a partial refund leaves the order active but
-    // returns money → 'refunded' template. Both cases reuse sendOrderStatusUpdateEmail.
+    // BMC-170: notify the customer of the refund. Non-blocking and wrapped so a
+    // mail failure can never surface as a 500 or roll back the already-processed
+    // Stripe refund + D1 write (mirrors PUT /api/orders). This is the refund
+    // endpoint, so money always comes back — BOTH full and partial refunds use the
+    // 'refunded' template (the 'cancelled' template omits money-back info and would
+    // misstate an admin-initiated refund). A full refund also cancels the order, so
+    // we flag it (isFullRefund) to add a "will not be shipped" line, and we always
+    // surface the refunded amount (order total for full, partial amount for partial).
     try {
-      const emailStatus = type === 'full' ? 'cancelled' : 'refunded';
-      const emailData = buildRefundStatusEmail(updatedOrder, emailStatus);
+      const refundAmountFormatted = Money.fromMinor(refundAmount, order.currency_code).format();
+      const emailData = buildRefundStatusEmail(updatedOrder, {
+        isFullRefund: type === 'full',
+        refundAmount: refundAmountFormatted,
+      });
       await sendOrderStatusUpdateEmail(emailData);
-      console.log(`Refund status email sent for order ${orderId}: ${emailStatus}`);
+      console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
     } catch (emailError) {
       console.error(`Failed to send refund status email for order ${orderId}:`, emailError);
     }
@@ -293,17 +299,19 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Build the status-update email payload for a refunded/cancelled order.
+ * Build the status-update email payload for a refunded order.
  *
- * Mirrors transformOrderForEmail() in app/api/orders/route.ts, but takes the
- * email status explicitly: a partial refund does not change the order's stored
- * status, yet the customer still needs a 'refunded' notification. `order` is the
- * post-write row; its JSON columns arrive already parsed (mode:"json"), but we
- * parse defensively in case a raw string ever slips through.
+ * Mirrors transformOrderForEmail() in app/api/orders/route.ts. Always uses the
+ * 'refunded' status (this is the refund endpoint — money always comes back), and
+ * carries the formatted refund amount plus an `isFullRefund` flag: a full refund
+ * also cancels the order (→ "will not be shipped" line), while a partial refund
+ * leaves the order active. `order` is the post-write row; its JSON columns arrive
+ * already parsed (mode:"json"), but we parse defensively in case a raw string ever
+ * slips through.
  */
 function buildRefundStatusEmail(
   order: typeof orders.$inferSelect,
-  status: 'cancelled' | 'refunded'
+  opts: { isFullRefund: boolean; refundAmount: string }
 ): OrderStatusUpdateData {
   const parse = (value: unknown): any =>
     typeof value === 'string' ? JSON.parse(value) : value;
@@ -316,7 +324,9 @@ function buildRefundStatusEmail(
     orderNumber: order.id ?? '',
     customerName: shippingAddr.recipient || shippingAddr.company || 'Valued Customer',
     customerEmail: extensions.email || shippingAddr.email || '',
-    status,
+    status: 'refunded',
+    refundAmount: opts.refundAmount,
+    orderCancelled: opts.isFullRefund,
     carrier: extensions.carrier,
     trackingNumber: order.tracking_number ?? undefined,
     trackingUrl: extensions.trackingUrl,
