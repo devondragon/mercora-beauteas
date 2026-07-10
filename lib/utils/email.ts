@@ -63,6 +63,18 @@ export interface OrderStatusUpdateData {
   trackingUrl?: string;
   notes?: string;
   cancellationReason?: string;
+  /**
+   * Pre-formatted refund amount (e.g. "$12.50", via Money.format()) shown in the
+   * `refunded` status email. Set by the refund route for both full and partial
+   * refunds. Formatted string, never a raw number (same BMC-143 contract as OrderData).
+   */
+  refundAmount?: string;
+  /**
+   * True when a full refund also cancelled the order (order status → 'cancelled'),
+   * so the `refunded` email can add a "will not be shipped" line. Omitted/false for
+   * a partial refund, which leaves the order active and shippable.
+   */
+  orderCancelled?: boolean;
   items: Array<{
     productId: string;
     name: string;
@@ -305,7 +317,9 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
       statusColor = "#cf8577";
       statusContent = `
         <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been refunded and the payment has been processed back to your original payment method.</p>
+        ${orderData.orderCancelled ? `<p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been cancelled and will not be shipped.</p>` : ''}
         <div style="background-color: #fef3f2; border-left: 4px solid #cf8577; padding: 12px 16px; margin: 16px 0;">
+          ${orderData.refundAmount ? `<p style="color: #7c2d12; font-size: 14px; margin: 0 0 8px;"><strong>Refund amount:</strong> ${orderData.refundAmount}</p>` : ''}
           <p style="color: #ea580c; font-size: 14px; margin: 0 0 4px;"><strong>Refund Processing:</strong></p>
           <p style="color: #7c2d12; font-size: 14px; margin: 0;">Please allow 5-10 business days for the refund to appear on your statement.</p>
         </div>

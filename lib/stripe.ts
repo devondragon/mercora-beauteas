@@ -163,13 +163,21 @@ export class CloudflareStripe {
   private async request(
     method: 'GET' | 'POST',
     endpoint: string,
-    data?: Record<string, any>
+    data?: Record<string, any>,
+    options?: { idempotencyKey?: string }
   ) {
     const url = `https://api.stripe.com/v1${endpoint}`;
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${this.apiKey}`,
       'Stripe-Version': this.apiVersion,
     };
+
+    // BMC-172: Stripe idempotency — a safe-retry POST (e.g. /refunds) carrying the
+    // same key reuses the original result instead of creating a duplicate. Stripe
+    // ignores this header on GET, so it is safe to thread through generically.
+    if (options?.idempotencyKey) {
+      headers['Idempotency-Key'] = options.idempotencyKey;
+    }
 
     let body: string | undefined;
     if (data && method === 'POST') {

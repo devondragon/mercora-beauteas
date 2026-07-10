@@ -37,6 +37,9 @@ import { eq } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
 import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmount } from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
+import { sha256Hex } from '@/lib/auth/crypto';
+import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
+import { Money } from '@/lib/money';
 
 interface RefundRequest {
   orderId: string;
@@ -140,6 +143,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // BMC-172: deterministic idempotency key so a RETRY of the *same* refund
+    // reuses it — Stripe then returns the ORIGINAL refund instead of moving money
+    // a second time. This closes the audited double-refund window: if the D1 write
+    // below throws AFTER Stripe succeeds (→ 500), the admin's retry passes the
+    // "already refunded" guards above (the failed write left the order untouched)
+    // and would otherwise issue a SECOND full refund. The key is scoped to the
+    // order, refund type/amount, the specific line items, AND the count of refunds
+    // already recorded on the order: a failed write leaves that count unchanged so
+    // the retry collides (dedupes to one refund), while a genuinely NEW partial
+    // refund lands after a successful prior write (higher count) and so gets a
+    // distinct key. Hashed to bound the length (Stripe caps keys at 255 chars).
+    //
+    // KNOWN GAP (out of scope for BMC-172, which targets the Stripe-succeeded /
+    // D1-write-failed retry): because `priorRefundCount` changes once a refund has
+    // been recorded, a PARTIAL refund re-submitted AFTER a fully-successful prior
+    // attempt (e.g. an admin double-clicking after a slow/dropped response) gets a
+    // new key and can issue a second Stripe refund — but only up to the remaining
+    // refundable amount, which `assertRefundWithinRemaining` still bounds. A full
+    // refund is already immune (it flips status to 'cancelled', so the resubmit is
+    // rejected by the "already cancelled or refunded" guard above). `reason`/`notes`
+    // are intentionally excluded from the key, so a same-amount retry that only
+    // changes those still dedupes to the original refund.
+    const priorRefundCount = Array.isArray(extensions.refunds) ? extensions.refunds.length : 0;
+    const refundLineKeys = (items ?? []).slice().sort().join(',');
+    const idempotencyKey = `refund:${await sha256Hex(
+      `${orderId}|${type}|${refundAmount}|${priorRefundCount}|${refundLineKeys}`
+    )}`;
+
     // Create Stripe refund
     let stripeRefund;
     try {
@@ -157,7 +188,7 @@ export async function POST(request: NextRequest) {
             refundReason: reason,
             ...(items && { refundedItems: items.join(',') })
           }
-        });
+        }, { idempotencyKey });
       } else {
         // Using Cloudflare-compatible Stripe client
         const stripeCloudflare = stripe as any;
@@ -171,7 +202,7 @@ export async function POST(request: NextRequest) {
             refundReason: reason,
             ...(items && { refundedItems: items.join(',') })
           }
-        });
+        }, { idempotencyKey });
       }
     } catch (stripeError: any) {
       console.error('Stripe refund failed:', stripeError);
@@ -232,6 +263,34 @@ export async function POST(request: NextRequest) {
       admin: authResult.tokenInfo?.tokenName || 'unknown'
     });
 
+    // BMC-170: notify the customer of the refund. Non-blocking and wrapped so a
+    // mail failure can never surface as a 500 or roll back the already-processed
+    // Stripe refund + D1 write (mirrors PUT /api/orders). This is the refund
+    // endpoint, so money always comes back — BOTH full and partial refunds use the
+    // 'refunded' template (the 'cancelled' template omits money-back info and would
+    // misstate an admin-initiated refund). A full refund also cancels the order, so
+    // we flag it (isFullRefund) to add a "will not be shipped" line, and we always
+    // surface the refunded amount (order total for full, partial amount for partial).
+    try {
+      const refundAmountFormatted = Money.fromMinor(refundAmount, order.currency_code).format();
+      const emailData = buildRefundStatusEmail(updatedOrder, {
+        isFullRefund: type === 'full',
+        refundAmount: refundAmountFormatted,
+      });
+      // sendOrderStatusUpdateEmail() swallows Resend errors and returns
+      // { success:false } rather than throwing, so inspect the result instead of
+      // logging success unconditionally — otherwise a real delivery failure (e.g.
+      // an order with no email on file) would be masked by a "sent" log line.
+      const emailResult = await sendOrderStatusUpdateEmail(emailData);
+      if (emailResult.success) {
+        console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
+      } else {
+        console.error(`Failed to send refund status email for order ${orderId}: ${emailResult.error}`);
+      }
+    } catch (emailError) {
+      console.error(`Failed to send refund status email for order ${orderId}:`, emailError);
+    }
+
     return NextResponse.json({
       success: true,
       refund: {
@@ -256,4 +315,55 @@ export async function POST(request: NextRequest) {
       details: errorDetails(error)
     }, { status: 500 });
   }
+}
+
+/**
+ * Build the status-update email payload for a refunded order.
+ *
+ * Mirrors transformOrderForEmail() in app/api/orders/route.ts. Always uses the
+ * 'refunded' status (this is the refund endpoint — money always comes back), and
+ * carries the formatted refund amount plus an `isFullRefund` flag: a full refund
+ * also cancels the order (→ "will not be shipped" line), while a partial refund
+ * leaves the order active. `order` is the post-write row; its JSON columns arrive
+ * already parsed (mode:"json"), but we parse defensively in case a raw string ever
+ * slips through.
+ */
+function buildRefundStatusEmail(
+  order: typeof orders.$inferSelect,
+  opts: { isFullRefund: boolean; refundAmount: string }
+): OrderStatusUpdateData {
+  const parse = (value: unknown): any =>
+    typeof value === 'string' ? JSON.parse(value) : value;
+  const rawItems = order.items ? parse(order.items) : [];
+  const items: any[] = Array.isArray(rawItems) ? rawItems : [];
+  const shippingAddr = (order.shipping_address ? parse(order.shipping_address) : {}) || {};
+  const extensions = (order.extensions ? parse(order.extensions) : {}) || {};
+
+  return {
+    orderNumber: order.id ?? '',
+    customerName: shippingAddr.recipient || shippingAddr.company || 'Valued Customer',
+    customerEmail: extensions.email || shippingAddr.email || '',
+    status: 'refunded',
+    refundAmount: opts.refundAmount,
+    orderCancelled: opts.isFullRefund,
+    carrier: extensions.carrier,
+    trackingNumber: order.tracking_number ?? undefined,
+    trackingUrl: extensions.trackingUrl,
+    notes: order.notes ?? undefined,
+    cancellationReason: extensions.cancellationReason,
+    items: items.map((item: any) => ({
+      productId: item.product_id || item.id,
+      name: item.product_name || item.name || item.title,
+      price: item.unit_price?.amount || item.unit_price || item.price || 0,
+      quantity: item.quantity || 1,
+      imageUrl: item.imageUrl || '',
+    })),
+    shippingAddress: {
+      street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
+      city: shippingAddr.city || '',
+      state: shippingAddr.region || '',
+      zipCode: shippingAddr.postal_code || '',
+      country: shippingAddr.country || 'US',
+    },
+  };
 }
