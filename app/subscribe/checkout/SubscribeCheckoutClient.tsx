@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Money } from "@/lib/money";
 import {
   Select,
   SelectContent,
@@ -390,7 +391,7 @@ function PaymentFormInner({
   // Affirmative consent to recurring billing (FTC ROSCA / CA ARL).
   const [consented, setConsented] = useState(false);
 
-  const priceLabel = `$${(subscriptionPriceInCents / 100).toFixed(2)}`;
+  const priceLabel = Money.fromMinor(subscriptionPriceInCents).format();
   const cadence = FREQUENCY_CADENCE[frequency] ?? "on each renewal";
 
   async function handleSubmit(e: React.FormEvent) {
@@ -398,7 +399,13 @@ function PaymentFormInner({
 
     if (!stripe || !elements) return;
     // Do not start a recurring subscription without affirmative consent.
-    if (!consented) return;
+    // Surface an inline error so submitting (e.g. via Enter) isn't a silent no-op.
+    if (!consented) {
+      setErrorMessage(
+        "Please confirm you understand this is a recurring subscription before continuing."
+      );
+      return;
+    }
 
     setIsProcessing(true);
     setErrorMessage("");
@@ -506,6 +513,7 @@ function PaymentFormInner({
               className="font-medium text-primary-600 underline hover:text-primary-700"
             >
               Terms of Service
+              <span className="sr-only"> (opens in a new tab)</span>
             </Link>
             .
           </p>
@@ -516,7 +524,11 @@ function PaymentFormInner({
             <Checkbox
               id="subscription-consent"
               checked={consented}
-              onCheckedChange={(checked) => setConsented(checked === true)}
+              onCheckedChange={(checked) => {
+                const isChecked = checked === true;
+                setConsented(isChecked);
+                if (isChecked) setErrorMessage("");
+              }}
               className="mt-0.5 border-border-dark"
             />
             <span className="text-sm text-text-secondary">
