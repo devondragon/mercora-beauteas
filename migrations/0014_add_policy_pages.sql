@@ -16,8 +16,14 @@
 --   show_in_nav = 0: these are placed explicitly in the curated footer columns
 --   (lib/brand.config.ts) rather than the auto-populated nav column, so they do
 --   not double-list.
+--
+--   INSERT OR IGNORE: `pages.slug` is UNIQUE. If an environment already has one
+--   of these slugs (e.g. a page an admin created by hand), a plain INSERT would
+--   hit the UNIQUE constraint and abort the whole migration, blocking that
+--   deployment. OR IGNORE skips only the conflicting row and leaves the existing
+--   page untouched, so this is safe to apply everywhere.
 
-INSERT INTO pages (title, slug, content, status, template, meta_description, show_in_nav, sort_order) VALUES
+INSERT OR IGNORE INTO pages (title, slug, content, status, template, meta_description, show_in_nav, sort_order) VALUES
 (
     'Refund & Return Policy',
     'refund-policy',
