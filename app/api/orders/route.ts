@@ -21,14 +21,14 @@ import {
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData } from "@/lib/utils/email";
-import type { Order, OrderItem, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
+import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
 import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { retrievePaymentIntent } from "@/lib/stripe";
-import { Money, toWireMoney } from "@/lib/money";
-import type { MachMoney } from "@/lib/money";
+import { Money } from "@/lib/money";
 import { buildOrderEmailTotals } from "@/lib/utils/order-email-totals";
+import { toWireOrder } from "@/lib/utils/order-wire";
 
 
 
@@ -771,44 +771,6 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     extensions: dbOrder.extensions ? (typeof dbOrder.extensions === 'string' ? JSON.parse(dbOrder.extensions) : dbOrder.extensions) : undefined,
     created_at: dbOrder.created_at ?? undefined,
     updated_at: dbOrder.updated_at ?? undefined
-  };
-}
-
-/**
- * MACH wire-shaped order line item / order (BMC-164 review follow-up).
- * Structurally distinct from `OrderItem`/`Order` — money fields are
- * `MachMoney` (decimal major units + required precision), not the internal
- * cents-shaped `Money`. This lets `tsc` catch a wire value being fed back
- * into a cents-typed sink (e.g. priceToCents() in lib/services/order-pricing.ts),
- * which reusing `Order` as the return type could not.
- */
-type WireOrderItem = Omit<OrderItem, 'unit_price' | 'total_price'> & {
-  unit_price: MachMoney;
-  total_price: MachMoney;
-};
-
-type WireOrder = Omit<Order, 'total_amount' | 'items'> & {
-  total_amount: MachMoney;
-  items: WireOrderItem[];
-};
-
-/**
- * Convert a hydrated (internal, minor-unit/cents) Order to the MACH wire
- * shape for API responses (BMC-164): total_amount and each line's
- * unit_price/total_price become {amount, currency, precision} in major
- * units via toWireMoney. Internal callers (gift-card fulfillment, email)
- * keep reading the cents-based hydrateOrder() output untouched — this
- * conversion is applied last, immediately before NextResponse.json().
- */
-function toWireOrder(order: Order): WireOrder {
-  return {
-    ...order,
-    total_amount: toWireMoney(order.total_amount),
-    items: order.items?.map(item => ({
-      ...item,
-      unit_price: toWireMoney(item.unit_price),
-      total_price: toWireMoney(item.total_price),
-    })),
   };
 }
 

@@ -53,7 +53,16 @@ const orderRow = {
   currency_code: 'USD',
   shipping_address: { line1: '1 Secret St', city: 'Portland', region: 'OR', postal_code: '97201', country: 'US' },
   billing_address: null,
-  items: [{ product_id: 'p1', product_name: 'Morning Blend', quantity: 1 }],
+  items: [{
+    product_id: 'p1',
+    product_name: 'Morning Blend',
+    quantity: 1,
+    // Minor-unit (cents) Money, as persisted in the mode:"json" items column —
+    // toWireOrder must convert each LINE's price to the MACH wire shape too,
+    // not just the order-level total.
+    unit_price: { amount: 4200, currency: 'USD' },
+    total_price: { amount: 4200, currency: 'USD' },
+  }],
   shipping_method: 'standard',
   payment_method: 'stripe',
   payment_status: 'paid',
@@ -85,6 +94,35 @@ function getRequest() {
 
 function callGET() {
   return GET(getRequest(), { params: Promise.resolve({ id: ORDER_ID }) });
+}
+
+/**
+ * BMC-179 regression: the detail route must (a) hydrate the `mode:"json"`
+ * columns — Drizzle returns them ALREADY PARSED, so the old `typeof === 'string'`
+ * guards fell through and every response had `total_amount:{amount:0}` / `items:[]`
+ * / undefined addresses — and (b) emit the MACH wire shape at the boundary
+ * (major units + precision), identical to the sibling list route.
+ */
+function expectWireHydratedOrder(body: any) {
+  // 4200 minor units (cents) → 42 major units, precision 2 (USD) via toWireMoney.
+  expect(body.data.total_amount).toEqual({ amount: 42, currency: 'USD', precision: 2 });
+  expect(body.data.items).toHaveLength(1);
+  expect(body.data.items[0]).toMatchObject({
+    product_id: 'p1',
+    product_name: 'Morning Blend',
+    quantity: 1,
+  });
+  // Per-line money is ALSO converted to wire shape (4200 cents → 42 major units,
+  // precision 2) — guards the item-level toWireMoney() calls in toWireOrder.
+  expect(body.data.items[0].unit_price).toEqual({ amount: 42, currency: 'USD', precision: 2 });
+  expect(body.data.items[0].total_price).toEqual({ amount: 42, currency: 'USD', precision: 2 });
+  expect(body.data.shipping_address).toEqual({
+    line1: '1 Secret St',
+    city: 'Portland',
+    region: 'OR',
+    postal_code: '97201',
+    country: 'US',
+  });
 }
 
 beforeEach(() => {
@@ -131,6 +169,7 @@ describe('GET /api/orders/[id] IDOR guard (BMC-138 / H1)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.id).toBe(ORDER_ID);
+    expectWireHydratedOrder(body);
     // The owner short-circuit means the admin verifier is never consulted.
     expect(authenticateRequest).not.toHaveBeenCalled();
   });
@@ -148,6 +187,7 @@ describe('GET /api/orders/[id] IDOR guard (BMC-138 / H1)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.id).toBe(ORDER_ID);
+    expectWireHydratedOrder(body);
   });
 
   it('returns 404 for a missing order without consulting authorization', async () => {
