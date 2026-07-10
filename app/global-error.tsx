@@ -19,6 +19,10 @@ export default function GlobalError({
 
   return (
     <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </head>
       <body
         style={{
           margin: 0,
@@ -40,24 +44,49 @@ export default function GlobalError({
         <p style={{ color: "#555555", maxWidth: "28rem", margin: "0 0 1.5rem" }}>
           We hit a snag while brewing BeauTeas. Please take a breath and try again.
         </p>
-        <button
-          onClick={reset}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: "0.375rem",
-            border: "none",
-            backgroundColor: "#cf8577",
-            color: "#ffffff",
-            padding: "0.5rem 1.5rem",
-            fontSize: "0.875rem",
-            fontWeight: 500,
-            cursor: "pointer",
-          }}
-        >
-          Try Again
-        </button>
+        {/* eslint-disable @next/next/no-html-link-for-pages --
+            Use a plain <a>, not next/link: the Next.js router context cannot be
+            assumed healthy in a root-layout crash, so a hard navigation is the
+            reliable escape hatch. */}
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button
+            onClick={reset}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "0.375rem",
+              border: "none",
+              backgroundColor: "#cf8577",
+              color: "#ffffff",
+              padding: "0.5rem 1.5rem",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            Try Again
+          </button>
+          <a
+            href="/"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "0.375rem",
+              border: "1px solid #e8d5cf",
+              backgroundColor: "transparent",
+              color: "#555555",
+              padding: "0.5rem 1.5rem",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            Go Home
+          </a>
+        </div>
+        {/* eslint-enable @next/next/no-html-link-for-pages */}
       </body>
     </html>
   );
