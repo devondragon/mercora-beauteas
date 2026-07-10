@@ -46,6 +46,16 @@ export async function handleSubscriptionCreated(
   // createCustomerSubscriptionWithCreatedEvent), an existing row means both
   // already landed and the welcome email was already sent — skip cleanly rather
   // than hit the UNIQUE stripe_subscription_id constraint and 500 into a retry loop.
+  //
+  // EMAIL-INVARIANT: skipping the email here (and on the `!created` branch below)
+  // is what keeps the welcome email at-most-once — it assumes the FIRST delivery
+  // already sent it. That holds ONLY because getCustomerDetails/getProductName
+  // (handlers/utils.ts) swallow their own errors and never throw after the batch
+  // commits, so the first delivery always reaches the fire-and-forget send below.
+  // A refactor that lets either throw — or that awaits sendSubscriptionEmail
+  // without `.catch` — would make the first delivery 500 AFTER committing the row,
+  // and this short-circuit would then silently drop the email forever. Keep those
+  // helpers non-throwing.
   const existing = await getSubscriptionByStripeId(stripeSubscriptionId);
   if (existing) {
     console.log('[webhook] subscription.created: already processed, skipping', existing.id);

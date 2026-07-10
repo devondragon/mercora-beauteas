@@ -96,23 +96,6 @@ export async function getSubscriptionsByCustomer(customerId: string) {
     .orderBy(desc(customer_subscriptions.created_at));
 }
 
-export async function createCustomerSubscription(data: {
-  customer_id: string;
-  plan_id: string;
-  stripe_subscription_id: string;
-  stripe_customer_id: string;
-  status?: SubscriptionStatus;
-  current_period_start?: string;
-  current_period_end?: string;
-}) {
-  const db = await getDbAsync();
-  const [sub] = await db
-    .insert(customer_subscriptions)
-    .values(data)
-    .returning();
-  return sub;
-}
-
 /**
  * Atomically create a customer subscription row plus its opening `created`
  * audit event in a single db.batch() — D1's atomic multi-statement primitive
