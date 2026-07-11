@@ -82,6 +82,20 @@ describe('POST /api/subscriptions SetupIntent ownership guard (BMC-148 / M5)', (
     const res = await POST(postRequest({ setupIntentId: 'seti_victim', planId: 'plan_1' }));
 
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 403 when the SetupIntent has no customer attached', async () => {
+    retrieveSetupIntent.mockResolvedValue({
+      status: 'succeeded',
+      payment_method: 'pm_123',
+      customer: null,
+    });
+
+    const res = await POST(postRequest({ setupIntentId: 'seti_x', planId: 'plan_1' }));
+
+    expect(res.status).toBe(403);
     expect(createSubscription).not.toHaveBeenCalled();
   });
 
@@ -117,6 +131,23 @@ describe('POST /api/subscriptions SetupIntent ownership guard (BMC-148 / M5)', (
     const res = await POST(postRequest({ setupIntentId: 'seti_x', planId: 'plan_1' }));
 
     expect(res.status).toBe(403);
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('rejects with a uniform 403 when the caller-owned SetupIntent has not succeeded', async () => {
+    // Hardening (BMC-148 review): a not-yet-succeeded intent returns the same
+    // 403/Forbidden as a not-owned one — no 400 with the raw status string that
+    // would let a caller probe a candidate seti_… for its lifecycle stage.
+    retrieveSetupIntent.mockResolvedValue({
+      status: 'processing',
+      payment_method: 'pm_123',
+      customer: { id: 'cus_mine', metadata: { clerk_user_id: CALLER } },
+    });
+
+    const res = await POST(postRequest({ setupIntentId: 'seti_mine', planId: 'plan_1' }));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden' });
     expect(createSubscription).not.toHaveBeenCalled();
   });
 
