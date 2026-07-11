@@ -21,8 +21,27 @@ import {
 } from '@/lib/models/mach/subscriptions';
 import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency, SubscriptionStatus } from '@/lib/types/subscription';
+import type { Address } from '@/lib/types';
 import { BASE_URL } from '@/lib/seo/metadata';
 import { getCustomerDetails, getProductName } from './utils';
+
+/**
+ * Parse the shipping address that /api/subscriptions stored in the Stripe
+ * subscription's `shipping_address` metadata (a JSON-stringified MACH Address).
+ * BMC-171: persisted onto the D1 subscription row so webhook-created orders have
+ * an address. Returns null on absent/malformed metadata — a missing address must
+ * never block subscription creation.
+ */
+function parseShippingAddressMetadata(raw: string | undefined | null): Address | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Address) : null;
+  } catch (err) {
+    console.error('[webhook] subscription.created: malformed shipping_address metadata', err);
+    return null;
+  }
+}
 
 /**
  * Handle customer.subscription.created
@@ -111,6 +130,11 @@ export async function handleSubscriptionCreated(
       status: subscription.status as SubscriptionStatus,
       current_period_start: periodStart,
       current_period_end: periodEnd,
+      // Persist the checkout shipping address (BMC-171). The paid-invoice webhook
+      // (handleInvoicePaymentSucceeded) reads it from this row to build the
+      // initial + renewal fulfillment orders — no order is created here; the
+      // invoice is the authoritative "paid" signal and single order-creation path.
+      shipping_address: parseShippingAddressMetadata(subscription.metadata?.shipping_address),
     },
     stripeEventId
   );

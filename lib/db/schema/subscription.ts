@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import type { Address } from '@/lib/types';
 
 export const subscription_plans = sqliteTable(
   'subscription_plans',
@@ -40,6 +41,11 @@ export const customer_subscriptions = sqliteTable(
     current_period_end: text('current_period_end'),
     cancel_at_period_end: integer('cancel_at_period_end', { mode: 'boolean' }).default(false),
     pause_collection: text('pause_collection'),
+    // Shipping address collected at subscription checkout (BMC-171). Stored as a
+    // MACH Address JSON so webhook-created initial + renewal orders have a
+    // fulfillable address. Nullable: subscriptions created before this column (or
+    // without an address in the Stripe metadata) leave it null.
+    shipping_address: text('shipping_address', { mode: 'json' }).$type<Address>(),
     created_at: text('created_at').default(sql`CURRENT_TIMESTAMP`),
     updated_at: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
     canceled_at: text('canceled_at'),

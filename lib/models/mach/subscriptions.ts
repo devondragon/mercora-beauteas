@@ -18,6 +18,7 @@ import { eq, and, desc, lt, sql, count, like, gte } from 'drizzle-orm';
 import { customers } from '@/lib/db/schema/customer';
 import { products, product_variants } from '@/lib/db/schema/products';
 import type { SubscriptionStatus } from '@/lib/types/subscription';
+import type { Address } from '@/lib/types';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
 
 // ─── Subscription Plans ───────────────────────────────────────────
@@ -119,6 +120,9 @@ export async function createCustomerSubscriptionWithCreatedEvent(
     status?: SubscriptionStatus;
     current_period_start?: string;
     current_period_end?: string;
+    // Shipping address captured at checkout (BMC-171), stored on the row so the
+    // webhook-created initial + renewal orders have a fulfillable address.
+    shipping_address?: Address | null;
   },
   stripeEventId?: string
 ): Promise<{ subscription: CustomerSubscriptionRow; created: boolean }> {
