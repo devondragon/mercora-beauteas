@@ -8,6 +8,7 @@ vi.mock('@/lib/models/mach/products', () => ({
   getProductVariant: vi.fn(),
   getProduct: vi.fn(),
 }));
+vi.mock('@/lib/models/mach/orders', () => ({ updateOrderNotes: vi.fn() }));
 
 import {
   planLineAdjustment,
@@ -15,9 +16,11 @@ import {
   checkStockAvailability,
   selectRestockLines,
   lineRestockKey,
+  flagOversoldForReview,
   type NormalizedInventory,
 } from '@/lib/services/inventory-adjustment';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
+import { updateOrderNotes } from '@/lib/models/mach/orders';
 
 const variant = (id: string, inventory: unknown, product_id = 'prod') => ({
   id,
@@ -273,6 +276,40 @@ describe('selectRestockLines', () => {
       alreadyRestockedKeys: ['p1-v1'],
     });
     expect(keys).toEqual([]);
+  });
+});
+
+describe('flagOversoldForReview', () => {
+  beforeEach(() => vi.mocked(updateOrderNotes).mockReset());
+
+  it('appends a NEEDS REVIEW note with the oversold summary, preserving current notes', async () => {
+    await flagOversoldForReview({
+      orderId: 'O1',
+      currentNotes: 'Paid via Stripe',
+      oversold: [{ variant_id: 'v1', product_id: 'p1', product_name: 'Mug', requested: 3, available: 1 }],
+      logPrefix: '[test]',
+    });
+    expect(updateOrderNotes).toHaveBeenCalledTimes(1);
+    const [id, note] = vi.mocked(updateOrderNotes).mock.calls[0];
+    expect(id).toBe('O1');
+    expect(note).toBe('Paid via Stripe\n\nNEEDS REVIEW (BMC-178): oversold — Mug (requested 3, 1 on hand)');
+  });
+
+  it('is a no-op when nothing is oversold', async () => {
+    await flagOversoldForReview({ orderId: 'O1', currentNotes: null, oversold: [], logPrefix: '[test]' });
+    expect(updateOrderNotes).not.toHaveBeenCalled();
+  });
+
+  it('appends without a leading separator when the order has no current notes', async () => {
+    await flagOversoldForReview({
+      orderId: 'O1',
+      currentNotes: null,
+      oversold: [{ variant_id: 'v1', requested: 2, available: 0 }],
+      logPrefix: '[test]',
+    });
+    expect(vi.mocked(updateOrderNotes).mock.calls[0][1]).toBe(
+      'NEEDS REVIEW (BMC-178): oversold — v1 (requested 2, 0 on hand)'
+    );
   });
 
   it('falls back to the default variant when a line has only a product_id', async () => {

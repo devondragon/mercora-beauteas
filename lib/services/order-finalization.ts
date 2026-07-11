@@ -50,7 +50,7 @@ import {
 } from '@/lib/services/order-pricing';
 import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
-import { decrementStockForOrder } from '@/lib/services/inventory-adjustment';
+import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
 
 export interface FinalizePaidOrderResult {
   /** The order is paid after this call (this writer promoted it, or another already had). */
@@ -202,23 +202,15 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   // recorded, and the confirmation email must still send.
   try {
     const { oversold } = await decrementStockForOrder(finalOrder.items as any);
-    if (oversold.length) {
-      const summary = oversold
-        .map((o) => `${o.product_name ?? o.variant_id} (requested ${o.requested}, ${o.available} on hand)`)
-        .join('; ');
-      console.error(
-        `[finalize] Order ${orderId}: OVERSOLD on ${oversold.length} line(s) — ${summary}. ` +
-          `Order left paid; flagged for manual review.`
-      );
-      // Preserve the paid notes just stamped by the CAS, then append the flag
-      // (updateOrderNotes overwrites, so we rebuild from the current value).
-      try {
-        const existingNotes = finalOrder.notes ? `${finalOrder.notes}\n\n` : '';
-        await updateOrderNotes(orderId, `${existingNotes}NEEDS REVIEW (BMC-178): oversold — ${summary}`);
-      } catch (noteError) {
-        console.error(`[finalize] Order ${orderId}: failed to record oversold review note`, noteError);
-      }
-    }
+    // Preserve the paid notes just stamped by the CAS, then append the oversold
+    // flag (updateOrderNotes overwrites, so flagOversoldForReview rebuilds from
+    // the current value). No-op when nothing oversold.
+    await flagOversoldForReview({
+      orderId,
+      currentNotes: finalOrder.notes,
+      oversold,
+      logPrefix: '[finalize]',
+    });
   } catch (invError) {
     console.error(`[finalize] Inventory decrement failed for ${orderId}:`, invError);
   }

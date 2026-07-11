@@ -36,6 +36,7 @@ import { getDbAsync } from '@/lib/db';
 import { product_variants } from '@/lib/db/schema/products';
 import { and, eq, sql } from 'drizzle-orm';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
+import { updateOrderNotes } from '@/lib/models/mach/orders';
 
 // Gift-card lines are digital and priced/validated separately — never stock-
 // managed. Duplicated as a bare literal (rather than imported from
@@ -394,4 +395,40 @@ export function selectRestockLines(
   const candidates = opts.fullRefund ? list : list.filter(inRefund);
   const lines = candidates.filter((it) => !already.has(lineRestockKey(it)));
   return { lines, keys: lines.map(lineRestockKey) };
+}
+
+/**
+ * Flag a paid order for manual review after an oversell at capture time (the
+ * guarded CAS couldn't satisfy a tracked, non-backorderable line because a
+ * concurrent checkout took the last units). Shared by every paid-order path that
+ * decrements stock so the summary, log line, and best-effort note-append stay
+ * identical across `finalizePaidOrder` and the MCP place-order path.
+ *
+ * The order is intentionally left PAID — the money is captured and the goods may
+ * still be fulfillable after a restock; this only records the shortfall as a
+ * NEEDS REVIEW note. A note-write failure is logged, never thrown, so flagging
+ * can never turn a captured payment into an error. No-op when nothing oversold.
+ */
+export async function flagOversoldForReview(args: {
+  orderId: string;
+  currentNotes?: string | null;
+  oversold: StockShortfall[];
+  logPrefix: string;
+}): Promise<void> {
+  const { orderId, currentNotes, oversold, logPrefix } = args;
+  if (!oversold.length) return;
+
+  const summary = oversold
+    .map((o) => `${o.product_name ?? o.variant_id} (requested ${o.requested}, ${o.available} on hand)`)
+    .join('; ');
+  console.error(
+    `${logPrefix} Order ${orderId}: OVERSOLD on ${oversold.length} line(s) — ${summary}. ` +
+      `Order left paid; flagged for manual review.`
+  );
+  try {
+    const existingNotes = currentNotes ? `${currentNotes}\n\n` : '';
+    await updateOrderNotes(orderId, `${existingNotes}NEEDS REVIEW (BMC-178): oversold — ${summary}`);
+  } catch (noteError) {
+    console.error(`${logPrefix} Order ${orderId}: failed to record oversold review note`, noteError);
+  }
 }

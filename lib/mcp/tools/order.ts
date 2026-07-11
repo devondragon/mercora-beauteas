@@ -1,5 +1,5 @@
-import { createOrderPaid, getOrderByPaymentIntentId, updateOrderNotes } from '../../models/mach/orders';
-import { decrementStockForOrder } from '../../services/inventory-adjustment';
+import { createOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
+import { decrementStockForOrder, flagOversoldForReview } from '../../services/inventory-adjustment';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
@@ -398,21 +398,12 @@ export async function placeOrder(
     // inventory failure can never turn a successfully-paid order into an MCP error.
     try {
       const { oversold } = await decrementStockForOrder(order.items as any);
-      if (oversold.length) {
-        const summary = oversold
-          .map((o) => `${o.product_name ?? o.variant_id} (requested ${o.requested}, ${o.available} on hand)`)
-          .join('; ');
-        console.error(
-          `[mcp:place_order] Order ${order.id}: OVERSOLD on ${oversold.length} line(s) — ${summary}. ` +
-            `Order left paid; flagged for manual review.`
-        );
-        try {
-          const existingNotes = order.notes ? `${order.notes}\n\n` : '';
-          await updateOrderNotes(order.id!, `${existingNotes}NEEDS REVIEW (BMC-178): oversold — ${summary}`);
-        } catch (noteError) {
-          console.error(`[mcp:place_order] Order ${order.id}: failed to record oversold review note`, noteError);
-        }
-      }
+      await flagOversoldForReview({
+        orderId: order.id!,
+        currentNotes: order.notes,
+        oversold,
+        logPrefix: '[mcp:place_order]',
+      });
     } catch (invError) {
       console.error(`[mcp:place_order] Inventory decrement failed for ${order.id}:`, invError);
     }
