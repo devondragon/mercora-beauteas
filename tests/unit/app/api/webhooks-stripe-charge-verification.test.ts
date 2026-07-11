@@ -137,4 +137,19 @@ describe('POST /api/webhooks/stripe payment_intent.succeeded (BMC-131 + BMC-167)
     expect(res.status).toBe(200);
     expect(vi.mocked(releaseWebhookEventClaim)).not.toHaveBeenCalled(); // permanent → recorded processed
   });
+
+  it('L4: an H1 gift-card revert ({ paid:false, reverted:true, reason }) is handled — 200, NO retry', async () => {
+    // finalizePaidOrder promoted then reverted (tender not redeemed); it carries
+    // a reason so the webhook's !paid-with-reason branch logs it instead of
+    // silently leaving the order pending. This is permanent, not retryable.
+    vi.mocked(finalizePaidOrder).mockResolvedValue({
+      paid: false,
+      promotedByUs: true,
+      reverted: true,
+      reason: 'gift-card tender (2500c) counted toward payment but redemption applied nothing; reverted to pending',
+    });
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    expect(vi.mocked(releaseWebhookEventClaim)).not.toHaveBeenCalled();
+  });
 });

@@ -101,16 +101,34 @@ export async function createOrderPaid(
   return hydrateOrder(updatedRows[0]);
 }
 
-// Get orders for a specific customer
-export async function getOrdersByCustomer(customerId: string): Promise<Order[]> {
+// Get orders for a specific customer.
+//
+// BMC-167 (M1): since a server-side UNPAID `pending` order is now persisted at
+// PaymentIntent creation, every abandoned checkout-past-shipping leaves a
+// phantom draft under the customer. Exclude those unpaid drafts by default so
+// they don't surface in the customer's order history or skew order-history-based
+// personalization. Pass { includePending: true } to include them. (Rows with a
+// NULL payment_status — legacy/imported — are kept; only explicit 'pending' is
+// hidden.)
+export async function getOrdersByCustomer(
+  customerId: string,
+  opts?: { includePending?: boolean }
+): Promise<Order[]> {
   const db = await getDbAsync();
-  
+
+  const where = opts?.includePending
+    ? eq(orders.customer_id, customerId)
+    : and(
+        eq(orders.customer_id, customerId),
+        sql`(${orders.payment_status} IS NULL OR ${orders.payment_status} != 'pending')`
+      );
+
   const orderRecords = await db
     .select()
     .from(orders)
-    .where(eq(orders.customer_id, customerId))
+    .where(where)
     .orderBy(desc(orders.created_at));
-  
+
   return orderRecords.map(hydrateOrder);
 }
 

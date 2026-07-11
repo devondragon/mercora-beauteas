@@ -28,6 +28,7 @@ import { finalizePaidOrder } from "@/lib/services/order-finalization";
 import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
+import { isUniqueViolation } from "@/lib/utils/db-errors";
 
 
 
@@ -45,6 +46,13 @@ export async function GET(request: NextRequest) {
     const requestedUserId = url.searchParams.get('userId');
     const orderId = url.searchParams.get('orderId');
     const isAdminRequest = url.searchParams.has('admin');
+    // BMC-167 (M1): the storefront now persists an UNPAID `pending` order at
+    // PaymentIntent creation, so every abandoned checkout-past-shipping leaves a
+    // phantom draft. Exclude those unpaid drafts from operational list reads by
+    // default so they don't pollute the admin fulfillment queue or a customer's
+    // order history. An admin can still see them with ?includePending=true, and a
+    // direct ?orderId= lookup always returns the exact order regardless.
+    const includePending = url.searchParams.has('includePending');
 
     const db = await getDbAsync();
     
@@ -84,7 +92,12 @@ export async function GET(request: NextRequest) {
     if (status) {
       filteredOrders = filteredOrders.filter(order => order.status === status);
     }
-    
+    // Hide unpaid drafts (BMC-167 M1) unless explicitly requested or a specific
+    // order is being looked up by id.
+    if (!includePending && !orderId) {
+      filteredOrders = filteredOrders.filter(order => order.payment_status !== 'pending');
+    }
+
     const total = filteredOrders.length;
     const paginatedOrders = filteredOrders.slice(offset, offset + limit);
     const hydratedOrders = paginatedOrders.map(hydrateOrder);
@@ -323,7 +336,12 @@ export async function POST(request: NextRequest) {
       try {
         [orderRow] = await db.insert(orders).values(machOrder).returning();
       } catch (insertError) {
-        if (!isUniqueConstraintError(insertError)) {
+        // Only a duplicate-primary-key/unique violation means the id was created
+        // concurrently (the idempotency race). Use the canonical classifier
+        // (cause-chain aware, matches ONLY unique/primary-key — never a FK/
+        // NOTNULL/CHECK failure) so an unrelated constraint error propagates as a
+        // real error instead of being masked as a duplicate.
+        if (!isUniqueViolation(insertError)) {
           throw insertError;
         }
         const raced = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
@@ -587,16 +605,6 @@ function callerOwnsExistingOrder(
     : undefined;
 
   return typeof existingPi === 'string' && existingPi.length > 0 && existingPi === incomingPi;
-}
-
-/**
- * True for a SQLite/D1 primary-key or unique-constraint violation. Used to
- * distinguish an idempotency PK race (recoverable) from an unrelated insert
- * failure (must propagate) in the order-create catch.
- */
-function isUniqueConstraintError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /UNIQUE constraint failed|SQLITE_CONSTRAINT|constraint failed: orders\.id/i.test(msg);
 }
 
 /** JSON.parse that returns null instead of throwing on malformed input. */

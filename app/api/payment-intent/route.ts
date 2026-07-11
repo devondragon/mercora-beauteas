@@ -42,6 +42,8 @@ import {
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
+import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
+import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
 import type { Address } from '@/lib/types';
 
@@ -114,8 +116,30 @@ async function persistPendingOrder(
   draft: PendingOrderDraft,
   orderId: string,
   paymentIntentId: string,
-  customerId: string | null
+  userId: string | null
 ): Promise<void> {
+  // C1 (BMC-167 review): D1 enforces `orders.customer_id → customers.id`, and
+  // Clerk sign-up does NOT create a `customers` row (it is provisioned lazily —
+  // see lib/account/ensure-customer.ts). Without provisioning it here, a
+  // first-time AUTHENTICATED buyer's pending-order insert FK-fails, which would
+  // reintroduce the exact money-captured-no-order bug this ticket fixes. Ensure
+  // the customer exists before the insert. If provisioning genuinely fails,
+  // degrade to a GUEST order (customer_id = null is allowed by the FK) so the
+  // order still persists rather than blocking checkout — the same graceful
+  // degradation the order-creation path uses.
+  let customerId: string | null = userId;
+  if (customerId) {
+    try {
+      await getOrCreateCustomer(customerId);
+    } catch (customerError) {
+      console.error(
+        `[payment-intent] order ${orderId}: customer provisioning failed; persisting as a guest order`,
+        customerError
+      );
+      customerId = null;
+    }
+  }
+
   let items = Array.isArray(draft.items) ? draft.items : [];
   try {
     items = await canonicalizeOrderItemsDisplay(items);
@@ -149,16 +173,6 @@ async function persistPendingOrder(
     external_references: externalReferences,
     extensions,
   });
-}
-
-/**
- * True for a SQLite/D1 primary-key or unique-constraint violation. A duplicate
- * order id when persisting the pending order means it already exists (a retry or
- * a double-submit of the PI request) — safe to treat as success.
- */
-function isUniqueConstraintError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /UNIQUE constraint failed|SQLITE_CONSTRAINT|constraint failed: orders\.id/i.test(msg);
 }
 
 export async function POST(req: NextRequest) {
@@ -353,7 +367,12 @@ export async function POST(req: NextRequest) {
         const { userId } = await auth();
         await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null);
       } catch (persistError) {
-        if (isUniqueConstraintError(persistError)) {
+        // H1 (BMC-167 review): use the canonical unique-violation classifier
+        // (walks the cause chain, matches ONLY unique/primary-key — never a
+        // FK/NOTNULL/CHECK failure). A genuine non-unique constraint error must
+        // fail closed (500, withhold the client secret), never be swallowed as
+        // "already exists".
+        if (isUniqueViolation(persistError)) {
           // The pending order already exists for this id (a retry / double-submit
           // of the PI request). Safe — the order is there; fall through and return
           // the client secret.

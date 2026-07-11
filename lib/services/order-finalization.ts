@@ -153,7 +153,16 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
     await markOrderUnpaid(orderId, {
       notes: `Reverted to pending: gift-card tender not redeemed`,
     });
-    return { paid: false, promotedByUs: true, reverted: true };
+    // L4 (BMC-167 review): surface a reason so the webhook's
+    // `if (!result.paid && result.reason)` branch logs the revert instead of
+    // silently leaving the order pending with no trace (mirrors the
+    // catalog-unpriceable case).
+    return {
+      paid: false,
+      promotedByUs: true,
+      reverted: true,
+      reason: `gift-card tender (${giftCardTenderCents}c) counted toward payment but redemption applied nothing; reverted to pending`,
+    };
   }
 
   // Confirmation email — only the CAS winner sends it, so it fires exactly once
