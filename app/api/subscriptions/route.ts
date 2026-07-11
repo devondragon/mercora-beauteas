@@ -93,14 +93,34 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripeForWorkers();
 
-    // Retrieve the confirmed SetupIntent to get the payment method
-    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+    // Retrieve the confirmed SetupIntent to get the payment method. Expand the
+    // customer so we can verify ownership from its metadata below.
+    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId, {
+      expand: ['customer'],
+    });
 
-    if (setupIntent.status !== 'succeeded') {
-      return NextResponse.json(
-        { error: `SetupIntent has not succeeded (status: ${setupIntent.status})` },
-        { status: 400 }
-      );
+    // SECURITY (BMC-148): the setupIntentId is client-supplied, so we must not
+    // trust the customer/payment-method embedded in it. Confirm the SetupIntent's
+    // customer belongs to the calling Clerk user before billing anything to it —
+    // otherwise an attacker who learns another user's seti_… could create a
+    // subscription charged to that victim's payment method. The Clerk↔Stripe link
+    // is the `clerk_user_id` metadata set at customer-creation time in
+    // /api/setup-intent. Anything other than a live customer carrying the caller's
+    // id (string ref, deleted customer, missing/mismatched metadata) fails closed.
+    const setupIntentCustomer = setupIntent.customer;
+    const ownerClerkId =
+      setupIntentCustomer &&
+      typeof setupIntentCustomer === 'object' &&
+      !('deleted' in setupIntentCustomer)
+        ? setupIntentCustomer.metadata?.clerk_user_id
+        : undefined;
+
+    // Uniform 403 for every case the caller can't legitimately act on: a
+    // not-yet-succeeded intent and one owned by another user are indistinguishable
+    // from the outside, so a client holding a candidate seti_… can't probe its
+    // existence, status, or ownership.
+    if (setupIntent.status !== 'succeeded' || ownerClerkId !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const paymentMethodId =
