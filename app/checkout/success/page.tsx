@@ -105,14 +105,16 @@ export default function CheckoutSuccessPage() {
       const pending = paymentIntentId ? loadPendingOrder(paymentIntentId) : null;
       if (!pending) {
         // No snapshot for this PI (returned in a different browser, localStorage
-        // cleared, or overwritten). We can't rebuild the order and the webhook
-        // can't create it from PaymentIntent metadata alone. Be honest — do NOT
-        // show a confirmation. Payment did go through, so clear the cart to avoid
-        // an accidental re-payment. (BMC-165 follow-up: a server-side pending
-        // order at PI creation would let the webhook reconcile this case.)
+        // cleared, or overwritten) so we can't finalize the order on THIS device.
+        // BMC-167: a server-side PENDING order was persisted at PaymentIntent
+        // creation, so the Stripe `payment_intent.succeeded` webhook promotes it
+        // to paid and sends the confirmation email server-side — this case now
+        // reconciles automatically. We still don't show a local confirmation
+        // (we have no order id to display) and we clear the cart to avoid an
+        // accidental re-payment.
         setPhase('received');
         setMessage(
-          'Your payment was received. If you don’t see a confirmation email shortly, please contact support with your payment reference below.'
+          'Your payment was received and your order is being finalized. A confirmation email will follow shortly — if you don’t see it, contact support with your payment reference below.'
         );
         await clearCartSafely();
         return;

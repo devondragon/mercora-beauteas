@@ -36,7 +36,14 @@ export interface OrderTotals {
 
 export interface BuildOrderArgs {
   orderId: string;
-  paymentIntentId: string;
+  /**
+   * The funding PaymentIntent id. Optional so the checkout can build the order
+   * DRAFT it sends to `/api/payment-intent` (BMC-167) BEFORE the id has been
+   * minted — the server stamps the real id it created onto the persisted pending
+   * order. Always supplied for the localStorage redirect snapshot, whose lookup
+   * is keyed by this id.
+   */
+  paymentIntentId?: string;
   items: CartItem[];
   shippingAddress?: Address;
   shippingOption?: ShippingOption;
@@ -78,7 +85,10 @@ export function buildCreateOrderBody(args: BuildOrderArgs) {
     payment_method: 'stripe',
     payment_status: 'paid', // Advisory only — server verifies against Stripe.
     extensions: {
-      payment_intent_id: paymentIntentId,
+      // Empty string when building the pre-PI draft (BMC-167); the server
+      // overwrites it with the real id it minted. Always the real id on the
+      // localStorage redirect snapshot, whose lookup is keyed by it.
+      payment_intent_id: paymentIntentId ?? '',
       shipping_cost: shippingCost,
       tax_amount: tax,
       subtotal,
