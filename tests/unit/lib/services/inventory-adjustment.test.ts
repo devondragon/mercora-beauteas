@@ -13,6 +13,8 @@ import {
   planLineAdjustment,
   normalizeInventory,
   checkStockAvailability,
+  selectRestockLines,
+  lineRestockKey,
   type NormalizedInventory,
 } from '@/lib/services/inventory-adjustment';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
@@ -183,6 +185,94 @@ describe('checkStockAvailability', () => {
     ]);
     expect(res.ok).toBe(false);
     expect(res.shortfalls.map((s) => s.variant_id)).toEqual(['short']);
+  });
+
+  it('aggregates demand across multiple lines of the SAME variant (2 + 2 > stock 3 fails)', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue(
+      variant('v1', { track_inventory: true, quantity: 3, allow_backorder: false }) as any
+    );
+    const res = await checkStockAvailability([
+      { variant_id: 'v1', quantity: 2 },
+      { variant_id: 'v1', quantity: 2 },
+    ]);
+    expect(res.ok).toBe(false);
+    expect(res.shortfalls).toHaveLength(1);
+    expect(res.shortfalls[0]).toMatchObject({ variant_id: 'v1', requested: 4, available: 3 });
+  });
+
+  it('aggregated same-variant demand that fits stock passes (2 + 1 <= stock 3)', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue(
+      variant('v1', { track_inventory: true, quantity: 3, allow_backorder: false }) as any
+    );
+    const res = await checkStockAvailability([
+      { variant_id: 'v1', quantity: 2 },
+      { variant_id: 'v1', quantity: 1 },
+    ]);
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe('lineRestockKey', () => {
+  it('builds the admin UI composite key, defaulting a missing variant', () => {
+    expect(lineRestockKey({ product_id: 'p1', variant_id: 'v1' })).toBe('p1-v1');
+    expect(lineRestockKey({ product_id: 'p1' })).toBe('p1-default');
+    expect(lineRestockKey({ productId: 'p1', variantId: 'v1' })).toBe('p1-v1');
+  });
+});
+
+describe('selectRestockLines', () => {
+  const orderItems = [
+    { product_id: 'p1', variant_id: 'v1', quantity: 1 },
+    { product_id: 'p2', variant_id: 'v2', quantity: 1 },
+  ];
+
+  it('full refund with no prior restock selects every line', () => {
+    const { lines, keys } = selectRestockLines(orderItems, {
+      fullRefund: true,
+      refundedItemKeys: [],
+      alreadyRestockedKeys: [],
+    });
+    expect(keys).toEqual(['p1-v1', 'p2-v2']);
+    expect(lines).toHaveLength(2);
+  });
+
+  it('partial refund selects only the composite-key-matched lines', () => {
+    const { keys } = selectRestockLines(orderItems, {
+      fullRefund: false,
+      refundedItemKeys: ['p1-v1'],
+      alreadyRestockedKeys: [],
+    });
+    expect(keys).toEqual(['p1-v1']);
+  });
+
+  it('partial refund also matches a bare product id', () => {
+    const { keys } = selectRestockLines(orderItems, {
+      fullRefund: false,
+      refundedItemKeys: ['p2'],
+      alreadyRestockedKeys: [],
+    });
+    expect(keys).toEqual(['p2-v2']);
+  });
+
+  it('CRITICAL regression: full refund AFTER a partial does NOT re-restock the already-restocked line', () => {
+    // p1 was restocked by a prior partial refund; the follow-up full refund must
+    // restore only p2, never p1 again (else on-hand inflates above what was sold).
+    const { lines, keys } = selectRestockLines(orderItems, {
+      fullRefund: true,
+      refundedItemKeys: [],
+      alreadyRestockedKeys: ['p1-v1'],
+    });
+    expect(keys).toEqual(['p2-v2']);
+    expect(lines).toHaveLength(1);
+  });
+
+  it('repeated partial re-selecting the same line does not restock it twice', () => {
+    const { keys } = selectRestockLines(orderItems, {
+      fullRefund: false,
+      refundedItemKeys: ['p1-v1'],
+      alreadyRestockedKeys: ['p1-v1'],
+    });
+    expect(keys).toEqual([]);
   });
 
   it('falls back to the default variant when a line has only a product_id', async () => {

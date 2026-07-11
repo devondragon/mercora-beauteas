@@ -212,17 +212,40 @@ export async function checkStockAvailability(
   const list = Array.isArray(items) ? items : [];
   const resolved = await Promise.all(list.map((it) => resolveLine(it).catch(() => null)));
 
-  const shortfalls: StockShortfall[] = [];
+  // Aggregate requested quantity per resolved variant BEFORE comparing to on
+  // hand, so multiple cart lines that reference the SAME tracked variant are
+  // checked against stock together — two lines of 2 against a stock of 3 must
+  // fail as a combined demand of 4, not pass line-by-line. Only 'decrement'
+  // lines gate; backorder/untracked/unresolved lines never block.
+  const demand = new Map<
+    string,
+    { requested: number; available: number; product_id?: string; product_name?: string }
+  >();
   for (const line of resolved) {
     if (!line) continue;
     if (planLineAdjustment(line.inv) !== 'decrement') continue; // skip / backorder → available
-    if (line.inv.quantity < line.quantity) {
-      shortfalls.push({
-        variant_id: line.variantId,
-        product_id: line.productId,
-        product_name: line.productName,
+    const prev = demand.get(line.variantId);
+    if (prev) {
+      prev.requested += line.quantity;
+    } else {
+      demand.set(line.variantId, {
         requested: line.quantity,
         available: Math.max(0, line.inv.quantity),
+        product_id: line.productId,
+        product_name: line.productName,
+      });
+    }
+  }
+
+  const shortfalls: StockShortfall[] = [];
+  for (const [variantId, d] of demand) {
+    if (d.requested > d.available) {
+      shortfalls.push({
+        variant_id: variantId,
+        product_id: d.product_id,
+        product_name: d.product_name,
+        requested: d.requested,
+        available: d.available,
       });
     }
   }
@@ -330,4 +353,45 @@ export async function restockForOrder(items: OrderLineForStock[]): Promise<{ res
   }
 
   return { restocked };
+}
+
+/** The composite key the admin returns UI uses to identify a line. */
+export function lineRestockKey(it: OrderLineForStock): string {
+  const pid = it.product_id ?? it.productId;
+  const vid = it.variant_id ?? it.variantId;
+  return `${pid}-${vid || 'default'}`;
+}
+
+/**
+ * Choose which order lines a refund should restore, EXCLUDING any line already
+ * restocked by a prior refund on the same order. Pure and DB-free so it is unit-
+ * testable.
+ *
+ * Without this, a FULL refund restocks every line unconditionally — so a "partial
+ * return of line A, then cancel the rest" flow (or a repeated partial that
+ * re-selects A) would restock A twice and inflate on-hand above what was ever
+ * sold, reintroducing the exact phantom-stock problem BMC-178 closes. Each sold
+ * line is therefore restored at most once across the order's refund history.
+ *
+ * `refundedItemKeys` are the keys the refund request carries: the admin UI sends
+ * composite `${product_id}-${variant_id||'default'}` keys, but a bare-product-id
+ * API caller is also honored. `alreadyRestockedKeys` are the composite keys
+ * recorded on prior refunds. Returns the lines to restock and their keys (to
+ * persist onto the order).
+ */
+export function selectRestockLines(
+  orderItems: OrderLineForStock[],
+  opts: { fullRefund: boolean; refundedItemKeys: string[]; alreadyRestockedKeys: string[] }
+): { lines: OrderLineForStock[]; keys: string[] } {
+  const list = Array.isArray(orderItems) ? orderItems : [];
+  const refundSet = opts.refundedItemKeys ?? [];
+  const already = new Set(opts.alreadyRestockedKeys ?? []);
+
+  const inRefund = (it: OrderLineForStock): boolean =>
+    refundSet.includes(lineRestockKey(it)) ||
+    refundSet.includes((it.product_id ?? it.productId) as string);
+
+  const candidates = opts.fullRefund ? list : list.filter(inRefund);
+  const lines = candidates.filter((it) => !already.has(lineRestockKey(it)));
+  return { lines, keys: lines.map(lineRestockKey) };
 }

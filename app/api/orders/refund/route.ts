@@ -39,7 +39,7 @@ import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmo
 import { errorDetails } from '@/lib/utils/error-response';
 import { sha256Hex } from '@/lib/auth/crypto';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
-import { restockForOrder } from '@/lib/services/inventory-adjustment';
+import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
 
 interface RefundRequest {
@@ -220,6 +220,28 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString()
     };
 
+    // BMC-178: decide which lines this refund restores BEFORE writing the order,
+    // so the "already restocked" record commits atomically with the refund entry.
+    // A FULL refund cancels the order → restore every not-yet-restocked line; a
+    // PARTIAL refund → restore only the refunded lines. selectRestockLines
+    // excludes any line a prior refund already restocked, so a full-refund-after-
+    // partial (or a repeated partial) can never inflate on-hand above what was
+    // sold. Restock is scoped to the refund path (a paid order whose stock was
+    // decremented), NOT an arbitrary status change — a PUT → 'cancelled' on an
+    // unpaid order never decremented, so restocking there would inflate stock.
+    const rawItems = order.items
+      ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items)
+      : [];
+    const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
+    const priorRestockedKeys: string[] = Array.isArray(extensions.restockedLineKeys)
+      ? extensions.restockedLineKeys
+      : [];
+    const { lines: restockItems, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
+      fullRefund: type === 'full',
+      refundedItemKeys: items ?? [],
+      alreadyRestockedKeys: priorRestockedKeys,
+    });
+
     // Add refund information to extensions
     const updatedExtensions = {
       ...extensions,
@@ -235,7 +257,10 @@ export async function POST(request: NextRequest) {
           processed_at: new Date().toISOString(),
           stripe_refund_id: stripeRefund.id
         }
-      ]
+      ],
+      // Persist the set of lines restored so far so a later refund on this order
+      // won't restock them again (see selectRestockLines). Deduped union.
+      restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
     };
     // extensions is a `mode: "json"` column — assign the RAW object and let
     // Drizzle serialize; a manual JSON.stringify would double-encode.
@@ -254,35 +279,16 @@ export async function POST(request: NextRequest) {
       .where(eq(orders.id, orderId))
       .returning();
 
-    // BMC-178: restore on-hand stock for the refunded goods (the inverse of the
-    // decrement at payment success). A FULL refund cancels the order → restock
-    // every line; a PARTIAL refund → restock only the refunded product lines, at
-    // the quantities on the order. Restock is intentionally scoped to the refund
-    // path (a paid order whose stock was decremented), NOT an arbitrary status
-    // change: a PUT → 'cancelled' on an unpaid order never decremented, so
-    // restocking there would inflate stock. Best-effort and wrapped: the money is
-    // already refunded and the order already written, so an inventory hiccup must
-    // never surface as a 500 or unwind the refund. Untracked/backorder lines are
-    // handled inside restockForOrder. (Idempotency mirrors the refund route's own
-    // guarantees: a full refund flips status to 'cancelled' so the guard above
-    // blocks a second one; a partial refund restores only its own lines.)
+    // BMC-178: now actually restore on-hand stock for the lines selected above
+    // (the inverse of the decrement at payment success). Best-effort and wrapped:
+    // the money is already refunded and the order already written (including the
+    // restockedLineKeys record), so an inventory hiccup here must never surface as
+    // a 500 or unwind the refund. Untracked/backorder lines are handled inside
+    // restockForOrder. Recording the keys with the order write (rather than after
+    // a confirmed increment) mirrors the route's existing best-effort posture — a
+    // rare post-write restock failure is logged and left for manual reconciliation
+    // rather than risking a double-restock on retry.
     try {
-      const rawItems = order.items
-        ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items)
-        : [];
-      const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
-      // The admin returns UI selects lines by a COMPOSITE key
-      // (`${product_id}-${variant_id || 'default'}`), so `items[]` on a partial
-      // refund carries those composite keys — not bare product ids. Match a line
-      // if the refund set contains its composite key OR its bare product id, so
-      // both the real admin caller and any bare-id API caller restock correctly.
-      const refundSet = items ?? [];
-      const lineInRefund = (it: any): boolean => {
-        const pid = it.product_id ?? it.productId;
-        const vid = it.variant_id ?? it.variantId;
-        return refundSet.includes(`${pid}-${vid || 'default'}`) || refundSet.includes(pid);
-      };
-      const restockItems = type === 'full' ? orderItems : orderItems.filter(lineInRefund);
       if (restockItems.length > 0) {
         const { restocked } = await restockForOrder(restockItems);
         if (restocked.length) {
