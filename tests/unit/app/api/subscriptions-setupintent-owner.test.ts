@@ -108,6 +108,22 @@ describe('POST /api/subscriptions SetupIntent ownership guard (BMC-148 / M5)', (
     expect(createSubscription).not.toHaveBeenCalled();
   });
 
+  it('rejects with 403 for a non-owned SetupIntent regardless of status (not succeeded)', async () => {
+    // A non-owner must never learn a candidate seti_…'s status: a not-succeeded
+    // intent owned by someone else fails closed to 403, same as any other denial.
+    retrieveSetupIntent.mockResolvedValue({
+      status: 'requires_confirmation',
+      payment_method: 'pm_123',
+      customer: { id: 'cus_victim', metadata: { clerk_user_id: 'user_victim' } },
+    });
+
+    const res = await POST(postRequest({ setupIntentId: 'seti_victim', planId: 'plan_1' }));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
   it('rejects with 403 when the customer is an unexpanded string ref', async () => {
     retrieveSetupIntent.mockResolvedValue({
       status: 'succeeded',
