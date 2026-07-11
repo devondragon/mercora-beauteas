@@ -20,15 +20,15 @@ import {
 } from "@/lib/models/mach/orders";
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
-import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, type OrderData } from "@/lib/utils/email";
+import { sendOrderStatusUpdateEmail } from "@/lib/utils/email";
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
-import { processGiftCardsForOrder, orderInvolvesGiftCards } from "@/lib/services/gift-card-fulfillment";
-import { resolveGiftCardTenderCents, verifyOrderChargeSufficient, canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
+import { canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
+import { finalizePaidOrder } from "@/lib/services/order-finalization";
 import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
-import { buildOrderEmailTotals } from "@/lib/utils/order-email-totals";
 import { toWireOrder } from "@/lib/utils/order-wire";
+import { isUniqueViolation } from "@/lib/utils/db-errors";
 
 
 
@@ -46,6 +46,13 @@ export async function GET(request: NextRequest) {
     const requestedUserId = url.searchParams.get('userId');
     const orderId = url.searchParams.get('orderId');
     const isAdminRequest = url.searchParams.has('admin');
+    // BMC-167 (M1): the storefront now persists an UNPAID `pending` order at
+    // PaymentIntent creation, so every abandoned checkout-past-shipping leaves a
+    // phantom draft. Exclude those unpaid drafts from operational list reads by
+    // default so they don't pollute the admin fulfillment queue or a customer's
+    // order history. An admin can still see them with ?includePending=true, and a
+    // direct ?orderId= lookup always returns the exact order regardless.
+    const includePending = url.searchParams.has('includePending');
 
     const db = await getDbAsync();
     
@@ -85,7 +92,12 @@ export async function GET(request: NextRequest) {
     if (status) {
       filteredOrders = filteredOrders.filter(order => order.status === status);
     }
-    
+    // Hide unpaid drafts (BMC-167 M1) unless explicitly requested or a specific
+    // order is being looked up by id.
+    if (!includePending && !orderId) {
+      filteredOrders = filteredOrders.filter(order => order.payment_status !== 'pending');
+    }
+
     const total = filteredOrders.length;
     const paginatedOrders = filteredOrders.slice(offset, offset + limit);
     const hydratedOrders = paginatedOrders.map(hydrateOrder);
@@ -207,92 +219,161 @@ export async function POST(request: NextRequest) {
 
     const db = await getDbAsync();
 
-    // Idempotency (BMC-165): an order id is created exactly once. A redirect
-    // payment-method customer returning to /checkout/success (and possibly
-    // refreshing), or an inline double-submit, can POST the same order_id again.
-    // Return success instead of failing on the primary-key insert — and
-    // short-circuit before re-sending the confirmation email or re-running
-    // gift-card fulfillment. Payment state is owned by the original creation +
-    // the Stripe webhook, so we never re-touch it here.
-    const alreadyCreated = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (alreadyCreated.length > 0) {
+    // BMC-167: the storefront now persists a server-side PENDING order at
+    // PaymentIntent creation (POST /api/payment-intent), so by the time this
+    // route runs the order row usually already exists. This handler therefore
+    // FINDS-AND-PROMOTES rather than blindly inserting: it is the idempotent
+    // client fast-path that promotes the SAME pending order the Stripe webhook
+    // would otherwise promote — the two converge on exactly one paid order.
+    //
+    // Three cases:
+    //   (a) order exists + already paid  → pure idempotent no-op (return id only)
+    //   (b) order exists + still pending → finalize it (verify PI, CAS-promote)
+    //   (c) order does not exist         → create it pending (older client that
+    //       didn't send the draft, or pending-order persistence failed at PI
+    //       creation), then finalize
+    let orderRow: typeof orders.$inferSelect | null = null;
+
+    const existing = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (existing.length > 0) {
       // SECURITY: authenticated ids are already namespace-bound to the caller
-      // above, but guest orders share the WEB-GUEST-<ts> namespace, so a
-      // guessed id must NOT hand back another guest's order. Confirm ownership
-      // before responding, and never echo the persisted order (it carries the
-      // shipping address / email / line items) — return only the id.
-      if (!callerOwnsExistingOrder(alreadyCreated[0], userId, body)) {
+      // above, but guest orders share the WEB-GUEST-<ts> namespace, so a guessed
+      // id must NOT hand back another guest's order. Confirm ownership before
+      // touching it, and never echo the persisted order (it carries the shipping
+      // address / email / line items) — return only the id.
+      if (!callerOwnsExistingOrder(existing[0], userId, body)) {
         return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
       }
-      // TODO(BMC-165): this is create-once idempotency, not full request
-      // idempotency — an owner re-POSTing the same id with a DIFFERENT body
-      // silently gets the original order back. Fine for our flows (the redirect
-      // return re-sends the identical snapshot), but if strict idempotency is
-      // ever needed, compare a request fingerprint and 409 on mismatch.
-      return NextResponse.json(
-        { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
-        { status: 200 }
-      );
-    }
-
-    // Handle customer_id - ensure there's a valid customer record or null for guest orders
-    let customerId = userId || body.customer_id || null;
-    if (customerId === "guest") {
-      customerId = null;
-    }
-    
-    // If we have a customer ID, make sure the customer exists in the database
-    if (customerId) {
-      try {
-        let customer = await getCustomer(customerId);
-        if (!customer) {
-          // Create a customer record if it doesn't exist
-          const user = await currentUser();
-          customer = await createCustomer({
-            id: customerId,
-            type: "person",
-            person: {
-              email: user?.emailAddresses?.[0]?.emailAddress || body.extensions?.email || '',
-              first_name: user?.firstName || '',
-              last_name: user?.lastName || '',
-              full_name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '',
-            }
-          });
-        }
-      } catch (error) {
-        console.error('Error handling customer record:', error);
-        // If customer creation fails, proceed as guest order
+      // (a) Already finalized — payment state is owned by the first writer to
+      // promote it (client or webhook); never re-touch it here.
+      if (existing[0].payment_status === 'paid') {
+        return NextResponse.json(
+          { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
+          { status: 200 }
+        );
+      }
+      // (b) Owner + still pending → promote it below.
+      orderRow = existing[0];
+    } else {
+      // (c) No pending order for this id — create one now so this path still
+      // yields exactly one order.
+      // Handle customer_id — ensure there's a valid customer record or null for
+      // guest orders.
+      let customerId = userId || body.customer_id || null;
+      if (customerId === "guest") {
         customerId = null;
+      }
+      if (customerId) {
+        try {
+          let customer = await getCustomer(customerId);
+          if (!customer) {
+            const user = await currentUser();
+            customer = await createCustomer({
+              id: customerId,
+              type: "person",
+              person: {
+                email: user?.emailAddresses?.[0]?.emailAddress || body.extensions?.email || '',
+                first_name: user?.firstName || '',
+                last_name: user?.lastName || '',
+                full_name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '',
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error handling customer record:', error);
+          customerId = null;
+        }
+      }
+
+      // M1: overwrite each line's DISPLAY fields (product_name/imageUrl) with
+      // catalog truth before persisting, so a spoofed name/image can't make the
+      // packing slip or confirmation email describe cheap goods as an expensive
+      // product. Never throws (fails soft to the client-supplied display).
+      let canonicalItems = body.items;
+      try {
+        canonicalItems = await canonicalizeOrderItemsDisplay(body.items as any);
+      } catch (canonError) {
+        console.error(`Order ${orderId}: display canonicalization failed; using client display`, canonError);
+      }
+
+      // Bind the PaymentIntent id into external_references too (not just the
+      // client-supplied extensions) so getOrderByPaymentIntentId can find it.
+      const bodyPaymentIntentId = (body.extensions as any)?.payment_intent_id;
+      const externalReferences =
+        bodyPaymentIntentId && typeof bodyPaymentIntentId === 'string'
+          ? { ...(body.external_references ?? {}), payment_intent_id: bodyPaymentIntentId }
+          : body.external_references ?? null;
+
+      // Encoding contract: total_amount / shipping_address / billing_address /
+      // items / external_references / extensions are `mode: "json"` columns —
+      // Drizzle serializes them on write and parses on read. Pass the RAW
+      // objects; a manual JSON.stringify would double-encode and break
+      // json_extract() in SQL. Always persist pending/pending — the paid state
+      // is reached only via the guarded promotion below (BMC-167).
+      const machOrder: any = {
+        id: orderId,
+        customer_id: customerId,
+        status: 'pending',
+        total_amount: Money.fromStored(body.total_amount).toJSON(),
+        currency_code: body.currency_code,
+        shipping_address: body.shipping_address ?? null,
+        billing_address: body.billing_address ?? null,
+        items: canonicalItems,
+        shipping_method: body.shipping_method || null,
+        payment_method: body.payment_method || null,
+        payment_status: 'pending',
+        notes: body.notes || null,
+        external_references: externalReferences,
+        extensions: body.extensions ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // On a duplicate-id violation, another writer created the row concurrently
+      // (a redirect return racing a refresh, or the PI-creation pending order
+      // landing between our pre-check and insert). Recover: promote/return the
+      // existing row rather than a spurious 400.
+      try {
+        [orderRow] = await db.insert(orders).values(machOrder).returning();
+      } catch (insertError) {
+        // Only a duplicate-primary-key/unique violation means the id was created
+        // concurrently (the idempotency race). Use the canonical classifier
+        // (cause-chain aware, matches ONLY unique/primary-key — never a FK/
+        // NOTNULL/CHECK failure) so an unrelated constraint error propagates as a
+        // real error instead of being masked as a duplicate.
+        if (!isUniqueViolation(insertError)) {
+          throw insertError;
+        }
+        const raced = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+        if (raced.length > 0 && callerOwnsExistingOrder(raced[0], userId, body)) {
+          if (raced[0].payment_status === 'paid') {
+            return NextResponse.json(
+              { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
+              { status: 200 }
+            );
+          }
+          orderRow = raced[0];
+        } else if (raced.length > 0) {
+          return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
+        } else {
+          throw insertError;
+        }
       }
     }
 
-    // Verify payment server-side before marking the order paid. We NEVER trust
-    // the client's payment_status flag: the order is 'paid' only if Stripe
-    // confirms the PaymentIntent succeeded AND it is bound to THIS order. This
-    // makes order creation the primary fulfiller (the webhook is a backup), so
-    // status no longer depends on a reachable NEXT_PUBLIC_URL. Fail closed to
-    // 'pending' on any doubt; the webhook reconciles later.
+    // ── Finalize: verify the PaymentIntent server-side, then promote ──────────
+    // We NEVER trust the client's payment_status flag: the order becomes 'paid'
+    // only if Stripe confirms the PaymentIntent SUCCEEDED and it is bound to THIS
+    // order, and the captured cash covers the catalog value of the goods
+    // (BMC-131, re-checked inside finalizePaidOrder). Any doubt leaves the order
+    // pending; the webhook reconciles later. The promotion is a guarded CAS, so
+    // a client-first and a webhook-first arrival converge on ONE paid order with
+    // side effects (email, gift cards) firing exactly once.
+    const order = hydrateOrder(orderRow);
     const paymentIntentId = (body.extensions as any)?.payment_intent_id;
-    let verifiedPi: Awaited<ReturnType<typeof retrievePaymentIntent>> | null = null;
-    // SECURITY (BMC-131 / C1): paymentConfirmed starts false and is set true
-    // ONLY as the very last step, after every check has passed. It must never be
-    // set true up front and cleared on failure: a throw anywhere in the block
-    // (Stripe retrieval, a transient D1 error while pricing the catalog, a
-    // gift-card lookup) then falls into the catch and leaves it at its default
-    // false — the order fails closed to 'pending' by construction, not by luck.
-    let paymentConfirmed = false;
-    // Gift-card tender (cents) that the sufficiency decision counted on. Kept in
-    // the outer scope so the fulfillment step below can detect a tender that was
-    // credited to the paid decision but never actually redeemed (H1).
-    let giftCardTenderCents = 0;
-    // M4: set when a genuinely-captured payment can't be reconciled because the
-    // catalog can't price the order (e.g. a variant was discontinued between
-    // capture and order creation). Distinguishes a legit paid-but-stuck order
-    // from an ordinary abandoned/underpaid 'pending' so ops can triage it.
-    let reviewNote: string | null = null;
     if (paymentIntentId && typeof paymentIntentId === 'string') {
       try {
-        verifiedPi = await retrievePaymentIntent(paymentIntentId);
+        const verifiedPi = await retrievePaymentIntent(paymentIntentId);
         const piSucceededAndBound =
           verifiedPi.status === 'succeeded' && verifiedPi.metadata?.orderId === orderId;
         if (!piSucceededAndBound) {
@@ -301,242 +382,44 @@ export async function POST(request: NextRequest) {
               `(status=${verifiedPi.status}, boundOrder=${verifiedPi.metadata?.orderId ?? 'none'}); leaving order pending`
           );
         } else {
-          // BMC-131: a succeeded, order-bound PaymentIntent is necessary but NOT
-          // sufficient. Re-verify that the cash actually collected covers the
-          // catalog value of the goods (never the client-supplied total/unit
-          // prices). Without this a shopper could pay a $0.50 PaymentIntent and
-          // submit an order for expensive items. Use ONLY amount_received (the
-          // captured amount), never the authorized pi.amount. Fail closed to
-          // 'pending' on any shortfall; the webhook re-runs the same check.
-          const paidAmountCents = verifiedPi.amount_received ?? 0;
-          giftCardTenderCents = await resolveGiftCardTenderCents(body.extensions);
-          const charge = await verifyOrderChargeSufficient({
-            items: body.items as any,
-            paidAmountCents,
-            giftCardTenderCents,
-          });
-          if (charge.ok) {
-            paymentConfirmed = true;
-          } else {
-            console.warn(
-              `Order ${orderId}: PaymentIntent ${paymentIntentId} amount check failed; leaving order pending — ${charge.reason}`
-            );
-            // M4: real money was captured but the catalog couldn't price the
-            // order — a legit customer stuck, not an underpayment attack. Flag
-            // for manual review instead of silently parking it as 'pending'.
-            if (paidAmountCents > 0 && charge.reason?.startsWith('cannot price order from catalog')) {
-              reviewNote =
-                `NEEDS REVIEW (BMC-131): captured ${paidAmountCents}c but the catalog could not price ` +
-                `this order — ${charge.reason}`;
+          // Best-effort display name for the confirmation email.
+          let customerName: string | undefined;
+          try {
+            const user = await currentUser();
+            if (user?.firstName && user?.lastName) {
+              customerName = `${user.firstName} ${user.lastName}`;
             }
+          } catch {
+            // no session (guest / redirect return) — finalize falls back to the
+            // shipping recipient.
           }
+          await finalizePaidOrder({
+            order,
+            paidAmountCents: verifiedPi.amount_received ?? 0,
+            sendEmail: true,
+            paidNotes: `Payment completed via Stripe - Payment Intent: ${paymentIntentId}`,
+            customerName,
+          });
         }
       } catch (piError) {
+        // A throw anywhere here (Stripe retrieval, a transient D1 error while
+        // pricing the catalog, a gift-card lookup) leaves the order pending by
+        // construction — the webhook reconciles later. Fail closed, never open.
         console.error(
-          `Order ${orderId}: PaymentIntent ${paymentIntentId} verification failed; leaving order pending`,
+          `Order ${orderId}: payment finalization failed; leaving order pending`,
           piError
         );
       }
     }
 
-    // M1: overwrite each line's DISPLAY fields (product_name/imageUrl) with
-    // catalog truth before persisting, so a spoofed name/image can't make the
-    // packing slip or confirmation email describe cheap goods as an expensive
-    // product. Never throws (fails soft to the client-supplied display).
-    let canonicalItems = body.items;
-    try {
-      canonicalItems = await canonicalizeOrderItemsDisplay(body.items as any);
-    } catch (canonError) {
-      console.error(`Order ${orderId}: display canonicalization failed; using client display`, canonError);
-    }
-
-    // Encoding contract: total_amount / shipping_address / billing_address /
-    // items / external_references / extensions are `mode: "json"` columns —
-    // Drizzle serializes them on write and parses on read. Pass the RAW objects;
-    // a manual JSON.stringify would double-encode and break json_extract() in SQL.
-    const machOrder: any = {
-      id: orderId,
-      customer_id: customerId,
-      status: paymentConfirmed ? 'processing' : 'pending',
-      // Guarantee the persisted value is a clean integer-minor-unit Money
-      // shape, regardless of what the client sent (already validated above,
-      // but this also normalizes currency casing / strips extra fields).
-      total_amount: Money.fromStored(body.total_amount).toJSON(),
-      currency_code: body.currency_code,
-      shipping_address: body.shipping_address ?? null,
-      billing_address: body.billing_address ?? null,
-      items: canonicalItems,
-      shipping_method: body.shipping_method || null,
-      payment_method: body.payment_method || null,
-      payment_status: paymentConfirmed ? 'paid' : 'pending',
-      notes: reviewNote || body.notes || null,
-      external_references: body.external_references ?? null,
-      extensions: body.extensions ?? null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    // Create the order. The pre-check above handles the common idempotent case;
-    // this catch closes the concurrent-insert race (two redirect returns, or a
-    // return racing a refresh) where both pass the pre-check and one loses the
-    // primary-key insert. On a duplicate-id violation, return the row the winner
-    // wrote rather than a spurious 400.
-    let newOrder: typeof orders.$inferSelect;
-    try {
-      [newOrder] = await db.insert(orders).values(machOrder).returning();
-    } catch (insertError) {
-      // Only a duplicate-primary-key violation means the id was created
-      // concurrently (the idempotency race). Any other insert failure — e.g. a
-      // transient D1 error — must surface as a real error, never be masked as a
-      // duplicate just because some unrelated row happens to share this id.
-      if (!isUniqueConstraintError(insertError)) {
-        throw insertError;
-      }
-      const raced = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-      // Same ownership + no-PII-echo rules as the idempotency pre-check apply.
-      if (raced.length > 0 && callerOwnsExistingOrder(raced[0], userId, body)) {
-        return NextResponse.json(
-          { data: { id: orderId }, meta: { schema: 'mach:order', idempotent: true } },
-          { status: 200 }
-        );
-      }
-      if (raced.length > 0) {
-        return NextResponse.json({ error: 'Order already exists' }, { status: 409 });
-      }
-      throw insertError;
-    }
-
-
-    // Send order confirmation email (MACH-compliant)
-    try {
-      const user = await currentUser();
-      const shippingAddr = body.shipping_address;
-      let customerName = 'Valued Customer';
-      if (user?.firstName && user?.lastName) {
-        customerName = `${user.firstName} ${user.lastName}`;
-      } else if (shippingAddr?.recipient) {
-        customerName = shippingAddr.recipient;
-      } else if (shippingAddr?.company) {
-        customerName = shippingAddr.company;
-      }
-      const customerEmail = body.extensions?.email || shippingAddr?.email || '';
-      // BMC-143: every field below is MINOR units (cents), same contract as
-      // the persisted order (Money.toJSON() shape) — format through Money
-      // once here, then the email templates just render pre-formatted
-      // strings. Never .toFixed() a minor-unit number as if it were dollars.
-      const emailCurrency = body.currency_code || 'USD';
-      const orderTotalMinor = typeof body.total_amount === 'object' ? body.total_amount.amount : body.total_amount;
-      // BMC-164: checkout (components/checkout/CheckoutClient.tsx) writes
-      // extensions.shipping_cost / extensions.tax_amount (snake_case, minor
-      // units) — the previous camelCase shippingCost/taxAmount keys here
-      // never matched, so shipping/tax always rendered as $0.00.
-      const emailTotals = buildOrderEmailTotals({
-        subtotal: body.extensions?.subtotal || 0,
-        shipping: body.extensions?.shipping_cost || 0,
-        tax: body.extensions?.tax_amount || 0,
-        total: orderTotalMinor,
-        currency: emailCurrency,
-        // giftCardTenderCents is the server-verified (balance-capped) tender
-        // bound to a confirmed PaymentIntent, computed above — not the raw
-        // client-supplied extensions.gift_card.amount.
-        giftCardAmount: giftCardTenderCents,
-      });
-      const orderData: OrderData = {
-        orderNumber: orderId,
-        customerName,
-        customerEmail,
-        items: canonicalItems.map(item => {
-          const unitPriceMinor = typeof item.unit_price === 'object' ? item.unit_price.amount : item.unit_price;
-          const unitPrice = Money.fromMinor(unitPriceMinor, emailCurrency);
-          return {
-            productId: item.product_id,
-            name: item.product_name,
-            price: unitPrice.format(),
-            lineTotal: unitPrice.times(item.quantity).format(),
-            quantity: item.quantity,
-            imageUrl: (item as any).imageUrl || '',
-          };
-        }),
-        ...emailTotals,
-        shippingAddress: shippingAddr ? {
-          street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
-          city: typeof shippingAddr.city === 'string' ? shippingAddr.city : (shippingAddr.city ? Object.values(shippingAddr.city)[0] : ''),
-          state: shippingAddr.region || '',
-          zipCode: shippingAddr.postal_code || '',
-          country: shippingAddr.country || 'US',
-        } : {
-          street: '', city: '', state: '', zipCode: '', country: ''
-        },
-        estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-      };
-      const emailResult = await sendOrderConfirmationEmail(orderData);
-      if (emailResult.success) {
-        console.log('Order confirmation email sent successfully:', emailResult.id);
-      } else {
-        console.error('Failed to send confirmation email:', emailResult.error);
-      }
-    } catch (emailError) {
-      console.error('Email preparation failed:', emailError);
-    }
-
-    // Gift card fulfillment (safety net for the client/webhook race).
-    // Security: we do NOT trust any client-supplied paid flag. We retrieve the
-    // PaymentIntent from Stripe and verify it actually succeeded and is bound to
-    // this order before issuing/redeeming any stored value. Idempotent +
-    // order-keyed, so running here and in the webhook is safe.
-    const hydratedOrder = hydrateOrder(newOrder);
-    if (orderInvolvesGiftCards(hydratedOrder)) {
-      try {
-        // Reuse the PaymentIntent verified above — no second Stripe round-trip.
-        // Stored value is only issued/redeemed once payment is confirmed for
-        // THIS order; otherwise defer to the webhook (which re-verifies).
-        if (!verifiedPi || !paymentConfirmed) {
-          console.warn(`Gift card order ${orderId}: payment not confirmed at creation; deferring fulfillment to webhook`);
-        } else {
-          // Use ONLY the captured amount. pi.amount is the authorized amount
-          // (can exceed what was captured in partial-capture flows), so we
-          // must never accept it as proof of full payment — fail closed at 0.
-          const paidAmountCents = verifiedPi.amount_received ?? 0;
-          const gcResult = await processGiftCardsForOrder(hydratedOrder, { paidAmountCents });
-          if (gcResult.issued || gcResult.redeemed) {
-            console.log(
-              `Gift cards for ${orderId}: issued=${gcResult.issued} redeemed=${gcResult.redeemed}`
-            );
-          }
-          if (gcResult.errors.length) {
-            console.error('Gift card fulfillment errors:', gcResult.errors);
-          }
-
-          // SECURITY (BMC-131 / H1): the paid decision above credited an
-          // UNRESERVED gift-card balance snapshot as tender. If the actual
-          // redemption then applied nothing (e.g. two orders raced for the same
-          // card and this one lost the balance CAS), the tender never
-          // materialized — so the cash we collected does NOT cover the goods.
-          // Revert the order to pending rather than fulfilling goods that were
-          // only partially paid for.
-          const appliedGiftCardCode = (body.extensions as any)?.gift_card?.code;
-          if (appliedGiftCardCode && giftCardTenderCents > 0 && gcResult.redeemed === 0) {
-            console.error(
-              `Order ${orderId}: gift-card tender (${giftCardTenderCents}c) was counted toward payment ` +
-                `but redemption applied nothing; reverting order to pending`
-            );
-            await db
-              .update(orders)
-              .set({ status: 'pending', payment_status: 'pending', updated_at: new Date().toISOString() })
-              .where(eq(orders.id, orderId));
-            hydratedOrder.status = 'pending';
-            hydratedOrder.payment_status = 'pending';
-          }
-        }
-      } catch (gcError) {
-        console.error('Gift card fulfillment failed:', gcError);
-      }
-    }
+    // Re-read for the response so it reflects the promoted state (finalize may
+    // have flipped pending → processing/paid, or an H1 revert may have undone it).
+    const finalRows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const responseOrder = finalRows.length > 0 ? hydrateOrder(finalRows[0]) : order;
 
     const response = {
-      // BMC-164: MACH wire shape at the response boundary only — gift-card
-      // fulfillment above already read/mutated hydratedOrder in cents.
-      data: toWireOrder(hydratedOrder),
+      // BMC-164: MACH wire shape at the response boundary only.
+      data: toWireOrder(responseOrder),
       meta: {
         schema: "mach:order"
       }
@@ -722,16 +605,6 @@ function callerOwnsExistingOrder(
     : undefined;
 
   return typeof existingPi === 'string' && existingPi.length > 0 && existingPi === incomingPi;
-}
-
-/**
- * True for a SQLite/D1 primary-key or unique-constraint violation. Used to
- * distinguish an idempotency PK race (recoverable) from an unrelated insert
- * failure (must propagate) in the order-create catch.
- */
-function isUniqueConstraintError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /UNIQUE constraint failed|SQLITE_CONSTRAINT|constraint failed: orders\.id/i.test(msg);
 }
 
 /** JSON.parse that returns null instead of throwing on malformed input. */

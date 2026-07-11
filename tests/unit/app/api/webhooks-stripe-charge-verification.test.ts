@@ -1,23 +1,25 @@
 /**
- * Regression test for BMC-131 (webhook enforcement + H1/H2).
+ * Webhook wiring test for BMC-131 + BMC-167.
  *
- * `payment_intent.succeeded` is the second writer that can flip an order to
- * paid. It must run the SAME catalog sufficiency check as order creation, and
- * it must handle the two failure modes distinctly:
+ * `payment_intent.succeeded` is the SERVER-SIDE backstop that finalizes a
+ * storefront order when the client-side POST /api/orders never lands. Since
+ * BMC-167 the order row is pre-persisted (pending) at PaymentIntent creation, so
+ * the webhook FINDS it and delegates promotion to the shared `finalizePaidOrder`
+ * (whose charge gate / CAS / H1 / H2 internals are unit-tested in
+ * tests/unit/lib/services/order-finalization.test.ts). This test pins how the
+ * ROUTE reacts to each finalize outcome:
  *
- *  - Underpayment (charge.ok === false) is PERMANENT: skip markOrderPaid, leave
- *    the order pending, and return 200 so the event is recorded processed (no
- *    Stripe retry storm).
- *  - H2: a THROW inside the check (e.g. a transient D1 error reading the
- *    catalog) is TRANSIENT: it must propagate so the route returns 500 and
- *    Stripe redelivers — otherwise a legitimately-paid order is stranded pending
- *    forever with the event marked processed.
- *  - H1: if the order relied on gift-card tender but redemption applied nothing,
- *    the order is reverted from paid back to pending.
+ *  - order not found yet → retryable 500 (Stripe redelivers; the pending order
+ *    should exist, but a redelivery may race a slow commit).
+ *  - order already paid (client POST won) → skip, 200, no double finalize.
+ *  - finalize THROWS (transient, e.g. D1 pricing error) → retryable 500, claim
+ *    released so Stripe can retry (H2).
+ *  - finalize returns { paid:false, reason } (permanent underpayment) → 200, NO
+ *    retry (event recorded processed, order left pending).
+ *  - finalize succeeds → 200.
  *
- * Pure unit test (CI `npm test`): Stripe, subscriptions, handlers, orders model,
- * gift-card fulfillment and the catalog seams are all mocked; order-pricing is
- * left real so the wiring itself is under test.
+ * Pure unit test: Stripe, subscriptions, handlers, orders model and
+ * finalizePaidOrder are mocked.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -56,35 +58,23 @@ vi.mock('@/app/api/webhooks/stripe/handlers/invoice-handlers', () => ({
 
 vi.mock('@/lib/models/mach/orders', () => ({
   getOrderById: vi.fn(),
-  markOrderPaid: vi.fn().mockResolvedValue({ id: 'WEB-GUEST-1' }),
-  markOrderUnpaid: vi.fn().mockResolvedValue({ id: 'WEB-GUEST-1' }),
 }));
 
-vi.mock('@/lib/services/gift-card-fulfillment', () => ({
-  processGiftCardsForOrder: vi.fn().mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] }),
-}));
-
-vi.mock('@/lib/models/mach/products', () => ({
-  getProduct: vi.fn(),
-  getProductVariant: vi.fn(),
-}));
-vi.mock('@/lib/models/mach/giftCard', () => ({
-  getGiftCardByCode: vi.fn(),
+vi.mock('@/lib/services/order-finalization', () => ({
+  finalizePaidOrder: vi.fn(),
 }));
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/webhooks/stripe/route';
-import { getOrderById, markOrderPaid, markOrderUnpaid } from '@/lib/models/mach/orders';
-import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
-import { getProductVariant, getProduct } from '@/lib/models/mach/products';
-import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
+import { getOrderById } from '@/lib/models/mach/orders';
+import { finalizePaidOrder } from '@/lib/services/order-finalization';
 import { releaseWebhookEventClaim } from '@/lib/models/mach/subscriptions';
 
-const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
-
-function order(overrides: Record<string, any> = {}) {
+function order(overrides: Record<string, any> = {}): any {
   return {
     id: 'WEB-GUEST-1',
+    status: 'pending',
+    payment_status: 'pending',
     items: [{ product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 }],
     extensions: null,
     ...overrides,
@@ -103,53 +93,63 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakeEvent.data.object.amount_received = 2999;
   fakeEvent.data.object.metadata = { orderId: 'WEB-GUEST-1' };
-  vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
-    id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
-  );
-  vi.mocked(getProduct).mockResolvedValue(null as any);
-  vi.mocked(getGiftCardByCode).mockResolvedValue(null as any);
-  vi.mocked(getOrderById).mockResolvedValue(order() as any);
-  vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] });
+  vi.mocked(getOrderById).mockResolvedValue(order());
+  vi.mocked(finalizePaidOrder).mockResolvedValue({ paid: true, promotedByUs: true });
 });
 
-describe('POST /api/webhooks/stripe payment_intent.succeeded charge gate (BMC-131)', () => {
-  it('happy path: sufficient capture marks the order paid, returns 200', async () => {
+describe('POST /api/webhooks/stripe payment_intent.succeeded (BMC-131 + BMC-167)', () => {
+  it('BMC-167: promotes the pre-persisted pending order with the CAPTURED amount, 200', async () => {
     const res = await POST(makeRequest());
     expect(res.status).toBe(200);
-    expect(vi.mocked(markOrderPaid)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(finalizePaidOrder)).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(finalizePaidOrder).mock.calls[0][0];
+    expect(arg.paidAmountCents).toBe(2999); // amount_received, never authorized pi.amount
+    expect(arg.order.id).toBe('WEB-GUEST-1');
+    expect(arg.sendEmail).toBe(true); // webhook path sends the confirmation email
   });
 
-  it('THE EXPLOIT: an underpaid ($0.50) succeeded PI is NOT marked paid, returns 200 (no retry)', async () => {
-    fakeEvent.data.object.amount_received = 50;
-    const res = await POST(makeRequest());
-    expect(res.status).toBe(200);
-    expect(vi.mocked(markOrderPaid)).not.toHaveBeenCalled();
-  });
-
-  it('H2: a transient error while pricing the catalog returns 500 and releases the claim (retryable)', async () => {
-    vi.mocked(getProductVariant).mockRejectedValue(new Error('D1 unavailable'));
+  it('order not found yet → retryable 500 and the claim is released (Stripe redelivers)', async () => {
+    vi.mocked(getOrderById).mockResolvedValue(null);
     const res = await POST(makeRequest());
     expect(res.status).toBe(500);
     expect(vi.mocked(releaseWebhookEventClaim)).toHaveBeenCalledWith(fakeEvent.id);
-    expect(vi.mocked(markOrderPaid)).not.toHaveBeenCalled();
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
   });
 
-  it('H1: gift-card tender counted but not redeemed reverts the order to pending', async () => {
-    fakeEvent.data.object.amount_received = 0; // fully covered by gift card... supposedly
-    vi.mocked(getOrderById).mockResolvedValue(
-      order({ extensions: { gift_card: { code: 'GC-1', amount: 2500 } } }) as any
-    );
-    vi.mocked(getGiftCardByCode).mockResolvedValue({ code: 'GC-1', status: 'active', balance: 2500 } as any);
-    vi.mocked(processGiftCardsForOrder).mockResolvedValue({
-      issued: 0,
-      redeemed: 0,
-      redeemedAmount: 0,
-      errors: ['Gift card redemption failed: insufficient balance'],
-    });
-
+  it('order already paid (client POST won the race) → skip finalize, 200 (no duplicate)', async () => {
+    vi.mocked(getOrderById).mockResolvedValue(order({ payment_status: 'paid', status: 'processing' }));
     const res = await POST(makeRequest());
     expect(res.status).toBe(200);
-    expect(vi.mocked(markOrderUnpaid)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(markOrderUnpaid).mock.calls[0][0]).toBe('WEB-GUEST-1');
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
+  });
+
+  it('H2: finalize THROWS (transient) → retryable 500 and the claim is released', async () => {
+    vi.mocked(finalizePaidOrder).mockRejectedValue(new Error('D1 unavailable'));
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(500);
+    expect(vi.mocked(releaseWebhookEventClaim)).toHaveBeenCalledWith(fakeEvent.id);
+  });
+
+  it('THE EXPLOIT: permanent underpayment ({ paid:false, reason }) → 200, NO retry', async () => {
+    fakeEvent.data.object.amount_received = 50;
+    vi.mocked(finalizePaidOrder).mockResolvedValue({ paid: false, promotedByUs: false, reason: 'paid 50c is less than required 2500c' });
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    expect(vi.mocked(releaseWebhookEventClaim)).not.toHaveBeenCalled(); // permanent → recorded processed
+  });
+
+  it('L4: an H1 gift-card revert ({ paid:false, reverted:true, reason }) is handled — 200, NO retry', async () => {
+    // finalizePaidOrder promoted then reverted (tender not redeemed); it carries
+    // a reason so the webhook's !paid-with-reason branch logs it instead of
+    // silently leaving the order pending. This is permanent, not retryable.
+    vi.mocked(finalizePaidOrder).mockResolvedValue({
+      paid: false,
+      promotedByUs: true,
+      reverted: true,
+      reason: 'gift-card tender (2500c) counted toward payment but redemption applied nothing; reverted to pending',
+    });
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    expect(vi.mocked(releaseWebhookEventClaim)).not.toHaveBeenCalled();
   });
 });

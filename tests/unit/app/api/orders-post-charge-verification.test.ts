@@ -1,21 +1,27 @@
 /**
- * Regression test for BMC-131 (C1 / H1) — the POST /api/orders charge gate.
+ * Route test for POST /api/orders — the client fast-path (BMC-131 + BMC-165 +
+ * BMC-167).
  *
- * The pure `order-pricing.ts` logic is unit-tested separately; this test proves
- * the ROUTE actually wires it in and fails closed:
+ * Since BMC-167 the storefront persists a PENDING order at PaymentIntent
+ * creation, so this route FINDS-AND-PROMOTES rather than blindly inserting. It
+ * delegates the actual pending→paid promotion (charge gate, guarded CAS, gift
+ * cards, H1, email) to the shared `finalizePaidOrder`, whose internals are
+ * unit-tested in tests/unit/lib/services/order-finalization.test.ts. This test
+ * pins the ROUTE responsibilities:
  *
- *  - A succeeded, order-bound PaymentIntent whose CAPTURED amount does not cover
- *    the catalog goods must persist the order as pending/pending, never
- *    processing/paid (the core BMC-131 invariant at the order-creation writer).
- *  - C1: if the charge verification THROWS (e.g. a transient D1 error while
- *    reading the catalog), the order must still fail closed to pending — the old
- *    code set paymentConfirmed=true before the check and swallowed the throw in
- *    an outer catch, leaving it true.
- *  - H1: when the order relied on gift-card tender but the actual redemption
- *    fails (a lost balance race), the order must be reverted to pending rather
- *    than left paid for goods that were never fully tendered.
+ *  - order already exists + pending + owned → PROMOTE it (no second insert),
+ *    delegating to finalizePaidOrder with the CAPTURED amount (BMC-167
+ *    client-first path).
+ *  - order does not exist → create it pending, then finalize (older client / a
+ *    PI-time persistence failure fallback).
+ *  - order already exists + PAID + owned → pure idempotent no-op: 200, id only,
+ *    NO re-verify, NO finalize, NO PII echo (BMC-165).
+ *  - a non-owner guessing an id → 409, no insert, no PII echo (BMC-165 IDOR).
+ *  - the PK-insert race → recover to promote/200 or 409, never a spurious 400.
+ *  - the client payment_status flag is NEVER trusted: the order is only promoted
+ *    when Stripe confirms the PaymentIntent SUCCEEDED and bound to THIS order.
  *
- * Pure unit test (CI `npm test`): every Cloudflare/Stripe/Clerk seam is mocked.
+ * Pure unit test: every Cloudflare/Stripe/Clerk seam + finalizePaidOrder mocked.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -28,41 +34,19 @@ vi.mock('@/lib/stripe', () => ({
   retrievePaymentIntent: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/email', () => ({
-  sendOrderConfirmationEmail: vi.fn().mockResolvedValue({ success: true, id: 'email_1' }),
-  sendOrderStatusUpdateEmail: vi.fn().mockResolvedValue({ success: true, id: 'email_2' }),
-}));
-
 vi.mock('@/lib/models/mach/customer', () => ({
   getCustomer: vi.fn().mockResolvedValue({ id: 'guest' }),
   createCustomer: vi.fn(),
 }));
 
-vi.mock('@/lib/models/mach/orders', () => ({
-  getOrdersByCustomer: vi.fn(),
-  getOrderById: vi.fn(),
-  createOrder: vi.fn(),
-  updateOrderStatus: vi.fn(),
-  updateOrderShipping: vi.fn(),
+vi.mock('@/lib/services/order-finalization', () => ({
+  finalizePaidOrder: vi.fn().mockResolvedValue({ paid: true, promotedByUs: true }),
 }));
 
-vi.mock('@/lib/models/order', () => ({
-  getOrdersByCustomerId: vi.fn(),
-  insertOrder: vi.fn(),
-}));
-
-// Catalog + gift-card seams that order-pricing (left REAL) reads through.
+// Catalog seam that canonicalizeOrderItemsDisplay (left REAL) reads through.
 vi.mock('@/lib/models/mach/products', () => ({
   getProduct: vi.fn(),
   getProductVariant: vi.fn(),
-}));
-vi.mock('@/lib/models/mach/giftCard', () => ({
-  getGiftCardByCode: vi.fn(),
-}));
-
-vi.mock('@/lib/services/gift-card-fulfillment', () => ({
-  processGiftCardsForOrder: vi.fn().mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] }),
-  orderInvolvesGiftCards: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -74,37 +58,26 @@ import { auth } from '@clerk/nextjs/server';
 import { POST } from '@/app/api/orders/route';
 import { getDbAsync } from '@/lib/db';
 import { retrievePaymentIntent } from '@/lib/stripe';
-import { getProductVariant, getProduct } from '@/lib/models/mach/products';
-import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
-import { processGiftCardsForOrder, orderInvolvesGiftCards } from '@/lib/services/gift-card-fulfillment';
+import { getProduct } from '@/lib/models/mach/products';
+import { finalizePaidOrder } from '@/lib/services/order-finalization';
 
-const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 const ORDER_ID = 'WEB-GUEST-1000';
 
 // Captures every row written via db.insert(orders).values(row).returning().
 let insertedRows: any[] = [];
-// Captures every db.update(orders).set(row) payload (used to detect H1 revert).
-let updatedRows: any[] = [];
-// Rows the idempotency pre-check (select ... where id = orderId) should return.
-// Default empty: the order does not exist yet, so POST proceeds to insert.
-let existingOrderRows: any[] = [];
-// Per-call select() results queue. When non-empty, successive select().limit()
-// calls shift the next entry — lets a test model a true race (pre-check sees
-// nothing, the post-insert raced select then finds a row). Falls back to
-// existingOrderRows when the queue is empty (the simple idempotency cases).
+// Per-call select() results queue. Each select().limit() shifts the next entry;
+// falls back to [] when the queue is empty.
 let selectResults: any[][] = [];
-// When set, the insert's .returning() rejects with this error (models a PK race
-// or a transient D1 failure). Reset per test.
+// When set, the insert's .returning() rejects with this error.
 let insertShouldFail: Error | null = null;
 
 function makeDb() {
   return {
-    // BMC-165 idempotency pre-check: db.select().from(orders).where(id).limit(1).
     select: vi.fn().mockImplementation(() => ({
       from: vi.fn().mockImplementation(() => ({
         where: vi.fn().mockImplementation(() => ({
           limit: vi.fn().mockImplementation(() =>
-            Promise.resolve(selectResults.length ? selectResults.shift() : existingOrderRows)
+            Promise.resolve(selectResults.length ? selectResults.shift() : [])
           ),
         })),
       })),
@@ -119,10 +92,9 @@ function makeDb() {
       })),
     })),
     update: vi.fn().mockImplementation(() => ({
-      set: vi.fn().mockImplementation((row: any) => {
-        updatedRows.push(row);
-        return { where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: ORDER_ID, ...row }]) }) };
-      }),
+      set: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+      })),
     })),
   };
 }
@@ -155,186 +127,155 @@ function orderBody(overrides: Record<string, any> = {}) {
   };
 }
 
+const SUCCEEDED_PI = { status: 'succeeded', metadata: { orderId: ORDER_ID }, amount_received: 2999 };
+
 beforeEach(() => {
   vi.clearAllMocks();
   insertedRows = [];
-  updatedRows = [];
-  existingOrderRows = [];
   selectResults = [];
   insertShouldFail = null;
-  // Default to a guest caller; individual tests override for authenticated cases.
-  // (clearAllMocks keeps implementations, so reset explicitly for isolation.)
   vi.mocked(auth).mockResolvedValue({ userId: null } as any);
   vi.mocked(getDbAsync).mockResolvedValue(makeDb() as any);
-  vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
-    id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
-  );
   vi.mocked(getProduct).mockResolvedValue(null as any);
-  vi.mocked(getGiftCardByCode).mockResolvedValue(null as any);
-  vi.mocked(orderInvolvesGiftCards).mockReturnValue(false);
-  vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] });
+  vi.mocked(finalizePaidOrder).mockResolvedValue({ paid: true, promotedByUs: true });
+  vi.mocked(retrievePaymentIntent).mockResolvedValue(SUCCEEDED_PI as any);
 });
 
-describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
-  it('THE EXPLOIT: succeeded PI that captured only $0.50 persists the order pending, not paid', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 50, // $0.50 captured for $25 of catalog goods
-    } as any);
-
+describe('POST /api/orders create-or-promote (BMC-167)', () => {
+  it('order does NOT exist → inserts pending/pending then delegates to finalizePaidOrder with the captured amount', async () => {
+    selectResults = [[]]; // existing lookup: none
     const res = await POST(postRequest(orderBody()));
     expect(res.status).toBe(201);
 
+    // Always persisted pending; paid state is reached only via the guarded promote.
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].status).toBe('pending');
     expect(insertedRows[0].payment_status).toBe('pending');
+    // The PI id is bound into external_references so getOrderByPaymentIntentId finds it.
+    expect(insertedRows[0].external_references?.payment_intent_id).toBe('pi_test_1');
+
+    expect(vi.mocked(finalizePaidOrder)).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(finalizePaidOrder).mock.calls[0][0];
+    expect(arg.paidAmountCents).toBe(2999); // captured amount, never client total
+    expect(arg.sendEmail).toBe(true);
   });
 
-  it('happy path: a PI that captured the full catalog amount marks the order processing/paid', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 2999, // covers $25 goods + tax/shipping
-    } as any);
-
-    const res = await POST(postRequest(orderBody()));
-    expect(res.status).toBe(201);
-
-    expect(insertedRows[0].status).toBe('processing');
-    expect(insertedRows[0].payment_status).toBe('paid');
-  });
-
-  it('C1: a throw inside charge verification fails closed to pending (no fail-open)', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 5000,
-    } as any);
-    // Transient D1 error while reading the catalog — must NOT leave the order paid.
-    vi.mocked(getProductVariant).mockRejectedValue(new Error('D1 unavailable'));
-
-    const res = await POST(postRequest(orderBody()));
-    expect(res.status).toBe(201);
-
-    expect(insertedRows[0].status).toBe('pending');
-    expect(insertedRows[0].payment_status).toBe('pending');
-  });
-
-  it('H1: a gift-card order whose redemption fails is reverted from paid back to pending', async () => {
-    // $25 goods, $25 gift card tender, $0 residual cash. The card has balance,
-    // so the sufficiency check passes and the order is first written paid...
-    vi.mocked(getGiftCardByCode).mockResolvedValue({ code: 'GC-1', status: 'active', balance: 2500 } as any);
-    vi.mocked(orderInvolvesGiftCards).mockReturnValue(true);
-    // ...but the actual redemption loses the balance race and applies nothing.
-    vi.mocked(processGiftCardsForOrder).mockResolvedValue({
-      issued: 0,
-      redeemed: 0,
-      redeemedAmount: 0,
-      errors: ['Gift card redemption failed: insufficient balance'],
-    });
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 0,
-    } as any);
-
-    const res = await POST(
-      postRequest(orderBody({ extensions: { payment_intent_id: 'pi_test_1', gift_card: { code: 'GC-1', amount: 2500 } } }))
-    );
-    expect(res.status).toBe(201);
-
-    // The order must not remain paid for goods whose gift-card tender never
-    // materialized — it is reverted to pending via a follow-up update.
-    const revert = updatedRows.find((r) => r.payment_status === 'pending' || r.status === 'pending');
-    expect(revert).toBeTruthy();
-  });
-
-  it('BMC-165 idempotency: an owner re-POST (matching PaymentIntent id) returns 200, id only, no insert/re-verify', async () => {
-    // The redirect (Klarna/Cash App/Amazon Pay) return page can POST the same
-    // order_id again — e.g. the shopper refreshes /checkout/success, or the
-    // return races the Stripe webhook. Ownership is proven here by the matching
-    // PaymentIntent id (orderBody() default extensions.payment_intent_id).
-    existingOrderRows = [
-      {
-        id: ORDER_ID,
-        customer_id: null, // guest order
-        status: 'processing',
-        payment_status: 'paid',
-        total_amount: { amount: 2500, currency: 'USD' },
-        currency_code: 'USD',
-        items: [],
-        shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
-        billing_address: null,
-        extensions: { payment_intent_id: 'pi_test_1' },
-      },
+  it('BMC-167 client-first: an existing PENDING order is PROMOTED, never re-inserted', async () => {
+    // The pending order persisted at PI creation already exists.
+    selectResults = [
+      [
+        {
+          id: ORDER_ID,
+          customer_id: null,
+          status: 'pending',
+          payment_status: 'pending',
+          total_amount: { amount: 2500, currency: 'USD' },
+          currency_code: 'USD',
+          items: [{ product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 }],
+          shipping_address: null,
+          billing_address: null,
+          extensions: { payment_intent_id: 'pi_test_1' },
+        },
+      ],
     ];
+    const res = await POST(postRequest(orderBody()));
+    expect(res.status).toBe(201);
+    expect(insertedRows).toHaveLength(0); // promoted, NOT duplicated
+    expect(vi.mocked(finalizePaidOrder)).toHaveBeenCalledTimes(1);
+  });
 
+  it('never trusts the client: a PI that did NOT succeed does not finalize (order left pending)', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({ status: 'requires_payment_method', metadata: { orderId: ORDER_ID } } as any);
+    selectResults = [[]];
+    const res = await POST(postRequest(orderBody()));
+    expect(res.status).toBe(201);
+    expect(insertedRows[0].payment_status).toBe('pending');
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
+  });
+
+  it('never trusts the client: a PI bound to a DIFFERENT order does not finalize', async () => {
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({ status: 'succeeded', metadata: { orderId: 'WEB-OTHER-9' }, amount_received: 999999 } as any);
+    selectResults = [[]];
+    const res = await POST(postRequest(orderBody()));
+    expect(res.status).toBe(201);
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
+  });
+
+  it('BMC-165 idempotency: an owner re-POST of an already-PAID order returns 200 id-only — no finalize, no PII echo', async () => {
+    selectResults = [
+      [
+        {
+          id: ORDER_ID,
+          customer_id: null,
+          status: 'processing',
+          payment_status: 'paid',
+          total_amount: { amount: 2500, currency: 'USD' },
+          currency_code: 'USD',
+          items: [],
+          shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
+          billing_address: null,
+          extensions: { payment_intent_id: 'pi_test_1' },
+        },
+      ],
+    ];
     const res = await POST(postRequest(orderBody()));
     expect(res.status).toBe(200);
-
     const json = (await res.json()) as any;
     expect(json.meta.idempotent).toBe(true);
-    // Response echoes ONLY the id — never the persisted order's PII.
     expect(json.data).toEqual({ id: ORDER_ID });
     expect(JSON.stringify(json)).not.toContain('Private Rd');
     expect(JSON.stringify(json)).not.toContain('jane@example.com');
-    // No second row written, and payment state is never re-touched.
     expect(insertedRows).toHaveLength(0);
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
     expect(retrievePaymentIntent).not.toHaveBeenCalled();
   });
 
   it('BMC-165 IDOR: a guessed order id from a non-owner returns 409 and leaks no order PII', async () => {
-    // Guest orders share the WEB-GUEST-<ts> namespace, so a guessed id must not
-    // hand back someone else's order. Caller is a guest (userId null) whose
-    // PaymentIntent id does NOT match the stored order's.
-    existingOrderRows = [
-      {
-        id: ORDER_ID,
-        customer_id: 'user_victim',
-        status: 'processing',
-        payment_status: 'paid',
-        total_amount: { amount: 2500, currency: 'USD' },
-        currency_code: 'USD',
-        items: [{ product_name: 'Secret Item' }],
-        shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
-        billing_address: null,
-        extensions: { payment_intent_id: 'pi_victim_secret' },
-      },
+    selectResults = [
+      [
+        {
+          id: ORDER_ID,
+          customer_id: 'user_victim',
+          status: 'processing',
+          payment_status: 'paid',
+          total_amount: { amount: 2500, currency: 'USD' },
+          currency_code: 'USD',
+          items: [{ product_name: 'Secret Item' }],
+          shipping_address: { line1: '123 Private Rd', recipient: 'Jane Doe', email: 'jane@example.com' },
+          billing_address: null,
+          extensions: { payment_intent_id: 'pi_victim_secret' },
+        },
+      ],
     ];
-
     const res = await POST(postRequest(orderBody({ extensions: { payment_intent_id: 'pi_attacker_guess' } })));
     expect(res.status).toBe(409);
-
     const body = JSON.stringify(await res.json());
     expect(body).not.toContain('Private Rd');
     expect(body).not.toContain('jane@example.com');
     expect(body).not.toContain('Secret Item');
     expect(insertedRows).toHaveLength(0);
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
   });
 
   it('BMC-165 idempotency: an authenticated owner (customer_id match) returns 200 id-only, no PI-id needed', async () => {
     vi.mocked(auth).mockResolvedValue({ userId: 'user_owner' } as any);
-    existingOrderRows = [
-      {
-        id: 'WEB-USEROWNER-1000',
-        customer_id: 'user_owner',
-        status: 'processing',
-        payment_status: 'paid',
-        total_amount: { amount: 2500, currency: 'USD' },
-        currency_code: 'USD',
-        items: [],
-        shipping_address: { line1: '9 Secret Ave' },
-        billing_address: null,
-        // A DIFFERENT PaymentIntent id than the body's — ownership must come from
-        // the customer_id match, not the PI-id proof.
-        extensions: { payment_intent_id: 'pi_stored_owner' },
-      },
+    selectResults = [
+      [
+        {
+          id: 'WEB-USEROWNER-1000',
+          customer_id: 'user_owner',
+          status: 'processing',
+          payment_status: 'paid',
+          total_amount: { amount: 2500, currency: 'USD' },
+          currency_code: 'USD',
+          items: [],
+          shipping_address: { line1: '9 Secret Ave' },
+          billing_address: null,
+          extensions: { payment_intent_id: 'pi_stored_owner' },
+        },
+      ],
     ];
-
-    const res = await POST(
-      postRequest(orderBody({ order_id: 'WEB-USEROWNER-1000', extensions: { payment_intent_id: 'pi_body_differs' } }))
-    );
+    const res = await POST(postRequest(orderBody({ order_id: 'WEB-USEROWNER-1000', extensions: { payment_intent_id: 'pi_body_differs' } })));
     expect(res.status).toBe(200);
     const json = (await res.json()) as any;
     expect(json.data).toEqual({ id: 'WEB-USEROWNER-1000' });
@@ -343,36 +284,51 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
   });
 
   it('BMC-165 auth-transition: an authenticated caller may finalize a WEB-GUEST order id (no namespace 400)', async () => {
-    // A checkout that began as a guest (order_id WEB-GUEST-1000, baked into the
-    // redirect snapshot) whose Clerk session authenticates mid-redirect must
-    // still create the order on return — not 400 on the namespace check.
     vi.mocked(auth).mockResolvedValue({ userId: 'user_late' } as any);
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: 'WEB-GUEST-1000' },
-      amount_received: 2999,
-    } as any);
-
+    vi.mocked(retrievePaymentIntent).mockResolvedValue({ status: 'succeeded', metadata: { orderId: 'WEB-GUEST-1000' }, amount_received: 2999 } as any);
+    selectResults = [[]];
     const res = await POST(postRequest(orderBody({ order_id: 'WEB-GUEST-1000' })));
     expect(res.status).toBe(201);
     expect(insertedRows).toHaveLength(1);
     expect(insertedRows[0].id).toBe('WEB-GUEST-1000');
   });
 
-  it('BMC-165 race: losing the PK insert race but owning the order returns 200 id-only', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 2999,
-    } as any);
+  it('BMC-165 race: losing the PK insert race but owning the pending order promotes it (no duplicate)', async () => {
     // Pre-check sees no order; the insert loses a PK race; the raced select then
-    // finds the concurrently-created row, owned via the matching PaymentIntent id.
+    // finds the concurrently-created PENDING row, owned via the matching PI id.
     selectResults = [
       [],
       [
         {
           id: ORDER_ID,
           customer_id: null,
+          status: 'pending',
+          payment_status: 'pending',
+          total_amount: { amount: 2500, currency: 'USD' },
+          currency_code: 'USD',
+          items: [{ product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 }],
+          shipping_address: { line1: '9 Secret Rd' },
+          billing_address: null,
+          extensions: { payment_intent_id: 'pi_test_1' },
+        },
+      ],
+    ];
+    insertShouldFail = new Error('D1_ERROR: UNIQUE constraint failed: orders.id');
+    const res = await POST(postRequest(orderBody()));
+    expect(res.status).toBe(201);
+    expect(insertedRows).toHaveLength(0);
+    expect(vi.mocked(finalizePaidOrder)).toHaveBeenCalledTimes(1);
+  });
+
+  it('BMC-165 race: losing the PK race to an already-PAID owned order returns 200 idempotent', async () => {
+    selectResults = [
+      [],
+      [
+        {
+          id: ORDER_ID,
+          customer_id: null,
+          status: 'processing',
+          payment_status: 'paid',
           total_amount: { amount: 2500, currency: 'USD' },
           currency_code: 'USD',
           items: [],
@@ -382,28 +338,25 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
         },
       ],
     ];
-    insertShouldFail = new Error('D1_ERROR: UNIQUE constraint failed: orders.id');
-
+    insertShouldFail = new Error('UNIQUE constraint failed: orders.id');
     const res = await POST(postRequest(orderBody()));
     expect(res.status).toBe(200);
     const json = (await res.json()) as any;
     expect(json.meta.idempotent).toBe(true);
     expect(json.data).toEqual({ id: ORDER_ID });
     expect(JSON.stringify(json)).not.toContain('Secret Rd');
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
   });
 
   it('BMC-165 race: losing the PK race to a NON-owned order returns 409, no PII', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 2999,
-    } as any);
     selectResults = [
       [],
       [
         {
           id: ORDER_ID,
           customer_id: 'user_victim',
+          status: 'processing',
+          payment_status: 'paid',
           total_amount: { amount: 2500, currency: 'USD' },
           currency_code: 'USD',
           items: [{ product_name: 'Secret Item' }],
@@ -414,7 +367,6 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
       ],
     ];
     insertShouldFail = new Error('UNIQUE constraint failed: orders.id');
-
     const res = await POST(postRequest(orderBody({ extensions: { payment_intent_id: 'pi_attacker' } })));
     expect(res.status).toBe(409);
     const body = JSON.stringify(await res.json());
@@ -424,16 +376,8 @@ describe('POST /api/orders charge verification (BMC-131 C1/H1)', () => {
   });
 
   it('BMC-165 race: a NON-unique insert error is surfaced, never masked as idempotent', async () => {
-    vi.mocked(retrievePaymentIntent).mockResolvedValue({
-      status: 'succeeded',
-      metadata: { orderId: ORDER_ID },
-      amount_received: 2999,
-    } as any);
-    // Even if a row exists at this id, a transient (non-constraint) insert error
-    // must propagate — not be recovered as a duplicate-race 200/409.
     selectResults = [[], [{ id: ORDER_ID, extensions: { payment_intent_id: 'pi_test_1' } }]];
     insertShouldFail = new Error('D1_ERROR: network connection lost');
-
     const res = await POST(postRequest(orderBody()));
     expect(res.status).toBe(400); // generic error handler, not an idempotent 200
     const json = (await res.json()) as any;

@@ -101,16 +101,34 @@ export async function createOrderPaid(
   return hydrateOrder(updatedRows[0]);
 }
 
-// Get orders for a specific customer
-export async function getOrdersByCustomer(customerId: string): Promise<Order[]> {
+// Get orders for a specific customer.
+//
+// BMC-167 (M1): since a server-side UNPAID `pending` order is now persisted at
+// PaymentIntent creation, every abandoned checkout-past-shipping leaves a
+// phantom draft under the customer. Exclude those unpaid drafts by default so
+// they don't surface in the customer's order history or skew order-history-based
+// personalization. Pass { includePending: true } to include them. (Rows with a
+// NULL payment_status — legacy/imported — are kept; only explicit 'pending' is
+// hidden.)
+export async function getOrdersByCustomer(
+  customerId: string,
+  opts?: { includePending?: boolean }
+): Promise<Order[]> {
   const db = await getDbAsync();
-  
+
+  const where = opts?.includePending
+    ? eq(orders.customer_id, customerId)
+    : and(
+        eq(orders.customer_id, customerId),
+        sql`(${orders.payment_status} IS NULL OR ${orders.payment_status} != 'pending')`
+      );
+
   const orderRecords = await db
     .select()
     .from(orders)
-    .where(eq(orders.customer_id, customerId))
+    .where(where)
     .orderBy(desc(orders.created_at));
-  
+
   return orderRecords.map(hydrateOrder);
 }
 
@@ -149,10 +167,17 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 export async function getOrderByPaymentIntentId(paymentIntentId: string): Promise<Order | null> {
   const db = await getDbAsync();
 
+  // The PaymentIntent id is recorded under `external_references.payment_intent_id`
+  // by the MCP order path AND, for the storefront pending order (BMC-167), also
+  // under `extensions.payment_intent_id`. Match either so a PI lookup finds an
+  // order regardless of which writer created it.
   const orderRecords = await db
     .select()
     .from(orders)
-    .where(sql`json_extract(${orders.external_references}, '$.payment_intent_id') = ${paymentIntentId}`)
+    .where(
+      sql`json_extract(${orders.external_references}, '$.payment_intent_id') = ${paymentIntentId}
+        OR json_extract(${orders.extensions}, '$.payment_intent_id') = ${paymentIntentId}`
+    )
     .limit(1);
 
   if (orderRecords.length === 0) {
@@ -160,6 +185,54 @@ export async function getOrderByPaymentIntentId(paymentIntentId: string): Promis
   }
 
   return hydrateOrder(orderRecords[0]);
+}
+
+/**
+ * Promote an order from pending → paid with a guarded compare-and-swap (BMC-167).
+ *
+ * D1 has no interactive transactions, so "at most one writer marks this order
+ * paid" is enforced with a conditional UPDATE: the `WHERE payment_status =
+ * 'pending'` clause makes the flip atomic. Exactly one caller can match a row
+ * whose payment_status is still 'pending' and get it back via RETURNING; every
+ * other concurrent or later caller (the client POST and the Stripe webhook both
+ * race to promote the same pending order) sees zero rows changed. The winner
+ * (`promoted: true`) is the sole owner of the one-time side effects — order
+ * confirmation email, gift-card fulfillment — so those never double-fire.
+ *
+ * Returns `{ promoted: false }` when the row was already paid (idempotent
+ * no-op) or does not exist; `order` carries the current row (post-update on a
+ * win, current state on a loss) or null when the id is unknown.
+ */
+export async function promoteOrderToPaid(
+  orderId: string,
+  opts?: { status?: Order['status']; notes?: string }
+): Promise<{ promoted: boolean; order: Order | null }> {
+  const db = await getDbAsync();
+
+  const updateData: Record<string, unknown> = {
+    payment_status: 'paid',
+    status: opts?.status ?? 'processing',
+    updated_at: sql`CURRENT_TIMESTAMP`,
+  };
+  if (opts?.notes) {
+    updateData.notes = opts.notes;
+  }
+
+  const updated = await db
+    .update(orders)
+    .set(updateData)
+    .where(and(eq(orders.id, orderId), eq(orders.payment_status, 'pending')))
+    .returning();
+
+  if (updated.length > 0) {
+    return { promoted: true, order: hydrateOrder(updated[0]) };
+  }
+
+  // Not promoted: either already paid (another writer won the CAS) or the row
+  // does not exist. Surface the current state so the caller can distinguish
+  // "already paid → idempotent success" from "missing → defer/retry".
+  const current = await getOrderById(orderId);
+  return { promoted: false, order: current };
 }
 
 // Update order status
@@ -245,6 +318,18 @@ export async function markOrderUnpaid(
     .returning();
 
   return updated ? hydrateOrder(updated) : null;
+}
+
+/**
+ * Overwrite an order's free-text notes (BMC-167 / M4). Used to flag a captured-
+ * but-unpriceable order for manual review without touching its payment state.
+ */
+export async function updateOrderNotes(orderId: string, notes: string): Promise<void> {
+  const db = await getDbAsync();
+  await db
+    .update(orders)
+    .set({ notes, updated_at: sql`CURRENT_TIMESTAMP` })
+    .where(eq(orders.id, orderId));
 }
 
 // Update order with shipping information

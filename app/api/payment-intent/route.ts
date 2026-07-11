@@ -32,9 +32,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
+import { auth } from '@clerk/nextjs/server';
+import { createPaymentIntent, cancelPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
-import { computeCatalogSubtotalCents, AMOUNT_TOLERANCE_CENTS, MAX_ORDER_LINE_ITEMS } from '@/lib/services/order-pricing';
+import {
+  computeCatalogSubtotalCents,
+  AMOUNT_TOLERANCE_CENTS,
+  MAX_ORDER_LINE_ITEMS,
+  canonicalizeOrderItemsDisplay,
+} from '@/lib/services/order-pricing';
+import { createOrder } from '@/lib/models/mach/orders';
+import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
+import { isUniqueViolation } from '@/lib/utils/db-errors';
+import { Money } from '@/lib/money';
 import type { Address } from '@/lib/types';
 
 // Minimal shape of a cart line needed to price it from the catalog. Accepts
@@ -61,6 +71,108 @@ interface PaymentIntentRequest {
   // card's CURRENT balance before charging so a stale client-side balance can't
   // under-collect the amount due.
   giftCard?: { code: string; appliedCents: number };
+  // BMC-167: the full order draft (line items + address + amounts), same shape
+  // POST /api/orders receives, MINUS the PaymentIntent id (the server mints and
+  // injects that). Persisted as a `pending` order keyed to `orderId` BEFORE the
+  // client can pay, so the Stripe webhook can promote it to paid even if the
+  // client POST never lands (redirect method returning in a different browser,
+  // cleared localStorage, closed tab). Optional for backward compatibility.
+  order?: PendingOrderDraft;
+}
+
+// The client-supplied order draft. Only the fields the pending order needs; the
+// server never trusts `extensions.payment_intent_id` from here (it overwrites it
+// with the id it minted) nor `customer_id` (it derives that from the session).
+interface PendingOrderDraft {
+  order_id?: string;
+  items?: any[];
+  total_amount?: any;
+  currency_code?: string;
+  shipping_address?: any;
+  billing_address?: any;
+  shipping_method?: string;
+  payment_method?: string;
+  external_references?: Record<string, any>;
+  extensions?: Record<string, any>;
+}
+
+/**
+ * Persist the server-side pending order (BMC-167).
+ *
+ * Called after the PaymentIntent is created but BEFORE its client secret is
+ * returned, so the storefront only ever receives a secret for a PI that already
+ * has a matching order row. The order is written `pending`/`pending`; it is
+ * promoted to paid by whichever of POST /api/orders or the Stripe webhook
+ * confirms payment first. The PaymentIntent id is stamped on both
+ * `extensions.payment_intent_id` (storefront convention) and
+ * `external_references.payment_intent_id` (so `getOrderByPaymentIntentId` finds
+ * it). Item display fields are canonicalized from the catalog; the authoritative
+ * charge verification still happens at promotion time.
+ *
+ * Throws on failure so the caller can refuse to hand back a client secret for a
+ * PI with no order.
+ */
+async function persistPendingOrder(
+  draft: PendingOrderDraft,
+  orderId: string,
+  paymentIntentId: string,
+  userId: string | null
+): Promise<void> {
+  // C1 (BMC-167 review): D1 enforces `orders.customer_id → customers.id`, and
+  // Clerk sign-up does NOT create a `customers` row (it is provisioned lazily —
+  // see lib/account/ensure-customer.ts). Without provisioning it here, a
+  // first-time AUTHENTICATED buyer's pending-order insert FK-fails, which would
+  // reintroduce the exact money-captured-no-order bug this ticket fixes. Ensure
+  // the customer exists before the insert. If provisioning genuinely fails,
+  // degrade to a GUEST order (customer_id = null is allowed by the FK) so the
+  // order still persists rather than blocking checkout — the same graceful
+  // degradation the order-creation path uses.
+  let customerId: string | null = userId;
+  if (customerId) {
+    try {
+      await getOrCreateCustomer(customerId);
+    } catch (customerError) {
+      console.error(
+        `[payment-intent] order ${orderId}: customer provisioning failed; persisting as a guest order`,
+        customerError
+      );
+      customerId = null;
+    }
+  }
+
+  let items = Array.isArray(draft.items) ? draft.items : [];
+  try {
+    items = await canonicalizeOrderItemsDisplay(items);
+  } catch (canonError) {
+    console.error(`[payment-intent] order ${orderId}: pending-order canonicalization failed; using client display`, canonError);
+  }
+
+  const extensions = {
+    ...(draft.extensions ?? {}),
+    // Server-authoritative: never trust a client-supplied PI id here.
+    payment_intent_id: paymentIntentId,
+  };
+  const externalReferences = {
+    ...(draft.external_references ?? {}),
+    payment_intent_id: paymentIntentId,
+  };
+
+  await createOrder({
+    id: orderId,
+    customer_id: customerId ?? undefined,
+    // Normalize to a clean integer-minor-unit Money shape regardless of what the
+    // client sent (the authoritative amount is re-derived from the catalog at
+    // promotion time; this is display/fulfillment data only).
+    total_amount: Money.fromStored(draft.total_amount ?? { amount: 0, currency: draft.currency_code || 'USD' }).toJSON(),
+    currency_code: draft.currency_code || 'USD',
+    shipping_address: draft.shipping_address ?? undefined,
+    billing_address: draft.billing_address ?? undefined,
+    items,
+    shipping_method: draft.shipping_method,
+    payment_method: draft.payment_method || 'stripe',
+    external_references: externalReferences,
+    extensions,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -73,6 +185,7 @@ export async function POST(req: NextRequest) {
       description,
       giftCard,
       items,
+      order,
     }: PaymentIntentRequest = await req.json();
 
     // Validate required fields
@@ -238,9 +351,70 @@ export async function POST(req: NextRequest) {
       description: description || `Order ${orderId}`,
     });
 
+    const paymentIntentId = (paymentIntent as any).id as string;
+
+    // BMC-167: persist a server-side pending order keyed to this PaymentIntent
+    // BEFORE returning the client secret. This is the crux of the fix: once the
+    // shopper can pay, an order row already exists, so the Stripe webhook can
+    // promote it to paid even if the client-side POST /api/orders never lands
+    // (redirect payment method returning in a different browser, cleared
+    // localStorage, closed tab). We only hand back a client secret if this
+    // succeeds — never expose a payable PI that has no order behind it.
+    if (order) {
+      try {
+        // customer_id is derived from the session, never the client draft, so a
+        // caller can't stamp another user's id onto the order.
+        const { userId } = await auth();
+        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null);
+      } catch (persistError) {
+        // H1 (BMC-167 review): use the canonical unique-violation classifier
+        // (walks the cause chain, matches ONLY unique/primary-key — never a
+        // FK/NOTNULL/CHECK failure). A genuine non-unique constraint error must
+        // fail closed (500, withhold the client secret), never be swallowed as
+        // "already exists".
+        if (isUniqueViolation(persistError)) {
+          // The pending order already exists for this id (a retry / double-submit
+          // of the PI request). Safe — the order is there; fall through and return
+          // the client secret.
+          console.warn(`[payment-intent] order ${orderId}: pending order already exists; reusing it`);
+        } else {
+          console.error(
+            `[payment-intent] order ${orderId}: failed to persist pending order for PaymentIntent ${paymentIntentId}; ` +
+              `refusing to return a client secret for an order-less payment`,
+            persistError
+          );
+          // Best-effort cleanup (BMC-167 review): we are withholding the client
+          // secret, so this PaymentIntent can never capture money — but cancel it
+          // so it doesn't linger as an abandoned intent in the Stripe dashboard.
+          // Strictly non-fatal: a cancel failure only leaves a harmless orphan,
+          // and must never block or change the error response.
+          try {
+            await cancelPaymentIntent(paymentIntentId);
+          } catch (cancelError) {
+            console.error(
+              `[payment-intent] order ${orderId}: failed to cancel orphaned PaymentIntent ${paymentIntentId} (non-fatal)`,
+              cancelError
+            );
+          }
+          return NextResponse.json(
+            {
+              error: 'We could not start your checkout. Please try again.',
+              code: 'pending_order_persist_failed',
+            },
+            { status: 500 }
+          );
+        }
+      }
+    } else {
+      // Backward compatibility: an older client that doesn't send the order draft
+      // still gets a PaymentIntent, but the webhook cannot rebuild the order from
+      // metadata alone — such a checkout relies entirely on the client POST.
+      console.warn(`[payment-intent] order ${orderId}: no order draft supplied; skipping server-side pending order`);
+    }
+
     return NextResponse.json({
       clientSecret: (paymentIntent as any).client_secret,
-      paymentIntentId: (paymentIntent as any).id,
+      paymentIntentId,
       amount,
     });
 

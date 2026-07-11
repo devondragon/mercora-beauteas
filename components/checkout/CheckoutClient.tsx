@@ -223,7 +223,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       // state via get(), so it's the canonical source (integer minor units).
       // (The destructured `taxAmount` above is a stale render-time closure at
       // this point — setTaxAmount() hasn't triggered a re-render yet.)
-      const { tax, giftCardApplied, total } = calculateTotals();
+      const totals = calculateTotals();
+      const { tax, giftCardApplied, total } = totals;
       const amountDue = total;
 
       // First cut: gift cards that fully cover the order aren't supported yet
@@ -234,6 +235,21 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet — please reduce the gift card or add another item.'
         );
       }
+
+      // BMC-167: build the order DRAFT (full line items + address + amounts,
+      // MINUS the PaymentIntent id) so the server can persist a server-side
+      // PENDING order at PaymentIntent creation. That order lets the Stripe
+      // webhook promote the payment to paid even if this browser never reaches
+      // POST /api/orders (a redirect payment method returning in a different
+      // browser, cleared localStorage, or a closed tab).
+      const orderDraft = buildCreateOrderBody({
+        orderId: newOrderId,
+        items,
+        shippingAddress,
+        shippingOption: selectedShippingOption,
+        appliedGiftCard,
+        totals,
+      });
 
       // Create payment intent. /api/payment-intent still speaks major-unit
       // dollars (BMC-164 out of scope) — bridge at this boundary.
@@ -253,6 +269,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             variantId: item.variantId,
             quantity: item.quantity,
           })),
+          // Full order draft persisted as a server-side pending order (BMC-167).
+          order: orderDraft,
           // Let the server re-verify the gift card's live balance before
           // charging, so a stale client-side balance can't under-collect.
           // giftCardApplied is already integer minor units (cents) — no *100.
@@ -277,7 +295,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       // reads this snapshot back and creates the order on return. Card / Link pay
       // inline (redirect: 'if_required') and clear this snapshot in
       // handlePaymentSuccess, so it's only ever consumed by an actual redirect.
-      const snapshotTotals = calculateTotals();
+      // (The server-side pending order above is the webhook's backstop for when
+      // even this snapshot is lost.)
       savePendingOrder(
         buildCreateOrderBody({
           orderId: newOrderId,
@@ -286,7 +305,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           shippingAddress,
           shippingOption: selectedShippingOption,
           appliedGiftCard,
-          totals: snapshotTotals,
+          totals,
         })
       );
 
