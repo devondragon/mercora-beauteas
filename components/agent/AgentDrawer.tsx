@@ -343,9 +343,13 @@ export default function AgentDrawer({
           </div>
         </div>
 
-        {/* AI Disclaimer */}
-        <div className="flex-shrink-0 text-xs text-text-muted text-center px-2 py-1">
-          AI-generated responses may contain inaccuracies. Verify product details before purchase.
+        {/* AI + wellness disclaimer */}
+        <div className="flex-shrink-0 text-xs text-text-muted text-center px-2 py-1 space-y-0.5">
+          <p>AI-generated responses may contain inaccuracies. Verify product details before purchase.</p>
+          <p>
+            Chai&rsquo;s suggestions are for beauty &amp; lifestyle. These statements have not been evaluated
+            by the FDA and are not intended to diagnose, treat, cure, or prevent any disease.
+          </p>
         </div>
 
         {/* Input area - fixed */}
