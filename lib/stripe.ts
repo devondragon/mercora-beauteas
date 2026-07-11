@@ -265,6 +265,10 @@ export class CloudflareStripe {
     return await this.request('GET', `/payment_intents/${encodeURIComponent(id)}`);
   }
 
+  async cancelPaymentIntent(id: string) {
+    return await this.request('POST', `/payment_intents/${encodeURIComponent(id)}/cancel`);
+  }
+
   webhooks = {
     /** @deprecated Use verifyWebhookSignature() instead -- this does NOT verify signatures */
     constructEvent: (payload: string, signature: string, secret: string) => {
@@ -344,6 +348,23 @@ export const retrievePaymentIntent = async (
     return (await client.retrievePaymentIntent(id)) as any;
   }
   return (await client.paymentIntents.retrieve(id)) as any;
+};
+
+/**
+ * Cancel a Payment Intent using the appropriate Stripe client.
+ *
+ * Best-effort hygiene (BMC-167): when the server mints a PaymentIntent but then
+ * cannot persist its pending order, it withholds the client secret — so the PI
+ * can never capture money — and cancels it here so it does not linger as an
+ * abandoned intent in the Stripe dashboard. Callers should treat any failure as
+ * non-fatal.
+ */
+export const cancelPaymentIntent = async (id: string): Promise<any> => {
+  const client = getStripeClient();
+  if (client instanceof CloudflareStripe) {
+    return (await client.cancelPaymentIntent(id)) as any;
+  }
+  return (await client.paymentIntents.cancel(id)) as any;
 };
 
 /**

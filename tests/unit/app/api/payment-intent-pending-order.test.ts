@@ -27,6 +27,7 @@ vi.mock('@/lib/stripe', () => ({
   isStripeConfigured: vi.fn().mockReturnValue(true),
   formatAmountForStripe: vi.fn((a: number) => Math.round(a * 100)),
   createPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_minted', client_secret: 'pi_minted_secret_abc' }),
+  cancelPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_minted', status: 'canceled' }),
 }));
 
 vi.mock('@clerk/nextjs/server', () => ({
@@ -56,7 +57,7 @@ vi.mock('@/lib/models/mach/customer', () => ({
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/payment-intent/route';
-import { createPaymentIntent } from '@/lib/stripe';
+import { createPaymentIntent, cancelPaymentIntent } from '@/lib/stripe';
 import { getProductVariant } from '@/lib/models/mach/products';
 import { createOrder } from '@/lib/models/mach/orders';
 import { getCustomer, createCustomer } from '@/lib/models/mach/customer';
@@ -180,14 +181,15 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect((vi.mocked(createOrder).mock.calls[0][0] as any).customer_id).toBe('user_42');
   });
 
-  it('a duplicate pending order (UNIQUE/PK collision) is tolerated — still returns the client secret', async () => {
+  it('a duplicate pending order (UNIQUE/PK collision) is tolerated — still returns the client secret, does NOT cancel the PI', async () => {
     vi.mocked(createOrder).mockRejectedValue(new Error('D1_ERROR: UNIQUE constraint failed: orders.id'));
     const res = await POST(postRequest(baseBody()));
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).clientSecret).toBe('pi_minted_secret_abc');
+    expect(vi.mocked(cancelPaymentIntent)).not.toHaveBeenCalled();
   });
 
-  it('H1: a FOREIGN KEY constraint error is NOT swallowed — fails closed (500, no client secret)', async () => {
+  it('H1: a FOREIGN KEY constraint error is NOT swallowed — fails closed (500) and cancels the orphaned PI', async () => {
     // The old broad regex matched bare SQLITE_CONSTRAINT and would have masked
     // this as "already exists", handing back a secret for an order-less payment.
     vi.mocked(createOrder).mockRejectedValue(new Error('D1_ERROR: FOREIGN KEY constraint failed'));
@@ -196,9 +198,11 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     const json = (await res.json()) as any;
     expect(json.code).toBe('pending_order_persist_failed');
     expect(json.clientSecret).toBeUndefined();
+    // Orphaned PI is best-effort cancelled.
+    expect(vi.mocked(cancelPaymentIntent)).toHaveBeenCalledWith('pi_minted');
   });
 
-  it('refuses to return a client secret if the pending order cannot be persisted (order-less payment)', async () => {
+  it('refuses to return a client secret if the pending order cannot be persisted, and cancels the orphaned PI', async () => {
     vi.mocked(createOrder).mockRejectedValue(new Error('D1_ERROR: network connection lost'));
     const res = await POST(postRequest(baseBody()));
     expect(res.status).toBe(500);
@@ -206,6 +210,15 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect(json.code).toBe('pending_order_persist_failed');
     expect(json.clientSecret).toBeUndefined();
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(cancelPaymentIntent)).toHaveBeenCalledWith('pi_minted');
+  });
+
+  it('a PI-cancel failure on the persist-failure path stays non-fatal — still returns 500', async () => {
+    vi.mocked(createOrder).mockRejectedValue(new Error('D1_ERROR: network connection lost'));
+    vi.mocked(cancelPaymentIntent).mockRejectedValue(new Error('stripe unreachable'));
+    const res = await POST(postRequest(baseBody()));
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as any).code).toBe('pending_order_persist_failed');
   });
 
   it('back-compat: an older client that sends no order draft still gets a PaymentIntent (no pending order)', async () => {

@@ -33,7 +33,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { createPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
+import { createPaymentIntent, cancelPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
 import {
   computeCatalogSubtotalCents,
@@ -383,6 +383,19 @@ export async function POST(req: NextRequest) {
               `refusing to return a client secret for an order-less payment`,
             persistError
           );
+          // Best-effort cleanup (BMC-167 review): we are withholding the client
+          // secret, so this PaymentIntent can never capture money — but cancel it
+          // so it doesn't linger as an abandoned intent in the Stripe dashboard.
+          // Strictly non-fatal: a cancel failure only leaves a harmless orphan,
+          // and must never block or change the error response.
+          try {
+            await cancelPaymentIntent(paymentIntentId);
+          } catch (cancelError) {
+            console.error(
+              `[payment-intent] order ${orderId}: failed to cancel orphaned PaymentIntent ${paymentIntentId} (non-fatal)`,
+              cancelError
+            );
+          }
           return NextResponse.json(
             {
               error: 'We could not start your checkout. Please try again.',

@@ -139,6 +139,24 @@ describe('finalizePaidOrder', () => {
     expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
   });
 
+  it('H1 revert FAILURE: markOrderUnpaid throws → finalization does NOT throw, returns a review-flagged reason', async () => {
+    // The order is already CAS-promoted to paid; the tender didn't redeem AND the
+    // revert write fails. Finalization must NOT throw (that would 500 the webhook
+    // into an infinite retry / error the client) — it surfaces a manual-review
+    // reason the caller records instead.
+    const gcOrder = order({ extensions: { gift_card: { code: 'GC-1', amount: 2500 } } });
+    vi.mocked(getGiftCardByCode).mockResolvedValue({ code: 'GC-1', status: 'active', balance: 2500 } as any);
+    vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(gcOrder) as any);
+    vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: ['insufficient balance'] });
+    vi.mocked(markOrderUnpaid).mockRejectedValue(new Error('D1 unavailable'));
+
+    const res = await finalizePaidOrder({ order: gcOrder, paidAmountCents: 0, sendEmail: true });
+    expect(res.paid).toBe(false);
+    expect(res.reverted).toBe(false); // the revert did NOT succeed
+    expect(res.reason).toMatch(/MANUAL REVIEW REQUIRED/);
+    expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
+  });
+
   it('M4: a captured but catalog-unpriceable order is flagged for manual review', async () => {
     // Unknown variant → the catalog cannot price the goods.
     const res = await finalizePaidOrder({

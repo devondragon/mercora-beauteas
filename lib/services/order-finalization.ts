@@ -150,19 +150,44 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
       `[finalize] Order ${orderId}: gift-card tender (${giftCardTenderCents}c) was counted toward payment ` +
         `but redemption applied nothing; reverting order to pending`
     );
-    await markOrderUnpaid(orderId, {
-      notes: `Reverted to pending: gift-card tender not redeemed`,
-    });
-    // L4 (BMC-167 review): surface a reason so the webhook's
-    // `if (!result.paid && result.reason)` branch logs the revert instead of
-    // silently leaving the order pending with no trace (mirrors the
-    // catalog-unpriceable case).
-    return {
-      paid: false,
-      promotedByUs: true,
-      reverted: true,
-      reason: `gift-card tender (${giftCardTenderCents}c) counted toward payment but redemption applied nothing; reverted to pending`,
-    };
+    // The order is already CAS-promoted to PAID here. If markOrderUnpaid throws,
+    // we must NOT let it propagate: the caller (webhook) would 500 and retry
+    // forever, and the client POST would surface an error — all while the order
+    // stays stranded PAID with under-collected goods. Instead, log LOUDLY and
+    // return a review-flagged signal (BMC-167 review). Either way this is a
+    // permanent, non-retryable outcome the caller records via `reason`.
+    try {
+      await markOrderUnpaid(orderId, {
+        notes: `Reverted to pending: gift-card tender not redeemed`,
+      });
+      // L4 (BMC-167 review): surface a reason so the webhook's
+      // `if (!result.paid && result.reason)` branch logs the revert instead of
+      // silently leaving the order pending with no trace (mirrors the
+      // catalog-unpriceable case).
+      return {
+        paid: false,
+        promotedByUs: true,
+        reverted: true,
+        reason: `gift-card tender (${giftCardTenderCents}c) counted toward payment but redemption applied nothing; reverted to pending`,
+      };
+    } catch (revertError) {
+      console.error(
+        `[finalize] Order ${orderId}: CRITICAL — gift-card tender (${giftCardTenderCents}c) not redeemed AND ` +
+          `the revert to pending FAILED; the order is stranded PAID with under-collected goods — MANUAL REVIEW REQUIRED`,
+        revertError
+      );
+      // reverted:false signals the revert did NOT succeed. paid:false + reason
+      // still routes it through the caller's not-paid-with-reason branch (logged,
+      // 200/no-retry) so it is surfaced for manual review rather than thrown.
+      return {
+        paid: false,
+        promotedByUs: true,
+        reverted: false,
+        reason:
+          `MANUAL REVIEW REQUIRED: gift-card tender (${giftCardTenderCents}c) not redeemed and the revert to ` +
+          `pending FAILED; order left PAID with under-collected goods`,
+      };
+    }
   }
 
   // Confirmation email — only the CAS winner sends it, so it fires exactly once
