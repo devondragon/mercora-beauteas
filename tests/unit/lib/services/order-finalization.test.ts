@@ -38,6 +38,14 @@ vi.mock('@/lib/services/order-confirmation', () => ({
   sendOrderConfirmationForOrder: vi.fn().mockResolvedValue(undefined),
 }));
 
+// BMC-178: the shared finalizer now decrements inventory on a CAS win. Mock the
+// seam (it calls getDbAsync → getCloudflareContext, which is unavailable in the
+// unit env) so this stays a pure unit test AND the decrement path is actually
+// exercised/asserted rather than silently throwing into finalization's catch.
+vi.mock('@/lib/services/inventory-adjustment', () => ({
+  decrementStockForOrder: vi.fn().mockResolvedValue({ decremented: [], oversold: [] }),
+}));
+
 // Catalog + gift-card seams the REAL order-pricing reads through.
 vi.mock('@/lib/models/mach/products', () => ({
   getProduct: vi.fn(),
@@ -53,6 +61,7 @@ import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
+import { decrementStockForOrder } from '@/lib/services/inventory-adjustment';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 
@@ -85,6 +94,7 @@ beforeEach(() => {
   vi.mocked(getProduct).mockResolvedValue(null as any);
   vi.mocked(getGiftCardByCode).mockResolvedValue(null as any);
   vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] });
+  vi.mocked(decrementStockForOrder).mockResolvedValue({ decremented: [], oversold: [] });
 });
 
 describe('finalizePaidOrder', () => {
@@ -111,6 +121,26 @@ describe('finalizePaidOrder', () => {
     expect(res).toMatchObject({ paid: true, promotedByUs: true });
     expect(vi.mocked(promoteOrderToPaid)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(processGiftCardsForOrder)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendOrderConfirmationForOrder)).toHaveBeenCalledTimes(1);
+    // BMC-178: the CAS winner decrements inventory exactly once, with the order's lines.
+    expect(vi.mocked(decrementStockForOrder)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(decrementStockForOrder).mock.calls[0][0]).toEqual(order().items);
+  });
+
+  it('BMC-178: an oversold line (race at capture) flags the order for review but stays paid + emails', async () => {
+    vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(order()) as any);
+    vi.mocked(decrementStockForOrder).mockResolvedValue({
+      decremented: [],
+      oversold: [
+        { variant_id: 'var-tea-1', product_id: 'tea-1', product_name: 'Calendula Tea', requested: 2, available: 1 },
+      ],
+    });
+    const res = await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: true });
+    // Money is captured — the order stays paid and still emails; the shortfall is
+    // surfaced as a NEEDS REVIEW note rather than reverting payment.
+    expect(res).toMatchObject({ paid: true, promotedByUs: true });
+    expect(vi.mocked(updateOrderNotes)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateOrderNotes).mock.calls[0][1]).toMatch(/NEEDS REVIEW \(BMC-178\): oversold/);
     expect(vi.mocked(sendOrderConfirmationForOrder)).toHaveBeenCalledTimes(1);
   });
 

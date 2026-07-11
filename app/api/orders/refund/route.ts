@@ -39,6 +39,7 @@ import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmo
 import { errorDetails } from '@/lib/utils/error-response';
 import { sha256Hex } from '@/lib/auth/crypto';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
+import { restockForOrder } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
 
 interface RefundRequest {
@@ -252,6 +253,45 @@ export async function POST(request: NextRequest) {
       .set(updateData)
       .where(eq(orders.id, orderId))
       .returning();
+
+    // BMC-178: restore on-hand stock for the refunded goods (the inverse of the
+    // decrement at payment success). A FULL refund cancels the order → restock
+    // every line; a PARTIAL refund → restock only the refunded product lines, at
+    // the quantities on the order. Restock is intentionally scoped to the refund
+    // path (a paid order whose stock was decremented), NOT an arbitrary status
+    // change: a PUT → 'cancelled' on an unpaid order never decremented, so
+    // restocking there would inflate stock. Best-effort and wrapped: the money is
+    // already refunded and the order already written, so an inventory hiccup must
+    // never surface as a 500 or unwind the refund. Untracked/backorder lines are
+    // handled inside restockForOrder. (Idempotency mirrors the refund route's own
+    // guarantees: a full refund flips status to 'cancelled' so the guard above
+    // blocks a second one; a partial refund restores only its own lines.)
+    try {
+      const rawItems = order.items
+        ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items)
+        : [];
+      const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
+      // The admin returns UI selects lines by a COMPOSITE key
+      // (`${product_id}-${variant_id || 'default'}`), so `items[]` on a partial
+      // refund carries those composite keys — not bare product ids. Match a line
+      // if the refund set contains its composite key OR its bare product id, so
+      // both the real admin caller and any bare-id API caller restock correctly.
+      const refundSet = items ?? [];
+      const lineInRefund = (it: any): boolean => {
+        const pid = it.product_id ?? it.productId;
+        const vid = it.variant_id ?? it.variantId;
+        return refundSet.includes(`${pid}-${vid || 'default'}`) || refundSet.includes(pid);
+      };
+      const restockItems = type === 'full' ? orderItems : orderItems.filter(lineInRefund);
+      if (restockItems.length > 0) {
+        const { restocked } = await restockForOrder(restockItems);
+        if (restocked.length) {
+          console.log(`Restocked ${restocked.length} variant(s) for ${type} refund on order ${orderId}`);
+        }
+      }
+    } catch (restockError) {
+      console.error(`Failed to restock inventory for ${type} refund on order ${orderId}:`, restockError);
+    }
 
     // Log the refund action
     console.log(`${type.toUpperCase()} refund processed:`, {

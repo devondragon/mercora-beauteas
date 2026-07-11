@@ -42,6 +42,7 @@ import {
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
+import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
@@ -315,6 +316,32 @@ export async function POST(req: NextRequest) {
             code: 'amount_below_catalog',
           },
           { status: 400 }
+        );
+      }
+    }
+
+    // BMC-178: reject BEFORE charging if any tracked, non-backorderable line
+    // lacks the requested quantity on hand. This is oversell PREVENTION with a
+    // clear, immediate error; the authoritative backstop is the guarded decrement
+    // at payment success (finalizePaidOrder / MCP place_order), which can never
+    // take a tracked variant below zero even if this pre-check is skipped or a
+    // concurrent checkout races for the last unit. Backorderable and untracked
+    // (made-to-order) variants are always allowed through.
+    if (Array.isArray(items) && items.length > 0) {
+      const availability = await checkStockAvailability(items as any);
+      if (!availability.ok) {
+        const detail = availability.shortfalls
+          .map((s) => `${s.product_name ?? s.variant_id}: ${s.available} on hand, ${s.requested} requested`)
+          .join('; ');
+        console.warn(`[payment-intent] order ${orderId}: insufficient stock — ${detail}`);
+        return NextResponse.json(
+          {
+            error:
+              'Some items in your cart are no longer available in the quantity you requested. Please adjust your cart and try again.',
+            code: 'insufficient_stock',
+            shortfalls: availability.shortfalls,
+          },
+          { status: 409 }
         );
       }
     }
