@@ -81,13 +81,22 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   const orderId = order.id!;
 
   // (1) Charge gate — re-price the goods from the catalog and confirm the cash
-  // collected (plus any DB-resolved gift-card tender) covers them. A THROW here
-  // (transient catalog read) propagates to the caller by design.
+  // collected (plus any DB-resolved gift-card tender, minus any authoritatively
+  // recomputed cart discount) covers them. A THROW here (transient catalog read)
+  // propagates to the caller by design.
   const giftCardTenderCents = await resolveGiftCardTenderCents(order.extensions);
+  // The applied cart-discount code(s) were persisted on the order (BMC-177); the
+  // gate recomputes the discount from the coupon itself, so a stale/tampered
+  // client amount is never trusted. Non-array/legacy orders → no discount.
+  const rawDiscountCodes = (order.extensions as any)?.discount_codes;
+  const discountCodes = Array.isArray(rawDiscountCodes)
+    ? rawDiscountCodes.filter((c: unknown): c is string => typeof c === 'string')
+    : undefined;
   const charge = await verifyOrderChargeSufficient({
     items: order.items as any,
     paidAmountCents,
     giftCardTenderCents,
+    discountCodes,
   });
 
   if (!charge.ok) {

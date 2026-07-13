@@ -21,7 +21,7 @@ import { Money } from '@/lib/money';
 import type { CartItem } from '@/lib/types/cartitem';
 import type { Address } from '@/lib/types';
 import type { ShippingOption } from '@/lib/types/shipping';
-import type { AppliedGiftCard } from '@/lib/stores/cart-store';
+import type { AppliedGiftCard, AppliedDiscount } from '@/lib/stores/cart-store';
 
 /** Totals subset needed to build the order body (all integer minor units). */
 export interface OrderTotals {
@@ -48,6 +48,12 @@ export interface BuildOrderArgs {
   shippingAddress?: Address;
   shippingOption?: ShippingOption;
   appliedGiftCard?: AppliedGiftCard;
+  /**
+   * Applied discounts from the cart. Only the CART-type codes are persisted on
+   * the order (`extensions.discount_codes`) so the charge gate can recompute the
+   * discount authoritatively from the coupon at finalization (BMC-177).
+   */
+  appliedDiscounts?: AppliedDiscount[];
   totals: OrderTotals;
 }
 
@@ -58,8 +64,14 @@ export interface BuildOrderArgs {
  * whether the order was actually paid.
  */
 export function buildCreateOrderBody(args: BuildOrderArgs) {
-  const { orderId, paymentIntentId, items, shippingAddress, shippingOption, appliedGiftCard, totals } = args;
+  const { orderId, paymentIntentId, items, shippingAddress, shippingOption, appliedGiftCard, appliedDiscounts, totals } = args;
   const { subtotal, shippingCost, tax, giftCardApplied, totalBeforeGiftCard } = totals;
+
+  // Only cart-type discounts reduce the goods subtotal the charge floor enforces,
+  // so those are the codes the server must recompute at finalization (BMC-177).
+  const cartDiscountCodes = (appliedDiscounts ?? [])
+    .filter((d) => d.type === 'cart')
+    .map((d) => d.code);
 
   return {
     order_id: orderId, // keep order id consistent with payment-intent metadata
@@ -95,6 +107,9 @@ export function buildCreateOrderBody(args: BuildOrderArgs) {
       ...(giftCardApplied > 0 && appliedGiftCard
         ? { gift_card: { code: appliedGiftCard.code, amount: giftCardApplied } }
         : {}),
+      // Persist the cart-discount code(s) so the charge gate re-derives the
+      // discount from the coupon at finalization — never a client amount (BMC-177).
+      ...(cartDiscountCodes.length > 0 ? { discount_codes: cartDiscountCodes } : {}),
     },
   };
 }

@@ -81,6 +81,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     shippingOption,
     taxAmount,
     appliedGiftCard,
+    appliedDiscounts,
     setShippingAddress,
     setShippingOption,
     setTaxAmount,
@@ -248,6 +249,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
         shippingAddress,
         shippingOption: selectedShippingOption,
         appliedGiftCard,
+        appliedDiscounts,
         totals,
       });
 
@@ -271,6 +273,12 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           })),
           // Full order draft persisted as a server-side pending order (BMC-167).
           order: orderDraft,
+          // Applied cart-discount code(s) — the server recomputes the discount
+          // from the coupon and credits it toward the charge floor so a valid
+          // promo checkout isn't rejected as underpaying (BMC-177).
+          discountCodes: appliedDiscounts
+            .filter((d) => d.type === 'cart')
+            .map((d) => d.code),
           // Let the server re-verify the gift card's live balance before
           // charging, so a stale client-side balance can't under-collect.
           // giftCardApplied is already integer minor units (cents) — no *100.
@@ -305,6 +313,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           shippingAddress,
           shippingOption: selectedShippingOption,
           appliedGiftCard,
+          appliedDiscounts,
           totals,
         })
       );
@@ -332,6 +341,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
             shippingAddress,
             shippingOption,
             appliedGiftCard,
+            appliedDiscounts,
             totals: calculateTotals(),
           })
         ),

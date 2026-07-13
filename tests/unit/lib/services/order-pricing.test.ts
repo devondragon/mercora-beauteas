@@ -28,6 +28,13 @@ vi.mock('@/lib/models/mach/giftCard', () => ({
   getGiftCardByCode: vi.fn(),
 }));
 
+// BMC-177: the charge gate now recomputes the cart discount server-side. Mock the
+// resolver so these tests pin the FLOOR arithmetic deterministically; the resolver
+// itself is exercised in tests/unit/lib/services/discount-pricing.test.ts.
+vi.mock('@/lib/services/discount-pricing', () => ({
+  resolveCartDiscountCents: vi.fn(),
+}));
+
 import {
   computeCatalogSubtotalCents,
   verifyOrderChargeSufficient,
@@ -37,6 +44,7 @@ import {
 } from '@/lib/services/order-pricing';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
+import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
 
 // Catalog: one $25.00 variant belonging to product "tea-1".
 const VARIANT_TEA = {
@@ -60,6 +68,8 @@ beforeEach(() => {
   );
   vi.mocked(getProduct).mockResolvedValue(null as any);
   vi.mocked(getGiftCardByCode).mockResolvedValue(null as any);
+  // Default: no cart discount unless a test opts in.
+  vi.mocked(resolveCartDiscountCents).mockResolvedValue(0);
 });
 
 describe('computeCatalogSubtotalCents (BMC-131)', () => {
@@ -278,6 +288,60 @@ describe('verifyOrderChargeSufficient (BMC-131)', () => {
 
     const short = await verifyOrderChargeSufficient({ items, paidAmountCents: 1400, giftCardTenderCents: tender });
     expect(short.ok).toBe(false);
+  });
+});
+
+describe('verifyOrderChargeSufficient cart discount floor (BMC-177)', () => {
+  const items = [{ product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 }];
+
+  it('THE BUG: accepts the discounted total for a 25%-off cart coupon', async () => {
+    // $25 goods, 25% off → required cash $18.75. Before the fix the floor
+    // demanded the full $25 and rejected this legitimate promo checkout.
+    vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
+    const result = await verifyOrderChargeSufficient({
+      items,
+      paidAmountCents: 1875,
+      discountCodes: ['SAVE25'],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.discountCents).toBe(625);
+    expect(result.requiredCashCents).toBe(1875);
+  });
+
+  it('recomputes the discount from the coupon against the catalog goods subtotal', async () => {
+    vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
+    await verifyOrderChargeSufficient({ items, paidAmountCents: 1875, discountCodes: ['SAVE25'] });
+    // Server subtotal (2500c), NOT any client number, drives the recompute.
+    expect(vi.mocked(resolveCartDiscountCents)).toHaveBeenCalledWith(['SAVE25'], 2500);
+  });
+
+  it('still rejects paying below the DISCOUNTED floor (no under-pay via a real coupon)', async () => {
+    vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
+    const result = await verifyOrderChargeSufficient({
+      items,
+      paidAmountCents: 1000, // well under the $18.75 discounted floor
+      discountCodes: ['SAVE25'],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('stacks the discount with a gift-card tender', async () => {
+    // $25 goods − $6.25 discount − $10 gift card → $8.75 required cash.
+    vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
+    const result = await verifyOrderChargeSufficient({
+      items,
+      paidAmountCents: 875,
+      giftCardTenderCents: 1000,
+      discountCodes: ['SAVE25'],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.requiredCashCents).toBe(875);
+  });
+
+  it('does not credit a discount when no codes are supplied (MCP / non-promo path)', async () => {
+    const result = await verifyOrderChargeSufficient({ items, paidAmountCents: 1875 });
+    expect(result.ok).toBe(false); // full $25 floor still enforced
+    expect(result.discountCents).toBe(0);
   });
 });
 

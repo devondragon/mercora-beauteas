@@ -1,0 +1,182 @@
+/**
+ * Server-side cart-discount recompute for the charge floor (BMC-177).
+ *
+ * The storefront charge floor (`lib/services/order-pricing.ts` +
+ * `/api/payment-intent`) enforces that the cash collected covers the CATALOG
+ * value of the goods. It historically ignored discounts entirely, so a valid
+ * `cart`-type coupon whose discount exceeds shipping + tax + tolerance made the
+ * shopper's (correctly discounted) charge fall below the floor and get rejected
+ * with `amount_below_catalog` — blocking exactly the promo checkouts a launch
+ * wants to convert.
+ *
+ * This module recomputes the cart discount AUTHORITATIVELY from the coupon —
+ * never from the client-supplied discount number — so the floor can subtract it.
+ * Only `cart`-type promotions reduce the goods subtotal the floor enforces
+ * (shipping/product promotions don't touch it), so this resolves cart promotions
+ * only; anything else contributes 0. The cart-discount math mirrors the cart
+ * branches of `/api/validate-discount`'s `calculateDiscountAmount` (percentage /
+ * fixed against the subtotal) so the amount shown at checkout and the amount
+ * credited at the floor can't drift — but it computes against the SERVER catalog
+ * subtotal, never a client-supplied one.
+ *
+ * Fails CLOSED: an unknown/expired/non-cart code, or a cart promotion whose
+ * conditions aren't met by the catalog subtotal, resolves to 0 — the floor then
+ * demands full payment rather than crediting a discount that isn't actually
+ * valid. Never inflate the discount: that would let a shopper under-pay.
+ */
+
+import type { Promotion } from '@/lib/types';
+import { listCouponInstances } from '@/lib/models/mach/couponInstance';
+import { listPromotions } from '@/lib/models/mach/promotions';
+
+/**
+ * Coerce a promotion rule value (a bare number or a MACH `Money`-ish
+ * `{ amount }`) to a plain integer amount. Promotion rule amounts are stored in
+ * the same MINOR units (cents) the charge floor works in — matching how
+ * `/api/validate-discount` interprets them at runtime. Returns null when the
+ * value can't be read as a finite number.
+ */
+function ruleAmount(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'object') {
+    const amount = (value as { amount?: unknown }).amount;
+    return typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
+  }
+  return null;
+}
+
+/** Normalize the codes input to a de-duplicated list of trimmed, upper-cased codes. */
+function normalizeCodes(codes: string[] | string | null | undefined): string[] {
+  const raw = codes == null ? [] : Array.isArray(codes) ? codes : [codes];
+  const seen = new Set<string>();
+  for (const c of raw) {
+    if (typeof c !== 'string') continue;
+    const norm = c.trim().toUpperCase();
+    if (norm) seen.add(norm);
+  }
+  return [...seen];
+}
+
+/**
+ * Whether a cart promotion's conditions are satisfied by the catalog subtotal.
+ * Mirrors `/api/validate-discount`'s `validatePromotionConditions`: a
+ * `cart_subtotal >= X` minimum is checked against the (server) subtotal; a
+ * `product_category` requirement can't be re-verified in the charge path (we
+ * don't carry item categories here, and the storefront only applies such coupons
+ * against matching items), so it fails closed rather than crediting an
+ * unverifiable discount. Unknown condition types pass, matching validate-discount.
+ */
+function cartConditionsMet(promotion: Promotion, subtotalCents: number): boolean {
+  const conditions = promotion.rules?.conditions;
+  if (!conditions || conditions.length === 0) return true;
+
+  for (const condition of conditions) {
+    switch (condition.type) {
+      case 'cart_subtotal':
+        if (condition.operator === 'gte') {
+          const min = ruleAmount(condition.value) ?? 0;
+          if (subtotalCents < min) return false;
+        }
+        break;
+      case 'product_category':
+        if (condition.operator === 'in') return false;
+        break;
+      default:
+        break;
+    }
+  }
+  return true;
+}
+
+/**
+ * The cart-level discount (cents) a promotion grants against a goods subtotal.
+ * Mirrors the cart branches of `/api/validate-discount`'s `calculateDiscountAmount`:
+ * `percentage_discount` is a percentage of the subtotal; `fixed_discount` is a
+ * flat amount capped at the subtotal. Actions that don't reduce the cart goods
+ * total (item/shipping/tiered/etc.) contribute 0.
+ */
+function cartDiscountAmountCents(promotion: Promotion, subtotalCents: number): number {
+  const action = promotion.rules?.actions?.[0];
+  if (!action) return 0;
+
+  switch (action.type) {
+    case 'percentage_discount': {
+      const pct = typeof action.value === 'number' ? action.value : 0;
+      if (!(pct > 0)) return 0;
+      return Math.round(subtotalCents * (pct / 100));
+    }
+    case 'fixed_discount': {
+      const fixed = ruleAmount(action.value) ?? 0;
+      return Math.max(0, Math.min(fixed, subtotalCents));
+    }
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Resolve the authoritative CART-level discount (cents) for a set of coupon codes
+ * against a server-computed goods subtotal (BMC-177). Only active `cart`-type
+ * promotions whose conditions the subtotal satisfies contribute; the summed
+ * discount is capped at the subtotal and floored at 0. Returns 0 for no codes,
+ * a zero subtotal, or codes that don't resolve to a valid cart promotion.
+ */
+export async function resolveCartDiscountCents(
+  codes: string[] | string | null | undefined,
+  subtotalCents: number
+): Promise<number> {
+  const codeList = normalizeCodes(codes);
+  if (codeList.length === 0) return 0;
+
+  const subtotal = Math.max(0, Math.round(subtotalCents));
+  if (subtotal === 0) return 0;
+
+  // Load once and match in memory, mirroring /api/validate-discount's lookup
+  // (case-insensitive code match + active coupon + active promotion).
+  const [couponInstances, promotions] = await Promise.all([
+    listCouponInstances(),
+    listPromotions(),
+  ]);
+
+  let totalDiscount = 0;
+  // Dedup by PROMOTION, mirroring the cart store's dedup-by-promotionId
+  // (lib/stores/cart-store.ts `applyDiscount`): a promotion's discount is applied
+  // AT MOST ONCE even if several distinct coupon codes resolve to it. The client
+  // controls both `discountCodes` and the paid `amount`, so without this a shopper
+  // could stack multiple bulk codes for one promotion to inflate the credited
+  // discount past what their charge reflected and under-pay — defeating the floor.
+  const countedPromotionIds = new Set<string>();
+  for (const code of codeList) {
+    const coupon = couponInstances.find(
+      (c) => c.code?.toUpperCase() === code && c.status === 'active'
+    );
+    if (!coupon) {
+      console.warn(`[discount-pricing] code ${code} skipped: no active coupon`);
+      continue;
+    }
+
+    const promotion = promotions.find(
+      (p) => p.id === coupon.promotion_id && p.status === 'active'
+    );
+    if (!promotion || promotion.type !== 'cart') {
+      console.warn(`[discount-pricing] code ${code} skipped: no active cart promotion`);
+      continue;
+    }
+
+    // Same promotion already counted via another code → don't credit it twice.
+    if (countedPromotionIds.has(promotion.id)) continue;
+
+    if (!cartConditionsMet(promotion, subtotal)) {
+      console.warn(
+        `[discount-pricing] code ${code} skipped: cart conditions not met at subtotal ${subtotal}c`
+      );
+      continue;
+    }
+
+    countedPromotionIds.add(promotion.id);
+    totalDiscount += cartDiscountAmountCents(promotion, subtotal);
+  }
+
+  return Math.max(0, Math.min(subtotal, Math.round(totalDiscount)));
+}

@@ -41,6 +41,7 @@ import {
   MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
+import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
@@ -72,6 +73,11 @@ interface PaymentIntentRequest {
   // card's CURRENT balance before charging so a stale client-side balance can't
   // under-collect the amount due.
   giftCard?: { code: string; appliedCents: number };
+  // Applied cart-discount coupon code(s). The server recomputes the discount
+  // AUTHORITATIVELY from the coupon against the catalog subtotal (never the
+  // client-supplied amount) and credits it toward the charge floor, so a
+  // legitimately discounted promo checkout isn't rejected as underpaying (BMC-177).
+  discountCodes?: string[];
   // BMC-167: the full order draft (line items + address + amounts), same shape
   // POST /api/orders receives, MINUS the PaymentIntent id (the server mints and
   // injects that). Persisted as a `pending` order keyed to `orderId` BEFORE the
@@ -187,6 +193,7 @@ export async function POST(req: NextRequest) {
       giftCard,
       items,
       order,
+      discountCodes,
     }: PaymentIntentRequest = await req.json();
 
     // Validate required fields
@@ -303,12 +310,16 @@ export async function POST(req: NextRequest) {
       const giftCardTenderCents = giftCard?.code
         ? Math.max(0, Math.round(giftCard.appliedCents || 0))
         : 0;
-      const requiredCashCents = Math.max(0, subtotalCents - giftCardTenderCents);
+      // Recompute the cart discount from the coupon against the catalog subtotal
+      // (never the client number) and credit it toward the floor, so a valid
+      // promo checkout whose discount exceeds shipping + tax isn't rejected (BMC-177).
+      const discountCents = await resolveCartDiscountCents(discountCodes, subtotalCents);
+      const requiredCashCents = Math.max(0, subtotalCents - discountCents - giftCardTenderCents);
       const amountCents = Math.round(amount * 100);
       if (amountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
         console.warn(
           `[payment-intent] order ${orderId}: requested amount ${amountCents}c is below ` +
-            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, gift card ${giftCardTenderCents}c)`
+            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, cart discount ${discountCents}c, gift card ${giftCardTenderCents}c)`
         );
         return NextResponse.json(
           {
