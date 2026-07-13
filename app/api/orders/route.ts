@@ -24,7 +24,7 @@ import { sendOrderStatusUpdateEmail } from "@/lib/utils/email";
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
-import { normalizeDiscountCodes, MAX_DISCOUNT_CODES } from "@/lib/services/discount-pricing";
+import { normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from "@/lib/services/discount-pricing";
 import { finalizePaidOrder } from "@/lib/services/order-finalization";
 import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
@@ -163,8 +163,13 @@ export async function POST(request: NextRequest) {
     // Bound the persisted cart-discount codes the same way /api/payment-intent
     // does — this route is reachable pre-auth, so an unbounded `discount_codes`
     // array would otherwise be stored verbatim into the D1 `extensions` JSON and
-    // drive a burst of coupon lookups at finalization. Deduped count (BMC-177 review).
-    if (normalizeDiscountCodes((body.extensions as { discount_codes?: unknown })?.discount_codes as string[] | undefined).length > MAX_DISCOUNT_CODES) {
+    // drive a burst of coupon lookups at finalization. Bound the RAW array before
+    // the dedup pass, then enforce the deduped limit (BMC-177 review).
+    const rawDiscountCodes = (body.extensions as { discount_codes?: unknown })?.discount_codes;
+    if (
+      (Array.isArray(rawDiscountCodes) && rawDiscountCodes.length > MAX_RAW_DISCOUNT_CODES) ||
+      normalizeDiscountCodes(rawDiscountCodes as string[] | undefined).length > MAX_DISCOUNT_CODES
+    ) {
       return NextResponse.json({
         error: 'Validation failed',
         details: [`discount_codes must not exceed ${MAX_DISCOUNT_CODES} codes`]

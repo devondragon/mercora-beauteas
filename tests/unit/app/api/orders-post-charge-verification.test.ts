@@ -155,6 +155,19 @@ describe('POST /api/orders create-or-promote (BMC-167)', () => {
     expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
   });
 
+  it('BMC-177 review: rejects an oversized RAW discount_codes array (before the dedup pass)', async () => {
+    // 150 duplicates collapse to one code, but the raw array itself is over the
+    // raw bound (100) — rejected before the normalize/dedup pass runs over it.
+    const huge = Array.from({ length: 150 }, () => 'SAVE25');
+    const res = await POST(
+      postRequest(orderBody({ extensions: { payment_intent_id: 'pi_test_1', discount_codes: huge } }))
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { details?: string[] }).details?.[0]).toMatch(/discount_codes/);
+    expect(insertedRows).toHaveLength(0);
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
+  });
+
   it('order does NOT exist → inserts pending/pending then delegates to finalizePaidOrder with the captured amount', async () => {
     selectResults = [[]]; // existing lookup: none
     const res = await POST(postRequest(orderBody()));

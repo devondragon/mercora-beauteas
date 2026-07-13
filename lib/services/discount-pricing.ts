@@ -52,6 +52,15 @@ import { getProduct } from '@/lib/models/mach/products';
  */
 export const MAX_DISCOUNT_CODES = 25;
 
+/**
+ * Upper bound on the RAW (pre-dedup) discount-codes array a route will accept.
+ * Checked before the normalize/dedup pass so a pathological input (thousands of
+ * junk strings) can't drive that loop — mirroring how `items.length` is capped
+ * before per-item work. Generous relative to `MAX_DISCOUNT_CODES` so ordinary
+ * duplicate / case-variant codes still collapse and pass rather than 400.
+ */
+export const MAX_RAW_DISCOUNT_CODES = 100;
+
 /** Order/cart line shape the resolver needs to derive catalog categories. */
 export interface DiscountCartLine {
   product_id?: string;

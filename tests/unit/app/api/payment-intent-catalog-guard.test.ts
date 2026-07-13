@@ -35,6 +35,7 @@ vi.mock('@/lib/models/mach/products', () => ({
 vi.mock('@/lib/services/discount-pricing', () => ({
   resolveCartDiscountCents: vi.fn(),
   MAX_DISCOUNT_CODES: 25,
+  MAX_RAW_DISCOUNT_CODES: 100,
   // Real-mirror so the route's post-dedup cap check behaves like production.
   normalizeDiscountCodes: (codes: unknown) => {
     const raw = codes == null ? [] : Array.isArray(codes) ? codes : [codes];
@@ -53,7 +54,7 @@ import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/payment-intent/route';
 import { createPaymentIntent } from '@/lib/stripe';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
-import { resolveCartDiscountCents, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
+import { resolveCartDiscountCents, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 
@@ -165,6 +166,18 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
       expect(((await res.json()) as { code?: string }).code).toBe('too_many_discount_codes');
       expect(vi.mocked(resolveCartDiscountCents)).not.toHaveBeenCalled();
       expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
+    });
+
+    it('rejects an oversized RAW codes array before the normalize/dedup pass', async () => {
+      // All duplicates (would collapse to 1), but the raw array itself is over the
+      // raw bound — rejected up front so the dedup loop never runs over it.
+      const huge = Array.from({ length: MAX_RAW_DISCOUNT_CODES + 10 }, () => 'save25');
+      const res = await POST(
+        postRequest({ amount: 25, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: huge })
+      );
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code?: string }).code).toBe('too_many_discount_codes');
+      expect(vi.mocked(resolveCartDiscountCents)).not.toHaveBeenCalled();
     });
 
     it('does NOT reject many duplicate/case-variant codes (cap is post-dedup)', async () => {

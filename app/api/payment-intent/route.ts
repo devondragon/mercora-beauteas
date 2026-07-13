@@ -41,7 +41,7 @@ import {
   MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
-import { resolveCartDiscountCents, normalizeDiscountCodes, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
+import { resolveCartDiscountCents, normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
@@ -289,7 +289,17 @@ export async function POST(req: NextRequest) {
       // Cap discount codes before they drive one coupon+promotion lookup each
       // (this route is reachable pre-auth, so an unbounded array is a cheap way to
       // force a burst of concurrent D1 reads — same reasoning as the item cap).
-      // Check the DEDUPED count so repeated / case-variant codes don't 400.
+      // First bound the RAW array before the normalize/dedup pass runs over it…
+      if (Array.isArray(discountCodes) && discountCodes.length > MAX_RAW_DISCOUNT_CODES) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${discountCodes.length} raw discount codes exceeds the ${MAX_RAW_DISCOUNT_CODES} limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many discount codes. Please remove some and try again.', code: 'too_many_discount_codes' },
+          { status: 400 }
+        );
+      }
+      // …then check the DEDUPED count so repeated / case-variant codes don't 400.
       const normalizedDiscountCodes = normalizeDiscountCodes(discountCodes);
       if (normalizedDiscountCodes.length > MAX_DISCOUNT_CODES) {
         console.warn(
