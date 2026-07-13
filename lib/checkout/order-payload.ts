@@ -58,6 +58,17 @@ export interface BuildOrderArgs {
 }
 
 /**
+ * The CART-type discount codes to send/persist from a set of applied discounts.
+ * Only cart-type discounts reduce the goods subtotal the charge floor enforces,
+ * so those are the codes the server recomputes authoritatively at the floor
+ * (BMC-177). Shared by the checkout client (payment-intent request) and the
+ * order-body builder so the two can't drift.
+ */
+export function cartDiscountCodes(appliedDiscounts?: AppliedDiscount[]): string[] {
+  return (appliedDiscounts ?? []).filter((d) => d.type === 'cart').map((d) => d.code);
+}
+
+/**
  * Build the `POST /api/orders` request body from checkout state. The server
  * re-verifies payment against Stripe and ignores the client `payment_status`
  * flag, so this is display/line-item data only — never a source of truth for
@@ -67,11 +78,7 @@ export function buildCreateOrderBody(args: BuildOrderArgs) {
   const { orderId, paymentIntentId, items, shippingAddress, shippingOption, appliedGiftCard, appliedDiscounts, totals } = args;
   const { subtotal, shippingCost, tax, giftCardApplied, totalBeforeGiftCard } = totals;
 
-  // Only cart-type discounts reduce the goods subtotal the charge floor enforces,
-  // so those are the codes the server must recompute at finalization (BMC-177).
-  const cartDiscountCodes = (appliedDiscounts ?? [])
-    .filter((d) => d.type === 'cart')
-    .map((d) => d.code);
+  const cartCodes = cartDiscountCodes(appliedDiscounts);
 
   return {
     order_id: orderId, // keep order id consistent with payment-intent metadata
@@ -109,7 +116,7 @@ export function buildCreateOrderBody(args: BuildOrderArgs) {
         : {}),
       // Persist the cart-discount code(s) so the charge gate re-derives the
       // discount from the coupon at finalization — never a client amount (BMC-177).
-      ...(cartDiscountCodes.length > 0 ? { discount_codes: cartDiscountCodes } : {}),
+      ...(cartCodes.length > 0 ? { discount_codes: cartCodes } : {}),
     },
   };
 }

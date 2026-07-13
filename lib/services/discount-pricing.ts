@@ -76,8 +76,13 @@ function ruleAmount(value: unknown): number | null {
   return null;
 }
 
-/** Normalize the codes input to a de-duplicated list of trimmed, upper-cased codes. */
-function normalizeCodes(codes: string[] | string | null | undefined): string[] {
+/**
+ * Normalize a codes input to a de-duplicated list of trimmed, upper-cased codes.
+ * Exported so routes cap the DEDUPED count (a cart that repeats the same code /
+ * case-variants shouldn't trip the `MAX_DISCOUNT_CODES` gate) using the exact
+ * same normalization the resolver applies.
+ */
+export function normalizeDiscountCodes(codes: string[] | string | null | undefined): string[] {
   const raw = codes == null ? [] : Array.isArray(codes) ? codes : [codes];
   const seen = new Set<string>();
   for (const c of raw) {
@@ -223,7 +228,7 @@ export async function resolveCartDiscountCents(
   subtotalCents: number,
   items?: DiscountCartLine[]
 ): Promise<number> {
-  const codeList = normalizeCodes(codes).slice(0, MAX_DISCOUNT_CODES);
+  const codeList = normalizeDiscountCodes(codes).slice(0, MAX_DISCOUNT_CODES);
   if (codeList.length === 0) return 0;
 
   const subtotal = Math.max(0, Math.round(subtotalCents));

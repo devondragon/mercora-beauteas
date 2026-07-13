@@ -41,7 +41,7 @@ import OrderConfirmationModal from './OrderConfirmationModal';
 import type { Address, ShippingOption } from '@/lib/types';
 import type { CartItem } from '@/lib/types/cartitem';
 import { Money } from '@/lib/money';
-import { buildCreateOrderBody, savePendingOrder, clearPendingOrder } from '@/lib/checkout/order-payload';
+import { buildCreateOrderBody, cartDiscountCodes, savePendingOrder, clearPendingOrder } from '@/lib/checkout/order-payload';
 
 /** Derive the PaymentIntent id from its client secret (`pi_x_secret_y` → `pi_x`). */
 function paymentIntentIdFromSecret(clientSecret: string): string {
@@ -276,9 +276,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           // Applied cart-discount code(s) — the server recomputes the discount
           // from the coupon and credits it toward the charge floor so a valid
           // promo checkout isn't rejected as underpaying (BMC-177).
-          discountCodes: appliedDiscounts
-            .filter((d) => d.type === 'cart')
-            .map((d) => d.code),
+          discountCodes: cartDiscountCodes(appliedDiscounts),
           // Let the server re-verify the gift card's live balance before
           // charging, so a stale client-side balance can't under-collect.
           // giftCardApplied is already integer minor units (cents) — no *100.

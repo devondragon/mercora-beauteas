@@ -35,6 +35,18 @@ vi.mock('@/lib/models/mach/products', () => ({
 vi.mock('@/lib/services/discount-pricing', () => ({
   resolveCartDiscountCents: vi.fn(),
   MAX_DISCOUNT_CODES: 25,
+  // Real-mirror so the route's post-dedup cap check behaves like production.
+  normalizeDiscountCodes: (codes: unknown) => {
+    const raw = codes == null ? [] : Array.isArray(codes) ? codes : [codes];
+    const seen = new Set<string>();
+    for (const c of raw) {
+      if (typeof c === 'string') {
+        const n = c.trim().toUpperCase();
+        if (n) seen.add(n);
+      }
+    }
+    return [...seen];
+  },
 }));
 
 import { NextRequest } from 'next/server';
@@ -144,7 +156,7 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
       expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
     });
 
-    it('rejects too many discount codes before resolving any of them', async () => {
+    it('rejects too many DISTINCT discount codes before resolving any of them', async () => {
       const many = Array.from({ length: MAX_DISCOUNT_CODES + 5 }, (_, i) => `CODE${i}`);
       const res = await POST(
         postRequest({ amount: 25, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: many })
@@ -153,6 +165,18 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
       expect(((await res.json()) as { code?: string }).code).toBe('too_many_discount_codes');
       expect(vi.mocked(resolveCartDiscountCents)).not.toHaveBeenCalled();
       expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
+    });
+
+    it('does NOT reject many duplicate/case-variant codes (cap is post-dedup)', async () => {
+      // 30 copies of one code collapse to a single code — under the cap.
+      const dupes = Array.from({ length: MAX_DISCOUNT_CODES + 5 }, () => 'save25');
+      const res = await POST(
+        postRequest({ amount: 25, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: dupes })
+      );
+      expect(res.status).toBe(200);
+      expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);
+      // The resolver receives the single deduped, normalized code.
+      expect(vi.mocked(resolveCartDiscountCents)).toHaveBeenCalledWith(['SAVE25'], 2500, expect.any(Array));
     });
   });
 });

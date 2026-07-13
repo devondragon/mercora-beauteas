@@ -142,6 +142,19 @@ beforeEach(() => {
 });
 
 describe('POST /api/orders create-or-promote (BMC-167)', () => {
+  it('BMC-177 review: rejects an oversized discount_codes array at ingestion (no insert/finalize)', async () => {
+    // 30 distinct codes on the persisted extensions — over MAX_DISCOUNT_CODES (25).
+    const many = Array.from({ length: 30 }, (_, i) => `CODE${i}`);
+    const res = await POST(
+      postRequest(orderBody({ extensions: { payment_intent_id: 'pi_test_1', discount_codes: many } }))
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { details?: string[] }).details?.[0]).toMatch(/discount_codes/);
+    // Rejected up front — before any persistence or finalization work.
+    expect(insertedRows).toHaveLength(0);
+    expect(vi.mocked(finalizePaidOrder)).not.toHaveBeenCalled();
+  });
+
   it('order does NOT exist → inserts pending/pending then delegates to finalizePaidOrder with the captured amount', async () => {
     selectResults = [[]]; // existing lookup: none
     const res = await POST(postRequest(orderBody()));
