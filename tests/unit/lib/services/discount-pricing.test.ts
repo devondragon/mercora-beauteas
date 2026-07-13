@@ -27,9 +27,14 @@ vi.mock('@/lib/models/mach/promotions', () => ({
   checkTimeValidity: vi.fn(),
 }));
 
-import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
+vi.mock('@/lib/models/mach/products', () => ({
+  getProduct: vi.fn(),
+}));
+
+import { resolveCartDiscountCents, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
 import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
+import { getProduct } from '@/lib/models/mach/products';
 
 /** A 25%-off cart promotion (the ticket's acceptance case). */
 const PROMO_25_OFF = {
@@ -55,6 +60,17 @@ const PROMO_20_MIN50 = {
   rules: {
     conditions: [{ type: 'cart_subtotal', operator: 'gte', value: { amount: 5000, currency: 'USD' } }],
     actions: [{ type: 'percentage_discount', value: 20 }],
+  },
+};
+
+/** A 25%-off cart promotion gated on the cart containing a CAT-TEA product. */
+const PROMO_CAT_TEA = {
+  id: 'promo-cat',
+  type: 'cart',
+  status: 'active',
+  rules: {
+    conditions: [{ type: 'product_category', operator: 'in', value: ['CAT-TEA'] }],
+    actions: [{ type: 'percentage_discount', value: 25 }],
   },
 };
 
@@ -93,10 +109,17 @@ function seed(coupons: any[], promotions: any[]) {
   vi.mocked(getPromotionById).mockImplementation(async (id: string) => (byId.get(id) ?? null) as any);
 }
 
+/** Register catalog products (with categories) for server-side category checks. */
+function seedProducts(products: Array<{ id: string; categories?: string[] }>) {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  vi.mocked(getProduct).mockImplementation(async (id: string) => (byId.get(id) ?? null) as any);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getCouponInstanceByCode).mockResolvedValue(null as any);
   vi.mocked(getPromotionById).mockResolvedValue(null as any);
+  vi.mocked(getProduct).mockResolvedValue(null as any);
   vi.mocked(validateCouponInstance).mockImplementation(fakeCanBeUsed as any);
   vi.mocked(checkTimeValidity).mockImplementation(fakeInWindow as any);
 });
@@ -198,22 +221,33 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
     expect(await resolveCartDiscountCents('PROD30', 10000)).toBe(0);
   });
 
-  it('fails closed for an unverifiable product_category condition on a cart promo', async () => {
-    seed(
-      [coupon('CATONLY', 'promo-cat')],
-      [
-        {
-          id: 'promo-cat',
-          type: 'cart',
-          status: 'active',
-          rules: {
-            conditions: [{ type: 'product_category', operator: 'in', value: ['CAT-TEA'] }],
-            actions: [{ type: 'percentage_discount', value: 25 }],
-          },
-        },
-      ]
-    );
-    expect(await resolveCartDiscountCents('CATONLY', 10000)).toBe(0);
+  it('credits a category-gated cart promo when a CATALOG category qualifies', async () => {
+    seed([coupon('CATTEA', 'promo-cat')], [PROMO_CAT_TEA]);
+    seedProducts([{ id: 'tea-1', categories: ['CAT-TEA'] }]);
+    const items = [{ product_id: 'tea-1', quantity: 1 }];
+    expect(await resolveCartDiscountCents('CATTEA', 10000, items)).toBe(2500);
+  });
+
+  it('derives categories from the CATALOG, not the client — a non-qualifying cart gets 0', async () => {
+    seed([coupon('CATTEA', 'promo-cat')], [PROMO_CAT_TEA]);
+    // The product's real catalog category is CAT-MERCH, so the CAT-TEA-gated promo
+    // must NOT apply — even if a client claimed otherwise, the floor uses catalog truth.
+    seedProducts([{ id: 'mug-1', categories: ['CAT-MERCH'] }]);
+    const items = [{ product_id: 'mug-1', quantity: 1 }];
+    expect(await resolveCartDiscountCents('CATTEA', 10000, items)).toBe(0);
+  });
+
+  it('fails closed for a category-gated cart promo when items are omitted (unverifiable)', async () => {
+    seed([coupon('CATTEA', 'promo-cat')], [PROMO_CAT_TEA]);
+    expect(await resolveCartDiscountCents('CATTEA', 10000)).toBe(0);
+  });
+
+  it('reads the catalog only when a promotion actually gates on category', async () => {
+    // A plain percentage promo (no product_category condition) must not trigger
+    // any getProduct reads, even when items are supplied.
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
+    await resolveCartDiscountCents('SAVE25', 10000, [{ product_id: 'tea-1', quantity: 1 }]);
+    expect(getProduct).not.toHaveBeenCalled();
   });
 
   it('returns 0 for an unknown code', async () => {
@@ -241,5 +275,13 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
     // could stack same-promotion codes to under-pay (BMC-177 review, Finding 1).
     seed([coupon('WELCOME25', 'promo-25'), coupon('PARTNER25', 'promo-25')], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents(['WELCOME25', 'PARTNER25'], 10000)).toBe(2500);
+  });
+
+  it('caps the resolved code list at MAX_DISCOUNT_CODES (bounds pre-auth work)', async () => {
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
+    const many = Array.from({ length: MAX_DISCOUNT_CODES + 5 }, (_, i) => `CODE${i}`);
+    await resolveCartDiscountCents(many, 10000);
+    // Only the first MAX_DISCOUNT_CODES distinct codes drive a lookup.
+    expect(vi.mocked(getCouponInstanceByCode).mock.calls.length).toBe(MAX_DISCOUNT_CODES);
   });
 });

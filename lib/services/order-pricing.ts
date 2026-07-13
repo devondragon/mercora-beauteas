@@ -412,8 +412,10 @@ export async function verifyOrderChargeSufficient(
   }
 
   // Recompute the cart discount from the coupon against the catalog subtotal —
-  // never the client-supplied discount amount (BMC-177). No codes → 0.
-  const discountCents = await resolveCartDiscountCents(input.discountCodes, goodsCents);
+  // never the client-supplied discount amount (BMC-177). Items are passed so a
+  // category-gated promotion is verified against catalog-derived categories. No
+  // codes → 0.
+  const discountCents = await resolveCartDiscountCents(input.discountCodes, goodsCents, input.items);
 
   const giftCardTenderCents = Math.max(0, Math.round(input.giftCardTenderCents ?? 0));
   const requiredCashCents = Math.max(0, goodsCents - discountCents - giftCardTenderCents);

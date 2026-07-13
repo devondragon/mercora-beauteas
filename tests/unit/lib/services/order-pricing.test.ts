@@ -311,8 +311,9 @@ describe('verifyOrderChargeSufficient cart discount floor (BMC-177)', () => {
   it('recomputes the discount from the coupon against the catalog goods subtotal', async () => {
     vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
     await verifyOrderChargeSufficient({ items, paidAmountCents: 1875, discountCodes: ['SAVE25'] });
-    // Server subtotal (2500c), NOT any client number, drives the recompute.
-    expect(vi.mocked(resolveCartDiscountCents)).toHaveBeenCalledWith(['SAVE25'], 2500);
+    // Server subtotal (2500c), NOT any client number, drives the recompute; items
+    // are threaded through so category-gated promotions verify against the catalog.
+    expect(vi.mocked(resolveCartDiscountCents)).toHaveBeenCalledWith(['SAVE25'], 2500, items);
   });
 
   it('still rejects paying below the DISCOUNTED floor (no under-pay via a real coupon)', async () => {

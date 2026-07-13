@@ -31,14 +31,33 @@
  * let a client under-pay.
  *
  * Fails CLOSED: an unknown/expired/exhausted/non-cart code, or a cart promotion
- * whose conditions aren't met by the catalog subtotal, resolves to 0 — the floor
- * then demands full payment rather than crediting a discount that isn't actually
+ * whose conditions aren't met (subtotal minimum, or a `product_category` the
+ * cart's CATALOG-derived items don't satisfy), resolves to 0 — the floor then
+ * demands full payment rather than crediting a discount that isn't actually
  * valid. Never inflate the discount: that would let a shopper under-pay.
  */
 
 import type { Promotion } from '@/lib/types';
 import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
 import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
+import { getProduct } from '@/lib/models/mach/products';
+
+/**
+ * Upper bound on distinct coupon codes resolved per checkout. Each survivor of
+ * `normalizeCodes` drives an indexed coupon + promotion lookup, and this route is
+ * reachable pre-auth (guest checkout), so an unbounded array of distinct bogus
+ * codes could force a burst of concurrent D1 lookups per request. Real carts hold
+ * a code or two (discounts dedup by promotion); 25 is comfortably above any
+ * legitimate checkout. Mirrors the `MAX_ORDER_LINE_ITEMS` cap in the same floor.
+ */
+export const MAX_DISCOUNT_CODES = 25;
+
+/** Order/cart line shape the resolver needs to derive catalog categories. */
+export interface DiscountCartLine {
+  product_id?: string;
+  variant_id?: string;
+  quantity?: number;
+}
 
 /**
  * Coerce a promotion rule value (a bare number or a MACH `Money`-ish
@@ -70,15 +89,42 @@ function normalizeCodes(codes: string[] | string | null | undefined): string[] {
 }
 
 /**
- * Whether a cart promotion's conditions are satisfied by the catalog subtotal.
- * Mirrors `/api/validate-discount`'s `validatePromotionConditions`: a
- * `cart_subtotal >= X` minimum is checked against the (server) subtotal; a
- * `product_category` requirement can't be re-verified in the charge path (we
- * don't carry item categories here, and the storefront only applies such coupons
- * against matching items), so it fails closed rather than crediting an
- * unverifiable discount. Unknown condition types pass, matching validate-discount.
+ * Union of the catalog categories for the cart's products, resolved SERVER-SIDE
+ * from the catalog (`getProduct().categories`) — never from client-supplied
+ * categories, which the charge floor must not trust. One `getProduct` per
+ * distinct product id, run concurrently. Only called when a resolved promotion
+ * actually gates on `product_category`, so ordinary discounted checkouts pay no
+ * extra catalog reads.
  */
-function cartConditionsMet(promotion: Promotion, subtotalCents: number): boolean {
+async function collectCatalogCategories(items: DiscountCartLine[]): Promise<Set<string>> {
+  const productIds = [...new Set(items.map((i) => i.product_id).filter((id): id is string => !!id))];
+  const categories = new Set<string>();
+  await Promise.all(
+    productIds.map(async (id) => {
+      const product = await getProduct(id);
+      for (const c of product?.categories ?? []) {
+        if (typeof c === 'string') categories.add(c);
+      }
+    })
+  );
+  return categories;
+}
+
+/**
+ * Whether a cart promotion's conditions are satisfied. Mirrors
+ * `/api/validate-discount`'s `validatePromotionConditions`: a `cart_subtotal >= X`
+ * minimum is checked against the (server) subtotal; a `product_category in [...]`
+ * requirement is checked against the cart's CATALOG-derived categories (via
+ * `getCartCategories`, resolved server-side, never trusting the client). If those
+ * categories can't be determined (no items supplied), the condition fails closed
+ * rather than crediting an unverifiable discount. Unknown condition types pass,
+ * matching validate-discount.
+ */
+async function cartConditionsMet(
+  promotion: Promotion,
+  subtotalCents: number,
+  getCartCategories: () => Promise<Set<string> | null>
+): Promise<boolean> {
   const conditions = promotion.rules?.conditions;
   if (!conditions || conditions.length === 0) return true;
 
@@ -91,7 +137,13 @@ function cartConditionsMet(promotion: Promotion, subtotalCents: number): boolean
         }
         break;
       case 'product_category':
-        if (condition.operator === 'in') return false;
+        if (condition.operator === 'in') {
+          const required = Array.isArray(condition.value) ? condition.value : [condition.value];
+          const cats = await getCartCategories();
+          // Categories unknown (no items to price) → can't verify → fail closed.
+          if (!cats) return false;
+          if (!required.some((c) => typeof c === 'string' && cats.has(c))) return false;
+        }
         break;
       default:
         break;
@@ -155,15 +207,23 @@ async function resolveUsableCartPromotion(code: string): Promise<Promotion | nul
 /**
  * Resolve the authoritative CART-level discount (cents) for a set of coupon codes
  * against a server-computed goods subtotal (BMC-177). Only currently-usable
- * `cart`-type promotions whose conditions the subtotal satisfies contribute; the
+ * `cart`-type promotions whose conditions the subtotal (and, for category-gated
+ * promotions, the cart's CATALOG-derived categories) satisfy contribute; the
  * summed discount is capped at the subtotal and floored at 0. Returns 0 for no
  * codes, a zero subtotal, or codes that don't resolve to a valid cart promotion.
+ *
+ * `items` are the order lines (product ids); they're only read to verify a
+ * `product_category` condition, and only then — so ordinary discounted checkouts
+ * pay no extra catalog reads. Omit them and any category-gated promotion fails
+ * closed. The code list is capped at `MAX_DISCOUNT_CODES` as a defensive backstop
+ * (callers should reject earlier for a clean error).
  */
 export async function resolveCartDiscountCents(
   codes: string[] | string | null | undefined,
-  subtotalCents: number
+  subtotalCents: number,
+  items?: DiscountCartLine[]
 ): Promise<number> {
-  const codeList = normalizeCodes(codes);
+  const codeList = normalizeCodes(codes).slice(0, MAX_DISCOUNT_CODES);
   if (codeList.length === 0) return 0;
 
   const subtotal = Math.max(0, Math.round(subtotalCents));
@@ -172,6 +232,19 @@ export async function resolveCartDiscountCents(
   // Resolve each code independently via indexed lookups (no full-table scan);
   // Promise.all preserves order so the dedup below is deterministic.
   const resolved = await Promise.all(codeList.map(resolveUsableCartPromotion));
+
+  // Derive the cart's catalog categories at most once, and only if some resolved
+  // promotion actually gates on product_category — memoized so a second gated
+  // promotion reuses the result rather than re-reading the catalog.
+  let cartCategories: Set<string> | null = null;
+  let categoriesResolved = false;
+  const getCartCategories = async (): Promise<Set<string> | null> => {
+    if (!categoriesResolved) {
+      categoriesResolved = true;
+      cartCategories = items && items.length ? await collectCatalogCategories(items) : null;
+    }
+    return cartCategories;
+  };
 
   let totalDiscount = 0;
   // Dedup by PROMOTION, mirroring the cart store's dedup-by-promotionId
@@ -187,7 +260,7 @@ export async function resolveCartDiscountCents(
     // Same promotion already counted via another code → don't credit it twice.
     if (countedPromotionIds.has(promotion.id)) continue;
 
-    if (!cartConditionsMet(promotion, subtotal)) {
+    if (!(await cartConditionsMet(promotion, subtotal, getCartCategories))) {
       console.warn(
         `[discount-pricing] promotion ${promotion.id} skipped: cart conditions not met at subtotal ${subtotal}c`
       );

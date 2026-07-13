@@ -41,7 +41,7 @@ import {
   MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
-import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
+import { resolveCartDiscountCents, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
@@ -286,6 +286,18 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      // Cap discount codes before they drive one coupon+promotion lookup each
+      // (this route is reachable pre-auth, so an unbounded array is a cheap way to
+      // force a burst of concurrent D1 reads — same reasoning as the item cap).
+      if (Array.isArray(discountCodes) && discountCodes.length > MAX_DISCOUNT_CODES) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${discountCodes.length} discount codes exceeds the ${MAX_DISCOUNT_CODES} limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many discount codes. Please remove some and try again.', code: 'too_many_discount_codes' },
+          { status: 400 }
+        );
+      }
       const normalized = items.map((it) => ({
         product_id: it.product_id ?? it.productId,
         variant_id: it.variant_id ?? it.variantId,
@@ -312,8 +324,10 @@ export async function POST(req: NextRequest) {
         : 0;
       // Recompute the cart discount from the coupon against the catalog subtotal
       // (never the client number) and credit it toward the floor, so a valid
-      // promo checkout whose discount exceeds shipping + tax isn't rejected (BMC-177).
-      const discountCents = await resolveCartDiscountCents(discountCodes, subtotalCents);
+      // promo checkout whose discount exceeds shipping + tax isn't rejected
+      // (BMC-177). `normalized` lets a category-gated promotion verify against
+      // catalog-derived categories.
+      const discountCents = await resolveCartDiscountCents(discountCodes, subtotalCents, normalized);
       const requiredCashCents = Math.max(0, subtotalCents - discountCents - giftCardTenderCents);
       const amountCents = Math.round(amount * 100);
       if (amountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {

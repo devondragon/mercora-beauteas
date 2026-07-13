@@ -88,7 +88,7 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   // The applied cart-discount code(s) were persisted on the order (BMC-177); the
   // gate recomputes the discount from the coupon itself, so a stale/tampered
   // client amount is never trusted. Non-array/legacy orders → no discount.
-  const rawDiscountCodes = (order.extensions as any)?.discount_codes;
+  const rawDiscountCodes = order.extensions?.discount_codes;
   const discountCodes = Array.isArray(rawDiscountCodes)
     ? rawDiscountCodes.filter((c: unknown): c is string => typeof c === 'string')
     : undefined;
