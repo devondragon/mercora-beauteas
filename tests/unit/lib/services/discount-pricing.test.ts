@@ -5,23 +5,31 @@
  * with `amount_below_catalog`.
  *
  * `lib/services/discount-pricing.ts` recomputes the cart discount AUTHORITATIVELY
- * from the coupon (never the client number) so the floor can subtract it. These
- * tests pin that resolution with the two promotion-model reads mocked, so it
- * stays a unit test with no Workers runtime dependency (CI `npm test`).
+ * from the coupon (never the client number) so the floor can subtract it. It
+ * resolves each code via INDEXED lookups (`getCouponInstanceByCode` on the unique
+ * code index + `getPromotionById` on the PK) and gates it through the SAME
+ * usability primitives the storefront uses — `validateCouponInstance().canBeUsed`
+ * (active + within the coupon window + under its usage limit) and the promotion's
+ * `checkTimeValidity()`. These tests mock those model reads so the suite stays a
+ * pure unit test with no Workers runtime dependency (CI `npm test`); the mocked
+ * `validateCouponInstance`/`checkTimeValidity` faithfully mirror the real
+ * usability rules so fixtures can express expiry/usage naturally.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/models/mach/couponInstance', () => ({
-  listCouponInstances: vi.fn(),
+  getCouponInstanceByCode: vi.fn(),
+  validateCouponInstance: vi.fn(),
 }));
 
 vi.mock('@/lib/models/mach/promotions', () => ({
-  listPromotions: vi.fn(),
+  getPromotionById: vi.fn(),
+  checkTimeValidity: vi.fn(),
 }));
 
 import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
-import { listCouponInstances } from '@/lib/models/mach/couponInstance';
-import { listPromotions } from '@/lib/models/mach/promotions';
+import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
+import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
 
 /** A 25%-off cart promotion (the ticket's acceptance case). */
 const PROMO_25_OFF = {
@@ -50,14 +58,47 @@ const PROMO_20_MIN50 = {
   },
 };
 
-function coupon(code: string, promotionId: string, status = 'active') {
-  return { id: `ci-${code}`, code, promotion_id: promotionId, status };
+function coupon(code: string, promotionId: string, overrides: Record<string, unknown> = {}) {
+  return { id: `ci-${code}`, code, promotion_id: promotionId, status: 'active', ...overrides };
+}
+
+/**
+ * Faithful stand-in for the real `validateCouponInstance().canBeUsed`: active +
+ * within [valid_from, valid_to) + under usage_limit. Keeps the resolver's
+ * usability gate under test without loading the DB-backed model.
+ */
+function fakeCanBeUsed(c: any) {
+  const now = new Date();
+  const canBeUsed =
+    (c.status === 'active' || c.status === undefined) &&
+    (!c.valid_from || new Date(c.valid_from) <= now) &&
+    (!c.valid_to || new Date(c.valid_to) > now) &&
+    (!c.usage_limit || (c.usage_count || 0) < c.usage_limit);
+  return { isValid: true, canBeUsed, errors: [], warnings: [] };
+}
+
+/** Faithful stand-in for the real promotion `checkTimeValidity()`. */
+function fakeInWindow(p: any) {
+  const now = new Date();
+  if (p.valid_from && new Date(p.valid_from) > now) return false;
+  if (p.valid_to && new Date(p.valid_to) < now) return false;
+  return true;
+}
+
+/** Wire the indexed lookups to resolve from in-memory registries (by code / id). */
+function seed(coupons: any[], promotions: any[]) {
+  const byCode = new Map(coupons.map((c) => [c.code, c]));
+  const byId = new Map(promotions.map((p) => [p.id, p]));
+  vi.mocked(getCouponInstanceByCode).mockImplementation(async (code: string) => (byCode.get(code) ?? null) as any);
+  vi.mocked(getPromotionById).mockImplementation(async (id: string) => (byId.get(id) ?? null) as any);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(listCouponInstances).mockResolvedValue([] as any);
-  vi.mocked(listPromotions).mockResolvedValue([] as any);
+  vi.mocked(getCouponInstanceByCode).mockResolvedValue(null as any);
+  vi.mocked(getPromotionById).mockResolvedValue(null as any);
+  vi.mocked(validateCouponInstance).mockImplementation(fakeCanBeUsed as any);
+  vi.mocked(checkTimeValidity).mockImplementation(fakeInWindow as any);
 });
 
 describe('resolveCartDiscountCents (BMC-177)', () => {
@@ -69,34 +110,38 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
 
   it('returns 0 for a zero subtotal without hitting the DB', async () => {
     expect(await resolveCartDiscountCents('SAVE25', 0)).toBe(0);
-    expect(listCouponInstances).not.toHaveBeenCalled();
+    expect(getCouponInstanceByCode).not.toHaveBeenCalled();
   });
 
   it('applies a 25%-off cart coupon against the catalog subtotal (acceptance case)', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
     // $100.00 subtotal → 25% → $25.00
     expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(2500);
   });
 
+  it('looks the coupon up by its (unique, indexed) code — no full-table scan', async () => {
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
+    await resolveCartDiscountCents('save25', 10000);
+    // Normalized to upper-case for the exact-match index lookup.
+    expect(vi.mocked(getCouponInstanceByCode)).toHaveBeenCalledWith('SAVE25');
+    expect(vi.mocked(getPromotionById)).toHaveBeenCalledWith('promo-25');
+  });
+
   it('matches coupon codes case-insensitively', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents('save25', 10000)).toBe(2500);
     expect(await resolveCartDiscountCents('  Save25 ', 10000)).toBe(2500);
   });
 
   it('applies a fixed cart discount capped at the subtotal', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('TENOFF', 'promo-10')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_10_FIXED] as any);
+    seed([coupon('TENOFF', 'promo-10')], [PROMO_10_FIXED]);
     expect(await resolveCartDiscountCents('TENOFF', 10000)).toBe(1000);
     // Never exceeds the subtotal.
     expect(await resolveCartDiscountCents('TENOFF', 600)).toBe(600);
   });
 
   it('honors a cart_subtotal minimum condition', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('MIN50', 'promo-20-min')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_20_MIN50] as any);
+    seed([coupon('MIN50', 'promo-20-min')], [PROMO_20_MIN50]);
     // Below the $50 minimum → no discount.
     expect(await resolveCartDiscountCents('MIN50', 4999)).toBe(0);
     // At/above the minimum → 20%.
@@ -104,58 +149,80 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
   });
 
   it('fails closed for an inactive coupon', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25', 'disabled')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('SAVE25', 'promo-25', { status: 'disabled' })], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
   });
 
+  it('fails closed for an expired coupon (past valid_to)', async () => {
+    seed([coupon('SAVE25', 'promo-25', { valid_to: '2020-01-01T00:00:00.000Z' })], [PROMO_25_OFF]);
+    expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
+  });
+
+  it('fails closed for a not-yet-active coupon (future valid_from)', async () => {
+    seed([coupon('SAVE25', 'promo-25', { valid_from: '2999-01-01T00:00:00.000Z' })], [PROMO_25_OFF]);
+    expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
+  });
+
+  it('fails closed for a coupon at its usage limit', async () => {
+    seed([coupon('SAVE25', 'promo-25', { usage_limit: 1, usage_count: 1 })], [PROMO_25_OFF]);
+    expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
+  });
+
+  it('applies a coupon that is within its validity window', async () => {
+    seed(
+      [coupon('SAVE25', 'promo-25', { valid_from: '2020-01-01T00:00:00.000Z', valid_to: '2999-01-01T00:00:00.000Z' })],
+      [PROMO_25_OFF]
+    );
+    expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(2500);
+  });
+
   it('fails closed for an inactive promotion', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([{ ...PROMO_25_OFF, status: 'paused' }] as any);
+    seed([coupon('SAVE25', 'promo-25')], [{ ...PROMO_25_OFF, status: 'paused' }]);
+    expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
+  });
+
+  it('fails closed for an out-of-window promotion (past valid_to)', async () => {
+    seed([coupon('SAVE25', 'promo-25')], [{ ...PROMO_25_OFF, valid_to: '2020-01-01T00:00:00.000Z' }]);
     expect(await resolveCartDiscountCents('SAVE25', 10000)).toBe(0);
   });
 
   it('ignores non-cart promotions (shipping/product do not reduce the goods floor)', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([
-      coupon('FREESHIP', 'promo-ship'),
-      coupon('PROD30', 'promo-prod'),
-    ] as any);
-    vi.mocked(listPromotions).mockResolvedValue([
-      { id: 'promo-ship', type: 'shipping', status: 'active', rules: { actions: [{ type: 'shipping_percentage_discount', value: 100 }] } },
-      { id: 'promo-prod', type: 'product', status: 'active', rules: { actions: [{ type: 'item_percentage_discount', value: 30 }] } },
-    ] as any);
+    seed(
+      [coupon('FREESHIP', 'promo-ship'), coupon('PROD30', 'promo-prod')],
+      [
+        { id: 'promo-ship', type: 'shipping', status: 'active', rules: { actions: [{ type: 'shipping_percentage_discount', value: 100 }] } },
+        { id: 'promo-prod', type: 'product', status: 'active', rules: { actions: [{ type: 'item_percentage_discount', value: 30 }] } },
+      ]
+    );
     expect(await resolveCartDiscountCents('FREESHIP', 10000)).toBe(0);
     expect(await resolveCartDiscountCents('PROD30', 10000)).toBe(0);
   });
 
   it('fails closed for an unverifiable product_category condition on a cart promo', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('CATONLY', 'promo-cat')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([
-      {
-        id: 'promo-cat',
-        type: 'cart',
-        status: 'active',
-        rules: {
-          conditions: [{ type: 'product_category', operator: 'in', value: ['CAT-TEA'] }],
-          actions: [{ type: 'percentage_discount', value: 25 }],
+    seed(
+      [coupon('CATONLY', 'promo-cat')],
+      [
+        {
+          id: 'promo-cat',
+          type: 'cart',
+          status: 'active',
+          rules: {
+            conditions: [{ type: 'product_category', operator: 'in', value: ['CAT-TEA'] }],
+            actions: [{ type: 'percentage_discount', value: 25 }],
+          },
         },
-      },
-    ] as any);
+      ]
+    );
     expect(await resolveCartDiscountCents('CATONLY', 10000)).toBe(0);
   });
 
   it('returns 0 for an unknown code', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents('NOPE', 10000)).toBe(0);
   });
 
   it('sums multiple valid cart coupons, capped at the subtotal', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([
-      coupon('SAVE25', 'promo-25'),
-      coupon('TENOFF', 'promo-10'),
-    ] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF, PROMO_10_FIXED] as any);
+    seed([coupon('SAVE25', 'promo-25'), coupon('TENOFF', 'promo-10')], [PROMO_25_OFF, PROMO_10_FIXED]);
     // 25% of $100 ($25) + $10 = $35
     expect(await resolveCartDiscountCents(['SAVE25', 'TENOFF'], 10000)).toBe(3500);
     // Combined discount can never exceed the subtotal.
@@ -163,8 +230,7 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
   });
 
   it('de-duplicates repeated codes so a coupon is only counted once', async () => {
-    vi.mocked(listCouponInstances).mockResolvedValue([coupon('SAVE25', 'promo-25')] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('SAVE25', 'promo-25')], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents(['SAVE25', 'save25', ' SAVE25 '], 10000)).toBe(2500);
   });
 
@@ -173,11 +239,7 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
     // dedups by promotionId, so the shopper's charge only ever reflects 25%.
     // The floor must match — crediting 25% ($25), not 50% ($50) — or a client
     // could stack same-promotion codes to under-pay (BMC-177 review, Finding 1).
-    vi.mocked(listCouponInstances).mockResolvedValue([
-      coupon('WELCOME25', 'promo-25'),
-      coupon('PARTNER25', 'promo-25'),
-    ] as any);
-    vi.mocked(listPromotions).mockResolvedValue([PROMO_25_OFF] as any);
+    seed([coupon('WELCOME25', 'promo-25'), coupon('PARTNER25', 'promo-25')], [PROMO_25_OFF]);
     expect(await resolveCartDiscountCents(['WELCOME25', 'PARTNER25'], 10000)).toBe(2500);
   });
 });

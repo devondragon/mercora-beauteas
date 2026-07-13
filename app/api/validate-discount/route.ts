@@ -6,8 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { listPromotions, listCouponInstances } from '@/lib/models';
-import type { Promotion, CouponInstance } from '@/lib/types';
+import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
+import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
+import type { Promotion } from '@/lib/types';
 
 interface DiscountValidationRequest {
   code: string;
@@ -46,26 +47,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find coupon instance by code
-    const couponInstances = await listCouponInstances();
-    const couponInstance = couponInstances.find(
-      (c: CouponInstance) => c.code.toUpperCase() === code.toUpperCase() && c.status === 'active'
-    );
-
-    if (!couponInstance) {
+    // Indexed lookup by (unique) code — no full-table scan. Codes are stored
+    // upper-case (unique index; generation/validation enforce it), so upper-case
+    // the input to match. The coupon must be currently usable (active + within
+    // its validity window + under its usage limit) and its promotion active and
+    // in its own window — the SAME gates the charge floor applies
+    // (lib/services/discount-pricing.ts), so a code the storefront shows a
+    // discount for is exactly one the floor will credit, and vice-versa (BMC-177).
+    const couponInstance = await getCouponInstanceByCode(code.trim().toUpperCase());
+    if (!couponInstance || !validateCouponInstance(couponInstance).canBeUsed) {
       return NextResponse.json({
         valid: false,
         error: 'Invalid or expired discount code'
       });
     }
 
-    // Find associated promotion
-    const promotions = await listPromotions();
-    const promotion = promotions.find(
-      (p: Promotion) => p.id === couponInstance.promotion_id && p.status === 'active'
-    );
-
-    if (!promotion) {
+    const promotion = await getPromotionById(couponInstance.promotion_id);
+    if (!promotion || promotion.status !== 'active' || !checkTimeValidity(promotion)) {
       return NextResponse.json({
         valid: false,
         error: 'Promotion not found or expired'

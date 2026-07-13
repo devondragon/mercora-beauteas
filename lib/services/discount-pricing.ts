@@ -19,15 +19,26 @@
  * credited at the floor can't drift — but it computes against the SERVER catalog
  * subtotal, never a client-supplied one.
  *
- * Fails CLOSED: an unknown/expired/non-cart code, or a cart promotion whose
- * conditions aren't met by the catalog subtotal, resolves to 0 — the floor then
- * demands full payment rather than crediting a discount that isn't actually
+ * Coupon/promotion resolution goes through the SAME canonical gates the
+ * storefront uses — `validateCouponInstance().canBeUsed` (active + within the
+ * coupon's validity window + under its usage limit) and the promotion's
+ * `checkTimeValidity()` (within the promotion's own window) + active + `cart`
+ * type — via INDEXED lookups (`getCouponInstanceByCode` on the unique code
+ * index + `getPromotionById` on the PK), never a full-table scan. Gating the
+ * floor identically to `/api/validate-discount` is load-bearing: a floor that
+ * credited LESS than the storefront showed would false-reject a legitimately
+ * discounted checkout (the BMC-177 symptom), and one that credited MORE would
+ * let a client under-pay.
+ *
+ * Fails CLOSED: an unknown/expired/exhausted/non-cart code, or a cart promotion
+ * whose conditions aren't met by the catalog subtotal, resolves to 0 — the floor
+ * then demands full payment rather than crediting a discount that isn't actually
  * valid. Never inflate the discount: that would let a shopper under-pay.
  */
 
 import type { Promotion } from '@/lib/types';
-import { listCouponInstances } from '@/lib/models/mach/couponInstance';
-import { listPromotions } from '@/lib/models/mach/promotions';
+import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
+import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
 
 /**
  * Coerce a promotion rule value (a bare number or a MACH `Money`-ish
@@ -116,11 +127,37 @@ function cartDiscountAmountCents(promotion: Promotion, subtotalCents: number): n
 }
 
 /**
+ * Resolve one coupon code to its currently-usable parent CART promotion, or null.
+ * Indexed lookups only (unique code index + promotion PK). The coupon must pass
+ * `validateCouponInstance().canBeUsed` (active + within its validity window +
+ * under its usage limit) and its promotion must be active, in its own validity
+ * window (`checkTimeValidity`), and `cart`-typed — the same gates
+ * `/api/validate-discount` applies, so the floor never diverges from the
+ * storefront. `code` is already normalized (trimmed, upper-cased); coupon codes
+ * are stored upper-case (unique index; generation/validation enforce it).
+ */
+async function resolveUsableCartPromotion(code: string): Promise<Promotion | null> {
+  const coupon = await getCouponInstanceByCode(code);
+  if (!coupon || !validateCouponInstance(coupon).canBeUsed) {
+    console.warn(`[discount-pricing] code ${code} skipped: no usable coupon`);
+    return null;
+  }
+
+  const promotion = await getPromotionById(coupon.promotion_id);
+  if (!promotion || promotion.status !== 'active' || !checkTimeValidity(promotion) || promotion.type !== 'cart') {
+    console.warn(`[discount-pricing] code ${code} skipped: no active in-window cart promotion`);
+    return null;
+  }
+
+  return promotion;
+}
+
+/**
  * Resolve the authoritative CART-level discount (cents) for a set of coupon codes
- * against a server-computed goods subtotal (BMC-177). Only active `cart`-type
- * promotions whose conditions the subtotal satisfies contribute; the summed
- * discount is capped at the subtotal and floored at 0. Returns 0 for no codes,
- * a zero subtotal, or codes that don't resolve to a valid cart promotion.
+ * against a server-computed goods subtotal (BMC-177). Only currently-usable
+ * `cart`-type promotions whose conditions the subtotal satisfies contribute; the
+ * summed discount is capped at the subtotal and floored at 0. Returns 0 for no
+ * codes, a zero subtotal, or codes that don't resolve to a valid cart promotion.
  */
 export async function resolveCartDiscountCents(
   codes: string[] | string | null | undefined,
@@ -132,12 +169,9 @@ export async function resolveCartDiscountCents(
   const subtotal = Math.max(0, Math.round(subtotalCents));
   if (subtotal === 0) return 0;
 
-  // Load once and match in memory, mirroring /api/validate-discount's lookup
-  // (case-insensitive code match + active coupon + active promotion).
-  const [couponInstances, promotions] = await Promise.all([
-    listCouponInstances(),
-    listPromotions(),
-  ]);
+  // Resolve each code independently via indexed lookups (no full-table scan);
+  // Promise.all preserves order so the dedup below is deterministic.
+  const resolved = await Promise.all(codeList.map(resolveUsableCartPromotion));
 
   let totalDiscount = 0;
   // Dedup by PROMOTION, mirroring the cart store's dedup-by-promotionId
@@ -147,29 +181,15 @@ export async function resolveCartDiscountCents(
   // could stack multiple bulk codes for one promotion to inflate the credited
   // discount past what their charge reflected and under-pay — defeating the floor.
   const countedPromotionIds = new Set<string>();
-  for (const code of codeList) {
-    const coupon = couponInstances.find(
-      (c) => c.code?.toUpperCase() === code && c.status === 'active'
-    );
-    if (!coupon) {
-      console.warn(`[discount-pricing] code ${code} skipped: no active coupon`);
-      continue;
-    }
-
-    const promotion = promotions.find(
-      (p) => p.id === coupon.promotion_id && p.status === 'active'
-    );
-    if (!promotion || promotion.type !== 'cart') {
-      console.warn(`[discount-pricing] code ${code} skipped: no active cart promotion`);
-      continue;
-    }
+  for (const promotion of resolved) {
+    if (!promotion) continue;
 
     // Same promotion already counted via another code → don't credit it twice.
     if (countedPromotionIds.has(promotion.id)) continue;
 
     if (!cartConditionsMet(promotion, subtotal)) {
       console.warn(
-        `[discount-pricing] code ${code} skipped: cart conditions not met at subtotal ${subtotal}c`
+        `[discount-pricing] promotion ${promotion.id} skipped: cart conditions not met at subtotal ${subtotal}c`
       );
       continue;
     }
