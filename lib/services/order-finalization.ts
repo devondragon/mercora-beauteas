@@ -100,14 +100,24 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   });
 
   if (!charge.ok) {
-    // Real money captured but the catalog can't price the order (e.g. a variant
-    // was discontinued between capture and finalization) — a legit customer
-    // stuck, not an underpayment attack. Flag for manual review (M4). Best-effort.
-    if (paidAmountCents > 0 && charge.reason?.startsWith('cannot price order from catalog')) {
+    // Real money captured but re-verification failed — a legit customer stuck,
+    // not an underpayment attack — so flag it for manual review (best-effort)
+    // rather than leaving a silently-pending order with money captured. Two cases:
+    //   - the catalog can't price the order (e.g. a variant was discontinued
+    //     between capture and finalization) — M4 / BMC-131; or
+    //   - the order carried a cart-discount code whose promotion changed state
+    //     (paused, or its window elapsed) between charge and finalization, so the
+    //     discount correctly recomputes lower and the (correctly discounted)
+    //     captured amount now reads as underpaying — BMC-177 review. Without this,
+    //     a customer who paid exactly what they were quoted is left silently
+    //     pending with money captured.
+    const catalogUnpriceable = charge.reason?.startsWith('cannot price order from catalog');
+    const hadDiscountCodes = !!discountCodes?.length;
+    if (paidAmountCents > 0 && (catalogUnpriceable || hadDiscountCodes)) {
       try {
         await updateOrderNotes(
           orderId,
-          `NEEDS REVIEW (BMC-131): captured ${paidAmountCents}c but the catalog could not price this order — ${charge.reason}`
+          `NEEDS REVIEW: captured ${paidAmountCents}c but charge re-verification failed — ${charge.reason}`
         );
       } catch (noteError) {
         console.error(`[finalize] Order ${orderId}: failed to record review note`, noteError);
