@@ -41,6 +41,7 @@ import {
   MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
+import { resolveCartDiscountCents, normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
@@ -72,6 +73,11 @@ interface PaymentIntentRequest {
   // card's CURRENT balance before charging so a stale client-side balance can't
   // under-collect the amount due.
   giftCard?: { code: string; appliedCents: number };
+  // Applied cart-discount coupon code(s). The server recomputes the discount
+  // AUTHORITATIVELY from the coupon against the catalog subtotal (never the
+  // client-supplied amount) and credits it toward the charge floor, so a
+  // legitimately discounted promo checkout isn't rejected as underpaying (BMC-177).
+  discountCodes?: string[];
   // BMC-167: the full order draft (line items + address + amounts), same shape
   // POST /api/orders receives, MINUS the PaymentIntent id (the server mints and
   // injects that). Persisted as a `pending` order keyed to `orderId` BEFORE the
@@ -148,11 +154,18 @@ async function persistPendingOrder(
     console.error(`[payment-intent] order ${orderId}: pending-order canonicalization failed; using client display`, canonError);
   }
 
-  const extensions = {
+  const extensions: Record<string, any> = {
     ...(draft.extensions ?? {}),
     // Server-authoritative: never trust a client-supplied PI id here.
     payment_intent_id: paymentIntentId,
   };
+  // Bound the persisted cart-discount codes (pre-auth storage hardening, BMC-177
+  // review): normalize + cap so a client can't stash an unbounded array into the
+  // D1 `extensions` JSON via the order draft. Stores exactly the deduped list the
+  // charge gate will recompute from at finalization.
+  if (extensions.discount_codes !== undefined) {
+    extensions.discount_codes = normalizeDiscountCodes(extensions.discount_codes).slice(0, MAX_DISCOUNT_CODES);
+  }
   const externalReferences = {
     ...(draft.external_references ?? {}),
     payment_intent_id: paymentIntentId,
@@ -187,6 +200,7 @@ export async function POST(req: NextRequest) {
       giftCard,
       items,
       order,
+      discountCodes,
     }: PaymentIntentRequest = await req.json();
 
     // Validate required fields
@@ -279,6 +293,30 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      // Cap discount codes before they drive one coupon+promotion lookup each
+      // (this route is reachable pre-auth, so an unbounded array is a cheap way to
+      // force a burst of concurrent D1 reads — same reasoning as the item cap).
+      // First bound the RAW array before the normalize/dedup pass runs over it…
+      if (Array.isArray(discountCodes) && discountCodes.length > MAX_RAW_DISCOUNT_CODES) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${discountCodes.length} raw discount codes exceeds the ${MAX_RAW_DISCOUNT_CODES} limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many discount codes. Please remove some and try again.', code: 'too_many_discount_codes' },
+          { status: 400 }
+        );
+      }
+      // …then check the DEDUPED count so repeated / case-variant codes don't 400.
+      const normalizedDiscountCodes = normalizeDiscountCodes(discountCodes);
+      if (normalizedDiscountCodes.length > MAX_DISCOUNT_CODES) {
+        console.warn(
+          `[payment-intent] order ${orderId}: rejected — ${normalizedDiscountCodes.length} discount codes exceeds the ${MAX_DISCOUNT_CODES} limit`
+        );
+        return NextResponse.json(
+          { error: 'Too many discount codes. Please remove some and try again.', code: 'too_many_discount_codes' },
+          { status: 400 }
+        );
+      }
       const normalized = items.map((it) => ({
         product_id: it.product_id ?? it.productId,
         variant_id: it.variant_id ?? it.variantId,
@@ -303,12 +341,18 @@ export async function POST(req: NextRequest) {
       const giftCardTenderCents = giftCard?.code
         ? Math.max(0, Math.round(giftCard.appliedCents || 0))
         : 0;
-      const requiredCashCents = Math.max(0, subtotalCents - giftCardTenderCents);
+      // Recompute the cart discount from the coupon against the catalog subtotal
+      // (never the client number) and credit it toward the floor, so a valid
+      // promo checkout whose discount exceeds shipping + tax isn't rejected
+      // (BMC-177). `normalized` lets a category-gated promotion verify against
+      // catalog-derived categories.
+      const discountCents = await resolveCartDiscountCents(normalizedDiscountCodes, subtotalCents, normalized);
+      const requiredCashCents = Math.max(0, subtotalCents - discountCents - giftCardTenderCents);
       const amountCents = Math.round(amount * 100);
       if (amountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
         console.warn(
           `[payment-intent] order ${orderId}: requested amount ${amountCents}c is below ` +
-            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, gift card ${giftCardTenderCents}c)`
+            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, cart discount ${discountCents}c, gift card ${giftCardTenderCents}c)`
         );
         return NextResponse.json(
           {

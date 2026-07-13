@@ -21,9 +21,13 @@
  * Tax and shipping are additive-only (they can only increase what is owed) and
  * tax in particular is computed by Stripe Tax at checkout time; re-deriving it
  * here would risk drifting from what was actually charged and false-rejecting
- * legitimate orders. So the invariant enforced is:
+ * legitimate orders. A validated cart discount is SUBTRACTIVE — it lowers what is
+ * owed — so it must be credited or a legitimate promo checkout is false-rejected
+ * (BMC-177); we recompute it authoritatively from the coupon (never the client
+ * number) via `resolveCartDiscountCents`. So the invariant enforced is:
  *
- *     paidCents + giftCardTenderCents + TOLERANCE >= catalogGoodsSubtotalCents
+ *     paidCents + giftCardTenderCents + TOLERANCE
+ *         >= catalogGoodsSubtotalCents - serverRecomputedCartDiscountCents
  */
 
 import type { Money as StoredMoney } from '@/lib/types';
@@ -31,6 +35,7 @@ import { Money } from '@/lib/money';
 import type { MACHAddress as Address } from '@/lib/types/mach/Address';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
+import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
 
 // A few cents of slack for cent/dollar rounding across the checkout math. This
 // is the single source of truth for the tolerance; the gift-card fulfillment
@@ -360,7 +365,9 @@ export interface ChargeVerification {
   reason?: string;
   /** Catalog-recomputed goods subtotal (cents). */
   goodsCents: number;
-  /** Minimum cash that had to be collected after gift-card tender (cents). */
+  /** Server-recomputed cart discount credited against the goods (cents). */
+  discountCents: number;
+  /** Minimum cash that had to be collected after discount + gift-card tender (cents). */
   requiredCashCents: number;
 }
 
@@ -370,13 +377,22 @@ export interface VerifyChargeInput {
   paidAmountCents: number;
   /** Gift-card tender creditable to this order (cents), DB-resolved. */
   giftCardTenderCents?: number;
+  /**
+   * Applied cart-discount coupon code(s). The discount is recomputed
+   * AUTHORITATIVELY server-side from the coupon against the catalog subtotal
+   * (never trusted from the client) and subtracted from the required cash, so a
+   * legitimately discounted checkout isn't rejected as underpaying (BMC-177).
+   * Omitted / empty for flows without cart discounts (e.g. MCP) → no reduction.
+   */
+  discountCodes?: string[];
 }
 
 /**
  * Verify that the money actually collected covers the catalog value of the
- * goods. This is the guard that stops a client from paying a token amount for
- * expensive goods. Fails closed: any line without a trustworthy catalog price
- * makes the whole order unverifiable.
+ * goods, after any authoritatively-recomputed cart discount. This is the guard
+ * that stops a client from paying a token amount for expensive goods. Fails
+ * closed: any line without a trustworthy catalog price makes the whole order
+ * unverifiable.
  */
 export async function verifyOrderChargeSufficient(
   input: VerifyChargeInput
@@ -390,24 +406,32 @@ export async function verifyOrderChargeSufficient(
       ok: false,
       reason: `cannot price order from catalog: ${errors.join('; ')}`,
       goodsCents,
+      discountCents: 0,
       requiredCashCents: goodsCents,
     };
   }
 
+  // Recompute the cart discount from the coupon against the catalog subtotal —
+  // never the client-supplied discount amount (BMC-177). Items are passed so a
+  // category-gated promotion is verified against catalog-derived categories. No
+  // codes → 0.
+  const discountCents = await resolveCartDiscountCents(input.discountCodes, goodsCents, input.items);
+
   const giftCardTenderCents = Math.max(0, Math.round(input.giftCardTenderCents ?? 0));
-  const requiredCashCents = Math.max(0, goodsCents - giftCardTenderCents);
+  const requiredCashCents = Math.max(0, goodsCents - discountCents - giftCardTenderCents);
   const paidAmountCents = Math.max(0, Math.round(input.paidAmountCents));
 
   if (paidAmountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
     return {
       ok: false,
-      reason: `paid ${paidAmountCents}c is less than required ${requiredCashCents}c (catalog goods ${goodsCents}c, gift card tender ${giftCardTenderCents}c)`,
+      reason: `paid ${paidAmountCents}c is less than required ${requiredCashCents}c (catalog goods ${goodsCents}c, cart discount ${discountCents}c, gift card tender ${giftCardTenderCents}c)`,
       goodsCents,
+      discountCents,
       requiredCashCents,
     };
   }
 
-  return { ok: true, goodsCents, requiredCashCents };
+  return { ok: true, goodsCents, discountCents, requiredCashCents };
 }
 
 /**

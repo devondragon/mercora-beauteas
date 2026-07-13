@@ -56,6 +56,18 @@ vi.mock('@/lib/models/mach/giftCard', () => ({
   getGiftCardByCode: vi.fn(),
 }));
 
+// Coupon/promotion seams the REAL resolveCartDiscountCents reads through. Default
+// to "not found" so a discounted order's coupon resolves to 0 — modelling a
+// promotion that changed state between charge and finalization (BMC-177 review).
+vi.mock('@/lib/models/mach/couponInstance', () => ({
+  getCouponInstanceByCode: vi.fn().mockResolvedValue(null),
+  validateCouponInstance: vi.fn(),
+}));
+vi.mock('@/lib/models/mach/promotions', () => ({
+  getPromotionById: vi.fn().mockResolvedValue(null),
+  checkTimeValidity: vi.fn(),
+}));
+
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
 import { promoteOrderToPaid, markOrderUnpaid, updateOrderNotes } from '@/lib/models/mach/orders';
 import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
@@ -194,6 +206,20 @@ describe('finalizePaidOrder', () => {
       paidAmountCents: 2999,
       sendEmail: true,
     });
+    expect(res.paid).toBe(false);
+    expect(vi.mocked(promoteOrderToPaid)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateOrderNotes)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(updateOrderNotes).mock.calls[0][1]).toMatch(/NEEDS REVIEW/);
+  });
+
+  it('BMC-177: a captured DISCOUNTED order whose coupon dropped is flagged for review, not silently stuck', async () => {
+    // The coupon/promotion changed state (paused / window elapsed) between charge
+    // and finalization → resolveCartDiscountCents recomputes 0 (coupon not found),
+    // so the correctly-discounted capture ($18.75 of $25 goods) now reads as
+    // underpaying. The customer paid what they were quoted, so this must be flagged
+    // for manual review rather than left silently pending with money captured.
+    const discountedOrder = order({ extensions: { discount_codes: ['SAVE25'] } });
+    const res = await finalizePaidOrder({ order: discountedOrder, paidAmountCents: 1875, sendEmail: true });
     expect(res.paid).toBe(false);
     expect(vi.mocked(promoteOrderToPaid)).not.toHaveBeenCalled();
     expect(vi.mocked(updateOrderNotes)).toHaveBeenCalledTimes(1);
