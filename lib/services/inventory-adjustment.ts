@@ -284,7 +284,7 @@ export async function decrementStockForOrder(
       await db
         .update(product_variants)
         .set({
-          inventory: sql`json_set(inventory, '$.quantity', json_extract(inventory, '$.quantity') - ${line.quantity})`,
+          inventory: sql`json_set(inventory, '$.quantity', COALESCE(json_extract(inventory, '$.quantity'), 0) - ${line.quantity})`,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(product_variants.id, line.variantId));
@@ -298,13 +298,13 @@ export async function decrementStockForOrder(
     const rows = await db
       .update(product_variants)
       .set({
-        inventory: sql`json_set(inventory, '$.quantity', json_extract(inventory, '$.quantity') - ${line.quantity})`,
+        inventory: sql`json_set(inventory, '$.quantity', COALESCE(json_extract(inventory, '$.quantity'), 0) - ${line.quantity})`,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(
         and(
           eq(product_variants.id, line.variantId),
-          sql`json_extract(inventory, '$.quantity') >= ${line.quantity}`
+          sql`COALESCE(json_extract(inventory, '$.quantity'), 0) >= ${line.quantity}`
         )
       )
       .returning({ id: product_variants.id });
@@ -346,7 +346,7 @@ export async function restockForOrder(items: OrderLineForStock[]): Promise<{ res
     await db
       .update(product_variants)
       .set({
-        inventory: sql`json_set(inventory, '$.quantity', json_extract(inventory, '$.quantity') + ${line.quantity})`,
+        inventory: sql`json_set(inventory, '$.quantity', COALESCE(json_extract(inventory, '$.quantity'), 0) + ${line.quantity})`,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(product_variants.id, line.variantId));
@@ -385,8 +385,10 @@ export function selectRestockLines(
   opts: { fullRefund: boolean; refundedItemKeys: string[]; alreadyRestockedKeys: string[] }
 ): { lines: OrderLineForStock[]; keys: string[] } {
   const list = Array.isArray(orderItems) ? orderItems : [];
-  const refundSet = opts.refundedItemKeys ?? [];
-  const already = new Set(opts.alreadyRestockedKeys ?? []);
+  // Guard against a malformed request body where `items` is not an array (a bare
+  // string still has `.includes`, which would substring-match and mis-restock).
+  const refundSet = Array.isArray(opts.refundedItemKeys) ? opts.refundedItemKeys : [];
+  const already = new Set(Array.isArray(opts.alreadyRestockedKeys) ? opts.alreadyRestockedKeys : []);
 
   const inRefund = (it: OrderLineForStock): boolean =>
     refundSet.includes(lineRestockKey(it)) ||

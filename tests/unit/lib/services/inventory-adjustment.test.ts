@@ -277,6 +277,16 @@ describe('selectRestockLines', () => {
     });
     expect(keys).toEqual([]);
   });
+
+  it('treats a malformed non-array refundedItemKeys as empty (no substring mis-match)', () => {
+    const { keys } = selectRestockLines(orderItems, {
+      fullRefund: false,
+      // A bare string has .includes and would substring-match 'p1-v1' → guard it.
+      refundedItemKeys: 'p1-v1' as unknown as string[],
+      alreadyRestockedKeys: [],
+    });
+    expect(keys).toEqual([]);
+  });
 });
 
 describe('flagOversoldForReview', () => {
