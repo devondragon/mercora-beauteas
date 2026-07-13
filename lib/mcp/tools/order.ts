@@ -1,4 +1,5 @@
 import { createOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
+import { decrementStockForOrder, flagOversoldForReview } from '../../services/inventory-adjustment';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
@@ -387,6 +388,24 @@ export async function placeOrder(
           ['Use get_order_status to look up the existing order', 'Create a new PaymentIntent for a new order']);
       }
       throw createError;
+    }
+
+    // Inventory decrement (BMC-178) — runs exactly once per order: a duplicate
+    // place_order collides on the order PK and returns via the replay guard
+    // above. Tracked, non-backorderable lines decrement with a guarded CAS that
+    // can't oversell; a capture-time race yields `oversold` lines, which we flag
+    // for manual review without unwinding the captured payment. Wrapped so an
+    // inventory failure can never turn a successfully-paid order into an MCP error.
+    try {
+      const { oversold } = await decrementStockForOrder(order.items as any);
+      await flagOversoldForReview({
+        orderId: order.id!,
+        currentNotes: order.notes,
+        oversold,
+        logPrefix: '[mcp:place_order]',
+      });
+    } catch (invError) {
+      console.error(`[mcp:place_order] Inventory decrement failed for ${order.id}:`, invError);
     }
 
     // Calculate estimated delivery

@@ -217,7 +217,12 @@ export function transformProducts(
         barcode: variant.barcode || null,
         inventory: JSON.stringify({
           track_inventory: true,
-          quantity: variant.inventory_quantity ?? 0,
+          // BMC-178: clamp to a non-negative on-hand. Shopify can report a
+          // negative `inventory_quantity` (oversold in the old store), which,
+          // imported verbatim, made real merchandise permanently un-purchasable
+          // once BeauTeas started enforcing stock. Backorder intent is carried by
+          // `allow_backorder` (inventory_policy === 'continue'), not a negative count.
+          quantity: Math.max(0, variant.inventory_quantity ?? 0),
           allow_backorder: variant.inventory_policy === 'continue',
         }),
         tax_category: 'food',

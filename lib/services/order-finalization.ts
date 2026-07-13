@@ -50,6 +50,7 @@ import {
 } from '@/lib/services/order-pricing';
 import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
+import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
 
 export interface FinalizePaidOrderResult {
   /** The order is paid after this call (this writer promoted it, or another already had). */
@@ -188,6 +189,30 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
           `pending FAILED; order left PAID with under-collected goods`,
       };
     }
+  }
+
+  // Inventory decrement (BMC-178) — the CAS winner owns this one-time effect, and
+  // we run it only AFTER the H1 gift-card revert block above (which `return`s on
+  // revert), so an order that just bounced back to pending never loses stock.
+  // Tracked, non-backorderable lines use a guarded decrement that can't oversell;
+  // a capture-time race that leaves too little on hand yields `oversold` lines,
+  // which we flag for manual review WITHOUT reverting payment (the cash is
+  // captured and the goods may still be fulfillable after a restock). Wrapped so
+  // an inventory failure can never throw out of finalization — payment is already
+  // recorded, and the confirmation email must still send.
+  try {
+    const { oversold } = await decrementStockForOrder(finalOrder.items as any);
+    // Preserve the paid notes just stamped by the CAS, then append the oversold
+    // flag (updateOrderNotes overwrites, so flagOversoldForReview rebuilds from
+    // the current value). No-op when nothing oversold.
+    await flagOversoldForReview({
+      orderId,
+      currentNotes: finalOrder.notes,
+      oversold,
+      logPrefix: '[finalize]',
+    });
+  } catch (invError) {
+    console.error(`[finalize] Inventory decrement failed for ${orderId}:`, invError);
   }
 
   // Confirmation email — only the CAS winner sends it, so it fires exactly once
