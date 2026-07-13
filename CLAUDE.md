@@ -97,10 +97,11 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | Stripe publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_STRIPE_KEY` |
 
 - **Shared bindings** (inherited): `ASSETS` (`.open-next/assets`), `AI`, observability enabled, empty `durable_objects`.
+- **Rate-limit bindings** (per-env `ratelimits`, BMC-180): `AI_RATE_LIMITER` (20/60s — guards the paid `/api/agent-chat` AI path) and `PUBLIC_RATE_LIMITER` (60/60s — guards `tax`, `validate-discount`, `gift-cards/validate`, `payment-intent`). Native Cloudflare rate limiting (best-effort, per-colo); enforced via `lib/rate-limit.ts` (`enforceRateLimit`), which **fails open** if the binding is absent (e.g. plain `next dev`). Distinct `namespace_id`s per env so dev/prod counters don't share.
 - **Compatibility:** date `2026-06-25`, flags `["nodejs_compat", "global_fetch_strictly_public"]`.
 - **Secrets** are per-env via `wrangler secret put … --env <dev|production>` (NOT in config):
   `CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`.
-- Binding types are generated to `cloudflare-env.d.ts` (committed) via `npm run cf-typegen`.
+- Binding types are generated to `cloudflare-env.d.ts` (committed) via `npm run cf-typegen`. ⚠️ A newer wrangler CLI rewrites this file's other bindings as **optional** (`DB?`), which breaks existing `env.DB` call sites — the `AI_RATE_LIMITER`/`PUBLIC_RATE_LIMITER` `RateLimit` entries were therefore **hand-added** in the existing required-binding shape; keep them in sync with `wrangler.jsonc` manually rather than regenerating.
 
 ---
 
@@ -155,7 +156,7 @@ User query → BGE embeddings → Vectorize search → context → text model �
 - **Config:** `lib/ai/config.ts`
   - **Text generation:** `@cf/openai/gpt-oss-20b` (temp 0.3, ~512 max tokens)
   - **Embeddings:** `@cf/baai/bge-base-en-v1.5` (**768 dimensions** — must match the Vectorize index dims)
-- **System prompt / chat logic:** `app/api/agent-chat/route.ts` (Clerk-authenticated). Context-aware: user name, order history, geolocation, recent chat history.
+- **System prompt / chat logic:** `app/api/agent-chat/route.ts` — **public** (the storefront chat widget serves anonymous visitors); Clerk `userId`, when present, is used only for personalization + as the rate-limit key. Abuse-contained via `AI_RATE_LIMITER`, input-length caps, prompt-injection sanitization, and an admin gate on the content-generation mode (BMC-180/BMC-139). Context-aware: user name, order history, geolocation, recent chat history.
 - **Indexing:** `app/api/admin/vectorize` rebuilds the index from the `products` table + knowledge markdown in R2, embedding both with BGE. Content source files live under `data/r2/products_md/` and `data/r2/knowledge_md/`.
 - **PDP recommendations** ("Recommended for you") are a separate seam from Chai: `lib/recommendations/` (`getRecommendationsForProduct`) picks a `deterministic` or `ai_batch` provider (`recommendations.strategy` admin setting), blends in live personalization from order history, and is called **server-side** on the product page — it is no longer routed through `/api/agent-chat`. `ai_batch` reads precomputed rows from the `product_recommendations` table (see [migrations](#database--migrations)), rebuilt via an admin endpoint or the `workers/recommendations-cron/` scheduled Worker.
 

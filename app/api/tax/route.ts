@@ -35,9 +35,15 @@ import type { NextRequest } from "next/server";
 import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
 import { calculateTax, formatAmountForStripe, formatAmountFromStripe, isStripeConfigured } from "@/lib/stripe";
+import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // Fallback tax rate for when Stripe Tax is unavailable
 const FALLBACK_TAX_RATE = 0.07;
+
+// Upper bound on cart line items per request. This endpoint is public and each
+// call can hit the billable Stripe Tax API, so cap the work an anonymous caller
+// can request (BMC-180). A real cart never approaches this.
+const MAX_TAX_LINE_ITEMS = 100;
 
 interface TaxRequest {
   items: CartItem[];
@@ -55,10 +61,21 @@ interface TaxBreakdown {
 
 export async function POST(req: NextRequest) {
   try {
+    // Public + billable (Stripe Tax). Throttle per IP before doing any work.
+    const limited = await enforceRateLimit("PUBLIC_RATE_LIMITER", `tax:${getClientIp(req)}`);
+    if (limited) return limited;
+
     const { items, shippingAddress, shippingCost = 0 }: TaxRequest = await req.json();
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
+    }
+
+    if (items.length > MAX_TAX_LINE_ITEMS) {
+      return NextResponse.json(
+        { error: `Too many line items (max ${MAX_TAX_LINE_ITEMS})` },
+        { status: 400 }
+      );
     }
 
     const subtotal = items.reduce(

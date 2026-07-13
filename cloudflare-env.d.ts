@@ -11,6 +11,12 @@ declare namespace Cloudflare {
 		VECTORIZE: VectorizeIndex;
 		AI: Ai;
 		ASSETS: Fetcher;
+		// Native Cloudflare rate-limit bindings (wrangler.jsonc `ratelimits`, BMC-180).
+		// Hand-added to preserve this file's required-binding shape; `wrangler types`
+		// on a newer CLI rewrites unrelated bindings as optional, so keep these in sync
+		// with wrangler.jsonc manually rather than regenerating.
+		AI_RATE_LIMITER: RateLimit;
+		PUBLIC_RATE_LIMITER: RateLimit;
 	}
 }
 interface CloudflareEnv extends Cloudflare.Env {}

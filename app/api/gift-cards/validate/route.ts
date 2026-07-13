@@ -15,9 +15,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
+import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
+
+// A valid code returns a real balance, so this endpoint is a card-discovery
+// oracle. It already collapses failure reasons to a generic message; the rate
+// limit blunts brute-force enumeration (BMC-180 / BMC-124).
+const MAX_CODE_LENGTH = 128;
 
 export async function POST(req: NextRequest) {
   try {
+    const limited = await enforceRateLimit('PUBLIC_RATE_LIMITER', `giftcard:${getClientIp(req)}`);
+    if (limited) return limited;
+
     const { code } = (await req.json()) as { code?: string };
 
     if (!code || typeof code !== 'string' || !code.trim()) {
@@ -25,6 +34,14 @@ export async function POST(req: NextRequest) {
         { valid: false, error: 'Gift card code is required' },
         { status: 400 }
       );
+    }
+
+    if (code.length > MAX_CODE_LENGTH) {
+      // Mirror the generic rejection so length never becomes a probe signal.
+      return NextResponse.json({
+        valid: false,
+        error: 'This gift card is invalid or unavailable.',
+      });
     }
 
     const result = await validateGiftCardForRedemption(code);

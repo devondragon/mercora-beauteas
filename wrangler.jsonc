@@ -71,6 +71,23 @@
           "index_name": "beauteas-index-dev"
         }
       ],
+      // Per-IP abuse limiters (BMC-180). AI_RATE_LIMITER guards the paid AI path
+      // (/api/agent-chat); PUBLIC_RATE_LIMITER guards the other public POSTs
+      // (tax, validate-discount, gift-cards/validate, payment-intent). Native CF
+      // rate limiting: best-effort, per-colo. namespace_ids are distinct from
+      // production so dev/prod counters never share. period must be 10 or 60.
+      "ratelimits": [
+        {
+          "name": "AI_RATE_LIMITER",
+          "namespace_id": "2001",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "PUBLIC_RATE_LIMITER",
+          "namespace_id": "2002",
+          "simple": { "limit": 60, "period": 60 }
+        }
+      ],
       "vars": {
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YnVzeS1zaHJpbXAtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA",
         "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj"
@@ -104,6 +121,20 @@
         {
           "binding": "VECTORIZE",
           "index_name": "beauteas-index"
+        }
+      ],
+      // Per-IP abuse limiters (BMC-180) — see dev env above. Distinct
+      // namespace_ids so production counters are isolated from dev.
+      "ratelimits": [
+        {
+          "name": "AI_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "PUBLIC_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 60, "period": 60 }
         }
       ],
       "vars": {

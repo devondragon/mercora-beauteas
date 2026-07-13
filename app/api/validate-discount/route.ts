@@ -8,7 +8,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
 import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
+import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 import type { Promotion } from '@/lib/types';
+
+// Bounds for this public endpoint (BMC-180). Codes are short; a giant string is
+// only ever an abuse attempt. cartItems is capped so an anonymous caller can't
+// force unbounded per-item work.
+const MAX_CODE_LENGTH = 128;
+const MAX_CART_ITEMS = 200;
 
 interface DiscountValidationRequest {
   code: string;
@@ -37,12 +44,31 @@ interface DiscountValidationResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    // Public + brute-forceable (a valid code reveals a real discount). Throttle
+    // per IP to blunt code-guessing and per-request table lookups.
+    const limited = await enforceRateLimit('PUBLIC_RATE_LIMITER', `discount:${getClientIp(request)}`);
+    if (limited) return limited;
+
     const body: DiscountValidationRequest = await request.json();
     const { code, cartSubtotal = 0, cartItems = [] } = body;
 
     if (!code || typeof code !== 'string') {
       return NextResponse.json(
         { valid: false, error: 'Discount code is required' },
+        { status: 400 }
+      );
+    }
+
+    if (code.length > MAX_CODE_LENGTH) {
+      return NextResponse.json(
+        { valid: false, error: 'Invalid or expired discount code' },
+        { status: 400 }
+      );
+    }
+
+    if (Array.isArray(cartItems) && cartItems.length > MAX_CART_ITEMS) {
+      return NextResponse.json(
+        { valid: false, error: 'Too many cart items' },
         { status: 400 }
       );
     }
