@@ -154,11 +154,18 @@ async function persistPendingOrder(
     console.error(`[payment-intent] order ${orderId}: pending-order canonicalization failed; using client display`, canonError);
   }
 
-  const extensions = {
+  const extensions: Record<string, any> = {
     ...(draft.extensions ?? {}),
     // Server-authoritative: never trust a client-supplied PI id here.
     payment_intent_id: paymentIntentId,
   };
+  // Bound the persisted cart-discount codes (pre-auth storage hardening, BMC-177
+  // review): normalize + cap so a client can't stash an unbounded array into the
+  // D1 `extensions` JSON via the order draft. Stores exactly the deduped list the
+  // charge gate will recompute from at finalization.
+  if (extensions.discount_codes !== undefined) {
+    extensions.discount_codes = normalizeDiscountCodes(extensions.discount_codes).slice(0, MAX_DISCOUNT_CODES);
+  }
   const externalReferences = {
     ...(draft.external_references ?? {}),
     payment_intent_id: paymentIntentId,

@@ -124,6 +124,18 @@ beforeEach(() => {
 });
 
 describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
+  it('BMC-177 review: bounds a huge discount_codes array persisted via the order draft', async () => {
+    // The order draft's extensions is client-controlled; without bounding, an
+    // unbounded discount_codes array would be stored verbatim in the D1 extensions
+    // JSON (this route is pre-auth reachable). It must be normalized + capped.
+    const many = Array.from({ length: 200 }, (_, i) => `CODE${i}`);
+    const draft = orderDraft({ extensions: { payment_intent_id: '', shipping_cost: 999, tax_amount: 0, subtotal: 2500, discount_codes: many } });
+    const res = await POST(postRequest(baseBody({ order: draft })));
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.extensions.discount_codes.length).toBe(25);
+  });
+
   it('persists a pending order stamped with the MINTED PaymentIntent id, then returns the client secret', async () => {
     const res = await POST(postRequest(baseBody()));
     expect(res.status).toBe(200);
