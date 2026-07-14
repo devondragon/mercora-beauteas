@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { MCPToolResponse } from '../../../../../../lib/mcp/types';
 import { errorDetails } from '../../../../../../lib/utils/error-response';
-import { describeOrderDelivery, getOwnedOrder } from '../../../../../../lib/mcp/tools/order';
+import { describeOrderDelivery, getOwnedOrder } from '../../../../../../lib/mcp/order-delivery';
 
 interface TrackingResponse {
   orderId: string;

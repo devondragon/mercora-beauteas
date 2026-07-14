@@ -1,10 +1,10 @@
-import { createOrderPaid, getOrderById, getOrderByPaymentIntentId } from '../../models/mach/orders';
+import { createOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
 import { decrementStockForOrder, flagOversoldForReview } from '../../services/inventory-adjustment';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
-import type { Order } from '../../types';
+import { getOwnedOrder, describeOrderDelivery } from '../order-delivery';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
 import {
@@ -470,26 +470,6 @@ export async function placeOrder(
   }
 }
 
-/**
- * Fetch an order only if it belongs to the calling agent (BMC-181).
- *
- * MCP orders are tagged with the placing agent's id in extensions.agent_id (see
- * placeOrder). Returns the order for its owner; returns null alike for a missing
- * order, an order owned by a DIFFERENT agent, and a non-MCP order (no agent
- * attribution) — the single ownership/IDOR gate shared by get_order_status and
- * the order/track route, so the authorization rule has exactly one
- * implementation. Callers MUST pass the server-authenticated agentId (never a
- * client-supplied value) and surface an IDENTICAL not-found for a null result so
- * an agent can't probe order ids / states it doesn't own.
- */
-export async function getOwnedOrder(orderId: string, agentId: string): Promise<Order | null> {
-  const order = await getOrderById(orderId);
-  if (!order || !order.extensions?.agent_id || order.extensions.agent_id !== agentId) {
-    return null;
-  }
-  return order;
-}
-
 export async function getOrderStatus(
   orderId: string,
   agentId: string
@@ -573,23 +553,6 @@ export async function getOrderStatus(
       }
     };
   }
-}
-
-// Human-readable delivery estimate for a persisted order (BMC-181). Terminal
-// statuses report their outcome rather than a forward-looking "3-5 business
-// days", which would misleadingly imply an already-delivered/cancelled/refunded
-// order is still in transit. Shared by get_order_status and the order/track
-// route.
-export function describeOrderDelivery(
-  order: { status: string; shipping_address?: unknown; shipping_method?: string }
-): string {
-  if (order.status === 'delivered') return 'Delivered';
-  if (order.status === 'cancelled') return 'Cancelled';
-  if (order.status === 'refunded') return 'Refunded';
-  return calculateEstimatedDelivery(
-    normalizeAddress(order.shipping_address),
-    order.shipping_method || 'standard'
-  );
 }
 
 function calculateEstimatedDelivery(address: Address, shippingOption: string): string {

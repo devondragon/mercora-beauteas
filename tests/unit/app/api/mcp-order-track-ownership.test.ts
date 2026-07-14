@@ -11,9 +11,10 @@
  * independently). Missing orders, orders owned by another agent, and non-MCP
  * orders (no agent attribution) must all return an IDENTICAL 404 ORDER_NOT_FOUND.
  *
- * Mocks @/lib/mcp/auth and @/lib/models/mach/orders (+ @/lib/stripe to keep it
- * out of the import graph) so it runs in the jsdom unit env (CI `npm test`)
- * without touching D1/Cloudflare bindings.
+ * Mocks @/lib/mcp/auth and @/lib/models/mach/orders so it runs in the jsdom unit
+ * env (CI `npm test`) without touching D1/Cloudflare bindings. The route imports
+ * the read-only order helpers from lib/mcp/order-delivery (Stripe-free), so no
+ * Stripe mock is needed here — that decoupling is the point of PR #81's review.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -23,10 +24,6 @@ vi.mock('@/lib/mcp/auth', () => ({
 
 vi.mock('@/lib/models/mach/orders', () => ({
   getOrderById: vi.fn(),
-}));
-
-vi.mock('@/lib/stripe', () => ({
-  retrievePaymentIntent: vi.fn(),
 }));
 
 import { NextRequest } from 'next/server';

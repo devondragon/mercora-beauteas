@@ -26,7 +26,8 @@ vi.mock('@/lib/stripe', () => ({
 }));
 
 import { getOrderById } from '@/lib/models/mach/orders';
-import { getOrderStatus, describeOrderDelivery } from '@/lib/mcp/tools/order';
+import { getOrderStatus } from '@/lib/mcp/tools/order';
+import { describeOrderDelivery } from '@/lib/mcp/order-delivery';
 
 const AGENT = 'agent-a';
 
