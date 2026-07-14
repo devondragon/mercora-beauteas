@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { MCPToolResponse } from '../../../../../../lib/mcp/types';
 import { errorDetails } from '../../../../../../lib/utils/error-response';
-import { getOrderById } from '../../../../../../lib/models/mach/orders';
-import { describeOrderDelivery } from '../../../../../../lib/mcp/tools/order';
+import { describeOrderDelivery, getOwnedOrder } from '../../../../../../lib/mcp/tools/order';
 
 interface TrackingResponse {
   orderId: string;
@@ -22,7 +21,7 @@ interface TrackingResponse {
 // Build a tracking response from a real order (BMC-181) — no fabricated data.
 // The order is looked up and ownership-checked by the caller; history is
 // assembled only from timestamps the order actually carries.
-function buildTracking(order: NonNullable<Awaited<ReturnType<typeof getOrderById>>>): TrackingResponse {
+function buildTracking(order: NonNullable<Awaited<ReturnType<typeof getOwnedOrder>>>): TrackingResponse {
   const history: TrackingResponse['history'] = [];
   if (order.created_at) {
     history.push({
@@ -55,11 +54,11 @@ function buildTracking(order: NonNullable<Awaited<ReturnType<typeof getOrderById
   };
 }
 
-// Resolve an order for tracking, scoped to the calling agent (BMC-181). MCP
-// orders carry the placing agent's id in extensions.agent_id (see placeOrder);
-// an agent may only track an order it placed. Returns an IDENTICAL not-found for
-// a missing order and one owned by another agent so an agent can't probe order
-// ids it doesn't own (closes the latent IDOR).
+// Resolve an order for tracking, scoped to the calling agent (BMC-181). Reuses
+// the shared getOwnedOrder gate so the ownership/IDOR check has one
+// implementation across get_order_status and this route. A missing order, one
+// owned by another agent, and a non-MCP order all yield an IDENTICAL not-found
+// so an agent can't probe order ids it doesn't own.
 async function resolveTracking(
   orderId: string | null,
   agentId: string
@@ -75,8 +74,8 @@ async function resolveTracking(
     };
   }
 
-  const order = await getOrderById(orderId);
-  if (!order || !order.extensions?.agent_id || order.extensions.agent_id !== agentId) {
+  const order = await getOwnedOrder(orderId, agentId);
+  if (!order) {
     return {
       ok: false,
       status: 404,

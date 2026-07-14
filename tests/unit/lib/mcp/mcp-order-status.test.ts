@@ -26,7 +26,7 @@ vi.mock('@/lib/stripe', () => ({
 }));
 
 import { getOrderById } from '@/lib/models/mach/orders';
-import { getOrderStatus } from '@/lib/mcp/tools/order';
+import { getOrderStatus, describeOrderDelivery } from '@/lib/mcp/tools/order';
 
 const AGENT = 'agent-a';
 
@@ -119,5 +119,21 @@ describe('getOrderStatus returns real, agent-scoped order state (BMC-181)', () =
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('ORDER_NOT_FOUND');
+  });
+});
+
+describe('describeOrderDelivery reports terminal statuses, not a forward estimate (BMC-181)', () => {
+  it.each([
+    ['delivered', 'Delivered'],
+    ['cancelled', 'Cancelled'],
+    ['refunded', 'Refunded'],
+  ])('returns %s → "%s" instead of an in-transit estimate', (status, expected) => {
+    expect(describeOrderDelivery({ status, shipping_address: { region: 'CA' }, shipping_method: 'standard' }))
+      .toBe(expected);
+  });
+
+  it('falls through to the shipping estimate for in-flight statuses (AK surcharge routed via normalizeAddress)', () => {
+    expect(describeOrderDelivery({ status: 'processing', shipping_address: { region: 'AK' }, shipping_method: 'standard' }))
+      .toBe('5-7 business days');
   });
 });

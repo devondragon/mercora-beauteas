@@ -4,6 +4,7 @@ import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
+import type { Order } from '../../types';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
 import {
@@ -469,6 +470,26 @@ export async function placeOrder(
   }
 }
 
+/**
+ * Fetch an order only if it belongs to the calling agent (BMC-181).
+ *
+ * MCP orders are tagged with the placing agent's id in extensions.agent_id (see
+ * placeOrder). Returns the order for its owner; returns null alike for a missing
+ * order, an order owned by a DIFFERENT agent, and a non-MCP order (no agent
+ * attribution) — the single ownership/IDOR gate shared by get_order_status and
+ * the order/track route, so the authorization rule has exactly one
+ * implementation. Callers MUST pass the server-authenticated agentId (never a
+ * client-supplied value) and surface an IDENTICAL not-found for a null result so
+ * an agent can't probe order ids / states it doesn't own.
+ */
+export async function getOwnedOrder(orderId: string, agentId: string): Promise<Order | null> {
+  const order = await getOrderById(orderId);
+  if (!order || !order.extensions?.agent_id || order.extensions.agent_id !== agentId) {
+    return null;
+  }
+  return order;
+}
+
 export async function getOrderStatus(
   orderId: string,
   agentId: string
@@ -476,15 +497,11 @@ export async function getOrderStatus(
   const startTime = Date.now();
 
   try {
-    const order = await getOrderById(orderId);
+    const order = await getOwnedOrder(orderId, agentId);
 
-    // SECURITY (BMC-181): scope to the owning agent. MCP orders are tagged with
-    // the placing agent's id in extensions.agent_id (see placeOrder); an agent may
-    // only read an order it placed. Return an IDENTICAL not-found for both a
-    // missing order and one owned by another agent (or created outside MCP, which
-    // has no agent_id) so an agent can't probe order ids / states it doesn't own —
-    // closing the latent IDOR that appears the moment this reads real data.
-    if (!order || !order.extensions?.agent_id || order.extensions.agent_id !== agentId) {
+    // Identical not-found for missing / not-owned / non-MCP orders (see
+    // getOwnedOrder) so an agent can't probe order ids / states it doesn't own.
+    if (!order) {
       return {
         success: false,
         data: {
@@ -560,20 +577,22 @@ export async function getOrderStatus(
 
 // Human-readable delivery estimate for a persisted order (BMC-181). Terminal
 // statuses report their outcome rather than a forward-looking "3-5 business
-// days", which would misleadingly imply an already-delivered/cancelled order is
-// still in transit. Shared by get_order_status and the order/track route.
+// days", which would misleadingly imply an already-delivered/cancelled/refunded
+// order is still in transit. Shared by get_order_status and the order/track
+// route.
 export function describeOrderDelivery(
   order: { status: string; shipping_address?: unknown; shipping_method?: string }
 ): string {
   if (order.status === 'delivered') return 'Delivered';
   if (order.status === 'cancelled') return 'Cancelled';
+  if (order.status === 'refunded') return 'Refunded';
   return calculateEstimatedDelivery(
     normalizeAddress(order.shipping_address),
     order.shipping_method || 'standard'
   );
 }
 
-export function calculateEstimatedDelivery(address: Address, shippingOption: string): string {
+function calculateEstimatedDelivery(address: Address, shippingOption: string): string {
   if (shippingOption === 'expedited' || shippingOption === 'overnight') {
     return '1-2 business days';
   }
