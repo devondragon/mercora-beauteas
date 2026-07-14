@@ -113,7 +113,7 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 - **Drizzle schema** (TypeScript, for queries): `lib/db/schema/` (~22 files; `index.ts` re-exports). `lib/db.ts` exposes cached `getDb()` / `getDbAsync()` via `drizzle(env.DB, { schema })`.
 - **Data access layer:** `lib/models/` (incl. `lib/models/mach/` for MACH Alliance entities).
 
-### Current migrations (14 files → ~40 tables)
+### Current migrations (17 files → ~40 tables)
 | File | Adds |
 |---|---|
 | `0001_initial_schema.sql` | MACH core: addresses, languages, media, customers, categories, product_types, products, product_variants, promotions, coupon_instances, inventory, pricing, orders, api_tokens, chat_sessions/messages, order_webhooks, admin_settings |
@@ -130,8 +130,13 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | `0011_hash_mcp_api_keys.sql` | Renames `mcp_agents.api_key` → `api_key_hash` (store SHA-256, not plaintext) + re-seeds the dev `test-agent` hash (BMC-141/BMC-155; no new tables) |
 | `0012_remove_seeded_test_agent.sql` | Deletes the seeded `test-agent` MCP row from every DB — its key (`test-key-123`) is public in the repo, so the row was a live prod credential (BMC-136/C9; no new tables). Local dev restores it from the dev-only `data/d1/seed-dev.sql` |
 | `0013_add_product_recommendations.sql` | `product_recommendations` (precomputed per-product recs for the `ai_batch` provider) + seeds `recommendations.*` admin settings (`strategy`, `personalize`, `limit`, `exclude_owned`). Applied to local, remote dev, and dev preview; **production applies at cutover** |
+| `0014_add_policy_pages.sql` | Seeds published Refund/Return, Shipping, and Contact CMS pages the footer + checkout link to (BMC-173; data-only, placeholder legal copy pending counsel) |
+| `0015_add_subscription_shipping_address.sql` | Adds shipping-address columns to `customer_subscriptions` |
+| `0016_rewrite_legal_pages.sql` | Rewrites the boilerplate Privacy Policy + Terms of Service seeded by 0003 with real processor/rights/retention/cookie disclosures + business address, and deletes the dead Shopify `ccpa-opt-out`/`ccpa-compliance`/`gdpr-compliance` pages (BMC-183; data-only, guarded/idempotent, snapshots into `page_versions`). Fresh DBs are seeded correctly by the updated 0003 + `data/d1/seed.sql` (CCPA rows removed) |
 
-> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0014_*` (`0011_hash_mcp_api_keys`, `0012_remove_seeded_test_agent`, and `0013_add_product_recommendations` are taken).
+> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0017_*` (`0011`–`0016` are taken).
+>
+> ⚠️ **D1 caps LIKE patterns at 50 characters** ("LIKE or GLOB pattern too complex: SQLITE_ERROR"). Data-only migrations that guard an `UPDATE`/`INSERT ... SELECT` with `content LIKE '%…%'` (the 0009/0016 idempotency pattern) must keep the substring short — a ~50-char guard silently rolls back the whole migration.
 
 ### Making a schema change
 1. Update the Drizzle schema/types in `lib/db/schema/` (and `lib/models/`) so app code matches.
