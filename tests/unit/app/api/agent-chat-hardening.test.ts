@@ -19,7 +19,7 @@ vi.mock('@clerk/nextjs/server', () => ({
 }));
 
 const enforceRateLimit = vi.fn();
-const getClientIp = vi.fn(() => '1.2.3.4');
+const getClientIp = vi.fn((..._args: unknown[]) => '1.2.3.4');
 vi.mock('@/lib/rate-limit', () => ({
   enforceRateLimit: (...args: unknown[]) => enforceRateLimit(...args),
   getClientIp: (...args: unknown[]) => getClientIp(...args),
