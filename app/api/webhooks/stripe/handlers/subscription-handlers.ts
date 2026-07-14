@@ -22,6 +22,7 @@ import {
 import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency, SubscriptionStatus } from '@/lib/types/subscription';
 import type { Address } from '@/lib/types';
+import { normalizeShippableAddress } from '@/lib/utils/address';
 import { BASE_URL } from '@/lib/seo/metadata';
 import { getCustomerDetails, getProductName } from './utils';
 
@@ -29,14 +30,21 @@ import { getCustomerDetails, getProductName } from './utils';
  * Parse the shipping address that /api/subscriptions stored in the Stripe
  * subscription's `shipping_address` metadata (a JSON-stringified MACH Address).
  * BMC-171: persisted onto the D1 subscription row so webhook-created orders have
- * an address. Returns null on absent/malformed metadata — a missing address must
- * never block subscription creation.
+ * an address.
+ *
+ * Re-validated here even though /api/subscriptions already normalized it: the
+ * metadata is an untrusted boundary (a subscription can be created outside our
+ * POST flow, or the value hand-edited in the Stripe dashboard). We accept it only
+ * if it still has the minimum shippable shape (line1 + city + a valid ISO-2
+ * country), normalizing the country; anything absent, malformed, or partial
+ * returns null. A missing address must never block subscription creation.
  */
 function parseShippingAddressMetadata(raw: string | undefined | null): Address | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Address) : null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeShippableAddress(parsed as Record<string, unknown>);
   } catch (err) {
     console.error('[webhook] subscription.created: malformed shipping_address metadata', err);
     return null;

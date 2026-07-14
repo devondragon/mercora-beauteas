@@ -24,11 +24,27 @@ import { getSubscriptionPlanById } from '@/lib/models/mach/subscriptions';
 import { getProductVariants } from '@/lib/models/mach/products';
 import { getProductName } from './utils';
 import type { CustomerSubscriptionRow } from '@/lib/db/schema/subscription';
-import type { Address, CreateOrderRequest, Money } from '@/lib/types';
+import type { Address, CreateOrderRequest, Money, ProductVariant } from '@/lib/types';
 
 /** Deterministic order id for a subscription shipment funded by a Stripe invoice. */
 export function subscriptionOrderId(invoiceId: string): string {
   return `SUBORD-${invoiceId}`;
+}
+
+/**
+ * Deterministically pick the "primary" variant from an unordered list.
+ * `getProductVariants` issues no ORDER BY, so we impose a stable order here
+ * (position ascending with nulls last, then id) to guarantee the same SKU is
+ * chosen for a subscription's initial and every renewal order.
+ */
+function pickPrimaryVariant(variants: ProductVariant[]): ProductVariant | undefined {
+  if (variants.length === 0) return undefined;
+  return [...variants].sort((a, b) => {
+    const pa = a.position ?? Number.POSITIVE_INFINITY;
+    const pb = b.position ?? Number.POSITIVE_INFINITY;
+    if (pa !== pb) return pa - pb;
+    return String(a.id).localeCompare(String(b.id));
+  })[0];
 }
 
 interface SubscriptionOrderParams {
@@ -71,14 +87,20 @@ export async function createSubscriptionOrder(
   // Subscription plans target a product (typically single-variant here); fall
   // back to the product id as the SKU if no variant resolves, so a missing
   // variant never blocks a legitimately-paid order.
+  //
+  // getProductVariants has no ORDER BY, so pick the "first" variant
+  // deterministically (position asc, nulls last, then id) rather than relying on
+  // result order — otherwise the initial vs. renewal orders for the same
+  // subscription could pick different SKUs if a product ever has >1 variant.
   let sku = productId ?? sub.plan_id;
   let variantId: string | undefined;
   if (productId) {
     try {
       const variants = await getProductVariants(productId);
-      if (variants[0]?.sku) {
-        sku = variants[0].sku;
-        variantId = variants[0].id;
+      const variant = pickPrimaryVariant(variants);
+      if (variant?.sku) {
+        sku = variant.sku;
+        variantId = variant.id;
       }
     } catch (err) {
       console.error(`[webhook] subscription order: variant lookup failed for ${productId}`, err);
@@ -88,7 +110,12 @@ export async function createSubscriptionOrder(
   // The invoice is the authoritative "money changed hands" amount. Money.amount
   // is minor units (cents) throughout the order record (admin renders /100).
   const money: Money = { amount: amountPaidMinor, currency };
-  const address: Address | undefined = sub.shipping_address ?? undefined;
+  const shippingAddress: Address | undefined = sub.shipping_address ?? undefined;
+  // Reuse the same address for billing (subscriptions collect one address), but
+  // label it correctly so a consumer that branches on Address.type isn't misled.
+  const billingAddress: Address | undefined = shippingAddress
+    ? { ...shippingAddress, type: 'billing' }
+    : undefined;
 
   const orderData: CreateOrderRequest = {
     id: orderId,
@@ -106,8 +133,8 @@ export async function createSubscriptionOrder(
     ],
     total_amount: money,
     currency_code: currency,
-    shipping_address: address,
-    billing_address: address,
+    shipping_address: shippingAddress,
+    billing_address: billingAddress,
     shipping_method: 'standard',
     payment_method: 'subscription',
     notes: `Subscription ${kind} shipment (${sub.id} · invoice ${invoiceId})`,

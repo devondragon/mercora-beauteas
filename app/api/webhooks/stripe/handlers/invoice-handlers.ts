@@ -96,8 +96,15 @@ export async function handleInvoicePaymentSucceeded(
       return;
     }
     // A RENEWAL with no row is a genuinely unknown subscription (never synced to
-    // D1); warn and skip rather than retry forever.
-    console.warn('[webhook] invoice.payment_succeeded: no D1 record for subscription', stripeSubscriptionId);
+    // D1). We can't self-heal by retrying (unlike the initial-invoice race, no
+    // created-handler is inbound to land the row), but it is the same
+    // "captured charge, no order" outcome BMC-171 exists to eliminate — so raise
+    // the same loud, greppable ALERT as the orphaned initial invoice for manual
+    // reconciliation rather than a quiet warn.
+    console.error(
+      '[webhook][ALERT] subscription_order_orphaned: renewal invoice paid but no D1 subscription row — captured charge with no order, needs manual reconciliation:',
+      { invoiceId: invoice.id, stripeSubscriptionId }
+    );
     return;
   }
 

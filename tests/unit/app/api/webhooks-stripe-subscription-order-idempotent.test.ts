@@ -41,6 +41,8 @@ import { getSubscriptionPlanById } from '@/lib/models/mach/subscriptions';
 import { getProductVariants } from '@/lib/models/mach/products';
 
 const address = { type: 'shipping', line1: '1 Tea Rd', city: 'Portland', region: 'OR', country: 'US' };
+// billing reuses the shipping address but is relabeled type: 'billing' (BMC-171 review).
+const billingAddress = { ...address, type: 'billing' };
 
 const sub = {
   id: 'SUB-1',
@@ -85,7 +87,7 @@ describe('createSubscriptionOrder (BMC-171)', () => {
         currency_code: 'USD',
         total_amount: { amount: 2249, currency: 'USD' },
         shipping_address: address,
-        billing_address: address,
+        billing_address: billingAddress,
         payment_method: 'subscription',
       })
     );
@@ -142,5 +144,29 @@ describe('createSubscriptionOrder (BMC-171)', () => {
     expect(orderData.items[0]).toEqual(
       expect.objectContaining({ sku: 'PROD-1', variant_id: undefined })
     );
+  });
+
+  it('multi-variant product → picks a deterministic primary variant regardless of DB order', async () => {
+    vi.mocked(getOrderById).mockResolvedValue(null);
+    vi.mocked(createOrderPaid).mockResolvedValue({ id: 'SUBORD-in_1' } as never);
+
+    // Same variants, two different arrival orders (getProductVariants has no
+    // ORDER BY). The stable pick (position asc, nulls last, then id) must select
+    // the same SKU both times so initial + renewal orders never diverge.
+    const unordered = [
+      { id: 'VAR-C', sku: 'SKU-C', position: 2 },
+      { id: 'VAR-A', sku: 'SKU-A', position: 1 },
+      { id: 'VAR-B', sku: 'SKU-B' }, // no position → sorts last
+    ];
+    vi.mocked(getProductVariants).mockResolvedValueOnce(unordered as never);
+    await createSubscriptionOrder(baseParams);
+
+    vi.mocked(getProductVariants).mockResolvedValueOnce([...unordered].reverse() as never);
+    await createSubscriptionOrder(baseParams);
+
+    const first = vi.mocked(createOrderPaid).mock.calls[0][0].items[0];
+    const second = vi.mocked(createOrderPaid).mock.calls[1][0].items[0];
+    expect(first).toEqual(expect.objectContaining({ sku: 'SKU-A', variant_id: 'VAR-A' }));
+    expect(second).toEqual(expect.objectContaining({ sku: 'SKU-A', variant_id: 'VAR-A' }));
   });
 });
