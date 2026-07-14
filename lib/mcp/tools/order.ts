@@ -1,4 +1,4 @@
-import { createOrderPaid, getOrderByPaymentIntentId } from '../../models/mach/orders';
+import { createOrderPaid, getOrderById, getOrderByPaymentIntentId } from '../../models/mach/orders';
 import { decrementStockForOrder, flagOversoldForReview } from '../../services/inventory-adjustment';
 import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
@@ -474,16 +474,51 @@ export async function getOrderStatus(
   agentId: string
 ): Promise<MCPToolResponse<OrderResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    // In a real implementation, you'd fetch from orders table
-    // For now, return a mock response
+    const order = await getOrderById(orderId);
+
+    // SECURITY (BMC-181): scope to the owning agent. MCP orders are tagged with
+    // the placing agent's id in extensions.agent_id (see placeOrder); an agent may
+    // only read an order it placed. Return an IDENTICAL not-found for both a
+    // missing order and one owned by another agent (or created outside MCP, which
+    // has no agent_id) so an agent can't probe order ids / states it doesn't own —
+    // closing the latent IDOR that appears the moment this reads real data.
+    if (!order || !order.extensions?.agent_id || order.extensions.agent_id !== agentId) {
+      return {
+        success: false,
+        data: {
+          orderId: '',
+          status: 'not_found',
+          total: ZERO_TOTAL,
+          estimated_delivery: ''
+        },
+        context: {
+          session_id: 'status-check',
+          agent_id: agentId,
+          processing_time_ms: Date.now() - startTime
+        },
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'No order found for this agent with that ID.'
+        },
+        metadata: {
+          can_fulfill_percentage: 0,
+          estimated_satisfaction: 0,
+          next_actions: ['Verify the order ID', 'Place an order with place_order']
+        }
+      };
+    }
+
+    // Real order state — never a hardcoded 'confirmed'. total_amount is stored in
+    // cents; toWireMoney emits the MACH wire shape (BMC-164). estimated_delivery is
+    // derived from the order's own shipping address + method.
     const response: OrderResponse = {
-      orderId,
-      status: 'confirmed',
-      total: Money.fromMajor(299.99, 'USD').toMach(),
-      tracking_number: `BT${Date.now()}`,
-      estimated_delivery: '3-5 business days'
+      orderId: order.id!.toString(),
+      status: order.status,
+      total: toWireMoney(order.total_amount),
+      tracking_number: order.tracking_number || undefined,
+      estimated_delivery: describeOrderDelivery(order)
     };
 
     return {
@@ -523,7 +558,22 @@ export async function getOrderStatus(
   }
 }
 
-function calculateEstimatedDelivery(address: Address, shippingOption: string): string {
+// Human-readable delivery estimate for a persisted order (BMC-181). Terminal
+// statuses report their outcome rather than a forward-looking "3-5 business
+// days", which would misleadingly imply an already-delivered/cancelled order is
+// still in transit. Shared by get_order_status and the order/track route.
+export function describeOrderDelivery(
+  order: { status: string; shipping_address?: unknown; shipping_method?: string }
+): string {
+  if (order.status === 'delivered') return 'Delivered';
+  if (order.status === 'cancelled') return 'Cancelled';
+  return calculateEstimatedDelivery(
+    normalizeAddress(order.shipping_address),
+    order.shipping_method || 'standard'
+  );
+}
+
+export function calculateEstimatedDelivery(address: Address, shippingOption: string): string {
   if (shippingOption === 'expedited' || shippingOption === 'overnight') {
     return '1-2 business days';
   }
