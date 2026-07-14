@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
+import { postalAddressHtml } from '@/lib/utils/email-footer';
 
 let resend: Resend | null = null;
 
@@ -233,6 +234,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your order? Reply to this email or contact our support team.</p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+          ${postalAddressHtml('light')}
         </div>
 
       </div>
@@ -413,6 +415,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your order? Reply to this email or contact our support team.</p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+          ${postalAddressHtml('light')}
         </div>
 
       </div>
@@ -585,6 +588,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1; margin-top: 24px;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions? Reply to this email or contact our support team.</p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+          ${postalAddressHtml('light')}
         </div>
 
       </div>
@@ -712,6 +716,7 @@ function generateSubscriptionEmailHTML(
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your subscription? Reply to this email or contact our support team.</p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+          ${postalAddressHtml('light')}
         </div>
 
       </div>

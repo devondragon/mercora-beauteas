@@ -29,6 +29,8 @@ import type {
   ProductReviewEligibility,
 } from '@/lib/types';
 import { sendReviewReminderEmail, sendReviewStatusNotification } from '@/lib/utils/review-notifications';
+import { isUnsubscribedFromReviewReminders } from '@/lib/models/email-preferences';
+import { isUnsubscribeConfigured } from '@/lib/email/unsubscribe-token';
 
 interface SubmitReviewInput extends ReviewSubmissionPayload {
   customerId: string;
@@ -1152,6 +1154,23 @@ export async function findReviewReminderCandidates(
 }
 
 export async function sendReviewReminders(options: ReminderQueryOptions = {}) {
+  // CAN-SPAM (BMC-184): review reminders MUST carry a working unsubscribe. If
+  // the signing secret is missing we can't build one, so skip the ENTIRE run
+  // up front. Doing this here (rather than letting each send throw) avoids
+  // writing permanent `status: 'failed'` review_reminders rows — those feed
+  // findReviewReminderCandidates' exclusion set and would forever suppress the
+  // affected orders even after the secret is configured.
+  if (!isUnsubscribeConfigured()) {
+    console.error(
+      '[review-reminders] EMAIL_UNSUBSCRIBE_SECRET not configured — skipping all review reminders (cannot include a compliant unsubscribe).',
+    );
+    return {
+      sent: 0,
+      failed: [] as Array<{ candidate: ReviewReminderCandidate; error: string }>,
+      skipped: 'unsubscribe_not_configured' as const,
+    };
+  }
+
   const db = await getDbAsync();
   const candidates = await findReviewReminderCandidates(options);
   if (!candidates.length) {
@@ -1164,6 +1183,13 @@ export async function sendReviewReminders(options: ReminderQueryOptions = {}) {
   for (const candidate of candidates) {
     if (!candidate.customerEmail) {
       failures.push({ candidate, error: 'Missing customer email' });
+      continue;
+    }
+
+    // CAN-SPAM (BMC-184): never send review reminders to an address that opted
+    // out. Skip silently without recording a reminder row so we simply don't
+    // send — the candidate set is small, so re-evaluating next run is cheap.
+    if (await isUnsubscribedFromReviewReminders(candidate.customerEmail)) {
       continue;
     }
 
