@@ -169,11 +169,13 @@ export async function POST(req: NextRequest) {
     // fields the prompt reads (no attacker free text survives); `userName` is
     // inline-sanitized + capped; `userContext` is length-capped and later wrapped
     // in a clearly-delimited untrusted block.
+    // Truncate to the cap BEFORE sanitizing so the regex work is bounded by our
+    // limits, not by attacker-controlled input length.
     const userName =
-      sanitizeInline(String(rawUserName ?? "Guest")).slice(0, MAX_USERNAME_LENGTH) || "Guest";
+      sanitizeInline(String(rawUserName ?? "Guest").slice(0, MAX_USERNAME_LENGTH)) || "Guest";
     const userContext = String(rawUserContext ?? "").slice(0, MAX_USER_CONTEXT_LENGTH);
     const orders = (Array.isArray(rawOrders) ? rawOrders : []).slice(0, 3).map((o: any) => ({
-      id: sanitizeInline(String(o?.id ?? "")).slice(0, 64),
+      id: sanitizeInline(String(o?.id ?? "").slice(0, 64)),
       itemCount: Array.isArray(o?.items) ? o.items.length : 0,
       totalCents: Number(o?.total_amount?.amount ?? o?.total ?? 0) || 0,
     }));

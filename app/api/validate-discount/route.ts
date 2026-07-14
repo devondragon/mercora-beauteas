@@ -50,7 +50,10 @@ export async function POST(request: NextRequest) {
     if (limited) return limited;
 
     const body: DiscountValidationRequest = await request.json();
-    const { code, cartSubtotal = 0, cartItems = [] } = body;
+    const { code, cartSubtotal = 0 } = body;
+    // Normalize to an array immediately — a non-array cartItems (e.g. `{}`) would
+    // otherwise slip past the cap and throw later in validatePromotionConditions.
+    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : [];
 
     if (!code || typeof code !== 'string') {
       return NextResponse.json(
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (Array.isArray(cartItems) && cartItems.length > MAX_CART_ITEMS) {
+    if (cartItems.length > MAX_CART_ITEMS) {
       return NextResponse.json(
         { valid: false, error: 'Too many cart items' },
         { status: 400 }

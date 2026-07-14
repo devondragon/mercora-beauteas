@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     const { items, shippingAddress, shippingCost = 0 }: TaxRequest = await req.json();
 
-    if (!items || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
 
