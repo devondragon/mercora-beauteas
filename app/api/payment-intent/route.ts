@@ -47,6 +47,7 @@ import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
+import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 import type { Address } from '@/lib/types';
 
 // Minimal shape of a cart line needed to price it from the catalog. Accepts
@@ -191,6 +192,12 @@ async function persistPendingOrder(
 
 export async function POST(req: NextRequest) {
   try {
+    // Public (guest checkout supported) and the most expensive of the public
+    // POSTs — each call creates a real Stripe PaymentIntent. Throttle per IP to
+    // blunt PI-creation spam (BMC-180). Line-item/discount caps live below.
+    const limited = await enforceRateLimit('PUBLIC_RATE_LIMITER', `payment-intent:${getClientIp(req)}`);
+    if (limited) return limited;
+
     const {
       amount,
       taxAmount,
