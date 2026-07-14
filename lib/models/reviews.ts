@@ -29,6 +29,8 @@ import type {
   ProductReviewEligibility,
 } from '@/lib/types';
 import { sendReviewReminderEmail, sendReviewStatusNotification } from '@/lib/utils/review-notifications';
+import { getReviewReminderOptOuts } from '@/lib/models/email-preferences';
+import { isUnsubscribeConfigured, normalizeEmail } from '@/lib/email/unsubscribe-token';
 
 interface SubmitReviewInput extends ReviewSubmissionPayload {
   customerId: string;
@@ -1152,18 +1154,61 @@ export async function findReviewReminderCandidates(
 }
 
 export async function sendReviewReminders(options: ReminderQueryOptions = {}) {
+  // CAN-SPAM (BMC-184): review reminders MUST carry a working unsubscribe. If
+  // the signing secret is missing we can't build one, so skip the ENTIRE run
+  // up front. Doing this here (rather than letting each send throw) avoids
+  // writing permanent `status: 'failed'` review_reminders rows — those feed
+  // findReviewReminderCandidates' exclusion set and would forever suppress the
+  // affected orders even after the secret is configured.
+  if (!isUnsubscribeConfigured()) {
+    console.error(
+      '[review-reminders] EMAIL_UNSUBSCRIBE_SECRET not configured — skipping all review reminders (cannot include a compliant unsubscribe).',
+    );
+    return {
+      sent: 0,
+      failed: [] as Array<{ candidate: ReviewReminderCandidate; error: string }>,
+      skipped: 'unsubscribe_not_configured' as const,
+    };
+  }
+
   const db = await getDbAsync();
   const candidates = await findReviewReminderCandidates(options);
   if (!candidates.length) {
     return { sent: 0, failed: [] as Array<{ candidate: ReviewReminderCandidate; error: string }> };
   }
 
+  return dispatchReviewReminders(candidates, db);
+}
+
+/**
+ * Send reminders for an already-resolved candidate list, skipping opted-out
+ * addresses (BMC-184). Extracted from sendReviewReminders so the suppression
+ * path is unit-testable without mocking the whole candidate-discovery query
+ * chain.
+ */
+export async function dispatchReviewReminders(
+  candidates: ReviewReminderCandidate[],
+  db: Awaited<ReturnType<typeof getDbAsync>>,
+) {
   let sent = 0;
   const failures: Array<{ candidate: ReviewReminderCandidate; error: string }> = [];
+
+  // CAN-SPAM (BMC-184): resolve every opted-out address in ONE query up front,
+  // rather than an N+1 lookup per candidate.
+  const optedOut = await getReviewReminderOptOuts(
+    candidates.map((c) => c.customerEmail).filter((e): e is string => Boolean(e)),
+    db,
+  );
 
   for (const candidate of candidates) {
     if (!candidate.customerEmail) {
       failures.push({ candidate, error: 'Missing customer email' });
+      continue;
+    }
+
+    // Never send to an address that opted out. Skip silently without recording a
+    // reminder row — re-evaluating next run is cheap for the small candidate set.
+    if (optedOut.has(normalizeEmail(candidate.customerEmail))) {
       continue;
     }
 

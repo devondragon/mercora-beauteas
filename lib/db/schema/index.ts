@@ -127,3 +127,6 @@ export * from "./blog";
 
 // Product recommendations schema (application-specific)
 export * from "./product-recommendations";
+
+// Email unsubscribe suppression list (CAN-SPAM, BMC-184)
+export * from "./email-preferences";

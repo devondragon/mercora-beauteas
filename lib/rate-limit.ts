@@ -18,7 +18,6 @@
  */
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 export type RateLimiterBinding = "AI_RATE_LIMITER" | "PUBLIC_RATE_LIMITER";
 
@@ -33,7 +32,7 @@ interface RateLimiter {
  * present, which buckets all such callers into one shared limit — a safe,
  * conservative default (it can only over-throttle, never under-throttle).
  */
-export function getClientIp(req: NextRequest): string {
+export function getClientIp(req: Request): string {
   const cfIp = req.headers.get("CF-Connecting-IP");
   if (cfIp) return cfIp.trim();
 

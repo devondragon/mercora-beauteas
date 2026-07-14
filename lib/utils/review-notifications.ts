@@ -1,5 +1,8 @@
 import type { ReviewStatus } from '@/lib/types';
 import { getResendClient } from '@/lib/utils/email';
+import { postalAddressHtml, unsubscribeHtml } from '@/lib/utils/email-footer';
+import { createUnsubscribeToken } from '@/lib/email/unsubscribe-token';
+import { BASE_URL } from '@/lib/seo/metadata';
 
 interface ReviewStatusNotificationInput {
   email: string;
@@ -83,6 +86,9 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
           Thanks again for taking the time to share your experience. Your feedback helps others discover their perfect skincare tea blend.
         </p>
         <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">— The BeauTeas Team</p>
+        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #1f2937;">
+          ${postalAddressHtml('dark')}
+        </div>
       </div>
     </div>
   `;
@@ -99,6 +105,17 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   const resend = getResendClient();
   const greeting = input.name ? `Hi ${input.name.split(' ')[0]},` : 'Hi there,';
 
+  // CAN-SPAM: this is a marketing solicitation, so it MUST carry a working
+  // unsubscribe. If the signing secret is missing we cannot build one, and
+  // sending without it would be non-compliant — refuse to send instead.
+  const token = await createUnsubscribeToken(input.email);
+  if (!token) {
+    throw new Error(
+      'EMAIL_UNSUBSCRIBE_SECRET not configured — refusing to send review reminder without a working unsubscribe (CAN-SPAM).',
+    );
+  }
+  const unsubscribeUrl = `${BASE_URL}/api/email/unsubscribe?token=${encodeURIComponent(token)}`;
+
   const html = `
     <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #0f172a; padding: 32px; color: #f9fafb;">
       <div style="max-width: 520px; margin: 0 auto; background-color: #111827; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.4);">
@@ -112,6 +129,10 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
           Reviews help other shoppers make confident choices and give our team insight into what to improve next.
         </p>
         <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">If you've already shared your thoughts, thank you! You can ignore this reminder.</p>
+        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #1f2937;">
+          ${unsubscribeHtml(unsubscribeUrl, 'dark')}
+          ${postalAddressHtml('dark')}
+        </div>
       </div>
     </div>
   `;
@@ -121,5 +142,12 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
     to: [input.email],
     subject: `How's your ${input.productName}?`,
     html,
+    headers: {
+      // RFC 2369 + RFC 8058: expose the unsubscribe to the mail client and let
+      // supporting providers (Gmail/Yahoo) do a one-click POST. One-click is
+      // always a POST, so it can't be triggered by link pre-fetch.
+      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:hello@beauteas.com?subject=unsubscribe>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
   });
 }

@@ -62,6 +62,9 @@ type ApiErrorPayload = { error?: string } | null;
 interface ReminderTriggerResponse {
   sent?: number;
   failed?: Array<{ error: string }>;
+  // Present when the run was skipped wholesale, e.g. EMAIL_UNSUBSCRIBE_SECRET
+  // is not configured so no compliant unsubscribe can be built (BMC-184).
+  skipped?: string;
 }
 
 const limit = 20;
@@ -320,6 +323,13 @@ export default function ReviewModerationDashboard() {
         throw new Error(payload?.error ?? "Unable to send reminders");
       }
       const payload = await response.json() as ReminderTriggerResponse;
+      if (payload?.skipped === "unsubscribe_not_configured") {
+        toast.error("Reminders skipped: EMAIL_UNSUBSCRIBE_SECRET is not configured", {
+          description:
+            "Review reminders need a signing secret to include a working unsubscribe link. Set it before sending.",
+        });
+        return;
+      }
       const sentCount = payload?.sent ?? 0;
       const failedCount = payload?.failed?.length ?? 0;
       toast.success(
