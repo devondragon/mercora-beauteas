@@ -4,6 +4,7 @@ import { requireOwnedSession } from '../session';
 import { OrderRequest, OrderResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { MACHAddress as Address } from '../../types/mach/Address';
+import { getOwnedOrder, describeOrderDelivery } from '../order-delivery';
 import { CartItem } from '../../types/cartitem';
 import { retrievePaymentIntent } from '../../stripe';
 import {
@@ -474,16 +475,47 @@ export async function getOrderStatus(
   agentId: string
 ): Promise<MCPToolResponse<OrderResponse>> {
   const startTime = Date.now();
-  
+
   try {
-    // In a real implementation, you'd fetch from orders table
-    // For now, return a mock response
+    const order = await getOwnedOrder(orderId, agentId);
+
+    // Identical not-found for missing / not-owned / non-MCP orders (see
+    // getOwnedOrder) so an agent can't probe order ids / states it doesn't own.
+    if (!order) {
+      return {
+        success: false,
+        data: {
+          orderId: '',
+          status: 'not_found',
+          total: ZERO_TOTAL,
+          estimated_delivery: ''
+        },
+        context: {
+          session_id: 'status-check',
+          agent_id: agentId,
+          processing_time_ms: Date.now() - startTime
+        },
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'No order found for this agent with that ID.'
+        },
+        metadata: {
+          can_fulfill_percentage: 0,
+          estimated_satisfaction: 0,
+          next_actions: ['Verify the order ID', 'Place an order with place_order']
+        }
+      };
+    }
+
+    // Real order state — never a hardcoded 'confirmed'. total_amount is stored in
+    // cents; toWireMoney emits the MACH wire shape (BMC-164). estimated_delivery is
+    // derived from the order's own shipping address + method.
     const response: OrderResponse = {
-      orderId,
-      status: 'confirmed',
-      total: Money.fromMajor(299.99, 'USD').toMach(),
-      tracking_number: `BT${Date.now()}`,
-      estimated_delivery: '3-5 business days'
+      orderId: order.id!.toString(),
+      status: order.status,
+      total: toWireMoney(order.total_amount),
+      tracking_number: order.tracking_number || undefined,
+      estimated_delivery: describeOrderDelivery(order)
     };
 
     return {

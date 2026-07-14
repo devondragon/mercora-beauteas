@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '../../../../../../lib/mcp/auth';
 import { MCPToolResponse } from '../../../../../../lib/mcp/types';
 import { errorDetails } from '../../../../../../lib/utils/error-response';
+import { describeOrderDelivery, getOwnedOrder } from '../../../../../../lib/mcp/order-delivery';
 
 interface TrackingResponse {
   orderId: string;
@@ -17,9 +18,93 @@ interface TrackingResponse {
   }>;
 }
 
+// Build a tracking response from a real order (BMC-181) — no fabricated data.
+// The order is looked up and ownership-checked by the caller; history is
+// assembled only from timestamps the order actually carries.
+function buildTracking(order: NonNullable<Awaited<ReturnType<typeof getOwnedOrder>>>): TrackingResponse {
+  const history: TrackingResponse['history'] = [];
+  if (order.created_at) {
+    history.push({
+      date: order.created_at,
+      status: 'order_confirmed',
+      description: 'Order received and processing'
+    });
+  }
+  if (order.shipped_at) {
+    history.push({
+      date: order.shipped_at,
+      status: 'shipped',
+      description: 'Package shipped'
+    });
+  }
+  if (order.delivered_at) {
+    history.push({
+      date: order.delivered_at,
+      status: 'delivered',
+      description: 'Package delivered'
+    });
+  }
+
+  return {
+    orderId: order.id!.toString(),
+    trackingNumber: order.tracking_number || undefined,
+    status: order.status,
+    estimatedDelivery: describeOrderDelivery(order),
+    history
+  };
+}
+
+// Resolve an order for tracking, scoped to the calling agent (BMC-181). Reuses
+// the shared getOwnedOrder gate so the ownership/IDOR check has one
+// implementation across get_order_status and this route. A missing order, one
+// owned by another agent, and a non-MCP order all yield an IDENTICAL not-found
+// so an agent can't probe order ids it doesn't own.
+async function resolveTracking(
+  orderId: string | null,
+  agentId: string
+): Promise<
+  | { ok: true; response: MCPToolResponse<TrackingResponse> }
+  | { ok: false; status: number; body: { success: false; error: { code: string; message: string } } }
+> {
+  if (!orderId) {
+    return {
+      ok: false,
+      status: 400,
+      body: { success: false, error: { code: 'MISSING_ORDER_ID', message: 'orderId is required' } }
+    };
+  }
+
+  const order = await getOwnedOrder(orderId, agentId);
+  if (!order) {
+    return {
+      ok: false,
+      status: 404,
+      body: { success: false, error: { code: 'ORDER_NOT_FOUND', message: 'No order found for this agent with that ID.' } }
+    };
+  }
+
+  return {
+    ok: true,
+    response: {
+      success: true,
+      data: buildTracking(order),
+      context: {
+        session_id: 'tracking',
+        agent_id: agentId,
+        processing_time_ms: 0
+      },
+      metadata: {
+        can_fulfill_percentage: 100,
+        estimated_satisfaction: 95,
+        next_actions: ['Monitor delivery progress', 'Prepare for package arrival']
+      }
+    }
+  };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authenticateAgent(request);
-  
+
   if (!auth.success) {
     return NextResponse.json({
       success: false,
@@ -29,62 +114,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const orderId = request.nextUrl.searchParams.get('orderId');
-    const trackingNumber = request.nextUrl.searchParams.get('trackingNumber');
-    
-    if (!orderId && !trackingNumber) {
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'MISSING_IDENTIFIER',
-          message: 'orderId or trackingNumber parameter is required'
-        }
-      }, { status: 400 });
+
+    const result = await resolveTracking(orderId, auth.agentId!);
+    if (!result.ok) {
+      return NextResponse.json(result.body, { status: result.status });
     }
 
-    // Mock tracking data - in production, integrate with shipping provider
-    const trackingData: TrackingResponse = {
-      orderId: orderId || 'unknown',
-      trackingNumber: trackingNumber || `VT${Date.now()}`,
-      status: 'in_transit',
-      location: 'Oakland, CA',
-      estimatedDelivery: '2 business days',
-      history: [
-        {
-          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'order_confirmed',
-          description: 'Order confirmed and processing'
-        },
-        {
-          date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'shipped',
-          location: 'Warehouse, CA',
-          description: 'Package shipped from warehouse'
-        },
-        {
-          date: new Date().toISOString(),
-          status: 'in_transit',
-          location: 'Oakland, CA',
-          description: 'Package in transit to destination'
-        }
-      ]
-    };
-
-    const response: MCPToolResponse<TrackingResponse> = {
-      success: true,
-      data: trackingData,
-      context: {
-        session_id: 'tracking',
-        agent_id: auth.agentId!,
-        processing_time_ms: Date.now() - Date.now()
-      },
-      metadata: {
-        can_fulfill_percentage: 100,
-        estimated_satisfaction: 95,
-        next_actions: ['Monitor delivery progress', 'Prepare for package arrival']
-      }
-    };
-    
-    return NextResponse.json(response);
+    return NextResponse.json(result.response);
   } catch (error) {
     return NextResponse.json({
       success: false,
@@ -110,26 +146,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json() as any;
-    const { orderId, trackingNumber } = body;
-    
-    if (!orderId && !trackingNumber) {
-      return NextResponse.json({
-        success: false,
-        error: {
-          code: 'MISSING_IDENTIFIER',
-          message: 'orderId or trackingNumber is required'
-        }
-      }, { status: 400 });
+    const orderId: string | null = body?.orderId ?? null;
+
+    const result = await resolveTracking(orderId, auth.agentId!);
+    if (!result.ok) {
+      return NextResponse.json(result.body, { status: result.status });
     }
 
-    // Use the same logic as GET method
-    const url = new URL(request.url);
-    if (orderId) url.searchParams.set('orderId', orderId);
-    if (trackingNumber) url.searchParams.set('trackingNumber', trackingNumber);
-    
-    const modifiedRequest = new NextRequest(url, { method: 'GET', headers: request.headers });
-    return GET(modifiedRequest);
-    
+    return NextResponse.json(result.response);
   } catch (error) {
     return NextResponse.json({
       success: false,
