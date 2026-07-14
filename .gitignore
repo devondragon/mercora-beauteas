@@ -57,6 +57,5 @@ linkedin-article.md
 # Database dumps must never be committed — they can contain real PII (BMC-137).
 # Scoped to dump-style filenames so tracked migrations (migrations/*.sql) and
 # seeds (data/d1/*.sql) stay tracked and new ones can still be `git add`ed.
-*-db-dump.sql
-*.dump.sql
 *-dump.sql
+*.dump.sql
