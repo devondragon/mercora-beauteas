@@ -21,8 +21,35 @@ import {
 } from '@/lib/models/mach/subscriptions';
 import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency, SubscriptionStatus } from '@/lib/types/subscription';
+import type { Address } from '@/lib/types';
+import { normalizeShippableAddress } from '@/lib/utils/address';
 import { BASE_URL } from '@/lib/seo/metadata';
 import { getCustomerDetails, getProductName } from './utils';
+
+/**
+ * Parse the shipping address that /api/subscriptions stored in the Stripe
+ * subscription's `shipping_address` metadata (a JSON-stringified MACH Address).
+ * BMC-171: persisted onto the D1 subscription row so webhook-created orders have
+ * an address.
+ *
+ * Re-validated here even though /api/subscriptions already normalized it: the
+ * metadata is an untrusted boundary (a subscription can be created outside our
+ * POST flow, or the value hand-edited in the Stripe dashboard). We accept it only
+ * if it still has the minimum shippable shape (line1 + city + a valid ISO-2
+ * country), normalizing the country; anything absent, malformed, or partial
+ * returns null. A missing address must never block subscription creation.
+ */
+function parseShippingAddressMetadata(raw: string | undefined | null): Address | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeShippableAddress(parsed as Record<string, unknown>);
+  } catch (err) {
+    console.error('[webhook] subscription.created: malformed shipping_address metadata', err);
+    return null;
+  }
+}
 
 /**
  * Handle customer.subscription.created
@@ -111,6 +138,11 @@ export async function handleSubscriptionCreated(
       status: subscription.status as SubscriptionStatus,
       current_period_start: periodStart,
       current_period_end: periodEnd,
+      // Persist the checkout shipping address (BMC-171). The paid-invoice webhook
+      // (handleInvoicePaymentSucceeded) reads it from this row to build the
+      // initial + renewal fulfillment orders — no order is created here; the
+      // invoice is the authoritative "paid" signal and single order-creation path.
+      shipping_address: parseShippingAddressMetadata(subscription.metadata?.shipping_address),
     },
     stripeEventId
   );

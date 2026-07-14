@@ -191,3 +191,80 @@ describe('POST /api/subscriptions SetupIntent ownership guard (BMC-148 / M5)', (
     expect(retrieveSetupIntent).toHaveBeenCalledWith('seti_mine', { expand: ['customer'] });
   });
 });
+
+describe('POST /api/subscriptions shipping_address metadata (BMC-171)', () => {
+  beforeEach(() => {
+    retrieveSetupIntent.mockResolvedValue(setupIntentOwnedBy(CALLER));
+  });
+
+  function metadataFromCreateCall() {
+    return createSubscription.mock.calls[0][0].metadata as Record<string, string>;
+  }
+
+  it('forwards a valid shipping address as normalized JSON metadata (country uppercased)', async () => {
+    const res = await POST(
+      postRequest({
+        setupIntentId: 'seti_mine',
+        planId: 'plan_1',
+        shippingAddress: {
+          line1: '1 Tea Rd',
+          city: 'Portland',
+          region: 'OR',
+          postal_code: '97201',
+          country: 'us',
+        },
+      })
+    );
+
+    expect(res.status).toBe(201);
+    const metadata = metadataFromCreateCall();
+    expect(metadata.shipping_address).toBeDefined();
+    expect(JSON.parse(metadata.shipping_address)).toEqual({
+      type: 'shipping',
+      line1: '1 Tea Rd',
+      city: 'Portland',
+      region: 'OR',
+      postal_code: '97201',
+      country: 'US',
+    });
+  });
+
+  it('omits the metadata key (still creates the subscription) when no address is posted', async () => {
+    const res = await POST(postRequest({ setupIntentId: 'seti_mine', planId: 'plan_1' }));
+
+    expect(res.status).toBe(201);
+    expect(metadataFromCreateCall().shipping_address).toBeUndefined();
+  });
+
+  it('drops an invalid address (non-ISO-2 country) rather than storing it', async () => {
+    const res = await POST(
+      postRequest({
+        setupIntentId: 'seti_mine',
+        planId: 'plan_1',
+        shippingAddress: { line1: '1 Tea Rd', city: 'Portland', country: 'United States' },
+      })
+    );
+
+    expect(res.status).toBe(201);
+    expect(metadataFromCreateCall().shipping_address).toBeUndefined();
+  });
+
+  it('omits the address (never fails creation) when the JSON would exceed Stripe 500-char cap', async () => {
+    const res = await POST(
+      postRequest({
+        setupIntentId: 'seti_mine',
+        planId: 'plan_1',
+        shippingAddress: {
+          line1: 'A'.repeat(600),
+          city: 'Portland',
+          country: 'US',
+        },
+      })
+    );
+
+    // Degrades gracefully: subscription still created, oversized metadata dropped.
+    expect(res.status).toBe(201);
+    expect(createSubscription).toHaveBeenCalledTimes(1);
+    expect(metadataFromCreateCall().shipping_address).toBeUndefined();
+  });
+});

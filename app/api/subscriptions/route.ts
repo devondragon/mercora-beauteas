@@ -14,6 +14,7 @@ import {
   getSubscriptionsByCustomer,
   getSubscriptionPlanById,
 } from '@/lib/models/mach/subscriptions';
+import { normalizeShippableAddress } from '@/lib/utils/address';
 
 // ─── GET /api/subscriptions ──────────────────────────────────────
 
@@ -49,7 +50,33 @@ export async function GET() {
 interface CreateSubscriptionBody {
   setupIntentId: string;
   planId: string;
+  shippingAddress?: ClientShippingAddress;
 }
+
+/** Shape the subscription checkout client posts (SubscribeCheckoutClient.tsx). */
+interface ClientShippingAddress {
+  line1?: string;
+  line2?: string;
+  city?: string;
+  region?: string;
+  postal_code?: string;
+  country?: string;
+}
+
+/**
+ * BMC-171: the checkout shipping address was previously collected but silently
+ * dropped here. It is now normalized (see `normalizeShippableAddress` —
+ * line1 + city + a valid uppercase ISO-2 country required, else null) and
+ * forwarded to Stripe as subscription metadata so the
+ * `customer.subscription.created` webhook can persist it on the D1 subscription
+ * row, where the initial + renewal order-creation paths read it. Kept
+ * non-blocking: an absent/partial/invalid address must not fail an
+ * otherwise-valid subscription — the resulting order is simply created without
+ * an address for the merchant to reconcile.
+ */
+
+/** Stripe caps each metadata VALUE at 500 chars; a longer value fails the API call. */
+const STRIPE_METADATA_VALUE_MAX = 500;
 
 export async function POST(req: NextRequest) {
   try {
@@ -58,7 +85,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { setupIntentId, planId } =
+    const { setupIntentId, planId, shippingAddress } =
       (await req.json()) as CreateSubscriptionBody;
 
     if (!setupIntentId || !planId) {
@@ -147,17 +174,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Normalize the checkout shipping address (BMC-171). Forwarded via
+    // subscription metadata so the webhook can persist it on the D1 row for the
+    // initial + renewal order-creation paths.
+    const normalizedAddress = normalizeShippableAddress(
+      shippingAddress as ClientShippingAddress | undefined
+    );
+
+    const metadata: Record<string, string> = {
+      customer_id: userId,
+      plan_id: planId,
+      product_id: plan.product_id,
+    };
+
+    // Stripe caps each metadata VALUE at 500 chars. A normalized address JSON is
+    // realistically well under that, but guard defensively: if it would exceed
+    // the cap, omit the key (and log) rather than let stripe.subscriptions.create
+    // reject the whole request — the address is non-critical and must never block
+    // subscription creation.
+    const shippingAddressJson = normalizedAddress
+      ? JSON.stringify(normalizedAddress)
+      : null;
+    if (shippingAddressJson) {
+      if (shippingAddressJson.length <= STRIPE_METADATA_VALUE_MAX) {
+        metadata.shipping_address = shippingAddressJson;
+      } else {
+        console.warn(
+          '[subscriptions] shipping_address metadata exceeds Stripe 500-char cap; omitting it',
+          { length: shippingAddressJson.length }
+        );
+      }
+    }
+
     // Create the Stripe Subscription
     // The webhook handler (Phase 2) creates the D1 record and sends emails
     const stripeSubscription = await stripe.subscriptions.create({
       customer: stripeCustomerId,
       items: [{ price: plan.stripe_price_id }],
       default_payment_method: paymentMethodId,
-      metadata: {
-        customer_id: userId,
-        plan_id: planId,
-        product_id: plan.product_id,
-      },
+      metadata,
     });
 
     return NextResponse.json(

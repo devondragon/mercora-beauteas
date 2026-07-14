@@ -24,6 +24,7 @@ import { sendSubscriptionEmail } from '@/lib/utils/email';
 import type { SubscriptionFrequency } from '@/lib/types/subscription';
 import { BASE_URL } from '@/lib/seo/metadata';
 import { getCustomerDetails, getProductName } from './utils';
+import { createSubscriptionOrder } from './subscription-order';
 
 /**
  * Extract the Stripe subscription ID from an invoice's parent field.
@@ -41,8 +42,15 @@ function getSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
 /**
  * Handle invoice.payment_succeeded
  *
- * For renewal invoices (not the initial subscription_create invoice),
- * creates a "renewed" audit event and sends a renewal email.
+ * A paid subscription invoice — initial (`subscription_create`) or a recurring
+ * renewal — is the authoritative "money changed hands" signal, so it is the
+ * single place a fulfillable, paid order is created (BMC-171). The order is keyed
+ * on the invoice id for idempotency across Stripe retries.
+ *
+ * For renewals it additionally writes a "renewed" audit event, advances the
+ * period, and sends the renewal email. The initial invoice's welcome email +
+ * `created` audit event are owned by handleSubscriptionCreated, so this handler
+ * creates only the order for it and stops before the renewal-specific flow.
  */
 export async function handleInvoicePaymentSucceeded(
   invoice: Stripe.Invoice,
@@ -55,15 +63,71 @@ export async function handleInvoicePaymentSucceeded(
     return;
   }
 
+  const isInitial = invoice.billing_reason === 'subscription_create';
+
   const d1Sub = await getSubscriptionByStripeId(stripeSubscriptionId);
   if (!d1Sub) {
-    console.warn('[webhook] invoice.payment_succeeded: no D1 record for subscription', stripeSubscriptionId);
+    if (isInitial) {
+      // The initial invoice can be delivered before customer.subscription.created,
+      // which is what creates the D1 row (and persists the shipping address). WITHIN
+      // a short grace window, throw so the route 500s and Stripe retries — by then
+      // the created-handler will have landed the row, and this retry creates the
+      // initial order against it.
+      //
+      // But handleSubscriptionCreated has legitimate early-returns that NEVER create
+      // the row (no price id, no plan matching the price, or missing customer_id
+      // metadata — e.g. a subscription started outside our /api/subscriptions POST
+      // flow, or a plan whose stripe_price_id drifted from the live Stripe price
+      // after cutover). For those the row will never appear, so throwing on every
+      // redelivery would loop until Stripe's retry window quietly expires — a
+      // captured charge left with no order, silently. Past the grace window, stop
+      // retrying and raise a loud, greppable ALERT for manual reconciliation.
+      const invoiceAgeSeconds = Math.floor(Date.now() / 1000) - (invoice.created ?? 0);
+      const RACE_GRACE_SECONDS = 15 * 60; // ample for customer.subscription.created to land
+      if (invoiceAgeSeconds <= RACE_GRACE_SECONDS) {
+        throw new Error(
+          `[webhook] initial invoice ${invoice.id} arrived before subscription row for ${stripeSubscriptionId}; retrying`
+        );
+      }
+      console.error(
+        '[webhook][ALERT] subscription_order_orphaned: initial invoice paid but no D1 subscription row after grace window — captured charge with no order, needs manual reconciliation:',
+        { invoiceId: invoice.id, stripeSubscriptionId, invoiceAgeSeconds }
+      );
+      return;
+    }
+    // A RENEWAL with no row is a genuinely unknown subscription (never synced to
+    // D1). We can't self-heal by retrying (unlike the initial-invoice race, no
+    // created-handler is inbound to land the row), but it is the same
+    // "captured charge, no order" outcome BMC-171 exists to eliminate — so raise
+    // the same loud, greppable ALERT as the orphaned initial invoice for manual
+    // reconciliation rather than a quiet warn.
+    console.error(
+      '[webhook][ALERT] subscription_order_orphaned: renewal invoice paid but no D1 subscription row — captured charge with no order, needs manual reconciliation:',
+      { invoiceId: invoice.id, stripeSubscriptionId }
+    );
     return;
   }
 
-  // Only treat as renewal if this is not the first invoice
-  if (invoice.billing_reason === 'subscription_create') {
-    console.log('[webhook] invoice.payment_succeeded: initial invoice, skipping renewal flow');
+  // Create the fulfillable, paid order for this shipment (initial or renewal).
+  // Idempotent on the invoice id, so a Stripe redelivery cannot double-ship one
+  // charge. Runs before the audit event/email so fulfillment is never skipped by
+  // a later failure. invoice.id is always set for a paid invoice; guard defensively.
+  if (invoice.id) {
+    await createSubscriptionOrder({
+      subscription: d1Sub,
+      invoiceId: invoice.id,
+      amountPaidMinor: invoice.amount_paid,
+      currency: (invoice.currency || 'usd').toUpperCase(),
+      kind: isInitial ? 'initial' : 'renewal',
+    });
+  } else {
+    console.warn('[webhook] invoice.payment_succeeded: invoice has no id, cannot create order', stripeSubscriptionId);
+  }
+
+  // Initial invoice: order created above; the welcome email + `created` event are
+  // handled by handleSubscriptionCreated. Stop before the renewal-only flow.
+  if (isInitial) {
+    console.log('[webhook] invoice.payment_succeeded: initial order created, skipping renewal flow');
     return;
   }
 
