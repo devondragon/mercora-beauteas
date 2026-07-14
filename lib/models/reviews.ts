@@ -29,8 +29,8 @@ import type {
   ProductReviewEligibility,
 } from '@/lib/types';
 import { sendReviewReminderEmail, sendReviewStatusNotification } from '@/lib/utils/review-notifications';
-import { isUnsubscribedFromReviewReminders } from '@/lib/models/email-preferences';
-import { isUnsubscribeConfigured } from '@/lib/email/unsubscribe-token';
+import { getReviewReminderOptOuts } from '@/lib/models/email-preferences';
+import { isUnsubscribeConfigured, normalizeEmail } from '@/lib/email/unsubscribe-token';
 
 interface SubmitReviewInput extends ReviewSubmissionPayload {
   customerId: string;
@@ -1193,16 +1193,22 @@ export async function dispatchReviewReminders(
   let sent = 0;
   const failures: Array<{ candidate: ReviewReminderCandidate; error: string }> = [];
 
+  // CAN-SPAM (BMC-184): resolve every opted-out address in ONE query up front,
+  // rather than an N+1 lookup per candidate.
+  const optedOut = await getReviewReminderOptOuts(
+    candidates.map((c) => c.customerEmail).filter((e): e is string => Boolean(e)),
+    db,
+  );
+
   for (const candidate of candidates) {
     if (!candidate.customerEmail) {
       failures.push({ candidate, error: 'Missing customer email' });
       continue;
     }
 
-    // CAN-SPAM (BMC-184): never send review reminders to an address that opted
-    // out. Skip silently without recording a reminder row so we simply don't
-    // send — the candidate set is small, so re-evaluating next run is cheap.
-    if (await isUnsubscribedFromReviewReminders(candidate.customerEmail)) {
+    // Never send to an address that opted out. Skip silently without recording a
+    // reminder row — re-evaluating next run is cheap for the small candidate set.
+    if (optedOut.has(normalizeEmail(candidate.customerEmail))) {
       continue;
     }
 

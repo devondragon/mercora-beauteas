@@ -39,13 +39,25 @@ export function postalAddressHtml(theme: FooterTheme = 'light'): string {
   return `<p style="color: ${MUTED_COLOR[theme]}; font-size: 12px; line-height: 16px; margin: 0 0 8px;">${mailingAddressLine()}</p>`;
 }
 
+/** Escape a value for use inside a double-quoted HTML attribute. */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * Unsubscribe footer line for commercial email. `url` must be a pre-fetch-safe
  * confirmation link — a GET renders a confirm page and only a POST performs the
  * opt-out (see app/api/email/unsubscribe/route.ts), so email-client/scanner
  * pre-fetching never silently unsubscribes anyone.
+ *
+ * The URL is attribute-escaped defensively: today's caller passes a well-formed
+ * link, but this helper is reusable and must not become an HTML-injection seam.
  */
 export function unsubscribeHtml(url: string, theme: FooterTheme = 'dark'): string {
   const color = MUTED_COLOR[theme];
-  return `<p style="color: ${color}; font-size: 12px; line-height: 18px; margin: 0 0 8px;">You're receiving this because you purchased from BeauTeas. <a href="${url}" style="color: ${color}; text-decoration: underline;">Unsubscribe from review reminders</a>.</p>`;
+  return `<p style="color: ${color}; font-size: 12px; line-height: 18px; margin: 0 0 8px;">You're receiving this because you purchased from BeauTeas. <a href="${escapeAttr(url)}" style="color: ${color}; text-decoration: underline;">Unsubscribe from review reminders</a>.</p>`;
 }

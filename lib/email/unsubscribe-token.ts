@@ -13,6 +13,18 @@
 /** Only marketing email today is the review reminder; scope binds tokens to it. */
 const SCOPE = 'review_reminders';
 
+/**
+ * Upper bound on token length before we bother base64-decoding + HMAC-ing a
+ * public, unauthenticated input (the endpoint's GET isn't rate-limited). A real
+ * token is base64url(email) + "." + base64url(32-byte sig) ~= a few hundred
+ * bytes even for a long address; 1 KB is generous headroom that still caps
+ * CPU/memory work from a megabyte-sized query param.
+ *
+ * Tokens intentionally never expire: an unsubscribe link must keep working
+ * indefinitely (CAN-SPAM), so there is deliberately no timestamp/TTL here.
+ */
+const MAX_TOKEN_LENGTH = 1024;
+
 function b64urlEncode(bytes: Uint8Array): string {
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
@@ -86,6 +98,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 export async function verifyUnsubscribeToken(token: string): Promise<string | null> {
   const secret = getSecret();
   if (!secret) return null;
+  if (!token || token.length > MAX_TOKEN_LENGTH) return null;
 
   const parts = token.split('.');
   if (parts.length !== 2) return null;

@@ -21,7 +21,12 @@ import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 function htmlResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
-    headers: { 'content-type': 'text/html; charset=utf-8' },
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      // The confirm/confirmed pages echo the recipient's email — never let an
+      // intermediary or shared browser cache retain that PII.
+      'cache-control': 'no-store',
+    },
   });
 }
 
@@ -58,6 +63,17 @@ function shell(title: string, inner: string): string {
 
 /** Pull the token from the query string first (one-click URL + our POST action)
  *  and fall back to a posted form field. */
+function invalidLinkResponse(): Response {
+  return htmlResponse(
+    shell(
+      'Link expired',
+      `<h1>This unsubscribe link isn't valid</h1>
+       <p>It may have expired or been altered. If you'd still like to stop review reminders, reply to any BeauTeas email and we'll take care of it.</p>`,
+    ),
+    400,
+  );
+}
+
 async function extractToken(req: Request): Promise<string | null> {
   const fromQuery = new URL(req.url).searchParams.get('token');
   if (fromQuery) return fromQuery;
@@ -73,21 +89,15 @@ async function extractToken(req: Request): Promise<string | null> {
   return null;
 }
 
-// GET renders the confirmation page — never mutates (pre-fetch safe).
+// GET renders the confirmation page — never mutates (pre-fetch safe). It is
+// intentionally NOT rate-limited: it touches no DB, and verifyUnsubscribeToken
+// caps input length before any HMAC work, so there's no meaningful abuse surface
+// to guard (unlike POST, which mutates and is rate-limited).
 export async function GET(req: Request): Promise<Response> {
   const token = new URL(req.url).searchParams.get('token');
-  const email = token ? await verifyUnsubscribeToken(token) : null;
-
-  if (!email || !token) {
-    return htmlResponse(
-      shell(
-        'Link expired',
-        `<h1>This unsubscribe link isn't valid</h1>
-         <p>It may have expired or been altered. If you'd still like to stop review reminders, reply to any BeauTeas email and we'll take care of it.</p>`,
-      ),
-      400,
-    );
-  }
+  if (!token) return invalidLinkResponse();
+  const email = await verifyUnsubscribeToken(token);
+  if (!email) return invalidLinkResponse();
 
   const safeToken = escapeHtml(token);
   return htmlResponse(
@@ -112,17 +122,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const token = await extractToken(req);
   const email = token ? await verifyUnsubscribeToken(token) : null;
-
-  if (!email) {
-    return htmlResponse(
-      shell(
-        'Link expired',
-        `<h1>This unsubscribe link isn't valid</h1>
-         <p>It may have expired or been altered. Reply to any BeauTeas email and we'll unsubscribe you.</p>`,
-      ),
-      400,
-    );
-  }
+  if (!email) return invalidLinkResponse();
 
   await recordUnsubscribe(email, 'review_reminders');
 

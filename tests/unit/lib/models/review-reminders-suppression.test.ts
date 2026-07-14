@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/models/email-preferences', () => ({
-  isUnsubscribedFromReviewReminders: vi.fn(),
+  getReviewReminderOptOuts: vi.fn(),
 }));
 
 vi.mock('@/lib/utils/review-notifications', () => ({
@@ -17,7 +17,7 @@ vi.mock('@/lib/utils/review-notifications', () => ({
 }));
 
 import { dispatchReviewReminders } from '@/lib/models/reviews';
-import { isUnsubscribedFromReviewReminders } from '@/lib/models/email-preferences';
+import { getReviewReminderOptOuts } from '@/lib/models/email-preferences';
 import { sendReviewReminderEmail } from '@/lib/utils/review-notifications';
 
 const OPTED_OUT = 'optedout@example.com';
@@ -48,9 +48,7 @@ describe('dispatchReviewReminders — suppression (BMC-184)', () => {
   });
 
   it('does NOT email an opted-out customer but DOES email a subscribed one', async () => {
-    vi.mocked(isUnsubscribedFromReviewReminders).mockImplementation(
-      async (email: string) => email === OPTED_OUT,
-    );
+    vi.mocked(getReviewReminderOptOuts).mockResolvedValue(new Set([OPTED_OUT]));
     const { db, values } = fakeDb();
 
     const result = await dispatchReviewReminders(
@@ -70,7 +68,9 @@ describe('dispatchReviewReminders — suppression (BMC-184)', () => {
   });
 
   it('suppresses every candidate when all are opted out (no sends, no rows)', async () => {
-    vi.mocked(isUnsubscribedFromReviewReminders).mockResolvedValue(true);
+    vi.mocked(getReviewReminderOptOuts).mockResolvedValue(
+      new Set([OPTED_OUT, 'another@example.com']),
+    );
     const { db, values } = fakeDb();
 
     const result = await dispatchReviewReminders(

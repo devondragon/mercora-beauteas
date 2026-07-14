@@ -62,6 +62,11 @@ describe('unsubscribe-token', () => {
     expect(await verifyUnsubscribeToken('!!!.!!!')).toBeNull();
   });
 
+  it('rejects an over-long token without doing HMAC work (DoS guard)', async () => {
+    const huge = 'a'.repeat(2000) + '.' + 'b'.repeat(2000);
+    expect(await verifyUnsubscribeToken(huge)).toBeNull();
+  });
+
   it('rejects a token signed with a different secret', async () => {
     const token = (await createUnsubscribeToken('person@example.com'))!;
     process.env.EMAIL_UNSUBSCRIBE_SECRET = 'a-different-secret';

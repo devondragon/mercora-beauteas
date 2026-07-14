@@ -42,4 +42,11 @@ describe('email-footer', () => {
     expect(html).toContain(`href="${url}"`);
     expect(html.toLowerCase()).toContain('unsubscribe');
   });
+
+  it('unsubscribeHtml escapes a hostile url so it cannot break out of the href', () => {
+    const hostile = 'https://x.com/"><script>alert(1)</script>';
+    const html = unsubscribeHtml(hostile, 'dark');
+    expect(html).not.toContain('"><script>');
+    expect(html).toContain('&quot;&gt;&lt;script&gt;');
+  });
 });
