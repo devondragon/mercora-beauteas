@@ -53,3 +53,9 @@ linkedin-article.md
 # Shopify ETL run artifacts (keep the dir, ignore generated output)
 /scripts/shopify-migration/output/*
 !/scripts/shopify-migration/output/.gitkeep
+
+# Database dumps must never be committed — they can contain real PII (BMC-137).
+# Scoped to dump-style filenames so tracked migrations (migrations/*.sql) and
+# seeds (data/d1/*.sql) stay tracked and new ones can still be `git add`ed.
+*-dump.sql
+*.dump.sql
