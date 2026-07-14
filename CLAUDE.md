@@ -192,7 +192,7 @@ Two layers; both **fail closed** (default deny). The prior P0 (unauthenticated o
 
 ## API Routes (by area)
 
-- **Public:** `/api/categories`, `/api/products`, `/api/products/[id]`, `/api/products/[id]/subscription-plans`, `/api/pages/[slug]`, `/api/validate-discount`, `/api/tax`, `/api/shipping-options`
+- **Public:** `/api/categories`, `/api/products`, `/api/products/[id]`, `/api/products/[id]/subscription-plans`, `/api/pages/[slug]`, `/api/validate-discount`, `/api/tax`, `/api/shipping-options`, `/api/email/unsubscribe` (CAN-SPAM opt-out — GET confirm page, POST opts out; BMC-184)
 - **Orders/payments:** `GET/POST /api/orders`, `GET /api/orders/[id]`, `POST /api/orders/refund` (auth), `POST /api/payment-intent`
 - **Subscriptions:** `GET/POST /api/subscriptions`, `POST /api/subscriptions/[id]` (pause/resume/cancel — Clerk user)
 - **Webhooks:** `POST /api/webhooks/stripe` (payment_intent, subscription, invoice; dedup via `processed_webhook_events`)

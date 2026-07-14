@@ -1177,6 +1177,19 @@ export async function sendReviewReminders(options: ReminderQueryOptions = {}) {
     return { sent: 0, failed: [] as Array<{ candidate: ReviewReminderCandidate; error: string }> };
   }
 
+  return dispatchReviewReminders(candidates, db);
+}
+
+/**
+ * Send reminders for an already-resolved candidate list, skipping opted-out
+ * addresses (BMC-184). Extracted from sendReviewReminders so the suppression
+ * path is unit-testable without mocking the whole candidate-discovery query
+ * chain.
+ */
+export async function dispatchReviewReminders(
+  candidates: ReviewReminderCandidate[],
+  db: Awaited<ReturnType<typeof getDbAsync>>,
+) {
   let sent = 0;
   const failures: Array<{ candidate: ReviewReminderCandidate; error: string }> = [];
 
