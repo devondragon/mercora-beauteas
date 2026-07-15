@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPermissions, isSuperAdminActor } from "@/lib/auth/admin-middleware";
-import { customJsChanged, logCustomJsAudit } from "@/lib/cms/custom-js-guard";
+import { customJsChanged, isNonEmptyScript, logCustomJsAudit } from "@/lib/cms/custom-js-guard";
 import { errorDetails } from "@/lib/utils/error-response";
 import {
   getPageById,
@@ -145,10 +145,10 @@ export async function PUT(
     }
 
     // Guardrail (BMC-163): only a super-admin may set or change a page's
-    // arbitrary client-side `custom_js`. When the payload changes custom_js,
-    // require super-admin; otherwise reject the whole update so the existing
-    // value is preserved untouched. Ordinary edits that don't touch custom_js
-    // are unaffected.
+    // arbitrary client-side `custom_js` to a NON-EMPTY value. Clearing/removing
+    // an existing script is allowed for any admin (and still audited). Ordinary
+    // edits that don't touch custom_js are unaffected.
+    let auditCustomJsWrite = false;
     if ("custom_js" in updateData) {
       const currentPage = await getPageById(id);
       if (!currentPage) {
@@ -158,19 +158,27 @@ export async function PUT(
         );
       }
       if (customJsChanged(updateData, currentPage)) {
-        const allowed = await isSuperAdminActor(authResult);
-        logCustomJsAudit({
-          actorUserId: authResult.userId,
-          pageId: id,
-          action: "update",
-          allowed,
-        });
-        if (!allowed) {
-          return NextResponse.json(
-            { success: false, error: "Only a super-admin may change custom JavaScript on a page." },
-            { status: 403 }
-          );
+        if (isNonEmptyScript(updateData.custom_js)) {
+          // Setting/changing to a non-empty script — super-admin only.
+          const allowed = await isSuperAdminActor(authResult);
+          if (!allowed) {
+            // Rejected attempt — audit before returning (existing value preserved).
+            logCustomJsAudit({
+              actorUserId: authResult.userId,
+              pageId: id,
+              action: "update",
+              allowed: false,
+            });
+            return NextResponse.json(
+              { success: false, error: "Only a super-admin may change custom JavaScript on a page." },
+              { status: 403 }
+            );
+          }
         }
+        // Either an allowed super-admin set, or an ordinary admin clearing the
+        // script. Audit AFTER the update persists so `allowed: true` reflects a
+        // committed change.
+        auditCustomJsWrite = true;
       }
     }
 
@@ -187,6 +195,16 @@ export async function PUT(
         { success: false, error: "Page not found" },
         { status: 404 }
       );
+    }
+
+    if (auditCustomJsWrite) {
+      logCustomJsAudit({
+        actorUserId: authResult.userId,
+        pageId: id,
+        pageSlug: updatedPage.slug,
+        action: "update",
+        allowed: true,
+      });
     }
 
     return NextResponse.json({

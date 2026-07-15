@@ -3,6 +3,7 @@ import {
   CUSTOM_JS_ENABLED_SETTING,
   isCustomJsEnabled,
   customJsChanged,
+  isNonEmptyScript,
   logCustomJsAudit,
 } from "@/lib/cms/custom-js-guard";
 
@@ -58,6 +59,31 @@ describe("customJsChanged (super-admin write gate predicate)", () => {
   it("returns true when clearing an existing script", () => {
     expect(customJsChanged({ custom_js: "" }, { custom_js: "a()" })).toBe(true);
     expect(customJsChanged({ custom_js: null }, { custom_js: "a()" })).toBe(true);
+  });
+});
+
+describe("isNonEmptyScript (set-vs-clear discriminator)", () => {
+  it("is false for null / undefined / whitespace-only (a clear/removal)", () => {
+    expect(isNonEmptyScript(null)).toBe(false);
+    expect(isNonEmptyScript(undefined)).toBe(false);
+    expect(isNonEmptyScript("")).toBe(false);
+    expect(isNonEmptyScript("   ")).toBe(false);
+    expect(isNonEmptyScript("\n\t ")).toBe(false);
+  });
+
+  it("is true for actual script content (a set/change → super-admin only)", () => {
+    expect(isNonEmptyScript("alert(1)")).toBe(true);
+    expect(isNonEmptyScript("  a()  ")).toBe(true);
+  });
+
+  it("distinguishes clearing from setting for a changed custom_js write", () => {
+    // Clearing an existing script: changed, but empty → ordinary admin allowed.
+    expect(customJsChanged({ custom_js: "" }, { custom_js: "a()" })).toBe(true);
+    expect(isNonEmptyScript("")).toBe(false);
+
+    // Setting a new script: changed and non-empty → super-admin required.
+    expect(customJsChanged({ custom_js: "a()" }, { custom_js: null })).toBe(true);
+    expect(isNonEmptyScript("a()")).toBe(true);
   });
 });
 

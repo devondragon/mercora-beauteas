@@ -12,9 +12,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getDbAsync } from "@/lib/db";
 import { admin_settings, defaultSettings } from "@/lib/db/schema/settings";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { CUSTOM_JS_ENABLED_SETTING } from "@/lib/cms/custom-js-guard";
 import { eq, inArray } from "drizzle-orm";
 
 /**
@@ -123,10 +125,20 @@ export async function POST(request: NextRequest) {
     
     // Return updated settings
     const updatedKeys = updates.map(u => u.key);
+
+    // BMC-163: the CMS custom_js kill switch (`cms.custom_js_enabled`) is read
+    // during server render of the public `/[slug]` CMS pages, which are cached
+    // in the full route cache / R2 ISR (no `revalidate` on that route). Flipping
+    // the switch would otherwise not take effect until the cache expired, so
+    // bust the CMS page cache here to propagate the change immediately.
+    if (updatedKeys.includes(CUSTOM_JS_ENABLED_SETTING)) {
+      revalidatePath("/[slug]", "page");
+    }
+
     const updatedSettings = await db.select().from(admin_settings)
       .where(inArray(admin_settings.key, updatedKeys));
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       success: true, 
       updated: updatedSettings.length,
       settings: updatedSettings

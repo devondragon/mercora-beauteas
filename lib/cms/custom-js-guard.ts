@@ -52,6 +52,16 @@ function normalizeScript(value: string | null | undefined): string | null {
 }
 
 /**
+ * Pure: does this value carry actual script content (i.e. non-empty after
+ * whitespace normalization)? Used by the write routes to distinguish
+ * *setting/changing* `custom_js` to a non-empty value (super-admin only) from
+ * *removing* it (empty/whitespace — an ordinary admin may clear it).
+ */
+export function isNonEmptyScript(value: string | null | undefined): boolean {
+  return normalizeScript(value) !== null;
+}
+
+/**
  * Pure: does this page write set or change `custom_js` relative to the current
  * row? Returns `false` when the payload doesn't include `custom_js` at all, or
  * when the (whitespace-normalized) value is unchanged — so ordinary edits that
@@ -69,10 +79,15 @@ export function customJsChanged(
 }
 
 /**
- * Emit a structured audit record whenever a `custom_js` write is attempted.
+ * Emit a structured audit record for a `custom_js` write.
  * Uses `console.warn` (surfaced in Workers observability / `wrangler tail`)
  * since the repo has no dedicated audit table. Records who, what, when, and
- * whether the write was permitted.
+ * the outcome.
+ *
+ * Callers log with `allowed: false` when *rejecting* an attempt (before any
+ * write), and with `allowed: true` only *after* the write has actually
+ * persisted — so an `allowed: true` record always corresponds to a real,
+ * committed change (see BMC-163 review).
  */
 export function logCustomJsAudit(entry: {
   actorUserId?: string;
