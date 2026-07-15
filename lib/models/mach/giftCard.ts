@@ -406,17 +406,6 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
 }
 
 /**
- * Record that the recipient delivery email has been sent.
- */
-export async function markGiftCardDelivered(id: string): Promise<void> {
-  const db = await getDbAsync();
-  await db
-    .update(gift_cards)
-    .set({ delivered_at: sql`CURRENT_TIMESTAMP`, updated_at: sql`CURRENT_TIMESTAMP` })
-    .where(eq(gift_cards.id, id));
-}
-
-/**
  * Atomically CLAIM a card for delivery: stamp `delivered_at` only if it is
  * currently NULL. Returns true if THIS caller won the claim (and therefore must
  * send the email), false if another writer already claimed/sent it.

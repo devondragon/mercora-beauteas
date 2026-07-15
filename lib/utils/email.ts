@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
+import { Money } from '@/lib/money';
 
 let resend: Resend | null = null;
 
@@ -527,7 +528,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
     : `Someone special has sent you a BeauTeas gift card.`;
   const giftMessage = data.giftMessage ? escapeHtml(data.giftMessage) : '';
   const code = escapeHtml(data.code);
-  const amountDisplay = `$${(data.amount / 100).toFixed(2)}`;
+  const amountDisplay = Money.fromMinor(data.amount, data.currency || 'USD').format();
   // Only allow an absolute https URL; otherwise fall back to the brand origin.
   const redeemUrl =
     data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : 'https://beauteas.com';
@@ -706,7 +707,7 @@ function generateSubscriptionEmailHTML(
               ${data.amount !== undefined ? `
               <tr>
                 <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Amount:</td>
-                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">$${(data.amount / 100).toFixed(2)}</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${Money.fromMinor(data.amount, 'USD').format()}</td>
               </tr>` : ''}
             </table>
           </div>
@@ -742,7 +743,7 @@ function getTypeSpecificContent(
       // post-purchase acknowledgment (several state automatic-renewal laws
       // require this in the confirmation itself, BMC-186).
       const amountText =
-        data.amount !== undefined ? `$${(data.amount / 100).toFixed(2)}` : 'the subscription price';
+        data.amount !== undefined ? Money.fromMinor(data.amount, 'USD').format() : 'the subscription price';
       const cadence = FREQUENCY_CADENCE[data.frequency];
       const nextChargeLine = data.nextBillingDate
         ? ` Your first renewal charge is on ${data.nextBillingDate}.`
