@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasPermission, COMMERCE_SCOPES } from '../../../../../../lib/mcp/auth';
 import { clearCart } from '../../../../../../lib/mcp/tools/cart';
 import { errorDetails } from '../../../../../../lib/utils/error-response';
 
@@ -11,6 +11,16 @@ export async function POST(request: NextRequest) {
       success: false,
       error: auth.error
     }, { status: 401 });
+  }
+
+  if (!hasPermission(auth.permissions, COMMERCE_SCOPES.WRITE_CART)) {
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: "This tool requires an agent with the 'write:cart' permission"
+      }
+    }, { status: 403 });
   }
 
   try {

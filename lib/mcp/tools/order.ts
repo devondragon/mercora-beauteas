@@ -10,6 +10,7 @@ import { retrievePaymentIntent } from '../../stripe';
 import {
   verifyOrderChargeSufficient,
   AMOUNT_TOLERANCE_CENTS,
+  MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
   canonicalizeOrderItemsPricing,
   computeOrderTotals,
@@ -145,6 +146,17 @@ export async function placeOrder(
           next_actions: ['Add items to cart before placing order']
         }
       };
+    }
+
+    // Line-item cap (BMC-188): pricing/verification below does one catalog read
+    // per line (verifyOrderChargeSufficient, canonicalize*), so an oversized
+    // cart is a cheap way to force hundreds of concurrent D1 reads and exhaust
+    // Worker CPU. Reuse the same MAX_ORDER_LINE_ITEMS cap the web checkout path
+    // enforces (order-pricing.ts). Guard here — before any catalog read.
+    if (cart.length > MAX_ORDER_LINE_ITEMS) {
+      return orderFailure(sessionId, agentId, startTime, 'TOO_MANY_LINE_ITEMS',
+        `Cart has too many distinct items (max ${MAX_ORDER_LINE_ITEMS}).`,
+        ['Reduce the number of distinct items in the cart before placing the order']);
     }
 
     // Enhanced user context for order

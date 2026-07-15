@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasPermission, COMMERCE_SCOPES } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { placeOrder } from '../../../../../../lib/mcp/tools/order';
 import { OrderRequest } from '../../../../../../lib/mcp/types';
@@ -13,6 +13,16 @@ export async function POST(request: NextRequest) {
       success: false,
       error: auth.error
     }, { status: 401 });
+  }
+
+  if (!hasPermission(auth.permissions, COMMERCE_SCOPES.PLACE_ORDERS)) {
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: "This tool requires an agent with the 'place:orders' permission"
+      }
+    }, { status: 403 });
   }
 
   try {

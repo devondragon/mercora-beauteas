@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent, hasAgentManagementPermission } from '../../../lib/mcp/auth';
+import { authenticateAgent, hasAgentManagementPermission, hasPermission, COMMERCE_TOOL_SCOPES } from '../../../lib/mcp/auth';
 import { CapabilitiesResponse, MCPToolResponse } from '../../../lib/mcp/types';
 import { getCatalogCapabilities } from '../../../lib/mcp/catalog';
 import { createHttpErrorResponse } from '../../../lib/mcp/error-handler';
@@ -88,6 +88,19 @@ export async function POST(request: NextRequest) {
   if (AGENT_MANAGEMENT_TOOLS.includes(tool) && !hasAgentManagementPermission(auth.permissions)) {
     return createHttpErrorResponse(
       'Agent management requires an agent with admin or agents:manage permission',
+      403
+    );
+  }
+
+  // Commerce scope gate (BMC-188): cart-mutating and order/payment-placement
+  // tools require the matching per-agent permission scope (write:cart /
+  // place:orders). This dispatcher is the primary path callers reach them by,
+  // so the gate lives here as well as on the REST /tools/* routes. Fail closed —
+  // a key without the scope cannot mutate carts or spend money.
+  const requiredScope = COMMERCE_TOOL_SCOPES[tool];
+  if (requiredScope && !hasPermission(auth.permissions, requiredScope)) {
+    return createHttpErrorResponse(
+      `This tool requires an agent with the '${requiredScope}' permission`,
       403
     );
   }

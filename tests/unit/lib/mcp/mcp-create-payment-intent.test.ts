@@ -21,6 +21,8 @@ vi.mock('@/lib/mcp/session', () => ({
 
 vi.mock('@/lib/services/order-pricing', () => ({
   computeCatalogSubtotalCents: vi.fn(),
+  // Real value (order-pricing.ts) so the BMC-188 line-item cap resolves.
+  MAX_ORDER_LINE_ITEMS: 100,
 }));
 
 vi.mock('@/lib/stripe', () => ({
@@ -107,6 +109,22 @@ describe('create_payment_intent (BMC-132 / C5)', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('EMPTY_CART');
+    expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cart exceeding the line-item cap before any catalog read (BMC-188)', async () => {
+    const owned = ownedSessionWithCart();
+    owned.session.cart = Array.from({ length: 101 }, (_, i) => ({
+      productId: `p${i}`, variantId: `v${i}`, name: 'Blend', price: 20, quantity: 1, primaryImageUrl: '',
+    }));
+    vi.mocked(requireOwnedSession).mockResolvedValue(owned);
+
+    const result = await createAgentPaymentIntent(baseRequest(), SESSION, AGENT);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('TOO_MANY_LINE_ITEMS');
+    // Cap short-circuits before pricing the catalog or minting a PaymentIntent.
+    expect(vi.mocked(computeCatalogSubtotalCents)).not.toHaveBeenCalled();
     expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
   });
 
