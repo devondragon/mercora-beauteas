@@ -31,21 +31,86 @@ export function hasAgentManagementPermission(permissions: string[] | undefined):
   return permissions.some((p) => AGENT_MANAGEMENT_PERMISSIONS.includes(p));
 }
 
+/**
+ * Superuser grants — a key holding either satisfies ANY scope check below.
+ * `admin` and `*` are the same wildcard grants recognized by the
+ * agent-management tier, kept here so commerce and management scoping agree on
+ * what "unrestricted" means.
+ */
+const SUPERUSER_PERMISSIONS = ['admin', '*'];
+
+/**
+ * Commerce permission scopes (BMC-188). The per-agent `permissions` array was
+ * previously only consulted for the agent-management tier, so a key provisioned
+ * `["read:products"]` — or `[]` — could still mutate carts and spend money. The
+ * commerce tools now require the matching scope below (fail closed):
+ *   - write:cart   → cart-mutating tools (add/update/remove/bulk-add/clear)
+ *   - place:orders → order + payment placement (place_order, create_payment_intent)
+ * `admin`/`*` (SUPERUSER_PERMISSIONS) satisfy either.
+ */
+export const COMMERCE_SCOPES = {
+  WRITE_CART: 'write:cart',
+  PLACE_ORDERS: 'place:orders',
+} as const;
+
+/**
+ * True when the agent's granted permissions include `required`, or hold a
+ * superuser grant (`admin`/`*`). Fails closed for undefined/empty permissions.
+ * This is the single mechanism the commerce tools and the dispatcher use to
+ * gate scoped operations.
+ */
+export function hasPermission(permissions: string[] | undefined, required: string): boolean {
+  if (!permissions) return false;
+  return permissions.some((p) => p === required || SUPERUSER_PERMISSIONS.includes(p));
+}
+
+/**
+ * Maps a dispatchable MCP tool name to the commerce scope it requires. Tools
+ * absent from this map carry no commerce-scope requirement (read-only/catalog
+ * tools and the separately-gated agent-management tier). Used by the JSON
+ * dispatcher (POST /api/mcp) and mirrored on the REST /tools/* routes.
+ */
+export const COMMERCE_TOOL_SCOPES: Record<string, string> = {
+  add_to_cart: COMMERCE_SCOPES.WRITE_CART,
+  update_cart: COMMERCE_SCOPES.WRITE_CART,
+  remove_from_cart: COMMERCE_SCOPES.WRITE_CART,
+  bulk_add_to_cart: COMMERCE_SCOPES.WRITE_CART,
+  clear_cart: COMMERCE_SCOPES.WRITE_CART,
+  place_order: COMMERCE_SCOPES.PLACE_ORDERS,
+  create_payment_intent: COMMERCE_SCOPES.PLACE_ORDERS,
+};
+
+/**
+ * Returns the commerce scope a tool requires, or `undefined` for tools that
+ * carry no commerce-scope requirement. This is the single lookup both the JSON
+ * dispatcher and the REST /tools/* routes use, so the REST routes derive their
+ * required scope from `COMMERCE_TOOL_SCOPES` (the source of truth) rather than
+ * hardcoding it inline — adding a future commerce tool only means updating the
+ * map above (BMC-188 review).
+ */
+export function requiredScopeForTool(toolName: string): string | undefined {
+  return COMMERCE_TOOL_SCOPES[toolName];
+}
+
 export async function authenticateAgent(
   request: NextRequest,
   opts: { isOrderOp?: boolean } = {}
 ): Promise<AgentAuthResult> {
   const { isOrderOp = false } = opts;
+  // Header-only (BMC-188): a key must arrive in a request header, never the
+  // query string. `?api_key=` leaks the credential into CF/access logs, the
+  // Referer header, and browser history — it was dropped to match the project's
+  // header-only auth standard (the same rule unified-auth enforces for
+  // api_tokens).
   const apiKey = request.headers.get('X-Agent-API-Key') ||
-                 request.headers.get('Authorization')?.replace('Bearer ', '') ||
-                 request.nextUrl.searchParams.get('api_key');
+                 request.headers.get('Authorization')?.replace('Bearer ', '');
 
   if (!apiKey) {
     return {
       success: false,
       error: {
         code: 'MISSING_API_KEY',
-        message: 'Agent API key required in X-Agent-API-Key header, Authorization header, or api_key query parameter'
+        message: 'Agent API key required in X-Agent-API-Key or Authorization header'
       }
     };
   }

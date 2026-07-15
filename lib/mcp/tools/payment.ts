@@ -5,7 +5,7 @@ import {
 } from '../types';
 import { CartItem } from '../../types/cartitem';
 import { requireOwnedSession } from '../session';
-import { computeCatalogSubtotalCents } from '../../services/order-pricing';
+import { computeCatalogSubtotalCents, MAX_ORDER_LINE_ITEMS } from '../../services/order-pricing';
 import { computeOrderTotals, normalizeAddress } from './order';
 import { Money } from '../../money';
 import {
@@ -175,6 +175,16 @@ export async function createAgentPaymentIntent(
     const cart = ownership.session.cart;
     if (cart.length === 0) {
       return fail('EMPTY_CART', 'Cannot create a payment for an empty cart.', ['Add items to cart first']);
+    }
+
+    // Line-item cap (BMC-188): computeCatalogSubtotalCents below does one catalog
+    // read per line, so an oversized cart is a cheap way to force hundreds of
+    // concurrent D1 reads. Reuse the same MAX_ORDER_LINE_ITEMS cap the web
+    // checkout path enforces (order-pricing.ts) — guard before pricing.
+    if (cart.length > MAX_ORDER_LINE_ITEMS) {
+      return fail('TOO_MANY_LINE_ITEMS',
+        `Cart has too many distinct items (max ${MAX_ORDER_LINE_ITEMS}).`,
+        ['Reduce the number of distinct items in the cart']);
     }
 
     if (!isStripeConfigured()) {
