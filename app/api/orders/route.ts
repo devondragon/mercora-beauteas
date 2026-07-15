@@ -31,6 +31,7 @@ import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
+import { validatePutOrderStatus, protectPaymentIntentId } from "@/lib/utils/order-update-guards";
 
 
 
@@ -527,12 +528,16 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Validate status value (must match schema)
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json({
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
-      }, { status: 400 });
+    // Validate the status value AND gate refund-owned transitions (BMC-158).
+    // 'cancelled'/'refunded' are rejected here (422) — they are set only by the
+    // dedicated POST /api/orders/refund route, which issues the Stripe refund
+    // and updates payment_status atomically. Setting them via this
+    // fulfillment-only PUT would leave the order in an inconsistent state
+    // (e.g. status='refunded' while payment_status stays 'paid' with no refund)
+    // and email the customer a false cancelled/refunded notice.
+    const statusCheck = validatePutOrderStatus(status);
+    if (!statusCheck.ok) {
+      return NextResponse.json({ error: statusCheck.error }, { status: statusCheck.status });
     }
 
     const db = await getDbAsync();
@@ -570,6 +575,13 @@ export async function PUT(request: NextRequest) {
     // Build update data (MACH-compliant).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
+    //
+    // SECURITY (BMC-158): `extensions.payment_intent_id` is the binding the
+    // refund route trusts to locate the PaymentIntent it refunds. A wholesale
+    // `extensions` overwrite here could rebind it (refund fraud) or drop it, so
+    // protectPaymentIntentId pins it back to the currently stored value (and
+    // forbids introducing one where none existed) while passing other
+    // extensions keys through untouched.
     const updateData: any = {
       ...(status && { status }),
       ...(shipping_method && { shipping_method }),
@@ -578,7 +590,7 @@ export async function PUT(request: NextRequest) {
       ...(delivered_at && { delivered_at }),
       ...(notes && { notes }),
       ...(external_references && { external_references }),
-      ...(extensions && { extensions }),
+      ...(extensions && { extensions: protectPaymentIntentId(extensions, currentOrder.extensions) }),
       updated_at: new Date().toISOString()
     };
 
