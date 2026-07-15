@@ -278,14 +278,27 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
 
       // A card already exists for this line: never re-mint. But if its delivery
       // email never landed, re-drive it now so the recipient still gets the code
-      // (BMC-186) — the purchaser was charged and the card was minted.
+      // (BMC-186) — the purchaser was charged and the card was minted. This is
+      // defense-in-depth: in practice only the promotion CAS winner reaches
+      // issuance and it runs once, so this branch is rarely hit today — the
+      // reachable retry is `retryUndeliveredGiftCards` on the CAS-loser path.
       const existingCard = existingByLineId.get(orderLineId);
       if (existingCard) {
         if (!existingCard.delivered_at) {
-          const retry = await deliverGiftCard(existingCard, purchaserName);
-          if (!retry.ok) {
+          // deliverGiftCard does a DB write (the claim), so guard it — this
+          // function must honor processGiftCardsForOrder's "never throws" contract.
+          try {
+            const retry = await deliverGiftCard(existingCard, purchaserName);
+            if (!retry.ok) {
+              errors.push(
+                `Gift card ${existingCard.code} delivery retry failed: ${retry.error}`
+              );
+            }
+          } catch (err) {
             errors.push(
-              `Gift card ${existingCard.code} delivery retry failed: ${retry.error}`
+              `Gift card ${existingCard.code} delivery retry error: ${
+                err instanceof Error ? err.message : 'unknown error'
+              }`
             );
           }
         }
@@ -347,17 +360,26 @@ export async function retryUndeliveredGiftCards(
   if (!(order.items || []).some(isGiftCardLine)) return { retried, errors };
 
   const purchaserName = purchaserNameFromOrder(order);
-  const cards = await getGiftCardsByOrderId(orderId);
-  for (const card of cards) {
-    if (card.delivered_at) continue; // already delivered
-    const result = await deliverGiftCard(card, purchaserName);
-    if (!result.ok) {
-      errors.push(`Gift card ${card.code} delivery retry failed: ${result.error}`);
-    } else if (!result.skipped) {
-      // Only count deliveries WE actually sent — `skipped` means another writer
-      // won the single-flight claim (no email sent by us).
-      retried++;
+  // Honor the "never throws" contract: getGiftCardsByOrderId and the DB write
+  // inside deliverGiftCard can throw, so convert any failure into an error entry
+  // rather than letting it propagate (a caller may not wrap this).
+  try {
+    const cards = await getGiftCardsByOrderId(orderId);
+    for (const card of cards) {
+      if (card.delivered_at) continue; // already delivered
+      const result = await deliverGiftCard(card, purchaserName);
+      if (!result.ok) {
+        errors.push(`Gift card ${card.code} delivery retry failed: ${result.error}`);
+      } else if (!result.skipped) {
+        // Only count deliveries WE actually sent — `skipped` means another writer
+        // won the single-flight claim (no email sent by us).
+        retried++;
+      }
     }
+  } catch (err) {
+    errors.push(
+      `Gift card delivery retry error: ${err instanceof Error ? err.message : 'unknown error'}`
+    );
   }
 
   return { retried, errors };

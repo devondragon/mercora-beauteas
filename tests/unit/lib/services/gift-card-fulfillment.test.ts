@@ -143,6 +143,15 @@ describe('processGiftCardsForOrder — delivery retry (BMC-186)', () => {
     expect(result.errors.some((e) => e.includes('delivery retry failed'))).toBe(true);
   });
 
+  it('does NOT throw when the delivery claim write throws (honors the never-throws contract)', async () => {
+    vi.mocked(getGiftCardsByOrderId).mockResolvedValue([existingCard({ delivered_at: null })]);
+    vi.mocked(claimGiftCardForDelivery).mockRejectedValue(new Error('D1 write failed'));
+
+    const result = await processGiftCardsForOrder(giftCardOrder(), { paidAmountCents: 2500 });
+
+    expect(result.errors.some((e) => e.includes('delivery retry error'))).toBe(true);
+  });
+
   it('does NOT send a second email when another writer already won the claim (single-flight)', async () => {
     vi.mocked(getGiftCardsByOrderId).mockResolvedValue([existingCard({ delivered_at: null })]);
     // Another writer (the finalize winner) claimed delivery first.
@@ -229,5 +238,14 @@ describe('retryUndeliveredGiftCards — reachable retry path (BMC-186)', () => {
 
     expect(result.retried).toBe(0);
     expect(getGiftCardsByOrderId).not.toHaveBeenCalled();
+  });
+
+  it('does NOT throw when a DB read/write throws (honors the never-throws contract)', async () => {
+    vi.mocked(getGiftCardsByOrderId).mockRejectedValue(new Error('D1 read failed'));
+
+    const result = await retryUndeliveredGiftCards(giftCardOrder());
+
+    expect(result.retried).toBe(0);
+    expect(result.errors.some((e) => e.includes('delivery retry error'))).toBe(true);
   });
 });

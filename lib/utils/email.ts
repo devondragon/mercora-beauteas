@@ -753,7 +753,7 @@ function getTypeSpecificContent(
         extra: `
           <div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 12px 16px; margin: 16px 0;">
             <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0 0 8px;"><strong>Recurring billing:</strong> You'll be charged ${amountText} ${cadence}, automatically, until you cancel.${nextChargeLine}</p>
-            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime — no fees, no commitment — from your <a href="${data.manageUrl}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime — no fees, no commitment — from your <a href="${escapeHtml(data.manageUrl)}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
           </div>
         `,
       };
