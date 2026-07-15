@@ -95,6 +95,21 @@ describe('verifyOrderChargeSufficient tax + shipping floor (BMC-201)', () => {
     expect(res.requiredCashCents).toBe(2699);
   });
 
+  it('coerces a NaN expected value to 0 rather than letting the floor silently pass', async () => {
+    // A NaN would poison requiredCashCents (NaN comparisons are always false),
+    // silently passing every capture. It must degrade to the goods-only floor.
+    const res = await verifyOrderChargeSufficient({
+      items,
+      paidAmountCents: 10, // well under goods 2500
+      expectedTaxCents: NaN as any,
+      expectedShippingCents: NaN as any,
+    });
+    expect(res.ok).toBe(false);
+    expect(res.taxCents).toBe(0);
+    expect(res.shippingCents).toBe(0);
+    expect(res.requiredCashCents).toBe(2500);
+  });
+
   it('back-compat: no expected tax/shipping → the goods-only floor, unchanged', async () => {
     const res = await verifyOrderChargeSufficient({ items, paidAmountCents: 2500 });
     expect(res.ok).toBe(true);

@@ -443,6 +443,17 @@ export interface VerifyChargeInput {
 }
 
 /**
+ * Coerce a caller-supplied expected-charge value to a non-negative integer cents,
+ * or 0 when it's missing / non-finite / negative. Guards the floor against a NaN
+ * (which `?? 0` would let through) silently making `requiredCashCents` NaN and
+ * every comparison pass — the same contract as `order-finalization`'s reader.
+ */
+function toFiniteNonNegativeCents(value: number | undefined): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+/**
  * Verify that the money actually collected covers the catalog value of the
  * goods, after any authoritatively-recomputed cart discount. This is the guard
  * that stops a client from paying a token amount for expensive goods. Fails
@@ -459,9 +470,12 @@ export async function verifyOrderChargeSufficient(
   // Server-computed expected shipping + tax to add to the floor (BMC-201). These
   // are supplied by the caller (computed once at PI creation, persisted on the
   // pending order); defaulting to 0 keeps the goods-only floor for callers that
-  // don't enforce them (MCP, legacy orders).
-  const shippingCents = Math.max(0, Math.round(input.expectedShippingCents ?? 0));
-  const taxCents = Math.max(0, Math.round(input.expectedTaxCents ?? 0));
+  // don't enforce them (MCP, legacy orders). Coerce to a FINITE non-negative
+  // integer: a NaN here (a non-numeric `any` slipping through) would poison
+  // `requiredCashCents` to NaN and make every floor comparison silently pass —
+  // `?? 0` only guards null/undefined, not NaN.
+  const shippingCents = toFiniteNonNegativeCents(input.expectedShippingCents);
+  const taxCents = toFiniteNonNegativeCents(input.expectedTaxCents);
 
   if (errors.length) {
     return {
