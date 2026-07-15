@@ -605,6 +605,13 @@ const FREQUENCY_DISPLAY: Record<SubscriptionFrequency, string> = {
   bimonthly: 'Every 2 Months',
 };
 
+// Lower-case cadence phrase for inline sentences, e.g. "billed $X every 2 weeks".
+const FREQUENCY_CADENCE: Record<SubscriptionFrequency, string> = {
+  biweekly: 'every 2 weeks',
+  monthly: 'every month',
+  bimonthly: 'every 2 months',
+};
+
 const SUBSCRIPTION_SUBJECTS: Record<string, string> = {
   created: 'Your Subscription is Active!',
   renewed: 'Subscription Renewed',
@@ -730,11 +737,26 @@ function getTypeSpecificContent(
   data: SubscriptionEmailData
 ): { body: string; extra: string } {
   switch (type) {
-    case 'created':
+    case 'created': {
+      // Restate the recurring terms + surface the cancel path in the
+      // post-purchase acknowledgment (several state automatic-renewal laws
+      // require this in the confirmation itself, BMC-186).
+      const amountText =
+        data.amount !== undefined ? `$${(data.amount / 100).toFixed(2)}` : 'the subscription price';
+      const cadence = FREQUENCY_CADENCE[data.frequency];
+      const nextChargeLine = data.nextBillingDate
+        ? ` Your first renewal charge is on ${data.nextBillingDate}.`
+        : '';
       return {
         body: 'Your subscription has been activated! We will automatically prepare and ship your order according to your selected schedule.',
-        extra: '',
+        extra: `
+          <div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 12px 16px; margin: 16px 0;">
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0 0 8px;"><strong>Recurring billing:</strong> You'll be charged ${amountText} ${cadence}, automatically, until you cancel.${nextChargeLine}</p>
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime — no fees, no commitment — from your <a href="${data.manageUrl}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
+          </div>
+        `,
       };
+    }
     case 'renewed':
       return {
         body: 'Your subscription has been renewed and your next order is being prepared.',

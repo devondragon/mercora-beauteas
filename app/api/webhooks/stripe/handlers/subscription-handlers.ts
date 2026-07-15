@@ -163,6 +163,12 @@ export async function handleSubscriptionCreated(
       frequency: plan.frequency as SubscriptionFrequency,
       subscriptionId: d1Sub.id,
       nextBillingDate: periodEnd ? new Date(periodEnd).toLocaleDateString() : undefined,
+      // Per-cycle recurring charge (cents) from the Stripe price, so the
+      // confirmation can restate the actual amount in its ARL terms (BMC-186).
+      amount:
+        firstItem?.price?.unit_amount != null
+          ? firstItem.price.unit_amount * (firstItem.quantity ?? 1)
+          : undefined,
       manageUrl: `${BASE_URL}/subscriptions`,
     }).catch((err) => console.error('[webhook] Failed to send created email:', err));
   }
