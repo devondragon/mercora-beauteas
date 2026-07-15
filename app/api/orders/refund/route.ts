@@ -16,20 +16,26 @@
  * - Payment intent validation
  * - Refund amount verification
  *
- * === Write ordering & concurrency (BMC-193) ===
- * The refund ledger lives in the `orders.extensions.refunds[]` JSON column. Two
- * gaps are closed here:
+ * === Write ordering & concurrency (BMC-193 + review) ===
+ * The refund ledger lives in the `orders.extensions.refunds[]` JSON column. The
+ * reconcile-vs-reserve DECISION is a pure, unit-tested helper
+ * (`lib/payments/refund-ledger.ts` → `decideRefundLedgerAction`); this route is
+ * only the D1/Stripe plumbing around it. Three gaps are closed here:
  *   1. **Write-ordering.** A `pending` ledger entry (carrying the deterministic
  *      idempotency key) is reserved BEFORE the Stripe call, then flipped to
  *      `succeeded`/`failed` after. A Stripe-success / D1-failure therefore leaves
  *      a recoverable `pending` entry (already counted in the refunded total, so
  *      no over-refund window) rather than an order that looks un-refunded — a
- *      retry reconciles the pending entry and reuses its idempotency key.
+ *      retry reconciles the pending entry by EXACT idempotency key (not a loose
+ *      type+amount+items heuristic, which could collapse a genuinely-new refund
+ *      into a stuck pending) and reuses its key so Stripe dedupes.
  *   2. **Lost updates.** Every ledger write is an optimistic-concurrency CAS
- *      (`WHERE id = ? AND updated_at = <read value>`); a lost race re-reads and
- *      retries. D1 has no interactive transactions, so this guarded read-modify-
- *      write is how two concurrent distinct partial refunds both land without
- *      silently dropping one entry (which would corrupt computeRefundedTotal).
+ *      guarded on BOTH `updated_at` AND a monotonic `extensions.refunds_version`
+ *      integer (bumped on every write) — the version disambiguates two writers
+ *      that share a millisecond `updated_at`. A lost race re-reads and retries.
+ *      D1 has no interactive transactions, so this guarded read-modify-write is
+ *      how two concurrent distinct partial refunds both land without silently
+ *      dropping one entry (which would corrupt computeRefundedTotal).
  *
  * === Request Format ===
  * ```json
@@ -48,16 +54,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStripeClient } from '@/lib/stripe';
 import { getDbAsync } from '@/lib/db';
 import { orders } from '@/lib/db/schema/order';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
-import {
-  computeRefundedTotal,
-  assertRefundWithinRemaining,
-  resolveFullRefundAmount,
-  type RefundRecord,
-} from '@/lib/utils/refund-validation';
+import { type RefundRecord } from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
-import { deriveRefundIdempotencyKey, normalizeRefundItemKeys } from '@/lib/payments/refund-idempotency';
+import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
@@ -79,17 +80,33 @@ function parseJson(value: unknown): any {
   return typeof value === 'string' ? JSON.parse(value) : value;
 }
 
-/** Order-independent equality of two refunded-line-item sets. */
-function refundItemsMatch(a: unknown, b: string[]): boolean {
-  return normalizeRefundItemKeys(Array.isArray(a) ? (a as string[]) : []) === normalizeRefundItemKeys(b);
-}
-
 /**
  * The `updated_at` half of a CAS guard. `updated_at` can be NULL on legacy rows,
  * and `= NULL` never matches in SQL, so route those to `IS NULL`.
  */
 function updatedAtGuard(value: string | null) {
   return value === null ? isNull(orders.updated_at) : eq(orders.updated_at, value);
+}
+
+/**
+ * Monotonic version half of the CAS guard (BMC-193 review, Finding 2). The
+ * `updated_at` timestamp is millisecond-resolution ISO text, so two writes in
+ * the same millisecond could theoretically share it and both pass an
+ * `updated_at`-only CAS. `extensions.refunds_version` is an integer bumped on
+ * EVERY ledger write, so it disambiguates same-millisecond writers: a lost
+ * racer reads the stale version and its `COALESCE(json_extract(...),0) = <read>`
+ * predicate no longer matches once the winner has incremented it. Legacy rows
+ * (no `refunds_version`) read as 0 via COALESCE; the first write bumps them to 1.
+ * Kept as a single atomic UPDATE statement (no schema migration needed).
+ */
+function refundsVersionGuard(version: number) {
+  return sql`COALESCE(json_extract(${orders.extensions}, '$.refunds_version'), 0) = ${version}`;
+}
+
+/** Current refund-ledger version on a parsed extensions object (default 0). */
+function readRefundsVersion(extensions: any): number {
+  const v = extensions?.refunds_version;
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
 export async function POST(request: NextRequest) {
@@ -141,6 +158,7 @@ export async function POST(request: NextRequest) {
       const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
       const totalAmount = order.total_amount ? (parseJson(order.total_amount) ?? { amount: 0 }) : { amount: 0 };
       const refunds: RefundRecord[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+      const version = readRefundsVersion(extensions);
 
       paymentIntentId = extensions.payment_intent_id;
       if (!paymentIntentId) {
@@ -152,23 +170,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Order is already cancelled or refunded' }, { status: 400 });
       }
 
-      // Retry reconciliation: an interrupted prior attempt (Stripe succeeded,
-      // ledger flip failed) left a `pending` entry for this exact intent. Finish
-      // that one — reuse its idempotency key so Stripe dedupes — rather than
-      // reserving a second refund. Its amount is already counted in the refunded
-      // total, so no re-validation is needed.
-      const pending = refunds.find((r: any) =>
-        r?.status === 'pending' &&
-        r?.type === type &&
-        refundItemsMatch(r?.items, refundedItemKeys) &&
-        (type === 'full' || r?.amount === amount)
-      ) as any;
+      // Pure decision: reconcile an existing `pending` entry (a retry of an
+      // interrupted refund — matched by EXACT idempotency key, Finding 1) or
+      // reserve a brand-new one. All the amount/validation math lives in the
+      // helper so it is unit-tested under tests/unit/** (the CI-gated suite).
+      const decision = await decideRefundLedgerAction(refunds, {
+        orderId,
+        type,
+        amount,
+        items: refundedItemKeys,
+        totalAmount: totalAmount.amount ?? 0,
+      });
 
-      if (pending) {
+      if (decision.action === 'reject') {
+        return NextResponse.json({ error: decision.error }, { status: decision.status });
+      }
+
+      if (decision.action === 'reconcile') {
+        // The `pending` entry (from an interrupted prior attempt) is already
+        // reserved and counted in the refunded total — no write here, just carry
+        // its idempotency key into the Stripe call so Stripe dedupes.
+        const entry: any = refunds[decision.entryIndex];
         reservation = {
-          idempotencyKey: pending.idempotency_key ?? pending.id,
-          refundAmount: pending.amount,
-          entryId: pending.id,
+          idempotencyKey: decision.idempotencyKey,
+          refundAmount: decision.refundAmount,
+          entryId: (entry?.id as string) ?? decision.idempotencyKey,
           reused: true,
         };
         newStatus = type === 'full' ? 'cancelled' : order.status;
@@ -176,45 +202,10 @@ export async function POST(request: NextRequest) {
         break;
       }
 
-      // New refund — compute the amount against the current ledger.
-      const alreadyRefunded = computeRefundedTotal(extensions);
-      let refundAmount: number;
-      if (type === 'full') {
-        // Full refund — refund whatever is still outstanding, not the whole
-        // order total again. If a prior refund (partial or full) already covers
-        // the total, reject with a clean 400 instead of calling Stripe (BMC-152).
-        const fullRefundResolution = resolveFullRefundAmount(totalAmount.amount, alreadyRefunded);
-        if (!fullRefundResolution.ok) {
-          return NextResponse.json({ error: fullRefundResolution.error }, { status: 400 });
-        }
-        refundAmount = fullRefundResolution.amount;
-        newStatus = 'cancelled';
-        newPaymentStatus = 'refunded';
-      } else {
-        // Partial refund — validate it doesn't exceed what's actually left to
-        // refund (total minus everything already recorded, including in-flight
-        // pending reservations), for a clean 400 instead of a raw Stripe error.
-        refundAmount = amount!;
-        const refundCheck = assertRefundWithinRemaining(totalAmount.amount, alreadyRefunded, refundAmount);
-        if (!refundCheck.ok) {
-          return NextResponse.json({ error: refundCheck.error }, { status: 400 });
-        }
-        newStatus = order.status; // Keep same status for partial refunds
-        newPaymentStatus = 'paid'; // Still considered paid since it's partial
-      }
-
-      // BMC-172/BMC-192: deterministic idempotency key so a retry of the *same*
-      // refund reuses it and Stripe returns the ORIGINAL refund. `priorRefundCount`
-      // is the current ledger length — a failed reserve leaves it unchanged so the
-      // retry collides, while a genuinely new refund lands after a prior write
-      // (higher count) and gets a distinct key.
-      const idempotencyKey = await deriveRefundIdempotencyKey({
-        orderId,
-        type,
-        refundAmount,
-        priorRefundCount: refunds.length,
-        items: refundedItemKeys,
-      });
+      // Reserve a new `pending` entry BEFORE Stripe (write-ordering).
+      const { idempotencyKey, refundAmount } = decision;
+      newStatus = type === 'full' ? 'cancelled' : order.status;
+      newPaymentStatus = type === 'full' ? 'refunded' : 'paid';
 
       const nowIso = new Date().toISOString();
       const pendingEntry = {
@@ -228,12 +219,21 @@ export async function POST(request: NextRequest) {
         idempotency_key: idempotencyKey,
         created_at: nowIso,
       };
-      const nextExtensions = { ...extensions, refunds: [...refunds, pendingEntry] };
+      const nextExtensions = {
+        ...extensions,
+        refunds: [...refunds, pendingEntry],
+        refunds_version: version + 1,
+      };
 
-      // CAS: only commit if the row hasn't changed since we read it.
+      // CAS: only commit if the row is unchanged since we read it — guarded on
+      // BOTH updated_at and the monotonic refunds_version (Finding 2).
       const [row] = await db.update(orders)
         .set({ extensions: nextExtensions, updated_at: nowIso })
-        .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+        .where(and(
+          eq(orders.id, orderId),
+          updatedAtGuard(order.updated_at ?? null),
+          refundsVersionGuard(version),
+        ))
         .returning();
 
       if (row) {
@@ -304,7 +304,28 @@ export async function POST(request: NextRequest) {
 
       const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
       const refunds: any[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+      const version = readRefundsVersion(extensions);
       const idx = refunds.findIndex((r: any) => r?.id === entryId || r?.idempotency_key === idempotencyKey);
+
+      // Finding 4: the reserved `pending` entry should always be present here
+      // (Phase 1 wrote it, or reconciled one that exists). If it is somehow gone
+      // (idx < 0) — a defensive, effectively-unreachable branch — do NOT blindly
+      // append: a settled entry carrying this idempotency key / Stripe refund id
+      // may already exist (a concurrent settle or a prior retry), and appending
+      // again would DOUBLE-COUNT the refund in computeRefundedTotal. Detect that
+      // and no-op instead. Only append if truly nothing for this refund exists.
+      if (idx < 0) {
+        const alreadySettled = refunds.some((r: any) =>
+          r?.status === 'succeeded' &&
+          (r?.idempotency_key === idempotencyKey || r?.stripe_refund_id === stripeRefund.id)
+        );
+        if (alreadySettled) {
+          console.warn(`Refund ${idempotencyKey} already settled on order ${orderId}; skipping duplicate ledger append`);
+          updatedOrder = order;
+          restockItems = [];
+          break;
+        }
+      }
 
       const nowIso = new Date().toISOString();
       const settledEntry = {
@@ -341,6 +362,7 @@ export async function POST(request: NextRequest) {
         // Deduped union of lines restored so far so a later refund won't restock
         // them again (see selectRestockLines).
         restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
+        refunds_version: version + 1,
       };
 
       // extensions is a `mode: "json"` column — assign the RAW object and let
@@ -361,7 +383,11 @@ export async function POST(request: NextRequest) {
 
       const [row] = await db.update(orders)
         .set(updateData)
-        .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+        .where(and(
+          eq(orders.id, orderId),
+          updatedAtGuard(order.updated_at ?? null),
+          refundsVersionGuard(version),
+        ))
         .returning();
 
       if (row) {
@@ -479,6 +505,7 @@ async function settleRefundEntry(
 
     const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
     const refunds: any[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+    const version = readRefundsVersion(extensions);
     const idx = refunds.findIndex((r: any) => r?.id === entryId || r?.idempotency_key === entryId);
     if (idx < 0) return; // nothing to settle (already reconciled)
 
@@ -492,11 +519,16 @@ async function settleRefundEntry(
     const nextExtensions = {
       ...extensions,
       refunds: refunds.map((r: any, i: number) => (i === idx ? settledEntry : r)),
+      refunds_version: version + 1,
     };
 
     const [row] = await db.update(orders)
       .set({ extensions: nextExtensions, updated_at: nowIso })
-      .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+      .where(and(
+        eq(orders.id, orderId),
+        updatedAtGuard(order.updated_at ?? null),
+        refundsVersionGuard(version),
+      ))
       .returning();
     if (row) return;
     // Lost the CAS race — re-read and retry.
