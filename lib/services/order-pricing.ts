@@ -17,17 +17,31 @@
  * order paid: order creation, the Stripe webhook, and (as a fail-early guard)
  * payment-intent creation.
  *
- * Scope note: we enforce the *goods* subtotal, which is the exploitable surface.
- * Tax and shipping are additive-only (they can only increase what is owed) and
- * tax in particular is computed by Stripe Tax at checkout time; re-deriving it
- * here would risk drifting from what was actually charged and false-rejecting
- * legitimate orders. A validated cart discount is SUBTRACTIVE — it lowers what is
- * owed — so it must be credited or a legitimate promo checkout is false-rejected
- * (BMC-177); we recompute it authoritatively from the coupon (never the client
- * number) via `resolveCartDiscountCents`. So the invariant enforced is:
+ * Scope note: the floor enforces goods, cart discount, shipping, AND tax.
+ * - Goods: recomputed from the catalog (`product_variants.price`) — the surface
+ *   a client could otherwise under-pay by sending a token amount.
+ * - Cart discount: SUBTRACTIVE (lowers what is owed), so it must be credited or a
+ *   legitimate promo checkout is false-rejected (BMC-177); recomputed
+ *   authoritatively from the coupon (never the client number) via
+ *   `resolveCartDiscountCents`.
+ * - Shipping + tax (BMC-201): previously "additive-only, not enforced", which let
+ *   a client call `/api/payment-intent` directly with an amount covering only
+ *   goods and `taxAmount: 0` and be promoted to a paid order with $0 tax/shipping
+ *   collected. They are now enforced via SERVER-COMPUTED expected values passed in
+ *   (`expectedShippingCents`/`expectedTaxCents`). Those are computed once at
+ *   PaymentIntent creation through the shared `checkout-charges` seam — the SAME
+ *   Stripe-Tax path `/api/tax` quotes the shopper, so the quote and the floor
+ *   can't drift (the old reason to leave tax unenforced) — and PERSISTED on the
+ *   pending order, so finalization and the Stripe webhook re-enforce the identical
+ *   figure with no second Stripe call. Callers that supply neither (e.g. the MCP
+ *   order path, which runs its own `computeOrderTotals` total check, or legacy
+ *   pre-BMC-201 orders) default both to 0 → the goods-only floor, unchanged.
+ *
+ * So the invariant enforced is:
  *
  *     paidCents + giftCardTenderCents + TOLERANCE
  *         >= catalogGoodsSubtotalCents - serverRecomputedCartDiscountCents
+ *            + expectedShippingCents + expectedTaxCents
  */
 
 import type { Money as StoredMoney } from '@/lib/types';
@@ -389,7 +403,11 @@ export interface ChargeVerification {
   goodsCents: number;
   /** Server-recomputed cart discount credited against the goods (cents). */
   discountCents: number;
-  /** Minimum cash that had to be collected after discount + gift-card tender (cents). */
+  /** Server-computed expected shipping added to the floor (cents). */
+  shippingCents: number;
+  /** Server-computed expected tax added to the floor (cents). */
+  taxCents: number;
+  /** Minimum cash that had to be collected after discount + gift-card tender, incl. shipping + tax (cents). */
   requiredCashCents: number;
 }
 
@@ -407,6 +425,32 @@ export interface VerifyChargeInput {
    * Omitted / empty for flows without cart discounts (e.g. MCP) → no reduction.
    */
   discountCodes?: string[];
+  /**
+   * Server-computed expected shipping (cents) to add to the floor (BMC-201).
+   * Derived from the catalog goods + destination via the shared `checkout-charges`
+   * seam and PERSISTED on the pending order at PaymentIntent creation, then re-read
+   * here at finalization. Omitted (e.g. MCP, which runs its own total check, or a
+   * legacy order) → 0, i.e. the goods-only floor, unchanged.
+   */
+  expectedShippingCents?: number;
+  /**
+   * Server-computed expected tax (cents) to add to the floor (BMC-201). Same
+   * provenance as `expectedShippingCents` — computed via Stripe Tax at PI creation
+   * and persisted — so an honest shopper who paid what `/api/tax` quoted always
+   * clears the floor within tolerance. Omitted → 0 (goods-only floor).
+   */
+  expectedTaxCents?: number;
+}
+
+/**
+ * Coerce a caller-supplied expected-charge value to a non-negative integer cents,
+ * or 0 when it's missing / non-finite / negative. Guards the floor against a NaN
+ * (which `?? 0` would let through) silently making `requiredCashCents` NaN and
+ * every comparison pass — the same contract as `order-finalization`'s reader.
+ */
+function toFiniteNonNegativeCents(value: number | undefined): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
 }
 
 /**
@@ -423,13 +467,25 @@ export async function verifyOrderChargeSufficient(
     input.items
   );
 
+  // Server-computed expected shipping + tax to add to the floor (BMC-201). These
+  // are supplied by the caller (computed once at PI creation, persisted on the
+  // pending order); defaulting to 0 keeps the goods-only floor for callers that
+  // don't enforce them (MCP, legacy orders). Coerce to a FINITE non-negative
+  // integer: a NaN here (a non-numeric `any` slipping through) would poison
+  // `requiredCashCents` to NaN and make every floor comparison silently pass —
+  // `?? 0` only guards null/undefined, not NaN.
+  const shippingCents = toFiniteNonNegativeCents(input.expectedShippingCents);
+  const taxCents = toFiniteNonNegativeCents(input.expectedTaxCents);
+
   if (errors.length) {
     return {
       ok: false,
       reason: `cannot price order from catalog: ${errors.join('; ')}`,
       goodsCents,
       discountCents: 0,
-      requiredCashCents: goodsCents,
+      shippingCents,
+      taxCents,
+      requiredCashCents: goodsCents + shippingCents + taxCents,
     };
   }
 
@@ -440,20 +496,25 @@ export async function verifyOrderChargeSufficient(
   const discountCents = await resolveCartDiscountCents(input.discountCodes, goodsCents, input.items);
 
   const giftCardTenderCents = Math.max(0, Math.round(input.giftCardTenderCents ?? 0));
-  const requiredCashCents = Math.max(0, goodsCents - discountCents - giftCardTenderCents);
+  // Floor = goods − discount + shipping + tax − gift-card tender (BMC-201). Tax is
+  // computed on the undiscounted goods + shipping to match how `/api/tax` quoted
+  // the shopper, so an honest amount clears the floor within tolerance.
+  const requiredCashCents = Math.max(0, goodsCents - discountCents + shippingCents + taxCents - giftCardTenderCents);
   const paidAmountCents = Math.max(0, Math.round(input.paidAmountCents));
 
   if (paidAmountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
     return {
       ok: false,
-      reason: `paid ${paidAmountCents}c is less than required ${requiredCashCents}c (catalog goods ${goodsCents}c, cart discount ${discountCents}c, gift card tender ${giftCardTenderCents}c)`,
+      reason: `paid ${paidAmountCents}c is less than required ${requiredCashCents}c (catalog goods ${goodsCents}c, cart discount ${discountCents}c, shipping ${shippingCents}c, tax ${taxCents}c, gift card tender ${giftCardTenderCents}c)`,
       goodsCents,
       discountCents,
+      shippingCents,
+      taxCents,
       requiredCashCents,
     };
   }
 
-  return { ok: true, goodsCents, discountCents, requiredCashCents };
+  return { ok: true, goodsCents, discountCents, shippingCents, taxCents, requiredCashCents };
 }
 
 /**

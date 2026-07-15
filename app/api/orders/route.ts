@@ -24,6 +24,7 @@ import { sendOrderStatusUpdateEmail } from "@/lib/utils/email";
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
+import { computeExpectedChargeExtras } from "@/lib/services/checkout-charges";
 import { normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from "@/lib/services/discount-pricing";
 import { finalizePaidOrder } from "@/lib/services/order-finalization";
 import { retrievePaymentIntent } from "@/lib/stripe";
@@ -320,6 +321,44 @@ export async function POST(request: NextRequest) {
           ? { ...(body.external_references ?? {}), payment_intent_id: bodyPaymentIntentId }
           : body.external_references ?? null;
 
+      // BMC-201: the expected shipping/tax the charge floor enforces are
+      // SERVER-authoritative. The standard storefront flow stamps them at
+      // PaymentIntent creation (`persistPendingOrder`) and reuses that pre-persisted
+      // row on the id collision below — so this fresh-insert branch (c) only runs
+      // when NO pending order exists (older client, or a client that deliberately
+      // omitted the `order` draft AND `items` at PI creation to skip the floor).
+      // For that path we must (1) strip any client-supplied `expected_*_cents` so
+      // the field can't be spoofed, and (2) RECOMPUTE it server-side from the
+      // catalog items + address, so finalization enforces tax/shipping here too
+      // rather than defaulting to a goods-only floor (the bypass). Priceable check
+      // fails soft: an unpriceable cart is rejected by the goods charge gate at
+      // finalization anyway. This compute is cold-path only (never on the standard
+      // pre-persisted flow, which lands in branch (b)).
+      let sanitizedExtensions: Record<string, unknown> | null = null;
+      if (body.extensions) {
+        sanitizedExtensions = { ...(body.extensions as Record<string, unknown>) };
+        delete sanitizedExtensions.expected_shipping_cents;
+        delete sanitizedExtensions.expected_tax_cents;
+      }
+      try {
+        const draftLines = (Array.isArray(body.items) ? body.items : []).map((it: any) => ({
+          product_id: it?.product_id ?? it?.productId,
+          variant_id: it?.variant_id ?? it?.variantId,
+          quantity: it?.quantity,
+        }));
+        const extras = await computeExpectedChargeExtras(draftLines, body.shipping_address ?? null);
+        if (extras.priceable) {
+          sanitizedExtensions = { ...(sanitizedExtensions ?? {}) };
+          sanitizedExtensions.expected_shipping_cents = extras.shippingCents;
+          sanitizedExtensions.expected_tax_cents = extras.taxCents;
+        }
+      } catch (chargeError) {
+        // Transient failure computing the floor extras — leave them unstamped; the
+        // goods charge gate at finalization still fails closed on an unpriceable
+        // cart, and a genuine underpayment is caught by goods alone.
+        console.error(`Order ${orderId}: failed to compute expected shipping/tax on fresh insert`, chargeError);
+      }
+
       // Encoding contract: total_amount / shipping_address / billing_address /
       // items / external_references / extensions are `mode: "json"` columns —
       // Drizzle serializes them on write and parses on read. Pass the RAW
@@ -340,7 +379,7 @@ export async function POST(request: NextRequest) {
         payment_status: 'pending',
         notes: body.notes || null,
         external_references: externalReferences,
-        extensions: body.extensions ?? null,
+        extensions: sanitizedExtensions,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

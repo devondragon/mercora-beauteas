@@ -244,6 +244,40 @@ describe('finalizePaidOrder', () => {
     expect(vi.mocked(updateOrderNotes).mock.calls[0][1]).toMatch(/NEEDS REVIEW/);
   });
 
+  it('BMC-201 THE EXPLOIT: a capture that omits the persisted tax/shipping does NOT promote', async () => {
+    // The pending order was stamped (at PI creation) with server-computed
+    // expected shipping ($9.99) + tax ($2.00). A client that paid only the goods
+    // ($25.00) — bypassing /api/tax, or resubmitting amount with taxAmount:0 —
+    // must NOT be promoted: floor = 2500 + 999 + 200 = 3699c > 2500c captured.
+    const taxedOrder = order({ extensions: { expected_shipping_cents: 999, expected_tax_cents: 200 } });
+    const res = await finalizePaidOrder({ order: taxedOrder, paidAmountCents: 2500, sendEmail: true });
+    expect(res.paid).toBe(false);
+    expect(res.reason).toMatch(/shipping 999c, tax 200c/);
+    expect(vi.mocked(promoteOrderToPaid)).not.toHaveBeenCalled();
+    expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
+  });
+
+  it('BMC-201: a capture covering goods + persisted shipping + tax IS promoted', async () => {
+    // Honest checkout: captured $36.99 covers goods $25 + shipping $9.99 + tax
+    // $2.00 (the persisted figures). The floor clears and the order promotes.
+    const taxedOrder = order({ extensions: { expected_shipping_cents: 999, expected_tax_cents: 200 } });
+    vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(taxedOrder) as any);
+    const res = await finalizePaidOrder({ order: taxedOrder, paidAmountCents: 3699, sendEmail: true });
+    expect(res).toMatchObject({ paid: true, promotedByUs: true });
+    expect(vi.mocked(promoteOrderToPaid)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendOrderConfirmationForOrder)).toHaveBeenCalledTimes(1);
+  });
+
+  it('BMC-201: a malformed persisted expected_tax_cents falls back to the goods-only floor (never NaN-passes)', async () => {
+    // A non-numeric persisted value must coerce to 0, not NaN (NaN comparisons are
+    // always false → would silently pass every floor). Here goods $25 with a junk
+    // tax field → floor is goods-only ($25), so a $29.99 capture promotes.
+    const junkOrder = order({ extensions: { expected_tax_cents: 'lots', expected_shipping_cents: null } });
+    vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(junkOrder) as any);
+    const res = await finalizePaidOrder({ order: junkOrder, paidAmountCents: 2999, sendEmail: true });
+    expect(res).toMatchObject({ paid: true, promotedByUs: true });
+  });
+
   it('does not email when sendEmail is false, even on a CAS win', async () => {
     vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(order()) as any);
     const res = await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: false });

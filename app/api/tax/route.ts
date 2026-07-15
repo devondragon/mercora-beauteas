@@ -34,42 +34,21 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
-import { calculateTax, formatAmountForStripe, formatAmountFromStripe, isStripeConfigured } from "@/lib/stripe";
+import { formatAmountForStripe, formatAmountFromStripe } from "@/lib/stripe";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 import { computeCatalogLineCents } from "@/lib/services/order-pricing";
+import { computeExpectedTaxCents, FALLBACK_TAX_RATE } from "@/lib/services/checkout-charges";
 
-// Fallback tax rate applied when Stripe Tax cannot be used (BMC-187).
-//
-// This flat rate is a DEGRADED path, not the intended behavior. It is applied
-// whenever: (a) no usable shipping address is present, (b) the Stripe Tax call
-// errors, or (c) Stripe is not configured in this runtime. It taxes the same
-// base as the real Stripe path — `subtotal + shippingCost` — so the two paths
-// agree on what is taxable; only the rate differs.
-//
-// At scale a flat rate mischarges every order (it ignores nexus, jurisdiction,
-// and product tax codes). The correct state for production is that this path is
-// NEVER hit: Stripe Tax must be enabled with registrations/nexus configured in
-// the LIVE Stripe account before go-live. That is an explicit cutover step —
-// see PRODUCTION-CUTOVER-RUNBOOK.md §1 (Stripe Tax). A config miss is logged
-// loudly below (not silent) precisely because it means all orders mischarge.
-const FALLBACK_TAX_RATE = 0.07;
+// The Stripe-Tax-vs-fallback decision and the flat FALLBACK_TAX_RATE now live in
+// the shared `checkout-charges` seam (BMC-201) so the tax quoted here and the tax
+// ENFORCED at the charge floor are computed by one function — see its header for
+// why the flat fallback is a degraded, cutover-blocking path. This route only
+// imports the rate for its loud "not configured" log below.
 
 // Upper bound on cart line items per request. This endpoint is public and each
 // call can hit the billable Stripe Tax API, so cap the work an anonymous caller
 // can request (BMC-180). A real cart never approaches this.
 const MAX_TAX_LINE_ITEMS = 100;
-
-/**
- * Fallback tax on a taxable base (dollars), rounded to whole cents so the
- * response never carries >2 decimals of float drift. The Stripe path already
- * returns cent-clean dollars via `formatAmountFromStripe`; computing the
- * fallback the same way (dollars → cents → round → dollars) keeps the two paths
- * consistent and makes `total = subtotal + shipping + tax` exact (BMC-187).
- */
-function fallbackTaxAmount(taxableAmount: number): number {
-  const taxCents = Math.round(formatAmountForStripe(taxableAmount) * FALLBACK_TAX_RATE);
-  return formatAmountFromStripe(taxCents);
-}
 
 interface TaxRequest {
   items: CartItem[];
@@ -165,95 +144,69 @@ export async function POST(req: NextRequest) {
     const subtotalCents = lineCents.reduce((sum, cents) => sum + cents, 0);
     const subtotal = formatAmountFromStripe(subtotalCents);
 
-    // If no shipping address provided, use fallback calculation. Tax the same
-    // base the Stripe path taxes (`subtotal + shippingCost`) so the fallback and
-    // real paths stay consistent (BMC-187).
-    if (!shippingAddress || !shippingAddress.region || !shippingAddress.postal_code) {
-      const taxableAmount = subtotal + shippingCost;
-      const amount = fallbackTaxAmount(taxableAmount);
-      const breakdown: TaxBreakdown = {
-        subtotal,
-        shippingCost,
-        taxableAmount,
-        taxAmount: amount,
-        total: subtotal + shippingCost + amount,
-      };
+    // Delegate the tax NUMBER to the shared checkout-charges seam (BMC-201), the
+    // SAME function `/api/payment-intent` uses to compute the enforced floor — so
+    // the tax quoted here and the tax enforced at capture are computed identically
+    // and can't drift. It handles the Stripe-Tax-vs-fallback decision internally
+    // (no usable address / Stripe error / Stripe unconfigured → flat rate) on the
+    // same `subtotal + shippingCost` base (BMC-187/BMC-200). This route keeps its
+    // own catalog pricing above for the distinct 422/503 semantics and speaks
+    // major-unit dollars to the client, so it converts cents at the boundary.
+    const taxResult = await computeExpectedTaxCents({
+      lineCents,
+      shippingAddress,
+      // `/api/tax` taxes the CLIENT's shipping estimate (dollars → cents); the
+      // authoritative floor recomputes shipping server-side. Same seam, different
+      // shipping input — an understated shipping estimate is caught at the floor.
+      shippingCents: formatAmountForStripe(shippingCost),
+      // Preserve per-product references in Stripe's tax_breakdown for audit/debug.
+      itemReferences: items.map((item, index) => `item_${index}_${item.productId}`),
+    });
+    const taxAmount = formatAmountFromStripe(taxResult.taxCents);
+    const taxableAmount = subtotal + shippingCost;
+    const breakdown: TaxBreakdown = {
+      subtotal,
+      shippingCost,
+      taxableAmount,
+      taxAmount,
+      total: subtotal + shippingCost + taxAmount,
+    };
 
-      return NextResponse.json({ 
-        amount, 
-        breakdown,
-        calculated_by: "fallback",
-        message: "Using fallback tax rate - provide shipping address for accurate calculation"
-      });
+    if (taxResult.calculatedBy === "stripe") {
+      return NextResponse.json({ amount: taxAmount, breakdown, calculated_by: "stripe" });
     }
 
-    try {
-      // Use Stripe Tax for accurate calculation. Line amounts come from the
-      // catalog (`lineCents`), not `item.price` (BMC-200).
-      const taxAmount = await calculateStripeToleratedTax(
-        items.map((item, index) => ({
-          amountCents: lineCents[index],
-          reference: `item_${index}_${item.productId}`,
-        })),
-        shippingAddress,
-        shippingCost
-      );
-      
-      const breakdown: TaxBreakdown = {
-        subtotal,
-        shippingCost,
-        taxableAmount: subtotal + shippingCost,
-        taxAmount,
-        total: subtotal + shippingCost + taxAmount,
-      };
-
-      return NextResponse.json({ 
-        amount: taxAmount, 
-        breakdown,
-        calculated_by: "stripe"
-      });
-
-    } catch (stripeError) {
-      // Distinguish a *configuration* problem (no secret key in this runtime)
-      // from a transient Stripe outage. The fallback rate is a reasonable
-      // degradation for an outage, but a missing key means EVERY order is
-      // charged a flat FALLBACK_TAX_RATE with no accurate tax — that must be
-      // loud, not silent (it's what masked the checkout payment-intent failure).
-      if (!isStripeConfigured()) {
-        console.error(
-          "[tax] STRIPE_SECRET_KEY not configured — charging flat fallback tax " +
-            `rate (${FALLBACK_TAX_RATE * 100}%) for ALL orders. Set it in ` +
-            "`.dev.vars` for `wrangler dev`, or `wrangler secret put " +
-            "STRIPE_SECRET_KEY --env <env>` for deployed envs."
-        );
-      } else {
-        console.error("Stripe Tax calculation failed (using fallback rate):", stripeError);
-      }
-
-      // Fall back to simple calculation. Tax `subtotal + shippingCost` to match
-      // the Stripe path's taxable base (BMC-187).
-      const taxableAmount = subtotal + shippingCost;
-      const amount = fallbackTaxAmount(taxableAmount);
-      const breakdown: TaxBreakdown = {
-        subtotal,
-        shippingCost,
-        taxableAmount,
-        taxAmount: amount,
-        total: subtotal + shippingCost + amount,
-      };
-
+    // No usable shipping address → tell the shopper accurate tax needs one.
+    if (taxResult.fallbackReason === "no_address") {
       return NextResponse.json({
-        amount,
+        amount: taxAmount,
         breakdown,
         calculated_by: "fallback",
-        // Flag config problems distinctly so the client/monitoring can tell a
-        // "Stripe is down" fallback from a "Stripe was never wired up" one.
-        error: isStripeConfigured()
-          ? "Stripe Tax unavailable, using fallback rate"
-          : "Stripe Tax not configured, using fallback rate",
+        message: "Using fallback tax rate - provide shipping address for accurate calculation",
       });
     }
 
+    // Stripe Tax unavailable. A missing secret key means EVERY order is charged a
+    // flat FALLBACK_TAX_RATE with no accurate tax — that must be loud, not silent.
+    if (taxResult.fallbackReason === "not_configured") {
+      console.error(
+        "[tax] STRIPE_SECRET_KEY not configured — charging flat fallback tax " +
+          `rate (${FALLBACK_TAX_RATE * 100}%) for ALL orders. Set it in ` +
+          "`.dev.vars` for `wrangler dev`, or `wrangler secret put " +
+          "STRIPE_SECRET_KEY --env <env>` for deployed envs."
+      );
+    }
+    return NextResponse.json({
+      amount: taxAmount,
+      breakdown,
+      calculated_by: "fallback",
+      // Flag config problems distinctly so the client/monitoring can tell a
+      // "Stripe is down" fallback from a "Stripe was never wired up" one.
+      error:
+        taxResult.fallbackReason === "not_configured"
+          ? "Stripe Tax not configured, using fallback rate"
+          : "Stripe Tax unavailable, using fallback rate",
+    });
   } catch (err) {
     console.error("Tax calculation error:", err);
     return NextResponse.json(
@@ -261,58 +214,4 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-}
-
-/**
- * Calculate tax using Stripe Tax API
- * Provides accurate tax calculation based on customer location.
- *
- * Line amounts are the catalog-derived taxable amounts (cents), passed in by the
- * caller — never `item.price` from the request body (BMC-200).
- */
-async function calculateStripeToleratedTax(
-  lines: Array<{ amountCents: number; reference: string }>,
-  shippingAddress: Address,
-  shippingCost: number
-): Promise<number> {
-  // Build line items for Stripe Tax calculation (products only). Amounts are
-  // already in cents (Stripe's smallest currency unit), so no dollar conversion.
-  const lineItems = lines.map((line) => ({
-    amount: line.amountCents,
-    reference: line.reference,
-    tax_code: 'txcd_99999999', // General - Tangible Goods
-  }));
-
-  // Build the calculation parameters
-  const calculationParams: any = {
-    currency: 'usd',
-    line_items: lineItems,
-    customer_details: {
-      address: {
-        line1: String(shippingAddress.line1),
-        city: String(shippingAddress.city),
-        state: String(shippingAddress.region),
-        postal_code: String(shippingAddress.postal_code),
-        country: 'US',
-      },
-      address_source: 'shipping',
-    },
-    expand: ['line_items.data.tax_breakdown'],
-  };
-
-  // Add shipping cost as a parameter (not as a line item)
-  if (shippingCost > 0) {
-    calculationParams.shipping_cost = {
-      amount: formatAmountForStripe(shippingCost),
-      tax_code: 'txcd_92010001', // Shipping tax code
-    };
-  }
-
-  // Create tax calculation with Stripe
-  const calculation = await calculateTax(calculationParams);
-
-  // Sum up all tax amounts
-  const totalTaxAmount = (calculation as any).tax_amount_exclusive || 0;
-  
-  return formatAmountFromStripe(totalTaxAmount);
 }

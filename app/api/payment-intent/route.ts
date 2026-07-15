@@ -36,11 +36,11 @@ import { auth } from '@clerk/nextjs/server';
 import { createPaymentIntent, cancelPaymentIntent, formatAmountForStripe, isStripeConfigured } from '@/lib/stripe';
 import { validateGiftCardForRedemption } from '@/lib/models/mach/giftCard';
 import {
-  computeCatalogSubtotalCents,
   AMOUNT_TOLERANCE_CENTS,
   MAX_ORDER_LINE_ITEMS,
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
+import { computeExpectedChargeExtras } from '@/lib/services/checkout-charges';
 import { resolveCartDiscountCents, normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
@@ -124,7 +124,8 @@ async function persistPendingOrder(
   draft: PendingOrderDraft,
   orderId: string,
   paymentIntentId: string,
-  userId: string | null
+  userId: string | null,
+  expectedCharges?: { expectedShippingCents?: number; expectedTaxCents?: number }
 ): Promise<void> {
   // C1 (BMC-167 review): D1 enforces `orders.customer_id → customers.id`, and
   // Clerk sign-up does NOT create a `customers` row (it is provisioned lazily —
@@ -155,11 +156,53 @@ async function persistPendingOrder(
     console.error(`[payment-intent] order ${orderId}: pending-order canonicalization failed; using client display`, canonError);
   }
 
+  // BMC-201: stamp the SERVER-computed expected shipping + tax (cents) on the
+  // order so finalization / the Stripe webhook enforce the same figures the floor
+  // used at PI creation, with no second Stripe Tax call (→ no drift). When the
+  // fail-fast pricing block didn't run (no top-level `items`), recompute here from
+  // the draft's own catalog items + address so a crafted request that skipped that
+  // gate still can't dodge tax/shipping enforcement. These are ALWAYS overwritten
+  // server-side (never trusted from the client draft's extensions).
+  let shippingCents = expectedCharges?.expectedShippingCents;
+  let taxCents = expectedCharges?.expectedTaxCents;
+  if (shippingCents === undefined || taxCents === undefined) {
+    try {
+      const draftLines = (Array.isArray(draft.items) ? draft.items : []).map((it: any) => ({
+        product_id: it?.product_id ?? it?.productId,
+        variant_id: it?.variant_id ?? it?.variantId,
+        quantity: it?.quantity,
+      }));
+      const extras = await computeExpectedChargeExtras(draftLines, draft.shipping_address ?? null);
+      // Only stamp when the draft is fully priceable; an unpriceable draft is
+      // rejected by the goods charge gate at finalization anyway.
+      if (extras.priceable) {
+        shippingCents = extras.shippingCents;
+        taxCents = extras.taxCents;
+      }
+    } catch (chargeError) {
+      console.error(
+        `[payment-intent] order ${orderId}: failed to compute expected shipping/tax for pending order; ` +
+          `finalization will enforce goods only`,
+        chargeError
+      );
+    }
+  }
+
   const extensions: Record<string, any> = {
     ...(draft.extensions ?? {}),
     // Server-authoritative: never trust a client-supplied PI id here.
     payment_intent_id: paymentIntentId,
   };
+  // Drop any client-supplied expected-charge keys unconditionally, THEN set the
+  // server-computed ones. Without the strip, a run where we couldn't compute them
+  // (compute threw) would let the client draft's copy survive and be enforced as
+  // authoritative at finalization — so a `{ expected_tax_cents: 0 }` in the draft
+  // would defeat the floor. Absent server values → keys omitted → finalization
+  // falls back to the goods-only floor (safe, never client-controlled).
+  delete extensions.expected_shipping_cents;
+  delete extensions.expected_tax_cents;
+  if (shippingCents !== undefined) extensions.expected_shipping_cents = shippingCents;
+  if (taxCents !== undefined) extensions.expected_tax_cents = taxCents;
   // Bound the persisted cart-discount codes (pre-auth storage hardening, BMC-177
   // review): normalize + cap so a client can't stash an unbounded array into the
   // D1 `extensions` JSON via the order draft. Stores exactly the deduped list the
@@ -284,11 +327,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Server-computed expected shipping + tax (cents) for this order (BMC-201).
+    // Set inside the pricing block below when top-level `items` are present, then
+    // stamped on the pending order so finalization re-enforces the identical
+    // figure. `undefined` here (no top-level items) → persistPendingOrder computes
+    // them itself from the draft, so a crafted request that skips the fail-fast
+    // gate still can't dodge tax/shipping enforcement at finalization.
+    let expectedShippingCents: number | undefined;
+    let expectedTaxCents: number | undefined;
+
     // BMC-131: fail early if the requested charge doesn't even cover the
-    // catalog value of the goods. The authoritative gate is at order creation
-    // and the Stripe webhook (which re-verify against the CAPTURED amount);
-    // rejecting an under-priced PaymentIntent here stops a bogus charge from
-    // ever being created and gives the shopper an immediate, clear error.
+    // catalog value of the goods (BMC-201: now including shipping + tax). The
+    // authoritative gate is at order creation and the Stripe webhook (which
+    // re-verify against the CAPTURED amount); rejecting an under-priced
+    // PaymentIntent here stops a bogus charge from ever being created and gives
+    // the shopper an immediate, clear error.
     if (Array.isArray(items) && items.length > 0) {
       // M6: cap the line count before it drives one catalog lookup per item.
       if (items.length > MAX_ORDER_LINE_ITEMS) {
@@ -329,11 +382,14 @@ export async function POST(req: NextRequest) {
         variant_id: it.variant_id ?? it.variantId,
         quantity: it.quantity,
       }));
-      const { subtotalCents, errors } = await computeCatalogSubtotalCents(normalized);
-      if (errors.length) {
-        console.warn(
-          `[payment-intent] order ${orderId}: catalog pricing errors — ${errors.join('; ')}`
-        );
+      // BMC-201: compute the SERVER's expected goods + shipping + tax from the
+      // catalog and destination in one pass (never the client's `taxAmount`). Tax
+      // comes from the shared `checkout-charges` seam — the same Stripe-Tax path
+      // `/api/tax` quoted the shopper — so an honest amount clears the floor and a
+      // tax-omitting one is rejected.
+      const extras = await computeExpectedChargeExtras(normalized, shippingAddress);
+      if (!extras.priceable) {
+        console.warn(`[payment-intent] order ${orderId}: catalog pricing errors while computing charge floor`);
         return NextResponse.json(
           {
             error: 'One or more items are no longer available. Please refresh your cart and try again.',
@@ -342,6 +398,11 @@ export async function POST(req: NextRequest) {
           { status: 409 }
         );
       }
+      const subtotalCents = extras.goodsCents;
+      // Stash the server-computed expected shipping + tax so they are persisted on
+      // the pending order (below) and re-enforced identically at finalization.
+      expectedShippingCents = extras.shippingCents;
+      expectedTaxCents = extras.taxCents;
 
       // The gift card was already re-validated above against its live balance,
       // so appliedCents is a safe (<= balance) tender to credit here.
@@ -350,16 +411,21 @@ export async function POST(req: NextRequest) {
         : 0;
       // Recompute the cart discount from the coupon against the catalog subtotal
       // (never the client number) and credit it toward the floor, so a valid
-      // promo checkout whose discount exceeds shipping + tax isn't rejected
-      // (BMC-177). `normalized` lets a category-gated promotion verify against
-      // catalog-derived categories.
+      // promo checkout isn't rejected (BMC-177). `normalized` lets a category-gated
+      // promotion verify against catalog-derived categories.
       const discountCents = await resolveCartDiscountCents(normalizedDiscountCodes, subtotalCents, normalized);
-      const requiredCashCents = Math.max(0, subtotalCents - discountCents - giftCardTenderCents);
+      // Floor now includes server-computed shipping + tax (BMC-201): a client can
+      // no longer create a PaymentIntent that covers only goods and omits tax.
+      const requiredCashCents = Math.max(
+        0,
+        subtotalCents - discountCents + expectedShippingCents + expectedTaxCents - giftCardTenderCents
+      );
       const amountCents = Math.round(amount * 100);
       if (amountCents + AMOUNT_TOLERANCE_CENTS < requiredCashCents) {
         console.warn(
           `[payment-intent] order ${orderId}: requested amount ${amountCents}c is below ` +
-            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, cart discount ${discountCents}c, gift card ${giftCardTenderCents}c)`
+            `catalog floor ${requiredCashCents}c (goods ${subtotalCents}c, cart discount ${discountCents}c, ` +
+            `shipping ${expectedShippingCents}c, tax ${expectedTaxCents}c, gift card ${giftCardTenderCents}c)`
         );
         return NextResponse.json(
           {
@@ -443,7 +509,10 @@ export async function POST(req: NextRequest) {
         // customer_id is derived from the session, never the client draft, so a
         // caller can't stamp another user's id onto the order.
         const { userId } = await auth();
-        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null);
+        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null, {
+          expectedShippingCents,
+          expectedTaxCents,
+        });
       } catch (persistError) {
         // H1 (BMC-167 review): use the canonical unique-violation classifier
         // (walks the cause chain, matches ONLY unique/primary-key — never a
