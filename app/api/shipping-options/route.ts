@@ -46,9 +46,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Load shipping settings from database
-    const shippingSettings = await getSettings('shipping');
-    const storeSettings = await getSettings('store');
+    // Load shipping settings and recompute the catalog subtotal concurrently —
+    // they have no data dependency, and this route now does a D1 read per cart
+    // line, so overlapping them shaves latency off a heavier public endpoint.
+    // Free-shipping eligibility (BMC-187): the subtotal is derived from the D1
+    // catalog (`product_variants.price`), NEVER the client-supplied `item.price`.
+    // The old code trusted `item.price`, so a tampered cart could inflate its
+    // total past the threshold and get free shipping it hadn't paid for. A
+    // non-empty `errors` means at least one line couldn't be priced
+    // authoritatively, so we fail CLOSED (no free shipping) rather than grant the
+    // perk on an unverifiable cart. Shipping shown here is an estimate; the
+    // authoritative charge gate still lives in payment-intent / order creation.
+    const [shippingSettings, storeSettings, { subtotalCents, errors }] = await Promise.all([
+      getSettings('shipping'),
+      getSettings('store'),
+      computeCatalogSubtotalCents(
+        lineItems.map((item) => ({
+          product_id: item?.productId,
+          variant_id: item?.variantId,
+          quantity: item?.quantity,
+        }))
+      ),
+    ]);
+    if (errors.length) {
+      console.warn(`[shipping-options] catalog pricing errors — ${errors.join('; ')}`);
+    }
 
     // Get configured shipping methods.
     //
@@ -65,26 +87,6 @@ export async function POST(req: NextRequest) {
 
     // Filter to only enabled methods
     const enabledMethods = shippingMethods.filter((method: any) => method.enabled);
-
-    // Free-shipping eligibility (BMC-187): recompute the goods subtotal from the
-    // D1 catalog (`product_variants.price`), NEVER the client-supplied
-    // `item.price`. The old code trusted `item.price`, so a tampered cart could
-    // inflate its total past the threshold and get free shipping it hadn't paid
-    // for. `computeCatalogSubtotalCents` returns cents; a non-empty `errors`
-    // means at least one line couldn't be priced authoritatively, so we fail
-    // CLOSED (no free shipping) rather than grant the perk on an unverifiable
-    // cart. Shipping shown here is an estimate; the authoritative charge gate
-    // still lives in payment-intent / order creation.
-    const { subtotalCents, errors } = await computeCatalogSubtotalCents(
-      lineItems.map((item) => ({
-        product_id: item?.productId,
-        variant_id: item?.variantId,
-        quantity: item?.quantity,
-      }))
-    );
-    if (errors.length) {
-      console.warn(`[shipping-options] catalog pricing errors — ${errors.join('; ')}`);
-    }
 
     const freeShippingThreshold = storeSettings['store.free_shipping_threshold'] || 75;
     // Compare like-for-like via Money (threshold is stored in major units / dollars,

@@ -14,6 +14,11 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('@/lib/rate-limit', () => ({
+  enforceRateLimit: vi.fn().mockResolvedValue(null),
+  getClientIp: vi.fn().mockReturnValue('test-ip'),
+}));
+
 vi.mock('@/lib/utils/settings', () => ({
   getSettings: vi.fn(),
 }));

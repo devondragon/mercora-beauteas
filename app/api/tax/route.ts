@@ -58,6 +58,18 @@ const FALLBACK_TAX_RATE = 0.07;
 // can request (BMC-180). A real cart never approaches this.
 const MAX_TAX_LINE_ITEMS = 100;
 
+/**
+ * Fallback tax on a taxable base (dollars), rounded to whole cents so the
+ * response never carries >2 decimals of float drift. The Stripe path already
+ * returns cent-clean dollars via `formatAmountFromStripe`; computing the
+ * fallback the same way (dollars → cents → round → dollars) keeps the two paths
+ * consistent and makes `total = subtotal + shipping + tax` exact (BMC-187).
+ */
+function fallbackTaxAmount(taxableAmount: number): number {
+  const taxCents = Math.round(formatAmountForStripe(taxableAmount) * FALLBACK_TAX_RATE);
+  return formatAmountFromStripe(taxCents);
+}
+
 interface TaxRequest {
   items: CartItem[];
   shippingAddress?: Address;
@@ -101,7 +113,7 @@ export async function POST(req: NextRequest) {
     // real paths stay consistent (BMC-187).
     if (!shippingAddress || !shippingAddress.region || !shippingAddress.postal_code) {
       const taxableAmount = subtotal + shippingCost;
-      const amount = taxableAmount * FALLBACK_TAX_RATE;
+      const amount = fallbackTaxAmount(taxableAmount);
       const breakdown: TaxBreakdown = {
         subtotal,
         shippingCost,
@@ -156,7 +168,7 @@ export async function POST(req: NextRequest) {
       // Fall back to simple calculation. Tax `subtotal + shippingCost` to match
       // the Stripe path's taxable base (BMC-187).
       const taxableAmount = subtotal + shippingCost;
-      const amount = taxableAmount * FALLBACK_TAX_RATE;
+      const amount = fallbackTaxAmount(taxableAmount);
       const breakdown: TaxBreakdown = {
         subtotal,
         shippingCost,
