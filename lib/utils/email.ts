@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
+import { Money } from '@/lib/money';
 
 let resend: Resend | null = null;
 
@@ -527,7 +528,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
     : `Someone special has sent you a BeauTeas gift card.`;
   const giftMessage = data.giftMessage ? escapeHtml(data.giftMessage) : '';
   const code = escapeHtml(data.code);
-  const amountDisplay = `$${(data.amount / 100).toFixed(2)}`;
+  const amountDisplay = Money.fromMinor(data.amount, data.currency || 'USD').format();
   // Only allow an absolute https URL; otherwise fall back to the brand origin.
   const redeemUrl =
     data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : 'https://beauteas.com';
@@ -603,6 +604,13 @@ const FREQUENCY_DISPLAY: Record<SubscriptionFrequency, string> = {
   biweekly: 'Every 2 Weeks',
   monthly: 'Monthly',
   bimonthly: 'Every 2 Months',
+};
+
+// Lower-case cadence phrase for inline sentences, e.g. "billed $X every 2 weeks".
+const FREQUENCY_CADENCE: Record<SubscriptionFrequency, string> = {
+  biweekly: 'every 2 weeks',
+  monthly: 'every month',
+  bimonthly: 'every 2 months',
 };
 
 const SUBSCRIPTION_SUBJECTS: Record<string, string> = {
@@ -699,7 +707,7 @@ function generateSubscriptionEmailHTML(
               ${data.amount !== undefined ? `
               <tr>
                 <td style="color: #64748b; font-size: 14px; padding: 4px 0;">Amount:</td>
-                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">$${(data.amount / 100).toFixed(2)}</td>
+                <td style="color: #1e293b; font-size: 14px; text-align: right; padding: 4px 0;">${Money.fromMinor(data.amount, 'USD').format()}</td>
               </tr>` : ''}
             </table>
           </div>
@@ -730,11 +738,26 @@ function getTypeSpecificContent(
   data: SubscriptionEmailData
 ): { body: string; extra: string } {
   switch (type) {
-    case 'created':
+    case 'created': {
+      // Restate the recurring terms + surface the cancel path in the
+      // post-purchase acknowledgment (several state automatic-renewal laws
+      // require this in the confirmation itself, BMC-186).
+      const amountText =
+        data.amount !== undefined ? Money.fromMinor(data.amount, 'USD').format() : 'the subscription price';
+      const cadence = FREQUENCY_CADENCE[data.frequency];
+      const nextChargeLine = data.nextBillingDate
+        ? ` Your first renewal charge is on ${data.nextBillingDate}.`
+        : '';
       return {
         body: 'Your subscription has been activated! We will automatically prepare and ship your order according to your selected schedule.',
-        extra: '',
+        extra: `
+          <div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 12px 16px; margin: 16px 0;">
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0 0 8px;"><strong>Recurring billing:</strong> You'll be charged ${amountText} ${cadence}, automatically, until you cancel.${nextChargeLine}</p>
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime — no fees, no commitment — from your <a href="${escapeHtml(data.manageUrl)}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
+          </div>
+        `,
       };
+    }
     case 'renewed':
       return {
         body: 'Your subscription has been renewed and your next order is being prepared.',

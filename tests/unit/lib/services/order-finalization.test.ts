@@ -32,6 +32,8 @@ vi.mock('@/lib/models/mach/orders', () => ({
 
 vi.mock('@/lib/services/gift-card-fulfillment', () => ({
   processGiftCardsForOrder: vi.fn().mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] }),
+  // BMC-186: the CAS-loser branch re-drives undelivered gift-card emails.
+  retryUndeliveredGiftCards: vi.fn().mockResolvedValue({ retried: 0, errors: [] }),
 }));
 
 vi.mock('@/lib/services/order-confirmation', () => ({
@@ -70,7 +72,10 @@ vi.mock('@/lib/models/mach/promotions', () => ({
 
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
 import { promoteOrderToPaid, markOrderUnpaid, updateOrderNotes } from '@/lib/models/mach/orders';
-import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
+import {
+  processGiftCardsForOrder,
+  retryUndeliveredGiftCards,
+} from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
@@ -156,13 +161,26 @@ describe('finalizePaidOrder', () => {
     expect(vi.mocked(sendOrderConfirmationForOrder)).toHaveBeenCalledTimes(1);
   });
 
-  it('BMC-167 convergence: LOSING the CAS (already promoted) runs NO side effects, still reports paid', async () => {
+  it('BMC-167 convergence: LOSING the CAS (already promoted) runs NO one-time side effects, still reports paid', async () => {
     // Another writer (client POST or a prior webhook delivery) already flipped
-    // the row → our conditional UPDATE matches 0 rows. We must NOT re-fulfil or
-    // re-email, but the order IS paid, so report success.
+    // the row → our conditional UPDATE matches 0 rows. We must NOT re-fulfil
+    // (mint/redeem) or re-email the confirmation, but the order IS paid, so
+    // report success.
     vi.mocked(promoteOrderToPaid).mockResolvedValue(casLoseAlreadyPaid(order()) as any);
     const res = await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: true });
     expect(res).toMatchObject({ paid: true, promotedByUs: false });
+    expect(vi.mocked(processGiftCardsForOrder)).not.toHaveBeenCalled();
+    expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
+  });
+
+  it('BMC-186: the CAS loser re-drives undelivered gift-card deliveries (reachable retry)', async () => {
+    // The loser owns the one reliably-reached "re-run": it re-drives any
+    // gift-card delivery email the winner failed to send (idempotent, keyed on
+    // delivered_at), without re-minting/redeeming or re-sending the order email.
+    vi.mocked(promoteOrderToPaid).mockResolvedValue(casLoseAlreadyPaid(order()) as any);
+    const res = await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: true });
+    expect(res).toMatchObject({ paid: true, promotedByUs: false });
+    expect(vi.mocked(retryUndeliveredGiftCards)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(processGiftCardsForOrder)).not.toHaveBeenCalled();
     expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
   });

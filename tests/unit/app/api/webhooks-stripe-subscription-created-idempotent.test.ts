@@ -199,4 +199,46 @@ describe('handleSubscriptionCreated idempotency (BMC-182)', () => {
       customerEmail: 'shopper@example.com',
     }));
   });
+
+  // BMC-186: the ARL recurring-terms line in the `created` email must state the
+  // real per-cycle charge, derived from the Stripe price (unit_amount × quantity).
+  it('derives the ARL `amount` from the Stripe price (unit_amount × quantity)', async () => {
+    const newSub = { ...existingSub, id: 'SUB-AMT' };
+    state.selectQueue = [[], [fakePlan]];
+    batchSpy.mockResolvedValueOnce([[newSub], undefined]);
+
+    const pricedSubscription = {
+      ...fakeSubscription,
+      items: {
+        data: [
+          {
+            price: { id: 'price_123', unit_amount: 1999 },
+            quantity: 2,
+            current_period_start: 1_700_000_000,
+            current_period_end: 1_702_592_000,
+          },
+        ],
+      },
+    } as unknown as Stripe.Subscription;
+
+    await handleSubscriptionCreated(pricedSubscription, 'evt_amount');
+
+    expect(vi.mocked(sendSubscriptionEmail)).toHaveBeenCalledWith(
+      'created',
+      expect.objectContaining({ amount: 3998 })
+    );
+  });
+
+  it('leaves `amount` undefined when the Stripe price has no unit_amount', async () => {
+    const newSub = { ...existingSub, id: 'SUB-NOAMT' };
+    state.selectQueue = [[], [fakePlan]];
+    batchSpy.mockResolvedValueOnce([[newSub], undefined]);
+
+    // fakeSubscription's item has `price: { id }` only — no unit_amount.
+    await handleSubscriptionCreated(fakeSubscription, 'evt_noamt');
+
+    const lastCall = vi.mocked(sendSubscriptionEmail).mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe('created');
+    expect((lastCall?.[1] as { amount?: number }).amount).toBeUndefined();
+  });
 });

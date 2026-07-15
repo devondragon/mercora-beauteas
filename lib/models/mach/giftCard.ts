@@ -11,7 +11,7 @@ import { getDbAsync } from '@/lib/db';
 import { gift_cards, gift_card_transactions } from '@/lib/db/schema/gift-card';
 import type { GiftCardRow } from '@/lib/db/schema/gift-card';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { eq, and, gte, desc, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
@@ -406,13 +406,36 @@ export async function redeemGiftCard(input: RedeemGiftCardInput): Promise<Redeem
 }
 
 /**
- * Record that the recipient delivery email has been sent.
+ * Atomically CLAIM a card for delivery: stamp `delivered_at` only if it is
+ * currently NULL. Returns true if THIS caller won the claim (and therefore must
+ * send the email), false if another writer already claimed/sent it.
+ *
+ * This makes delivery single-flight across the two writers that can finalize an
+ * order (the order-promotion CAS winner and the loser's BMC-186 retry): the
+ * guarded `delivered_at IS NULL` predicate means exactly one of them flips the
+ * row and sends, so a concurrent pair can't email the recipient twice. A caller
+ * that wins the claim but then fails to send must release it (see
+ * `releaseGiftCardDeliveryClaim`) so a later run can retry.
  */
-export async function markGiftCardDelivered(id: string): Promise<void> {
+export async function claimGiftCardForDelivery(id: string): Promise<boolean> {
+  const db = await getDbAsync();
+  const rows = await db
+    .update(gift_cards)
+    .set({ delivered_at: sql`CURRENT_TIMESTAMP`, updated_at: sql`CURRENT_TIMESTAMP` })
+    .where(and(eq(gift_cards.id, id), isNull(gift_cards.delivered_at)))
+    .returning({ id: gift_cards.id });
+  return rows.length > 0;
+}
+
+/**
+ * Release a delivery claim (`delivered_at` → NULL) after a send FAILED, so the
+ * card is eligible for a later retry rather than being stuck falsely "delivered".
+ */
+export async function releaseGiftCardDeliveryClaim(id: string): Promise<void> {
   const db = await getDbAsync();
   await db
     .update(gift_cards)
-    .set({ delivered_at: sql`CURRENT_TIMESTAMP`, updated_at: sql`CURRENT_TIMESTAMP` })
+    .set({ delivered_at: null, updated_at: sql`CURRENT_TIMESTAMP` })
     .where(eq(gift_cards.id, id));
 }
 

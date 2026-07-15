@@ -20,9 +20,11 @@ import {
   getGiftCardByCode,
   getGiftCardsByOrderId,
   redeemGiftCard,
-  markGiftCardDelivered,
+  claimGiftCardForDelivery,
+  releaseGiftCardDeliveryClaim,
   normalizeCode,
 } from '@/lib/models/mach/giftCard';
+import type { GiftCardRow } from '@/lib/db/schema/gift-card';
 import { sendGiftCardDeliveryEmail } from '@/lib/utils/email';
 import { BASE_URL } from '@/lib/seo/metadata';
 import { AMOUNT_TOLERANCE_CENTS } from '@/lib/services/order-pricing';
@@ -166,8 +168,65 @@ function purchaserNameFromOrder(order: Order): string | undefined {
 }
 
 /**
+ * Send the delivery email for an issued card, single-flight.
+ *
+ * Delivery state is tracked by `delivered_at` (not merely by the card existing),
+ * so a card that was minted but whose email failed can be re-driven on a later
+ * run (BMC-186). To keep that safe under the two writers that can finalize an
+ * order concurrently (the promotion CAS winner and the loser's retry), we CLAIM
+ * the card with a guarded `delivered_at NULL→now` update BEFORE sending: only
+ * the writer that wins the claim sends, so the recipient can't be emailed twice.
+ * A claim we win but then fail to send is released so a later run can retry.
+ *
+ * Reads all recipient/message fields from the persisted card row — the same
+ * server-sanitized values used at issuance — so a retry is identical to the
+ * original send. `skipped` marks "another writer already owns delivery" (not an
+ * error, not a fresh delivery by us).
+ */
+async function deliverGiftCard(
+  card: GiftCardRow,
+  purchaserName: string | undefined
+): Promise<{ ok: boolean; error?: string; skipped?: boolean }> {
+  if (!card.recipient_email) {
+    return { ok: false, error: 'card has no recipient email' };
+  }
+
+  // Single-flight claim. If another writer already claimed (or sent) this card's
+  // delivery, do nothing — reporting ok so the caller doesn't log a spurious error.
+  const claimed = await claimGiftCardForDelivery(card.id);
+  if (!claimed) {
+    return { ok: true, skipped: true };
+  }
+
+  const emailResult = await sendGiftCardDeliveryEmail({
+    recipientEmail: card.recipient_email,
+    recipientName: card.recipient_name ?? undefined,
+    purchaserName,
+    code: card.code,
+    // Email the FACE value (initial_balance), not the live redeemable balance —
+    // a delivery retry may run after the code was already partially redeemed, and
+    // the recipient should see the amount they were gifted, not what's left.
+    amount: card.initial_balance,
+    currency: card.currency,
+    giftMessage: card.gift_message ?? undefined,
+    redeemUrl: BASE_URL,
+  });
+  if (!emailResult.success) {
+    // Release the claim so this failed delivery is retried on a later run rather
+    // than being stuck falsely "delivered".
+    await releaseGiftCardDeliveryClaim(card.id);
+    return { ok: false, error: emailResult.error };
+  }
+  return { ok: true };
+}
+
+/**
  * Issue + email a gift card for every gift-card line item on the order.
- * Idempotent: skips any (order, line, unit) that already has a card.
+ * Idempotent per (order, line, unit): never mints a second card for a line that
+ * already has one, but WILL re-drive the delivery email for an existing card
+ * whose recipient never received it (`delivered_at IS NULL`) — otherwise a mint
+ * that succeeded while its email failed would leave the recipient without the
+ * code forever (BMC-186).
  */
 async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; errors: string[] }> {
   const errors: string[] = [];
@@ -179,9 +238,13 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
   const giftLines = (order.items || []).filter(isGiftCardLine);
   if (giftLines.length === 0) return { issued, errors };
 
-  // Idempotency: which (line) cards already exist for this order?
+  // Idempotency: which (line) cards already exist for this order? Keep the whole
+  // row (not just the id) so we can check delivery state and retry the email.
   const existing = await getGiftCardsByOrderId(orderId);
-  const existingLineIds = new Set(existing.map((c) => c.order_line_id).filter(Boolean) as string[]);
+  const existingByLineId = new Map<string, GiftCardRow>();
+  for (const card of existing) {
+    if (card.order_line_id) existingByLineId.set(card.order_line_id, card);
+  }
 
   const purchaserEmail = purchaserEmailFromOrder(order);
   const purchaserName = purchaserNameFromOrder(order);
@@ -212,7 +275,35 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
     const quantity = Math.max(1, item.quantity || 1);
     for (let unit = 0; unit < quantity; unit++) {
       const orderLineId = `${orderId}#${i}#${unit}`;
-      if (existingLineIds.has(orderLineId)) continue; // already issued
+
+      // A card already exists for this line: never re-mint. But if its delivery
+      // email never landed, re-drive it now so the recipient still gets the code
+      // (BMC-186) — the purchaser was charged and the card was minted. This is
+      // defense-in-depth: in practice only the promotion CAS winner reaches
+      // issuance and it runs once, so this branch is rarely hit today — the
+      // reachable retry is `retryUndeliveredGiftCards` on the CAS-loser path.
+      const existingCard = existingByLineId.get(orderLineId);
+      if (existingCard) {
+        if (!existingCard.delivered_at) {
+          // deliverGiftCard does a DB write (the claim), so guard it — this
+          // function must honor processGiftCardsForOrder's "never throws" contract.
+          try {
+            const retry = await deliverGiftCard(existingCard, purchaserName);
+            if (!retry.ok) {
+              errors.push(
+                `Gift card ${existingCard.code} delivery retry failed: ${retry.error}`
+              );
+            }
+          } catch (err) {
+            errors.push(
+              `Gift card ${existingCard.code} delivery retry error: ${
+                err instanceof Error ? err.message : 'unknown error'
+              }`
+            );
+          }
+        }
+        continue;
+      }
 
       try {
         const card = await createGiftCard({
@@ -228,20 +319,9 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
         });
         issued++;
 
-        const emailResult = await sendGiftCardDeliveryEmail({
-          recipientEmail,
-          recipientName: recipientName ?? undefined,
-          purchaserName,
-          code: card.code,
-          amount: card.balance,
-          currency: card.currency,
-          giftMessage: giftMessage ?? undefined,
-          redeemUrl: BASE_URL,
-        });
-        if (emailResult.success) {
-          await markGiftCardDelivered(card.id);
-        } else {
-          errors.push(`Gift card ${card.code} issued but email failed: ${emailResult.error}`);
+        const delivery = await deliverGiftCard(card, purchaserName);
+        if (!delivery.ok) {
+          errors.push(`Gift card ${card.code} issued but email failed: ${delivery.error}`);
         }
       } catch (err) {
         errors.push(
@@ -254,6 +334,55 @@ async function issueGiftCardsForOrder(order: Order): Promise<{ issued: number; e
   }
 
   return { issued, errors };
+}
+
+/**
+ * Re-drive delivery emails for any already-issued cards on this order whose
+ * email never landed (`delivered_at IS NULL`) — the reachable BMC-186 retry.
+ *
+ * Full fulfillment (`processGiftCardsForOrder`) only runs for the order-promotion
+ * CAS *winner*, so a card minted while its email failed would otherwise never get
+ * a second attempt. This narrow path re-sends ONLY for cards that already exist
+ * (i.e. already paid for), so it needs no payment context and is safe to call on
+ * every finalize re-run — the convergence loser (the second of the client-POST /
+ * webhook pair) calls it to give a failed delivery another attempt at a later
+ * moment. Never throws; collects errors like the issuance path.
+ */
+export async function retryUndeliveredGiftCards(
+  order: Order
+): Promise<{ retried: number; errors: string[] }> {
+  const errors: string[] = [];
+  let retried = 0;
+
+  const orderId = order.id;
+  if (!orderId) return { retried, errors };
+  // No gift-card lines → nothing was ever issued for this order.
+  if (!(order.items || []).some(isGiftCardLine)) return { retried, errors };
+
+  const purchaserName = purchaserNameFromOrder(order);
+  // Honor the "never throws" contract: getGiftCardsByOrderId and the DB write
+  // inside deliverGiftCard can throw, so convert any failure into an error entry
+  // rather than letting it propagate (a caller may not wrap this).
+  try {
+    const cards = await getGiftCardsByOrderId(orderId);
+    for (const card of cards) {
+      if (card.delivered_at) continue; // already delivered
+      const result = await deliverGiftCard(card, purchaserName);
+      if (!result.ok) {
+        errors.push(`Gift card ${card.code} delivery retry failed: ${result.error}`);
+      } else if (!result.skipped) {
+        // Only count deliveries WE actually sent — `skipped` means another writer
+        // won the single-flight claim (no email sent by us).
+        retried++;
+      }
+    }
+  } catch (err) {
+    errors.push(
+      `Gift card delivery retry error: ${err instanceof Error ? err.message : 'unknown error'}`
+    );
+  }
+
+  return { retried, errors };
 }
 
 /**
