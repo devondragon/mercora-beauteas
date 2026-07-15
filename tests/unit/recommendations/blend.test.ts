@@ -7,6 +7,16 @@ function p(id: string, tags: string[] = []): Product {
   return { id, name: `P${id}`, tags, variants: [] } as unknown as Product;
 }
 
+/** Build a product carrying a single variant with an explicit stock quantity. */
+function pStock(id: string, qty: number, tags: string[] = []): Product {
+  return {
+    id,
+    name: `P${id}`,
+    tags,
+    variants: [{ id: `${id}-v`, inventory: { quantity: qty } }],
+  } as unknown as Product;
+}
+
 const source = p("SRC", ["calendula"]);
 const catalog = [source, p("A", ["calendula"]), p("B", ["calendula"]), p("C"), p("D"), p("E")];
 
@@ -166,6 +176,78 @@ describe("blendRecommendations", () => {
     expect(result.map((x) => x.id)).not.toContain("A");
     // 2 base slots preserved + personalized pick falls through owned "A" to "B"
     expect(result.map((x) => x.id)).toEqual(["C", "D", "B"]);
+  });
+
+  it("never recommends an out-of-stock product from the base list", () => {
+    const src = pStock("SRC", 5, ["calendula"]);
+    const result = blendRecommendations({
+      product: src,
+      // OOS product is the top base pick — must be dropped, not surfaced.
+      base: [pStock("OOS", 0), pStock("A", 3), pStock("B", 3)],
+      allProducts: [src, pStock("OOS", 0), pStock("A", 3), pStock("B", 3)],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.map((x) => x.id)).not.toContain("OOS");
+    // Still fills to the requested count from the remaining in-stock catalog.
+    expect(result.map((x) => x.id)).toEqual(["A", "B"]);
+  });
+
+  it("tops up to `limit` from in-stock catalog, skipping OOS items", () => {
+    const src = pStock("SRC", 5);
+    const result = blendRecommendations({
+      product: src,
+      base: [pStock("A", 3)],
+      // C is out of stock and must be skipped by the top-up in favor of D.
+      allProducts: [src, pStock("A", 3), pStock("B", 3), pStock("C", 0), pStock("D", 3)],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.length).toBe(3);
+    expect(result.map((x) => x.id)).not.toContain("C");
+    expect(result.map((x) => x.id)).toEqual(["A", "B", "D"]);
+  });
+
+  it("treats a variant with no inventory data as purchasable (no over-filtering)", () => {
+    const src = pStock("SRC", 5);
+    // `p()` products have `variants: []` — untracked, so they must remain eligible.
+    const result = blendRecommendations({
+      product: src,
+      base: [p("A"), p("B")],
+      allProducts: [src, p("A"), p("B"), p("C")],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.map((x) => x.id)).toEqual(["A", "B", "C"]);
+  });
+
+  it("keeps a product in stock when any one of several variants has stock", () => {
+    const src = pStock("SRC", 5);
+    const multi = {
+      id: "MULTI",
+      name: "PMULTI",
+      tags: [],
+      variants: [
+        { id: "m1", inventory: { quantity: 0 } },
+        { id: "m2", inventory: { quantity: 4 } },
+      ],
+    } as unknown as Product;
+    const result = blendRecommendations({
+      product: src,
+      base: [multi],
+      allProducts: [src, multi],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.map((x) => x.id)).toEqual(["MULTI"]);
   });
 
   it("returns exactly `limit` distinct products at the exhaustion boundary", () => {

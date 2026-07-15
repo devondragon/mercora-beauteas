@@ -3,6 +3,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-06-25",
   "compatibility_flags": ["nodejs_compat"],
+  // Emit invocation logs (incl. console.error/warn on rebuild failures) to
+  // Workers Logs so a silently-failing cron is observable.
+  "observability": { "enabled": true },
   "triggers": {
     // Daily at 08:00 UTC. Adjust cadence as the catalog's change rate warrants.
     "crons": ["0 8 * * *"]

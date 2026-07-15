@@ -21,7 +21,7 @@ function productText(product: any): string {
 export async function rebuildProductRecommendations(
   env: any,
   opts: { neighbors?: number } = {}
-): Promise<{ productsProcessed: number; rowsWritten: number; errors: { productId: string; error: string }[] }> {
+): Promise<{ productsProcessed: number; productsSkipped: number; rowsWritten: number; errors: { productId: string; error: string }[] }> {
   const ai = env.AI;
   const vectorize = env.VECTORIZE;
   if (!ai || !vectorize) {
@@ -33,6 +33,7 @@ export async function rebuildProductRecommendations(
   const db = await getDbAsync();
 
   let productsProcessed = 0;
+  let productsSkipped = 0;
   let rowsWritten = 0;
   const errors: { productId: string; error: string }[] = [];
 
@@ -57,6 +58,15 @@ export async function rebuildProductRecommendations(
         if (ranked.length >= neighbors) break;
       }
 
+      // Guard against an empty rebuild wiping good data: a zero-result query
+      // (e.g. a transient Vectorize outage or an un-indexed product) must NOT
+      // delete this product's existing recommendations. Only replace when we
+      // have a non-empty result set; otherwise preserve what's already stored.
+      if (ranked.length === 0) {
+        productsSkipped += 1;
+        continue;
+      }
+
       // Replace this source product's rows atomically (D1 has no transaction()).
       const statements: any[] = [
         db.delete(product_recommendations).where(eq(product_recommendations.source_product_id, sourceId)),
@@ -72,10 +82,8 @@ export async function rebuildProductRecommendations(
           })
         );
       });
-      if (statements.length > 0) {
-        // db.batch requires a non-empty tuple.
-        await db.batch(statements as [any, ...any[]]);
-      }
+      // db.batch requires a non-empty tuple.
+      await db.batch(statements as [any, ...any[]]);
 
       productsProcessed += 1;
       rowsWritten += ranked.length;
@@ -86,5 +94,5 @@ export async function rebuildProductRecommendations(
     }
   }
 
-  return { productsProcessed, rowsWritten, errors };
+  return { productsProcessed, productsSkipped, rowsWritten, errors };
 }
