@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { checkAdminPermissions, isSuperAdminActor } from "@/lib/auth/admin-middleware";
+import { customJsChanged, logCustomJsAudit } from "@/lib/cms/custom-js-guard";
 import { errorDetails } from "@/lib/utils/error-response";
 import {
   getPageById,
@@ -143,9 +144,39 @@ export async function PUT(
       });
     }
 
+    // Guardrail (BMC-163): only a super-admin may set or change a page's
+    // arbitrary client-side `custom_js`. When the payload changes custom_js,
+    // require super-admin; otherwise reject the whole update so the existing
+    // value is preserved untouched. Ordinary edits that don't touch custom_js
+    // are unaffected.
+    if ("custom_js" in updateData) {
+      const currentPage = await getPageById(id);
+      if (!currentPage) {
+        return NextResponse.json(
+          { success: false, error: "Page not found" },
+          { status: 404 }
+        );
+      }
+      if (customJsChanged(updateData, currentPage)) {
+        const allowed = await isSuperAdminActor(authResult);
+        logCustomJsAudit({
+          actorUserId: authResult.userId,
+          pageId: id,
+          action: "update",
+          allowed,
+        });
+        if (!allowed) {
+          return NextResponse.json(
+            { success: false, error: "Only a super-admin may change custom JavaScript on a page." },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     // Regular update
     const updatedPage = await updatePage(
-      id, 
+      id,
       updateData,
       authResult.userId,
       change_summary

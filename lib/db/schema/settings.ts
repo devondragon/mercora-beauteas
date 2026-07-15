@@ -41,7 +41,16 @@ export const defaultSettings = [
     description: 'Enable detailed error logging',
     data_type: 'boolean'
   },
-  
+  {
+    // BMC-163: kill switch for admin-authored CMS page custom_js. Default OFF —
+    // existing pages with custom_js stay inert until this is explicitly enabled.
+    key: 'cms.custom_js_enabled',
+    value: JSON.stringify(false),
+    category: 'system',
+    description: 'Allow admin-authored custom JavaScript on CMS pages to execute (security-sensitive)',
+    data_type: 'boolean'
+  },
+
   // Store Operations
   {
     key: 'store.free_shipping_threshold',

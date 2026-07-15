@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { checkAdminPermissions, isSuperAdminActor } from "@/lib/auth/admin-middleware";
+import { customJsChanged, logCustomJsAudit } from "@/lib/cms/custom-js-guard";
 import {
   getPages,
   createPage,
@@ -99,6 +100,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const data = await request.json() as Record<string, any>;
+
+    // Guardrail (BMC-163): only a super-admin may set arbitrary client-side
+    // `custom_js` on a page. Reject and audit non-super-admin attempts.
+    if (customJsChanged(data, null)) {
+      const allowed = await isSuperAdminActor(authResult);
+      logCustomJsAudit({
+        actorUserId: authResult.userId,
+        pageSlug: typeof data.slug === "string" ? data.slug : undefined,
+        action: "create",
+        allowed,
+      });
+      if (!allowed) {
+        return NextResponse.json(
+          { success: false, error: "Only a super-admin may set custom JavaScript on a page." },
+          { status: 403 }
+        );
+      }
+    }
 
     // Add creator information
     const pageData = {
