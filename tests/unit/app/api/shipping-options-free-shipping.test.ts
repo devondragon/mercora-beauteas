@@ -104,6 +104,7 @@ describe('POST /api/shipping-options free-shipping threshold (BMC-187)', () => {
     }));
     const res = await POST(postRequest({ address, items: many }));
     expect(res.status).toBe(400);
-    expect(vi.mocked(getProductVariant).mock.calls.length).toBeLessThan(MAX_ORDER_LINE_ITEMS);
+    // Rejected BEFORE any catalog pricing happens.
+    expect(vi.mocked(getProductVariant)).not.toHaveBeenCalled();
   });
 });

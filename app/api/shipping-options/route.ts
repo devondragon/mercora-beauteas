@@ -5,9 +5,18 @@ import type { ShippingOption } from "@/lib/types/shipping";
 import type { CartItem } from "@/lib/types/cartitem";
 import { getSettings } from "@/lib/utils/settings";
 import { computeCatalogSubtotalCents, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
+import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
+import { Money } from "@/lib/money";
 
 export async function POST(req: NextRequest) {
   try {
+    // Public and now catalog-backed: the free-shipping check below does one D1
+    // read per cart line, so throttle per IP before doing any work — same guard
+    // the tax / payment-intent endpoints use (BMC-180). Fails open when the
+    // binding is absent (plain `next dev`).
+    const limited = await enforceRateLimit("PUBLIC_RATE_LIMITER", `shipping-options:${getClientIp(req)}`);
+    if (limited) return limited;
+
     const { address, items }: { address: Address; items: CartItem[] } =
       await req.json();
 
@@ -68,9 +77,9 @@ export async function POST(req: NextRequest) {
     // still lives in payment-intent / order creation.
     const { subtotalCents, errors } = await computeCatalogSubtotalCents(
       lineItems.map((item) => ({
-        product_id: item.productId,
-        variant_id: item.variantId,
-        quantity: item.quantity,
+        product_id: item?.productId,
+        variant_id: item?.variantId,
+        quantity: item?.quantity,
       }))
     );
     if (errors.length) {
@@ -78,10 +87,12 @@ export async function POST(req: NextRequest) {
     }
 
     const freeShippingThreshold = storeSettings['store.free_shipping_threshold'] || 75;
-    // Threshold is stored in major units (dollars); compare against the
-    // catalog-derived cents subtotal.
-    const freeShippingThresholdCents = Math.round(freeShippingThreshold * 100);
-    const qualifiesForFreeShipping = errors.length === 0 && subtotalCents >= freeShippingThresholdCents;
+    // Compare like-for-like via Money (threshold is stored in major units / dollars,
+    // the catalog subtotal in minor units / cents) rather than a raw *100 — see
+    // CLAUDE.md Money & Pricing.
+    const qualifiesForFreeShipping =
+      errors.length === 0 &&
+      Money.fromMinor(subtotalCents).gte(Money.fromMajor(freeShippingThreshold));
     const freeShippingMethods = shippingSettings['shipping.free_methods'] || ['standard'];
 
     // Apply free shipping logic if order meets threshold
