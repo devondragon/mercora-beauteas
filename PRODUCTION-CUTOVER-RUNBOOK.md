@@ -38,6 +38,7 @@ These are hard gates. Do not deploy to production until all are resolved.
 - ☐ Cloudflare account on Workers **paid** plan; note Account ID.
 - ☐ **Clerk production instance** created (separate from the `pk_test_…dev` instance). Get `pk_live_…` + `sk_live_…`.
 - ☐ **Stripe** business verification complete, **Stripe Tax** enabled, account in **Live** mode available.
+- ☐ **Stripe Tax registrations/nexus configured in the LIVE account** (BMC-187). This is a hard go-live gate, not just "enable Stripe Tax": `/api/tax` uses nexus-aware Stripe Tax, but falls back to a **flat 7% rate** (`FALLBACK_TAX_RATE` in `app/api/tax/route.ts`) whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is unset in the runtime. If registrations/nexus aren't set up in live Stripe, **every production order mischarges tax** at the flat rate. Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered, then confirm a live checkout returns `"calculated_by": "stripe"` (not `"fallback"`) from `/api/tax`. Watch `wrangler tail --env production` for the loud `[tax] STRIPE_SECRET_KEY not configured` / Stripe Tax failure logs during the smoke test.
 - ☐ Decide the **maintenance/migration window** (low-traffic, e.g. overnight). Budget 2–4h.
 - ☐ Confirm Shopify data scale (expected: <1K customers, few hundred orders, ~30 products).
 - ☐ Obtain **Shopify Admin API** credentials (custom app: API key + secret + store URL) with read scopes for products, customers, orders, content/pages.

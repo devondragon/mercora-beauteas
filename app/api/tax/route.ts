@@ -37,13 +37,38 @@ import type { Address } from "@/lib/types";
 import { calculateTax, formatAmountForStripe, formatAmountFromStripe, isStripeConfigured } from "@/lib/stripe";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 
-// Fallback tax rate for when Stripe Tax is unavailable
+// Fallback tax rate applied when Stripe Tax cannot be used (BMC-187).
+//
+// This flat rate is a DEGRADED path, not the intended behavior. It is applied
+// whenever: (a) no usable shipping address is present, (b) the Stripe Tax call
+// errors, or (c) Stripe is not configured in this runtime. It taxes the same
+// base as the real Stripe path — `subtotal + shippingCost` — so the two paths
+// agree on what is taxable; only the rate differs.
+//
+// At scale a flat rate mischarges every order (it ignores nexus, jurisdiction,
+// and product tax codes). The correct state for production is that this path is
+// NEVER hit: Stripe Tax must be enabled with registrations/nexus configured in
+// the LIVE Stripe account before go-live. That is an explicit cutover step —
+// see PRODUCTION-CUTOVER-RUNBOOK.md §1 (Stripe Tax). A config miss is logged
+// loudly below (not silent) precisely because it means all orders mischarge.
 const FALLBACK_TAX_RATE = 0.07;
 
 // Upper bound on cart line items per request. This endpoint is public and each
 // call can hit the billable Stripe Tax API, so cap the work an anonymous caller
 // can request (BMC-180). A real cart never approaches this.
 const MAX_TAX_LINE_ITEMS = 100;
+
+/**
+ * Fallback tax on a taxable base (dollars), rounded to whole cents so the
+ * response never carries >2 decimals of float drift. The Stripe path already
+ * returns cent-clean dollars via `formatAmountFromStripe`; computing the
+ * fallback the same way (dollars → cents → round → dollars) keeps the two paths
+ * consistent and makes `total = subtotal + shipping + tax` exact (BMC-187).
+ */
+function fallbackTaxAmount(taxableAmount: number): number {
+  const taxCents = Math.round(formatAmountForStripe(taxableAmount) * FALLBACK_TAX_RATE);
+  return formatAmountFromStripe(taxCents);
+}
 
 interface TaxRequest {
   items: CartItem[];
@@ -83,13 +108,16 @@ export async function POST(req: NextRequest) {
       0
     );
 
-    // If no shipping address provided, use fallback calculation
+    // If no shipping address provided, use fallback calculation. Tax the same
+    // base the Stripe path taxes (`subtotal + shippingCost`) so the fallback and
+    // real paths stay consistent (BMC-187).
     if (!shippingAddress || !shippingAddress.region || !shippingAddress.postal_code) {
-      const amount = subtotal * FALLBACK_TAX_RATE;
+      const taxableAmount = subtotal + shippingCost;
+      const amount = fallbackTaxAmount(taxableAmount);
       const breakdown: TaxBreakdown = {
         subtotal,
         shippingCost,
-        taxableAmount: subtotal,
+        taxableAmount,
         taxAmount: amount,
         total: subtotal + shippingCost + amount,
       };
@@ -137,12 +165,14 @@ export async function POST(req: NextRequest) {
         console.error("Stripe Tax calculation failed (using fallback rate):", stripeError);
       }
 
-      // Fall back to simple calculation
-      const amount = subtotal * FALLBACK_TAX_RATE;
+      // Fall back to simple calculation. Tax `subtotal + shippingCost` to match
+      // the Stripe path's taxable base (BMC-187).
+      const taxableAmount = subtotal + shippingCost;
+      const amount = fallbackTaxAmount(taxableAmount);
       const breakdown: TaxBreakdown = {
         subtotal,
         shippingCost,
-        taxableAmount: subtotal,
+        taxableAmount,
         taxAmount: amount,
         total: subtotal + shippingCost + amount,
       };

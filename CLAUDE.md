@@ -97,7 +97,7 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | Stripe publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_STRIPE_KEY` |
 
 - **Shared bindings** (inherited): `ASSETS` (`.open-next/assets`), `AI`, observability enabled, empty `durable_objects`.
-- **Rate-limit bindings** (per-env `ratelimits`, BMC-180): `AI_RATE_LIMITER` (20/60s — guards the paid `/api/agent-chat` AI path) and `PUBLIC_RATE_LIMITER` (60/60s — guards `tax`, `validate-discount`, `gift-cards/validate`, `payment-intent`). Native Cloudflare rate limiting (best-effort, per-colo); enforced via `lib/rate-limit.ts` (`enforceRateLimit`), which **fails open** if the binding is absent (e.g. plain `next dev`). Distinct `namespace_id`s per env so dev/prod counters don't share.
+- **Rate-limit bindings** (per-env `ratelimits`, BMC-180): `AI_RATE_LIMITER` (20/60s — guards the paid `/api/agent-chat` AI path) and `PUBLIC_RATE_LIMITER` (60/60s — guards `tax`, `validate-discount`, `gift-cards/validate`, `payment-intent`, `shipping-options`). Native Cloudflare rate limiting (best-effort, per-colo); enforced via `lib/rate-limit.ts` (`enforceRateLimit`), which **fails open** if the binding is absent (e.g. plain `next dev`). Distinct `namespace_id`s per env so dev/prod counters don't share.
 - **Compatibility:** date `2026-06-25`, flags `["nodejs_compat", "global_fetch_strictly_public"]`.
 - **Secrets** are per-env via `wrangler secret put … --env <dev|production>` (NOT in config):
   `CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET` (signs CAN-SPAM unsubscribe links, BMC-184).
