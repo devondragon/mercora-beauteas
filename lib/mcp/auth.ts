@@ -80,6 +80,18 @@ export const COMMERCE_TOOL_SCOPES: Record<string, string> = {
   create_payment_intent: COMMERCE_SCOPES.PLACE_ORDERS,
 };
 
+/**
+ * Returns the commerce scope a tool requires, or `undefined` for tools that
+ * carry no commerce-scope requirement. This is the single lookup both the JSON
+ * dispatcher and the REST /tools/* routes use, so the REST routes derive their
+ * required scope from `COMMERCE_TOOL_SCOPES` (the source of truth) rather than
+ * hardcoding it inline — adding a future commerce tool only means updating the
+ * map above (BMC-188 review).
+ */
+export function requiredScopeForTool(toolName: string): string | undefined {
+  return COMMERCE_TOOL_SCOPES[toolName];
+}
+
 export async function authenticateAgent(
   request: NextRequest,
   opts: { isOrderOp?: boolean } = {}

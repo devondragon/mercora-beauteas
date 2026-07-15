@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAgent, hasPermission, COMMERCE_SCOPES } from '../../../../../../lib/mcp/auth';
+import { authenticateAgent, hasPermission, requiredScopeForTool } from '../../../../../../lib/mcp/auth';
 import { parseAgentContext } from '../../../../../../lib/mcp/context';
 import { createAgentPaymentIntent } from '../../../../../../lib/mcp/tools/payment';
 import { PaymentIntentCreateRequest } from '../../../../../../lib/mcp/types';
@@ -15,12 +15,13 @@ export async function POST(request: NextRequest) {
     }, { status: 401 });
   }
 
-  if (!hasPermission(auth.permissions, COMMERCE_SCOPES.PLACE_ORDERS)) {
+  const requiredScope = requiredScopeForTool('create_payment_intent');
+  if (requiredScope && !hasPermission(auth.permissions, requiredScope)) {
     return NextResponse.json({
       success: false,
       error: {
         code: 'FORBIDDEN',
-        message: "This tool requires an agent with the 'place:orders' permission"
+        message: `This tool requires an agent with the '${requiredScope}' permission`
       }
     }, { status: 403 });
   }
