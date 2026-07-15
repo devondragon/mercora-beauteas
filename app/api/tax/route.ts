@@ -36,6 +36,7 @@ import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
 import { calculateTax, formatAmountForStripe, formatAmountFromStripe, isStripeConfigured } from "@/lib/stripe";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
+import { computeCatalogLineCents } from "@/lib/services/order-pricing";
 
 // Fallback tax rate applied when Stripe Tax cannot be used (BMC-187).
 //
@@ -103,10 +104,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const subtotal = items.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0
+    // Derive the taxable goods base from the D1 catalog (`product_variants.price`),
+    // NEVER the client-supplied `item.price` (BMC-200). The old code summed
+    // `item.price * item.quantity` from the request body in both paths, so a
+    // tampered price could under-report the taxable amount and under-collect
+    // sales tax. We recompute each line's amount from the catalog (cents) using
+    // the same seam the charge gate / free-shipping check use. Any unpriceable
+    // line means we cannot compute an authoritative base, so we FAIL CLOSED with
+    // an error rather than tax a client-controlled (or silently undercounted)
+    // amount — the same cart is rejected downstream by the charge gate anyway.
+    const catalogLines = await computeCatalogLineCents(
+      items.map((item) => ({
+        product_id: item.productId,
+        variant_id: item.variantId,
+        quantity: item.quantity,
+      }))
     );
+    const pricingErrors = catalogLines.flatMap((line) =>
+      "error" in line ? [line.error] : []
+    );
+    if (pricingErrors.length) {
+      console.warn(`[tax] catalog pricing errors — ${pricingErrors.join("; ")}`);
+      return NextResponse.json(
+        { error: "Unable to price cart from catalog for tax calculation" },
+        { status: 422 }
+      );
+    }
+
+    // Per-line taxable amounts in cents (catalog truth), and the goods subtotal
+    // in dollars for the response contract (`/api/tax` speaks major-unit dollars
+    // to the client — see CheckoutClient's `cartItemsToMajorUnits` bridge).
+    const lineCents = catalogLines.map((line) => ("cents" in line ? line.cents : 0));
+    const subtotalCents = lineCents.reduce((sum, cents) => sum + cents, 0);
+    const subtotal = formatAmountFromStripe(subtotalCents);
 
     // If no shipping address provided, use fallback calculation. Tax the same
     // base the Stripe path taxes (`subtotal + shippingCost`) so the fallback and
@@ -131,8 +161,16 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // Use Stripe Tax for accurate calculation
-      const taxAmount = await calculateStripeToleratedTax(items, shippingAddress, shippingCost);
+      // Use Stripe Tax for accurate calculation. Line amounts come from the
+      // catalog (`lineCents`), not `item.price` (BMC-200).
+      const taxAmount = await calculateStripeToleratedTax(
+        items.map((item, index) => ({
+          amountCents: lineCents[index],
+          reference: `item_${index}_${item.productId}`,
+        })),
+        shippingAddress,
+        shippingCost
+      );
       
       const breakdown: TaxBreakdown = {
         subtotal,
@@ -200,17 +238,21 @@ export async function POST(req: NextRequest) {
 
 /**
  * Calculate tax using Stripe Tax API
- * Provides accurate tax calculation based on customer location
+ * Provides accurate tax calculation based on customer location.
+ *
+ * Line amounts are the catalog-derived taxable amounts (cents), passed in by the
+ * caller — never `item.price` from the request body (BMC-200).
  */
 async function calculateStripeToleratedTax(
-  items: CartItem[], 
-  shippingAddress: Address, 
+  lines: Array<{ amountCents: number; reference: string }>,
+  shippingAddress: Address,
   shippingCost: number
 ): Promise<number> {
-  // Build line items for Stripe Tax calculation (products only)
-  const lineItems = items.map((item, index) => ({
-    amount: formatAmountForStripe(item.price * item.quantity),
-    reference: `item_${index}_${item.productId}`,
+  // Build line items for Stripe Tax calculation (products only). Amounts are
+  // already in cents (Stripe's smallest currency unit), so no dollar conversion.
+  const lineItems = lines.map((line) => ({
+    amount: line.amountCents,
+    reference: line.reference,
     tax_code: 'txcd_99999999', // General - Tangible Goods
   }));
 

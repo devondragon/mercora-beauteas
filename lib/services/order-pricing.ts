@@ -164,24 +164,33 @@ export interface CatalogSubtotalResult {
 }
 
 /**
- * Recompute an order's goods subtotal (cents) from the live catalog. Any line
+ * Per-line result of catalog pricing: either the authoritative line total
+ * (catalog unit price × quantity, cents) or a reason the line couldn't be
+ * priced. Exactly one of `cents` / `error` is set.
+ */
+export type CatalogLineResult = { cents: number } | { error: string };
+
+/**
+ * Price each order line from the live catalog, preserving line order. Any line
  * that can't be priced authoritatively — malformed item, untrusted quantity,
- * unknown/mismatched/unpriceable variant — is reported in `errors`; callers
- * MUST treat a non-empty `errors` as "cannot verify → fail closed" rather than
- * silently undercounting the goods.
+ * unknown/mismatched/unpriceable variant — yields an `error` in its slot;
+ * callers MUST treat any `error` as "cannot verify → fail closed" rather than
+ * silently dropping the line (dropping it would undercount the goods / taxable
+ * base). Used both to sum the goods subtotal (`computeCatalogSubtotalCents`) and
+ * to build the per-line taxable amounts for `/api/tax` (BMC-200).
  *
  * Lines are priced concurrently (L1): each line is an independent catalog read,
  * so `Promise.all` overlaps the round-trips instead of serializing them. The
  * per-line work is wrapped so a single malformed line (e.g. `null`) fails that
  * line closed rather than throwing out of the whole computation (C1).
  */
-export async function computeCatalogSubtotalCents(
+export async function computeCatalogLineCents(
   items: Array<{ product_id?: string; variant_id?: string; quantity?: number }>
-): Promise<CatalogSubtotalResult> {
+): Promise<CatalogLineResult[]> {
   const list = Array.isArray(items) ? items : [];
 
-  const perLine = await Promise.all(
-    list.map(async (item, i): Promise<{ cents: number } | { error: string }> => {
+  return Promise.all(
+    list.map(async (item, i): Promise<CatalogLineResult> => {
       // C1: a non-object line (null, string, number) must fail closed, never
       // throw — an uncaught throw here used to bubble up to the order route's
       // outer catch and leave paymentConfirmed=true.
@@ -206,6 +215,19 @@ export async function computeCatalogSubtotalCents(
       return { cents: priced.cents * quantity };
     })
   );
+}
+
+/**
+ * Recompute an order's goods subtotal (cents) from the live catalog. Any line
+ * that can't be priced authoritatively — malformed item, untrusted quantity,
+ * unknown/mismatched/unpriceable variant — is reported in `errors`; callers
+ * MUST treat a non-empty `errors` as "cannot verify → fail closed" rather than
+ * silently undercounting the goods. Thin sum over `computeCatalogLineCents`.
+ */
+export async function computeCatalogSubtotalCents(
+  items: Array<{ product_id?: string; variant_id?: string; quantity?: number }>
+): Promise<CatalogSubtotalResult> {
+  const perLine = await computeCatalogLineCents(items);
 
   const errors: string[] = [];
   let subtotalCents = 0;
