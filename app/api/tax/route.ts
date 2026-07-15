@@ -159,6 +159,8 @@ export async function POST(req: NextRequest) {
       // authoritative floor recomputes shipping server-side. Same seam, different
       // shipping input — an understated shipping estimate is caught at the floor.
       shippingCents: formatAmountForStripe(shippingCost),
+      // Preserve per-product references in Stripe's tax_breakdown for audit/debug.
+      itemReferences: items.map((item, index) => `item_${index}_${item.productId}`),
     });
     const taxAmount = formatAmountFromStripe(taxResult.taxCents);
     const taxableAmount = subtotal + shippingCost;

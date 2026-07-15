@@ -12,8 +12,9 @@
  *
  * Pure unit test (CI `npm test`): Stripe, gift-card, orders/customer models, and
  * Clerk auth are mocked; order-pricing + checkout-charges are left real, with the
- * catalog seam and Stripe Tax mocked. Stripe Tax returns a fixed $2.00 so the
- * arithmetic is deterministic; shipping is the real $9.99 (< $100 subtotal).
+ * catalog seam, settings, and Stripe Tax mocked. Stripe Tax returns a fixed $2.00
+ * so the arithmetic is deterministic; shipping is the settings floor $5.99 (cart
+ * under the $75 free threshold) — the SAME source /api/shipping-options quotes.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -50,6 +51,12 @@ vi.mock('@/lib/models/mach/customer', () => ({
   createCustomer: vi.fn(),
 }));
 
+// Settings drive the shipping floor → default {} = standard $5.99 cheapest
+// method, free ≥ $75. Overridden in the free-shipping test.
+vi.mock('@/lib/utils/settings', () => ({
+  getSettings: vi.fn().mockResolvedValue({}),
+}));
+
 // No cart discount in these tests — pin the resolver so the floor arithmetic is
 // purely goods + shipping + tax.
 vi.mock('@/lib/services/discount-pricing', () => ({
@@ -74,6 +81,7 @@ import { POST } from '@/app/api/payment-intent/route';
 import { createPaymentIntent } from '@/lib/stripe';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { createOrder } from '@/lib/models/mach/orders';
+import { getSettings } from '@/lib/utils/settings';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 const items = [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 1 }];
@@ -104,6 +112,7 @@ function orderDraft() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getSettings).mockResolvedValue({});
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
@@ -112,12 +121,12 @@ beforeEach(() => {
 });
 
 describe('POST /api/payment-intent tax/shipping floor (BMC-201)', () => {
-  // goods $25.00 + shipping $9.99 + tax $2.00 = $36.99 floor.
+  // goods $25.00 + shipping $5.99 (settings floor) + tax $2.00 = $32.99 floor.
 
   it('THE EXPLOIT: rejects an amount that covers goods + shipping but OMITS tax', async () => {
-    // $34.99 = goods + shipping, tax dropped to $0 — the exact under-collection.
+    // $30.99 = goods + shipping, tax dropped to $0 — the exact under-collection.
     const res = await POST(
-      postRequest({ amount: 34.99, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items })
+      postRequest({ amount: 30.99, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items })
     );
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code?: string }).code).toBe('amount_below_catalog');
@@ -125,7 +134,7 @@ describe('POST /api/payment-intent tax/shipping floor (BMC-201)', () => {
   });
 
   it('rejects an amount that covers goods + tax but OMITS shipping', async () => {
-    // $27.00 = goods + tax, shipping dropped — floor still $36.99.
+    // $27.00 = goods + tax, shipping dropped — floor still $32.99.
     const res = await POST(
       postRequest({ amount: 27.0, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items })
     );
@@ -136,7 +145,7 @@ describe('POST /api/payment-intent tax/shipping floor (BMC-201)', () => {
 
   it('creates the PaymentIntent when the amount covers goods + shipping + tax', async () => {
     const res = await POST(
-      postRequest({ amount: 36.99, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items })
+      postRequest({ amount: 32.99, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items })
     );
     expect(res.status).toBe(200);
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);
@@ -144,26 +153,38 @@ describe('POST /api/payment-intent tax/shipping floor (BMC-201)', () => {
 
   it('stamps the server-computed expected shipping + tax on the pending order', async () => {
     const res = await POST(
-      postRequest({ amount: 36.99, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items, order: orderDraft() })
+      postRequest({ amount: 32.99, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items, order: orderDraft() })
     );
     expect(res.status).toBe(200);
     const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
-    expect(persisted.extensions.expected_shipping_cents).toBe(999);
+    expect(persisted.extensions.expected_shipping_cents).toBe(599);
     expect(persisted.extensions.expected_tax_cents).toBe(200);
   });
 
-  it('enforces the AK/HI shipping surcharge for the destination', async () => {
-    // Ship to AK → shipping $19.99, so floor = 2500 + 1999 + 200 = 4699c. An
-    // amount that would have cleared the CA floor ($36.99) is now rejected.
-    const akAddress = { ...shippingAddress, region: 'AK' };
-    const rejected = await POST(
-      postRequest({ amount: 36.99, taxAmount: 2, shippingAddress: akAddress, orderId: 'WEB-X-1', items })
+  it('does NOT false-reject when the shipping floor matches the storefront quote ($5.99, not calculateShipping $9.99)', async () => {
+    // Regression guard for the BMC-201 review finding: the floor's shipping must
+    // come from the SAME settings source /api/shipping-options quotes ($5.99), not
+    // the unrelated calculateShipping model ($9.99). A customer paying the real
+    // $5.99 standard rate (+ $2 tax) must clear the floor, which $36.99-based
+    // calculateShipping would have wrongly rejected.
+    const res = await POST(
+      postRequest({ amount: 32.99, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items })
     );
-    expect(rejected.status).toBe(400);
+    expect(res.status).toBe(200);
+  });
+
+  it('drops the shipping term when the cart qualifies for free shipping (≥ $75)', async () => {
+    // 4 × $25 = $100 goods ≥ $75 threshold → standard shipping free → floor shipping 0.
+    const fourItems = [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 4 }];
+    // Floor = 10000 goods + 0 shipping + 200 tax = 10200c ($102.00).
+    const rejected = await POST(
+      postRequest({ amount: 101.5, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items: fourItems })
+    );
+    expect(rejected.status).toBe(400); // below the $102 tax-inclusive floor
     expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
 
     const accepted = await POST(
-      postRequest({ amount: 46.99, taxAmount: 2, shippingAddress: akAddress, orderId: 'WEB-X-1', items })
+      postRequest({ amount: 102.0, taxAmount: 2, shippingAddress, orderId: 'WEB-X-1', items: fourItems })
     );
     expect(accepted.status).toBe(200);
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);

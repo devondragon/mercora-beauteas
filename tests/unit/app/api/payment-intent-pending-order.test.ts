@@ -30,9 +30,15 @@ vi.mock('@/lib/stripe', () => ({
   cancelPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_minted', status: 'canceled' }),
   // BMC-201: the floor now recomputes tax via the checkout-charges seam. Pin $0
   // tax here so these BMC-167 assertions turn on persistence/customer logic, not
-  // tax math (the tax floor has its own dedicated test). $34.99 = $25 goods +
-  // $9.99 shipping (calculateShipping, real) + $0 tax.
+  // tax math (the tax floor has its own dedicated test). $34.99 comfortably clears
+  // $25 goods + $5.99 shipping (settings floor) + $0 tax = $30.99.
   calculateTax: vi.fn().mockResolvedValue({ tax_amount_exclusive: 0 }),
+}));
+
+// Settings drive the shipping floor → default {} yields the built-in $5.99
+// cheapest method (free ≥ $75; the $25 cart is under, so $5.99 applies).
+vi.mock('@/lib/utils/settings', () => ({
+  getSettings: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('@clerk/nextjs/server', () => ({
@@ -154,9 +160,9 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect(persisted.extensions.payment_intent_id).toBe('pi_minted');
     expect(persisted.external_references.payment_intent_id).toBe('pi_minted');
     // BMC-201: the SERVER-computed expected shipping + tax are stamped on the
-    // order so finalization enforces them. $9.99 shipping (real calculateShipping,
-    // < $100 subtotal), $0 tax (mocked).
-    expect(persisted.extensions.expected_shipping_cents).toBe(999);
+    // order so finalization enforces them. $5.99 shipping (settings floor, cart
+    // under the free threshold), $0 tax (mocked).
+    expect(persisted.extensions.expected_shipping_cents).toBe(599);
     expect(persisted.extensions.expected_tax_cents).toBe(0);
     // Guest checkout → no customer id bound, no provisioning attempted.
     expect(persisted.customer_id).toBeUndefined();
@@ -176,7 +182,7 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect(res.status).toBe(200);
     const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
     expect(persisted.extensions.expected_tax_cents).toBe(0); // server value, not 999999
-    expect(persisted.extensions.expected_shipping_cents).toBe(999); // server value, not 1
+    expect(persisted.extensions.expected_shipping_cents).toBe(599); // server value, not 1
   });
 
   it('C1: a first-time AUTHENTICATED buyer with no customers row is PROVISIONED before insert (no FK-fail)', async () => {

@@ -29,9 +29,15 @@
  */
 
 import type { Address } from '@/lib/types';
+import type { ShippingOption } from '@/lib/types/shipping';
 import { Money } from '@/lib/money';
-import { calculateTax as stripeCalculateTax, isStripeConfigured } from '@/lib/stripe';
-import { calculateShipping, computeCatalogLineCents } from '@/lib/services/order-pricing';
+import {
+  calculateTax as stripeCalculateTax,
+  formatAmountForStripe,
+  isStripeConfigured,
+} from '@/lib/stripe';
+import { computeCatalogLineCents } from '@/lib/services/order-pricing';
+import { getSettings } from '@/lib/utils/settings';
 
 /**
  * Fallback flat tax rate, applied whenever Stripe Tax can't be used (no usable
@@ -66,14 +72,75 @@ function fallbackTaxCents(taxableCents: number): number {
   return Math.max(0, Math.round(taxableCents * FALLBACK_TAX_RATE));
 }
 
+// The storefront's shipping methods when `shipping.methods` isn't configured —
+// IDENTICAL to the `/api/shipping-options` default (kept in lockstep because both
+// this seam and that route resolve options through `resolveShippingOptions`). Costs
+// are MAJOR units (dollars), matching how admin settings store them.
+const DEFAULT_SHIPPING_METHODS = [
+  { id: 'standard', label: 'Standard (5–7 days)', cost: 5.99, estimatedDays: 5, enabled: true },
+  { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
+  { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true },
+];
+const DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR = 75;
+const DEFAULT_FREE_SHIPPING_METHODS = ['standard'];
+
 /**
- * Deterministic shipping (cents) for a goods subtotal + destination — the SAME
- * `calculateShipping` rules the MCP order path and `computeOrderTotals` use
- * (free over the threshold, AK/HI surcharge, else standard). No external call.
+ * Resolve the storefront's shipping options for a catalog goods subtotal, from
+ * admin settings (BMC-201). This is the SINGLE source of the storefront shipping
+ * model — `/api/shipping-options` (the customer-facing quote) and the charge floor
+ * (`computeShippingFloorCents`) both call it, so the shipping a customer is quoted
+ * and the shipping the floor enforces can never diverge.
+ *
+ * Free shipping (`store.free_shipping_threshold`, default $75) zeroes the cost of
+ * the configured free methods (`shipping.free_methods`, default `['standard']`)
+ * once the goods subtotal clears the threshold. `goodsCents` must be the SERVER
+ * catalog subtotal (never a client price); pass `qualifiesForFreeShipping: false`
+ * when the cart couldn't be priced authoritatively so the perk fails closed.
  */
-export function computeExpectedShippingCents(goodsCents: number, address?: Address | null): number {
-  const goods = Money.fromMinor(Math.max(0, Math.round(goodsCents)), 'USD');
-  return calculateShipping((address ?? {}) as Address, goods).toMinorUnits();
+export async function resolveShippingOptions(
+  goodsCents: number,
+  opts: { subtotalPriceable?: boolean } = {}
+): Promise<{ options: ShippingOption[]; qualifiesForFreeShipping: boolean }> {
+  const [shippingSettings, storeSettings] = await Promise.all([
+    getSettings('shipping'),
+    getSettings('store'),
+  ]);
+
+  const methods = shippingSettings['shipping.methods'] || DEFAULT_SHIPPING_METHODS;
+  const enabled = methods.filter((m: any) => m.enabled);
+
+  const threshold = storeSettings['store.free_shipping_threshold'] || DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR;
+  const qualifiesForFreeShipping =
+    opts.subtotalPriceable !== false &&
+    Money.fromMinor(Math.max(0, Math.round(goodsCents))).gte(Money.fromMajor(threshold));
+  const freeMethods = shippingSettings['shipping.free_methods'] || DEFAULT_FREE_SHIPPING_METHODS;
+
+  const options: ShippingOption[] = enabled.map((m: any) => ({
+    id: m.id,
+    label: m.label,
+    cost: qualifiesForFreeShipping && freeMethods.includes(m.id) ? 0 : m.cost,
+    estimatedDays: m.estimatedDays,
+  }));
+
+  return { options, qualifiesForFreeShipping };
+}
+
+/**
+ * The shipping (cents) the charge floor enforces: the MINIMUM cost among the
+ * storefront's enabled shipping options for this subtotal (0 when the cheapest
+ * option is free-shipping-eligible). The customer picks ONE method at checkout and
+ * pays that method's cost, which is always >= this minimum — so an honest order
+ * clears the floor regardless of which method they chose, while a client that
+ * omitted shipping (paid $0 when not free-eligible) is caught. Uses the SAME
+ * settings-based options `/api/shipping-options` quotes, so the floor can't drift
+ * from what the customer was actually charged (BMC-201). No enabled method → 0.
+ */
+export async function computeShippingFloorCents(goodsCents: number): Promise<number> {
+  const { options } = await resolveShippingOptions(goodsCents);
+  if (options.length === 0) return 0;
+  // `option.cost` is major-unit dollars; convert to cents for the floor.
+  const costsCents = options.map((o) => formatAmountForStripe(o.cost));
+  return Math.max(0, Math.min(...costsCents));
 }
 
 /**
@@ -190,7 +257,11 @@ export async function computeExpectedChargeExtras(
     return { goodsCents, shippingCents: 0, taxCents: 0, taxCalculatedBy: 'fallback', priceable: false };
   }
 
-  const shippingCents = computeExpectedShippingCents(goodsCents, shippingAddress);
+  // Shipping floor = the cheapest enabled storefront method (settings-based, same
+  // seam `/api/shipping-options` quotes) so the floor matches what the customer
+  // was actually charged; tax is computed on goods + that minimum shipping so the
+  // tax floor never exceeds what an honest customer paid (BMC-201).
+  const shippingCents = await computeShippingFloorCents(goodsCents);
   const tax = await computeExpectedTaxCents({ lineCents, shippingAddress, shippingCents });
   return {
     goodsCents,

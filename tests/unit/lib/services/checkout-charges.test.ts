@@ -19,6 +19,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/stripe', () => ({
   calculateTax: vi.fn(),
   isStripeConfigured: vi.fn().mockReturnValue(true),
+  // dollars → cents, matching the real Money-based helper.
+  formatAmountForStripe: (a: number) => Math.round(a * 100),
 }));
 
 vi.mock('@/lib/models/mach/products', () => ({
@@ -26,14 +28,23 @@ vi.mock('@/lib/models/mach/products', () => ({
   getProductVariant: vi.fn(),
 }));
 
+// Settings drive the shipping floor. Default to {} → the module's built-in
+// defaults (standard $5.99 / express $9.99 / overnight $19.99, free ≥ $75 on
+// standard); individual tests override.
+vi.mock('@/lib/utils/settings', () => ({
+  getSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import {
-  computeExpectedShippingCents,
+  computeShippingFloorCents,
+  resolveShippingOptions,
   computeExpectedTaxCents,
   computeExpectedChargeExtras,
   FALLBACK_TAX_RATE,
 } from '@/lib/services/checkout-charges';
 import { calculateTax, isStripeConfigured } from '@/lib/stripe';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
+import { getSettings } from '@/lib/utils/settings';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 const caAddress = { line1: '1 St', city: 'Town', region: 'CA', postal_code: '90210' } as any;
@@ -41,29 +52,64 @@ const caAddress = { line1: '1 St', city: 'Town', region: 'CA', postal_code: '902
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isStripeConfigured).mockReturnValue(true);
+  vi.mocked(getSettings).mockResolvedValue({});
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
   vi.mocked(getProduct).mockResolvedValue(null as any);
 });
 
-describe('computeExpectedShippingCents', () => {
-  it('charges standard $9.99 shipping under the free-shipping threshold', () => {
-    expect(computeExpectedShippingCents(2500, caAddress)).toBe(999);
+describe('computeShippingFloorCents (settings-based, matches /api/shipping-options)', () => {
+  it('is the cheapest enabled method cost ($5.99 standard) under the free threshold', async () => {
+    expect(await computeShippingFloorCents(2500)).toBe(599);
   });
 
-  it('is free at/over the $100 threshold', () => {
-    expect(computeExpectedShippingCents(10000, caAddress)).toBe(0);
-    expect(computeExpectedShippingCents(15000, caAddress)).toBe(0);
+  it('is 0 once the cart qualifies for free shipping on the cheapest method (≥ $75)', async () => {
+    expect(await computeShippingFloorCents(7500)).toBe(0);
+    expect(await computeShippingFloorCents(20000)).toBe(0);
   });
 
-  it('applies the AK/HI surcharge ($19.99)', () => {
-    expect(computeExpectedShippingCents(2500, { ...caAddress, region: 'AK' })).toBe(1999);
-    expect(computeExpectedShippingCents(2500, { ...caAddress, region: 'HI' })).toBe(1999);
+  it('honours an admin-configured methods list + free threshold', async () => {
+    vi.mocked(getSettings).mockImplementation(async (category?: string) => {
+      if (category === 'shipping') {
+        return {
+          'shipping.methods': [
+            { id: 'flat', label: 'Flat', cost: 4.5, estimatedDays: 4, enabled: true },
+            { id: 'rush', label: 'Rush', cost: 12, estimatedDays: 1, enabled: true },
+          ],
+          'shipping.free_methods': ['flat'],
+        };
+      }
+      if (category === 'store') return { 'store.free_shipping_threshold': 50 };
+      return {};
+    });
+    // < $50 → cheapest method $4.50.
+    expect(await computeShippingFloorCents(2500)).toBe(450);
+    // ≥ $50 → 'flat' becomes free → floor 0.
+    expect(await computeShippingFloorCents(6000)).toBe(0);
   });
 
-  it('defaults to standard shipping when the address is missing', () => {
-    expect(computeExpectedShippingCents(2500, null)).toBe(999);
+  it('returns 0 when no shipping methods are enabled', async () => {
+    vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+      category === 'shipping' ? { 'shipping.methods': [] } : {}
+    );
+    expect(await computeShippingFloorCents(2500)).toBe(0);
+  });
+});
+
+describe('resolveShippingOptions', () => {
+  it('zeroes the free-eligible method cost above the threshold but keeps others', async () => {
+    const { options, qualifiesForFreeShipping } = await resolveShippingOptions(8000);
+    expect(qualifiesForFreeShipping).toBe(true);
+    const standard = options.find((o) => o.id === 'standard');
+    const express = options.find((o) => o.id === 'express');
+    expect(standard?.cost).toBe(0); // free-eligible
+    expect(express?.cost).toBe(9.99); // not in free_methods → still charged
+  });
+
+  it('fails free shipping closed when the subtotal is not priceable', async () => {
+    const { qualifiesForFreeShipping } = await resolveShippingOptions(20000, { subtotalPriceable: false });
+    expect(qualifiesForFreeShipping).toBe(false);
   });
 });
 
@@ -111,11 +157,14 @@ describe('computeExpectedChargeExtras', () => {
     const extras = await computeExpectedChargeExtras([line], caAddress);
     expect(extras).toEqual({
       goodsCents: 2500,
-      shippingCents: 999,
+      shippingCents: 599, // cheapest settings method ($5.99), not calculateShipping
       taxCents: 200,
       taxCalculatedBy: 'stripe',
       priceable: true,
     });
+    // Stripe Tax is computed on goods + the shipping FLOOR (599c).
+    const params = vi.mocked(calculateTax).mock.calls[0][0] as any;
+    expect(params.shipping_cost.amount).toBe(599);
   });
 
   it('fails closed (priceable: false) and skips the Stripe call when a line is unpriceable', async () => {
