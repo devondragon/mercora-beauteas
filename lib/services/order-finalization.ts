@@ -48,7 +48,10 @@ import {
   resolveGiftCardTenderCents,
   verifyOrderChargeSufficient,
 } from '@/lib/services/order-pricing';
-import { processGiftCardsForOrder } from '@/lib/services/gift-card-fulfillment';
+import {
+  processGiftCardsForOrder,
+  retryUndeliveredGiftCards,
+} from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
 
@@ -134,8 +137,35 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
 
   if (!promoted) {
     // Another writer already promoted this order (or it vanished). Idempotent —
-    // do NOT re-run side effects. `paid` reflects whether it is currently paid.
+    // do NOT re-run the one-time side effects. `paid` reflects current state.
     const alreadyPaid = promotedOrder?.payment_status === 'paid';
+    // BMC-186: this branch is the convergence LOSER (the second of the
+    // client-POST / webhook pair). The winner already ran full gift-card
+    // fulfillment; if a card's delivery email failed there, re-drive it now — a
+    // genuine second attempt at a later moment. This re-sends ONLY for
+    // already-issued (already-paid-for) cards, so it needs no payment context
+    // and never mints or redeems. Guarded so it can't throw out of finalization.
+    if (alreadyPaid) {
+      try {
+        const retry = await retryUndeliveredGiftCards(promotedOrder ?? order);
+        if (retry.retried) {
+          console.log(
+            `[finalize] Re-drove ${retry.retried} undelivered gift-card email(s) for ${orderId}`
+          );
+        }
+        if (retry.errors.length) {
+          console.error(
+            `[finalize] Gift-card delivery retry errors for ${orderId}:`,
+            retry.errors
+          );
+        }
+      } catch (retryError) {
+        console.error(
+          `[finalize] Gift-card delivery retry failed for ${orderId}:`,
+          retryError
+        );
+      }
+    }
     return { paid: alreadyPaid, promotedByUs: false };
   }
 
