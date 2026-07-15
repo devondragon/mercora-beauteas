@@ -10,6 +10,15 @@
 
 export interface RefundRecord {
   amount?: number;
+  /**
+   * Lifecycle of the ledger entry (BMC-193). Absent on legacy entries, which are
+   * treated as settled ('succeeded'). A 'pending' entry is an in-flight refund
+   * reserved BEFORE the Stripe call — it counts toward the refunded total so a
+   * concurrent refund can't over-refund the reserved amount. A 'failed' entry is
+   * a reservation whose Stripe call never moved money — it is released (excluded
+   * from the total).
+   */
+  status?: 'pending' | 'succeeded' | 'failed';
   [key: string]: unknown;
 }
 
@@ -29,6 +38,13 @@ export function computeRefundedTotal(extensions: OrderExtensions | null | undefi
     return 0;
   }
   return refunds.reduce((sum, refund) => {
+    // A 'failed' entry is a reservation whose Stripe call never moved money
+    // (BMC-193); exclude it so a released reservation doesn't inflate the
+    // refunded total. 'pending' and 'succeeded' (and legacy status-less) entries
+    // all count — pending reserves its amount against concurrent over-refund.
+    if (refund?.status === 'failed') {
+      return sum;
+    }
     const amount = refund?.amount;
     // Only count positive, whole-cent amounts. A stored refund entry should
     // never be negative or fractional; ignoring such values keeps the
