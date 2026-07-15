@@ -15,6 +15,34 @@ export interface BlendInput {
   excludeOwned: boolean;
 }
 
+/**
+ * Whether a product has any purchasable stock. A product is excluded only when
+ * it has variants and *every* variant is positively out of stock — i.e. its
+ * inventory is tracked (`track_inventory !== false`), reports zero (or negative)
+ * quantity, and allows no backorder. Any other case keeps the product eligible.
+ *
+ * This is intentionally *more lenient* than the storefront's per-default-variant
+ * `isVariantAvailable` check (ProductCard/ProductDisplay): it scans *all*
+ * variants and deliberately keeps products with no variants, no inventory
+ * object, or untracked inventory, so we never over-filter the recommendation
+ * pool on missing/partial inventory data. A variant with `track_inventory:false`
+ * is treated as unlimited stock regardless of its quantity value.
+ */
+function hasAvailableStock(pr: Product): boolean {
+  const variants = pr.variants ?? [];
+  if (variants.length === 0) return true;
+  return variants.some((v) => {
+    const inv = v.inventory;
+    if (!inv) return true; // no inventory record — treat as purchasable
+    if (inv.allow_backorder) return true;
+    // Only *tracked* inventory can be positively out of stock; an untracked
+    // variant (track_inventory === false) is always purchasable.
+    if (inv.track_inventory === false) return true;
+    const qty = typeof inv.quantity === "number" ? inv.quantity : 0;
+    return qty > 0;
+  });
+}
+
 export function blendRecommendations(input: BlendInput): Product[] {
   const { product, base, allProducts, userContext, limit, personalize, excludeOwned } = input;
 
@@ -23,7 +51,12 @@ export function blendRecommendations(input: BlendInput): Product[] {
     excludeOwned && userContext ? userContext.recentPurchases.map(String) : []
   );
 
-  const isEligible = (pr: Product) => String(pr.id) !== sourceId && !ownedIds.has(String(pr.id));
+  // Exclude the source, owned products, and anything out of stock. Applied on
+  // every candidate source below (base, personalized picks, and catalog top-up),
+  // so out-of-stock items can never enter the result and the top-up still fills
+  // to `limit` from the remaining in-stock catalog.
+  const isEligible = (pr: Product) =>
+    String(pr.id) !== sourceId && !ownedIds.has(String(pr.id)) && hasAvailableStock(pr);
 
   // De-dupe the base list, preserving order, dropping source + owned.
   const seen = new Set<string>();
