@@ -28,6 +28,11 @@ vi.mock('@/lib/stripe', () => ({
   formatAmountForStripe: vi.fn((a: number) => Math.round(a * 100)),
   createPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_minted', client_secret: 'pi_minted_secret_abc' }),
   cancelPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_minted', status: 'canceled' }),
+  // BMC-201: the floor now recomputes tax via the checkout-charges seam. Pin $0
+  // tax here so these BMC-167 assertions turn on persistence/customer logic, not
+  // tax math (the tax floor has its own dedicated test). $34.99 = $25 goods +
+  // $9.99 shipping (calculateShipping, real) + $0 tax.
+  calculateTax: vi.fn().mockResolvedValue({ tax_amount_exclusive: 0 }),
 }));
 
 vi.mock('@clerk/nextjs/server', () => ({
@@ -148,9 +153,30 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect(persisted.id).toBe('WEB-X-1');
     expect(persisted.extensions.payment_intent_id).toBe('pi_minted');
     expect(persisted.external_references.payment_intent_id).toBe('pi_minted');
+    // BMC-201: the SERVER-computed expected shipping + tax are stamped on the
+    // order so finalization enforces them. $9.99 shipping (real calculateShipping,
+    // < $100 subtotal), $0 tax (mocked).
+    expect(persisted.extensions.expected_shipping_cents).toBe(999);
+    expect(persisted.extensions.expected_tax_cents).toBe(0);
     // Guest checkout → no customer id bound, no provisioning attempted.
     expect(persisted.customer_id).toBeUndefined();
     expect(vi.mocked(getCustomer)).not.toHaveBeenCalled();
+  });
+
+  it('BMC-201: overwrites a client-supplied expected_tax_cents in the draft with the SERVER value', async () => {
+    // A tampered draft tries to persist expected_tax_cents: 0 to defeat the floor.
+    // The server must overwrite it with its own computed value (here also 0 via the
+    // mock, but the KEY assertion is that the client copy never survives as-is on a
+    // higher-tax cart). We assert the persisted value is the server figure, and
+    // that a bogus non-numeric client value is not carried through.
+    const draft = orderDraft({
+      extensions: { payment_intent_id: '', shipping_cost: 999, tax_amount: 0, subtotal: 2500, expected_tax_cents: 999999, expected_shipping_cents: 1 },
+    });
+    const res = await POST(postRequest(baseBody({ order: draft })));
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.extensions.expected_tax_cents).toBe(0); // server value, not 999999
+    expect(persisted.extensions.expected_shipping_cents).toBe(999); // server value, not 1
   });
 
   it('C1: a first-time AUTHENTICATED buyer with no customers row is PROVISIONED before insert (no FK-fail)', async () => {

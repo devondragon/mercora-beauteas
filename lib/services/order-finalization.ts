@@ -79,6 +79,19 @@ export interface FinalizePaidOrderArgs {
   customerName?: string;
 }
 
+/**
+ * Coerce a persisted expected-charge field (`extensions.expected_*_cents`) to a
+ * non-negative integer number of cents, or 0 when missing/malformed. Persisted as
+ * a plain number by `/api/payment-intent`, but a legacy order won't have it and a
+ * hand-edited row could carry anything — fail to 0 (goods-only floor) rather than
+ * NaN (which would silently pass every comparison) or a negative (which would
+ * lower the floor).
+ */
+function toNonNegativeInt(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
 export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<FinalizePaidOrderResult> {
   const { order, paidAmountCents, sendEmail, paidNotes, customerName } = args;
   const orderId = order.id!;
@@ -95,11 +108,21 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   const discountCodes = Array.isArray(rawDiscountCodes)
     ? rawDiscountCodes.filter((c: unknown): c is string => typeof c === 'string')
     : undefined;
+  // BMC-201: the expected shipping + tax were computed server-side and persisted
+  // on the order at PaymentIntent creation. Re-enforce the SAME figures here (both
+  // writers — client POST /api/orders and the Stripe webhook — go through this
+  // finalizer), so a PaymentIntent whose captured amount omitted tax/shipping is
+  // rejected. Coerce to a non-negative integer; a legacy/pre-BMC-201 order without
+  // these keys → 0, i.e. the goods-only floor, unchanged.
+  const expectedShippingCents = toNonNegativeInt(order.extensions?.expected_shipping_cents);
+  const expectedTaxCents = toNonNegativeInt(order.extensions?.expected_tax_cents);
   const charge = await verifyOrderChargeSufficient({
     items: order.items as any,
     paidAmountCents,
     giftCardTenderCents,
     discountCodes,
+    expectedShippingCents,
+    expectedTaxCents,
   });
 
   if (!charge.ok) {

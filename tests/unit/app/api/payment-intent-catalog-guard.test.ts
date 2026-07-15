@@ -17,6 +17,10 @@ vi.mock('@/lib/stripe', () => ({
   isStripeConfigured: vi.fn().mockReturnValue(true),
   formatAmountForStripe: vi.fn((a: number) => Math.round(a * 100)),
   createPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_new', client_secret: 'cs_new' }),
+  // BMC-201: the floor now recomputes tax via the checkout-charges seam. Pin $0
+  // tax so these BMC-131/177 assertions stay about the goods + discount floor;
+  // the tax term has its own dedicated test. Shipping is real ($9.99 < $100).
+  calculateTax: vi.fn().mockResolvedValue({ tax_amount_exclusive: 0 }),
 }));
 
 vi.mock('@/lib/models/mach/giftCard', () => ({
@@ -105,9 +109,10 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
     expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
   });
 
-  it('creates the PaymentIntent when the amount covers the catalog goods', async () => {
+  it('creates the PaymentIntent when the amount covers catalog goods + shipping + tax', async () => {
+    // $25 goods + $9.99 shipping (real calculateShipping) + $0 tax (mocked) = $34.99.
     const res = await POST(
-      postRequest({ amount: 25, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items })
+      postRequest({ amount: 34.99, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items })
     );
     expect(res.status).toBe(200);
     expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);
@@ -134,11 +139,11 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
 
   describe('cart discount floor (BMC-177)', () => {
     it('credits the server-recomputed discount so a discounted amount clears the floor', async () => {
-      // $25 goods, $6.25 recomputed discount → floor $18.75. Without the credit
-      // this amount would be rejected as amount_below_catalog.
+      // $25 goods, $6.25 recomputed discount, +$9.99 shipping, +$0 tax → floor
+      // $28.74. Without the discount credit this amount would be amount_below_catalog.
       vi.mocked(resolveCartDiscountCents).mockResolvedValue(625);
       const res = await POST(
-        postRequest({ amount: 18.75, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: ['SAVE25'] })
+        postRequest({ amount: 28.74, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: ['SAVE25'] })
       );
       expect(res.status).toBe(200);
       expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);
@@ -184,7 +189,7 @@ describe('POST /api/payment-intent catalog guard (BMC-131)', () => {
       // 30 copies of one code collapse to a single code — under the cap.
       const dupes = Array.from({ length: MAX_DISCOUNT_CODES + 5 }, () => 'save25');
       const res = await POST(
-        postRequest({ amount: 25, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: dupes })
+        postRequest({ amount: 34.99, taxAmount: 0, shippingAddress, orderId: 'WEB-X-1', items, discountCodes: dupes })
       );
       expect(res.status).toBe(200);
       expect(vi.mocked(createPaymentIntent)).toHaveBeenCalledTimes(1);

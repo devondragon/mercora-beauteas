@@ -320,6 +320,20 @@ export async function POST(request: NextRequest) {
           ? { ...(body.external_references ?? {}), payment_intent_id: bodyPaymentIntentId }
           : body.external_references ?? null;
 
+      // BMC-201: the expected shipping/tax the charge floor enforces are
+      // SERVER-authoritative — stamped on the pending order at PaymentIntent
+      // creation (`persistPendingOrder`). This route's standard path reuses that
+      // pre-persisted row on the id collision below, but a FRESH insert here takes
+      // `body.extensions` verbatim, so strip any client-supplied `expected_*_cents`
+      // to keep the field un-spoofable (a fresh-insert order then falls back to the
+      // goods-only floor at finalization rather than a client-lowered one).
+      let sanitizedExtensions: Record<string, unknown> | null = null;
+      if (body.extensions) {
+        sanitizedExtensions = { ...(body.extensions as Record<string, unknown>) };
+        delete sanitizedExtensions.expected_shipping_cents;
+        delete sanitizedExtensions.expected_tax_cents;
+      }
+
       // Encoding contract: total_amount / shipping_address / billing_address /
       // items / external_references / extensions are `mode: "json"` columns —
       // Drizzle serializes them on write and parses on read. Pass the RAW
@@ -340,7 +354,7 @@ export async function POST(request: NextRequest) {
         payment_status: 'pending',
         notes: body.notes || null,
         external_references: externalReferences,
-        extensions: body.extensions ?? null,
+        extensions: sanitizedExtensions,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
