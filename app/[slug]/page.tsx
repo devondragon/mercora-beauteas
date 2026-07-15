@@ -8,6 +8,7 @@
 import { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getPageBySlug } from "@/lib/models/pages";
+import { getCustomJsEnabled } from "@/lib/cms/custom-js-guard";
 import PageRenderer from "./PageRenderer";
 import { auth } from "@clerk/nextjs/server";
 
@@ -92,8 +93,13 @@ export default async function PublicPage({ params }: PageProps) {
       }
     }
 
-    return <PageRenderer page={page} />;
-    
+    // Kill switch (BMC-163): custom_js runs client-side only when the
+    // `cms.custom_js_enabled` admin setting is explicitly enabled. Read it
+    // server-side (D1) and thread the decision into the client component.
+    const customJsEnabled = await getCustomJsEnabled();
+
+    return <PageRenderer page={page} customJsEnabled={customJsEnabled} />;
+
   } catch (error) {
     console.error("Error loading page:", error);
     notFound();

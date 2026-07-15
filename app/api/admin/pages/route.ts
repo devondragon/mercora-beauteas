@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
+import { checkAdminPermissions, isSuperAdminActor } from "@/lib/auth/admin-middleware";
+import { customJsChanged, isNonEmptyScript, logCustomJsAudit } from "@/lib/cms/custom-js-guard";
 import {
   getPages,
   createPage,
@@ -100,6 +101,29 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json() as Record<string, any>;
 
+    // Guardrail (BMC-163): only a super-admin may set arbitrary client-side
+    // `custom_js` to a NON-EMPTY value. Removing/clearing it is allowed for any
+    // admin. `customJsChanged(data, null)` is true only for a non-empty create
+    // here (there is no existing value to clear), but we gate explicitly on
+    // `isNonEmptyScript` to keep the intent obvious and consistent with PUT.
+    const customJsWrite = customJsChanged(data, null);
+    if (customJsWrite && isNonEmptyScript(data.custom_js)) {
+      const allowed = await isSuperAdminActor(authResult);
+      if (!allowed) {
+        // Rejected attempt — audit before returning (no write happens).
+        logCustomJsAudit({
+          actorUserId: authResult.userId,
+          pageSlug: typeof data.slug === "string" ? data.slug : undefined,
+          action: "create",
+          allowed: false,
+        });
+        return NextResponse.json(
+          { success: false, error: "Only a super-admin may set custom JavaScript on a page." },
+          { status: 403 }
+        );
+      }
+    }
+
     // Add creator information
     const pageData = {
       ...data,
@@ -108,6 +132,18 @@ export async function POST(request: NextRequest) {
     };
 
     const newPage = await createPage(pageData as any);
+
+    // Audit the custom_js write only AFTER it has actually persisted, so an
+    // `allowed: true` record always corresponds to a committed change.
+    if (customJsWrite) {
+      logCustomJsAudit({
+        actorUserId: authResult.userId,
+        pageId: newPage.id,
+        pageSlug: newPage.slug,
+        action: "create",
+        allowed: true,
+      });
+    }
 
     return NextResponse.json({
       success: true,

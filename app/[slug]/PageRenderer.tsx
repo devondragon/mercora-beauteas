@@ -15,9 +15,15 @@ import { sanitizeBlogHtml } from "@/lib/utils/sanitize-html";
 
 interface PageRendererProps {
   page: PageSelect;
+  /**
+   * Kill switch (BMC-163): admin-authored `custom_js` is executed via
+   * `new Function(...)()` only when this is explicitly `true`. Defaults to
+   * `false` (secure by default) so a missing/omitted flag never runs the code.
+   */
+  customJsEnabled?: boolean;
 }
 
-export default function PageRenderer({ page }: PageRendererProps) {
+export default function PageRenderer({ page, customJsEnabled = false }: PageRendererProps) {
   // Inject custom CSS and JS if present
   useEffect(() => {
     // Handle custom CSS
@@ -38,7 +44,13 @@ export default function PageRenderer({ page }: PageRendererProps) {
   }, [page.custom_css, page.id]);
 
   useEffect(() => {
-    // Handle custom JavaScript
+    // Handle custom JavaScript.
+    // Guardrail (BMC-163): execute admin-authored custom_js only when the
+    // per-env kill switch is explicitly enabled. Default-off means existing
+    // pages with custom_js are inert until an admin turns the setting on.
+    if (!customJsEnabled) {
+      return;
+    }
     if (page.custom_js) {
       try {
         const scriptFunction = new Function(page.custom_js);
@@ -47,7 +59,7 @@ export default function PageRenderer({ page }: PageRendererProps) {
         console.error("Error executing custom JavaScript for page:", error);
       }
     }
-  }, [page.custom_js]);
+  }, [page.custom_js, customJsEnabled]);
 
   // Format date for display. Dates are stored as Unix timestamps (seconds) in D1,
   // so multiply by 1000 to convert to milliseconds before constructing a Date.

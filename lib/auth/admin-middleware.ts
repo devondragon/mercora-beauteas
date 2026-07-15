@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { isUserAdmin, updateAdminLastLogin } from "../models/admin";
+import { isUserAdmin, isUserSuperAdmin, updateAdminLastLogin } from "../models/admin";
 import { timingSafeEqual } from "./crypto";
 
 export interface AdminAuthResult {
@@ -94,6 +94,31 @@ export async function checkAdminPermissions(request: NextRequest): Promise<Admin
       error: "Authentication error. Please try again." 
     };
   }
+}
+
+/**
+ * Resolve whether an already-authenticated admin actor holds super-admin
+ * privilege. Used to gate especially sensitive writes such as CMS `custom_js`
+ * (BMC-163).
+ *
+ * - Only the explicit `x-dev-admin` dev bypass (`isDevMode`) is treated as
+ *   super-admin. This is NOT "any signed-in dev user": a normal Clerk session
+ *   in development returns `success` without `isDevMode`, so it falls through
+ *   to the `admin_users` role check below and is elevated only if that row is
+ *   actually `super_admin`.
+ * - The `ADMIN_VECTORIZE_TOKEN` service token grants `admin:*` and is the
+ *   highest-privilege server credential, so it is treated as super-admin.
+ * - Any other Clerk session is elevated only when the `admin_users` row has
+ *   role `super_admin`. The Clerk-metadata `role=admin` fallback in
+ *   {@link checkAdminPermissions} does NOT distinguish super-admin, so those
+ *   users are (correctly) not elevated here.
+ */
+export async function isSuperAdminActor(authResult: AdminAuthResult): Promise<boolean> {
+  if (!authResult.success) return false;
+  if (authResult.isDevMode) return true;
+  if (authResult.isServiceToken) return true;
+  if (!authResult.userId) return false;
+  return isUserSuperAdmin(authResult.userId);
 }
 
 export const ADMIN_PERMISSIONS = {

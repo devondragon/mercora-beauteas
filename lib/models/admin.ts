@@ -29,6 +29,29 @@ export async function isUserAdmin(userId: string): Promise<boolean> {
 }
 
 /**
+ * Check if a user ID has super-admin access (highest-privilege role).
+ * Used to gate especially sensitive writes such as CMS `custom_js` (BMC-163).
+ */
+export async function isUserSuperAdmin(userId: string): Promise<boolean> {
+  try {
+    const db = await getDbAsync();
+    const rows = await db
+      .select()
+      .from(adminUsers)
+      .where(and(
+        eq(adminUsers.userId, userId),
+        eq(adminUsers.isActive, true)
+      ))
+      .limit(1);
+
+    return rows[0]?.role === 'super_admin';
+  } catch (error) {
+    console.error('Error checking super-admin status:', error);
+    return false;
+  }
+}
+
+/**
  * Get admin user by user ID
  */
 export async function getAdminUser(userId: string): Promise<AdminUser | null> {
