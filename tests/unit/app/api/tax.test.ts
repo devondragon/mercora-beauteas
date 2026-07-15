@@ -24,11 +24,22 @@ vi.mock('@/lib/stripe', () => ({
   isStripeConfigured: vi.fn().mockReturnValue(true),
 }));
 
+// The taxable base is now derived from the catalog (BMC-200), so mock the catalog
+// seam's data sources — otherwise the route reaches the real getCloudflareContext().
+vi.mock('@/lib/models/mach/products', () => ({
+  getProduct: vi.fn(),
+  getProductVariant: vi.fn(),
+}));
+
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/tax/route';
 import { calculateTax } from '@/lib/stripe';
+import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 
 const FALLBACK_RATE = 0.07;
+
+// $100 variant (catalog price 10000 cents) — matches the base this test asserts.
+const VARIANT = { id: 'var-1', product_id: 'tea-1', price: { amount: 10000, currency: 'USD' } };
 
 function postRequest(body: unknown) {
   return new NextRequest('http://localhost/api/tax', {
@@ -49,6 +60,10 @@ const address = { line1: '1 St', city: 'Town', region: 'CA', postal_code: '90210
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
+    id === VARIANT.id ? (VARIANT as any) : null
+  );
+  vi.mocked(getProduct).mockResolvedValue(null as any);
 });
 
 describe('POST /api/tax fallback taxable base (BMC-187)', () => {

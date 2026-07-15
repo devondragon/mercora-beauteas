@@ -127,6 +127,74 @@ describe('POST /api/tax taxable base (BMC-200)', () => {
     expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
   });
 
+  it('fails the whole cart closed (422) when one line among several cannot be priced', async () => {
+    // A real tampering attempt mixes a legit item with a spoofed one. The bad
+    // line must fail the ENTIRE request closed, not silently tax only the good
+    // lines (which would under-collect).
+    const res = await POST(
+      postRequest({
+        items: [
+          { productId: 'tea-1', variantId: 'var-tea-1', quantity: 1, price: 25 },
+          { productId: 'tea-1', variantId: 'ghost', quantity: 1, price: 1 },
+        ],
+        shippingAddress: address,
+      })
+    );
+    expect(res.status).toBe(422);
+    expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
+  });
+
+  it('fails closed (422) when a variant is smuggled under a mismatched product_id', async () => {
+    // var-tea-1 belongs to tea-1, not expensive-product → binding check rejects.
+    const res = await POST(
+      postRequest({
+        items: [{ productId: 'expensive-product', variantId: 'var-tea-1', quantity: 1, price: 1 }],
+        shippingAddress: address,
+      })
+    );
+    expect(res.status).toBe(422);
+    expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
+  });
+
+  it('fails closed (422) on a zero-quantity line', async () => {
+    const res = await POST(
+      postRequest({
+        items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 0, price: 25 }],
+        shippingAddress: address,
+      })
+    );
+    expect(res.status).toBe(422);
+    expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 (not a misleading 400) when a catalog read throws', async () => {
+    // A transient D1 error is an infra failure, not a malformed request.
+    vi.mocked(getProductVariant).mockRejectedValueOnce(new Error('D1 timeout'));
+    const res = await POST(
+      postRequest({
+        items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 1, price: 25 }],
+        shippingAddress: address,
+      })
+    );
+    expect(res.status).toBe(503);
+    expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
+  });
+
+  it('ignores a negative client shippingCost instead of zeroing out the tax', async () => {
+    // No address → fallback path. A tampered negative shippingCost must not drag
+    // the taxable base below the catalog subtotal.
+    const res = await POST(
+      postRequest({
+        items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 1, price: 25 }],
+        shippingCost: -100000,
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { amount: number; breakdown: { taxableAmount: number } };
+    expect(body.breakdown.taxableAmount).toBe(25); // clamped shipping (0) + $25 catalog
+    expect(body.amount).toBe(1.75);
+  });
+
   it('rejects an unreasonably large items array before pricing it', async () => {
     const many = Array.from({ length: MAX_ORDER_LINE_ITEMS + 1 }, () => ({
       productId: 'tea-1',
