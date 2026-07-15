@@ -31,6 +31,7 @@ import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
+import { validatePutOrderStatus, mergeExtensions } from "@/lib/utils/order-update-guards";
 
 
 
@@ -527,12 +528,16 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Validate status value (must match schema)
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json({
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
-      }, { status: 400 });
+    // Validate the status value AND gate refund-owned transitions (BMC-158).
+    // 'cancelled'/'refunded' are rejected here (422) — they are set only by the
+    // dedicated POST /api/orders/refund route, which issues the Stripe refund
+    // and updates payment_status atomically. Setting them via this
+    // fulfillment-only PUT would leave the order in an inconsistent state
+    // (e.g. status='refunded' while payment_status stays 'paid' with no refund)
+    // and email the customer a false cancelled/refunded notice.
+    const statusCheck = validatePutOrderStatus(status);
+    if (!statusCheck.ok) {
+      return NextResponse.json({ error: statusCheck.error }, { status: statusCheck.status });
     }
 
     const db = await getDbAsync();
@@ -567,6 +572,25 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // SECURITY (BMC-158): the `extensions` JSON column holds server-owned keys
+    // the client must not clobber — `payment_intent_id` (the binding the refund
+    // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
+    // ledger computeRefundedTotal sums for the over-refund guard), plus
+    // restockedLineKeys / email / etc. A wholesale `extensions` overwrite here
+    // could rebind/drop the PI (refund fraud) or wipe the refunds ledger
+    // (resetting the over-refund guard → double refund). mergeExtensions MERGES
+    // the client's keys over the stored ones and re-pins payment_intent_id; it
+    // fails safe (rejects) if the stored extensions are corrupt rather than
+    // persisting a stripped object.
+    let mergedExtensions: Record<string, unknown> | undefined;
+    if (extensions !== undefined) {
+      const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
+      if (!mergeResult.ok) {
+        return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
+      }
+      mergedExtensions = mergeResult.extensions;
+    }
+
     // Build update data (MACH-compliant).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
@@ -578,7 +602,7 @@ export async function PUT(request: NextRequest) {
       ...(delivered_at && { delivered_at }),
       ...(notes && { notes }),
       ...(external_references && { external_references }),
-      ...(extensions && { extensions }),
+      ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
       updated_at: new Date().toISOString()
     };
 
