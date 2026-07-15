@@ -16,6 +16,21 @@
  * - Payment intent validation
  * - Refund amount verification
  *
+ * === Write ordering & concurrency (BMC-193) ===
+ * The refund ledger lives in the `orders.extensions.refunds[]` JSON column. Two
+ * gaps are closed here:
+ *   1. **Write-ordering.** A `pending` ledger entry (carrying the deterministic
+ *      idempotency key) is reserved BEFORE the Stripe call, then flipped to
+ *      `succeeded`/`failed` after. A Stripe-success / D1-failure therefore leaves
+ *      a recoverable `pending` entry (already counted in the refunded total, so
+ *      no over-refund window) rather than an order that looks un-refunded — a
+ *      retry reconciles the pending entry and reuses its idempotency key.
+ *   2. **Lost updates.** Every ledger write is an optimistic-concurrency CAS
+ *      (`WHERE id = ? AND updated_at = <read value>`); a lost race re-reads and
+ *      retries. D1 has no interactive transactions, so this guarded read-modify-
+ *      write is how two concurrent distinct partial refunds both land without
+ *      silently dropping one entry (which would corrupt computeRefundedTotal).
+ *
  * === Request Format ===
  * ```json
  * {
@@ -33,11 +48,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStripeClient } from '@/lib/stripe';
 import { getDbAsync } from '@/lib/db';
 import { orders } from '@/lib/db/schema/order';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
-import { computeRefundedTotal, assertRefundWithinRemaining, resolveFullRefundAmount } from '@/lib/utils/refund-validation';
+import {
+  computeRefundedTotal,
+  assertRefundWithinRemaining,
+  resolveFullRefundAmount,
+  type RefundRecord,
+} from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
-import { sha256Hex } from '@/lib/auth/crypto';
+import { deriveRefundIdempotencyKey, normalizeRefundItemKeys } from '@/lib/payments/refund-idempotency';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
@@ -49,6 +69,27 @@ interface RefundRequest {
   amount?: number; // For partial refunds (in cents)
   items?: string[]; // For partial refunds - product IDs
   notes?: string;
+}
+
+/** Bounded CAS retries on the ledger column before we give up with a 409. */
+const MAX_CAS_ATTEMPTS = 5;
+
+/** Parse a `mode:"json"` column that may arrive already-parsed or as a string. */
+function parseJson(value: unknown): any {
+  return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
+/** Order-independent equality of two refunded-line-item sets. */
+function refundItemsMatch(a: unknown, b: string[]): boolean {
+  return normalizeRefundItemKeys(Array.isArray(a) ? (a as string[]) : []) === normalizeRefundItemKeys(b);
+}
+
+/**
+ * The `updated_at` half of a CAS guard. `updated_at` can be NULL on legacy rows,
+ * and `= NULL` never matches in SQL, so route those to `IS NULL`.
+ */
+function updatedAtGuard(value: string | null) {
+  return value === null ? isNull(orders.updated_at) : eq(orders.updated_at, value);
 }
 
 export async function POST(request: NextRequest) {
@@ -76,218 +117,276 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDbAsync();
-    
-    // Get the order
-    const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
-    if (!order) {
-      return NextResponse.json({
-        error: 'Order not found'
-      }, { status: 404 });
+    const refundedItemKeys = items ?? [];
+
+    // ── Phase 1: reserve a `pending` ledger entry (CAS) ──────────────────────
+    // Re-reads the order each attempt so validation runs against fresh ledger
+    // state (a concurrent refund may have consumed some remaining balance). Emits
+    // the pending entry BEFORE Stripe so a later crash is recoverable, and
+    // reconciles an already-pending entry from an interrupted prior attempt
+    // instead of issuing a second refund.
+    let reservation:
+      | { idempotencyKey: string; refundAmount: number; entryId: string; reused: boolean }
+      | null = null;
+    let paymentIntentId: string | undefined;
+    let newStatus: string = type;
+    let newPaymentStatus: string = 'paid';
+
+    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+      const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+
+      const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
+      const totalAmount = order.total_amount ? (parseJson(order.total_amount) ?? { amount: 0 }) : { amount: 0 };
+      const refunds: RefundRecord[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+
+      paymentIntentId = extensions.payment_intent_id;
+      if (!paymentIntentId) {
+        return NextResponse.json({ error: 'No payment intent found for this order' }, { status: 400 });
+      }
+
+      // Already fully resolved (a concurrent full refund may have cancelled it).
+      if (order.status === 'cancelled' || order.status === 'refunded') {
+        return NextResponse.json({ error: 'Order is already cancelled or refunded' }, { status: 400 });
+      }
+
+      // Retry reconciliation: an interrupted prior attempt (Stripe succeeded,
+      // ledger flip failed) left a `pending` entry for this exact intent. Finish
+      // that one — reuse its idempotency key so Stripe dedupes — rather than
+      // reserving a second refund. Its amount is already counted in the refunded
+      // total, so no re-validation is needed.
+      const pending = refunds.find((r: any) =>
+        r?.status === 'pending' &&
+        r?.type === type &&
+        refundItemsMatch(r?.items, refundedItemKeys) &&
+        (type === 'full' || r?.amount === amount)
+      ) as any;
+
+      if (pending) {
+        reservation = {
+          idempotencyKey: pending.idempotency_key ?? pending.id,
+          refundAmount: pending.amount,
+          entryId: pending.id,
+          reused: true,
+        };
+        newStatus = type === 'full' ? 'cancelled' : order.status;
+        newPaymentStatus = type === 'full' ? 'refunded' : 'paid';
+        break;
+      }
+
+      // New refund — compute the amount against the current ledger.
+      const alreadyRefunded = computeRefundedTotal(extensions);
+      let refundAmount: number;
+      if (type === 'full') {
+        // Full refund — refund whatever is still outstanding, not the whole
+        // order total again. If a prior refund (partial or full) already covers
+        // the total, reject with a clean 400 instead of calling Stripe (BMC-152).
+        const fullRefundResolution = resolveFullRefundAmount(totalAmount.amount, alreadyRefunded);
+        if (!fullRefundResolution.ok) {
+          return NextResponse.json({ error: fullRefundResolution.error }, { status: 400 });
+        }
+        refundAmount = fullRefundResolution.amount;
+        newStatus = 'cancelled';
+        newPaymentStatus = 'refunded';
+      } else {
+        // Partial refund — validate it doesn't exceed what's actually left to
+        // refund (total minus everything already recorded, including in-flight
+        // pending reservations), for a clean 400 instead of a raw Stripe error.
+        refundAmount = amount!;
+        const refundCheck = assertRefundWithinRemaining(totalAmount.amount, alreadyRefunded, refundAmount);
+        if (!refundCheck.ok) {
+          return NextResponse.json({ error: refundCheck.error }, { status: 400 });
+        }
+        newStatus = order.status; // Keep same status for partial refunds
+        newPaymentStatus = 'paid'; // Still considered paid since it's partial
+      }
+
+      // BMC-172/BMC-192: deterministic idempotency key so a retry of the *same*
+      // refund reuses it and Stripe returns the ORIGINAL refund. `priorRefundCount`
+      // is the current ledger length — a failed reserve leaves it unchanged so the
+      // retry collides, while a genuinely new refund lands after a prior write
+      // (higher count) and gets a distinct key.
+      const idempotencyKey = await deriveRefundIdempotencyKey({
+        orderId,
+        type,
+        refundAmount,
+        priorRefundCount: refunds.length,
+        items: refundedItemKeys,
+      });
+
+      const nowIso = new Date().toISOString();
+      const pendingEntry = {
+        id: idempotencyKey,
+        status: 'pending' as const,
+        amount: refundAmount,
+        type,
+        reason,
+        items: refundedItemKeys,
+        notes: notes || '',
+        idempotency_key: idempotencyKey,
+        created_at: nowIso,
+      };
+      const nextExtensions = { ...extensions, refunds: [...refunds, pendingEntry] };
+
+      // CAS: only commit if the row hasn't changed since we read it.
+      const [row] = await db.update(orders)
+        .set({ extensions: nextExtensions, updated_at: nowIso })
+        .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+        .returning();
+
+      if (row) {
+        reservation = { idempotencyKey, refundAmount, entryId: idempotencyKey, reused: false };
+        break;
+      }
+      // Lost the CAS race — a concurrent write landed first; re-read and retry.
     }
 
-    // Parse order data
-    const extensions = order.extensions ? (typeof order.extensions === 'string' ? JSON.parse(order.extensions) : order.extensions) : {};
-    const totalAmount = order.total_amount ? (typeof order.total_amount === 'string' ? JSON.parse(order.total_amount) : order.total_amount) : { amount: 0 };
-    
-    const paymentIntentId = extensions.payment_intent_id;
-    if (!paymentIntentId) {
+    if (!reservation) {
       return NextResponse.json({
-        error: 'No payment intent found for this order'
-      }, { status: 400 });
+        error: 'Refund could not be recorded due to concurrent updates; please retry'
+      }, { status: 409 });
     }
 
-    // Check if order is already cancelled or refunded
-    if (order.status === 'cancelled' || order.status === 'refunded') {
-      return NextResponse.json({
-        error: 'Order is already cancelled or refunded'
-      }, { status: 400 });
-    }
+    const { idempotencyKey, refundAmount, entryId } = reservation;
 
-    // Process Stripe refund
+    // ── Phase 2: create the Stripe refund ────────────────────────────────────
     const stripe = getStripeClient();
-    let refundAmount: number;
-    let newStatus: string;
-    let newPaymentStatus: string;
-
-    if (type === 'full') {
-      // Full refund — refund whatever is still outstanding, not the whole
-      // order total again. If a prior refund (partial or full) already
-      // covers the total, reject with a clean 400 instead of calling
-      // Stripe, which would reject the over-refund with a raw 500 (BMC-152).
-      const alreadyRefunded = computeRefundedTotal(extensions);
-      const fullRefundResolution = resolveFullRefundAmount(totalAmount.amount, alreadyRefunded);
-      if (!fullRefundResolution.ok) {
-        return NextResponse.json({
-          error: fullRefundResolution.error
-        }, { status: 400 });
-      }
-      refundAmount = fullRefundResolution.amount;
-      newStatus = 'cancelled';
-      newPaymentStatus = 'refunded';
-    } else {
-      // Partial refund
-      refundAmount = amount!;
-      newStatus = order.status; // Keep same status for partial refunds
-      newPaymentStatus = 'paid'; // Still considered paid since it's partial
-      
-      // Validate partial refund amount doesn't exceed what's actually left
-      // to refund — i.e. total minus everything already recorded in
-      // extensions.refunds[], not just the order total in isolation.
-      // Stripe would also reject a true over-refund, but we want a clean
-      // 400 here instead of surfacing a raw Stripe error (BMC-152).
-      const alreadyRefunded = computeRefundedTotal(extensions);
-      const refundCheck = assertRefundWithinRemaining(totalAmount.amount, alreadyRefunded, refundAmount);
-      if (!refundCheck.ok) {
-        return NextResponse.json({
-          error: refundCheck.error
-        }, { status: 400 });
-      }
-    }
-
-    // BMC-172: deterministic idempotency key so a RETRY of the *same* refund
-    // reuses it — Stripe then returns the ORIGINAL refund instead of moving money
-    // a second time. This closes the audited double-refund window: if the D1 write
-    // below throws AFTER Stripe succeeds (→ 500), the admin's retry passes the
-    // "already refunded" guards above (the failed write left the order untouched)
-    // and would otherwise issue a SECOND full refund. The key is scoped to the
-    // order, refund type/amount, the specific line items, AND the count of refunds
-    // already recorded on the order: a failed write leaves that count unchanged so
-    // the retry collides (dedupes to one refund), while a genuinely NEW partial
-    // refund lands after a successful prior write (higher count) and so gets a
-    // distinct key. Hashed to bound the length (Stripe caps keys at 255 chars).
-    //
-    // KNOWN GAP (out of scope for BMC-172, which targets the Stripe-succeeded /
-    // D1-write-failed retry): because `priorRefundCount` changes once a refund has
-    // been recorded, a PARTIAL refund re-submitted AFTER a fully-successful prior
-    // attempt (e.g. an admin double-clicking after a slow/dropped response) gets a
-    // new key and can issue a second Stripe refund — but only up to the remaining
-    // refundable amount, which `assertRefundWithinRemaining` still bounds. A full
-    // refund is already immune (it flips status to 'cancelled', so the resubmit is
-    // rejected by the "already cancelled or refunded" guard above). `reason`/`notes`
-    // are intentionally excluded from the key, so a same-amount retry that only
-    // changes those still dedupes to the original refund.
-    const priorRefundCount = Array.isArray(extensions.refunds) ? extensions.refunds.length : 0;
-    const refundLineKeys = (items ?? []).slice().sort().join(',');
-    const idempotencyKey = `refund:${await sha256Hex(
-      `${orderId}|${type}|${refundAmount}|${priorRefundCount}|${refundLineKeys}`
-    )}`;
-
-    // Create Stripe refund
     let stripeRefund;
     try {
+      const refundParams = {
+        payment_intent: paymentIntentId,
+        amount: refundAmount,
+        reason: 'requested_by_customer' as const,
+        metadata: {
+          orderId,
+          refundType: type,
+          refundReason: reason,
+          ...(items && { refundedItems: items.join(',') })
+        }
+      };
       // Check if we're using regular Stripe SDK or Cloudflare-compatible version
       if ('refunds' in stripe) {
-        // Using regular Stripe SDK
         const regularStripe = stripe as any;
-        stripeRefund = await regularStripe.refunds.create({
-          payment_intent: paymentIntentId,
-          amount: refundAmount,
-          reason: 'requested_by_customer',
-          metadata: {
-            orderId,
-            refundType: type,
-            refundReason: reason,
-            ...(items && { refundedItems: items.join(',') })
-          }
-        }, { idempotencyKey });
+        stripeRefund = await regularStripe.refunds.create(refundParams, { idempotencyKey });
       } else {
-        // Using Cloudflare-compatible Stripe client
         const stripeCloudflare = stripe as any;
-        stripeRefund = await stripeCloudflare.request('POST', '/refunds', {
-          payment_intent: paymentIntentId,
-          amount: refundAmount,
-          reason: 'requested_by_customer',
-          metadata: {
-            orderId,
-            refundType: type,
-            refundReason: reason,
-            ...(items && { refundedItems: items.join(',') })
-          }
-        }, { idempotencyKey });
+        stripeRefund = await stripeCloudflare.request('POST', '/refunds', refundParams, { idempotencyKey });
       }
     } catch (stripeError: any) {
       console.error('Stripe refund failed:', stripeError);
+      // Release the reservation (flip pending → failed) so it stops counting
+      // toward the refunded total and a corrected retry isn't blocked.
+      await settleRefundEntry(db, orderId, entryId, () => 'failed');
       return NextResponse.json({
         error: 'Failed to process refund with Stripe',
         details: errorDetails(stripeError)
       }, { status: 500 });
     }
 
-    // Update order in database
-    const updateData: any = {
-      status: newStatus,
-      payment_status: newPaymentStatus,
-      updated_at: new Date().toISOString()
-    };
+    // ── Phase 3: settle the ledger entry (CAS) + apply order-level effects ────
+    // BMC-178: restock is decided from the FRESH order read inside the CAS loop,
+    // so the "already restocked" record commits atomically with the settled
+    // refund entry. A FULL refund restores every not-yet-restocked line; a
+    // PARTIAL refund restores only the refunded lines. selectRestockLines
+    // excludes any line a prior refund already restocked.
+    let updatedOrder: typeof orders.$inferSelect | undefined;
+    let restockItems: any[] = [];
 
-    // BMC-178: decide which lines this refund restores BEFORE writing the order,
-    // so the "already restocked" record commits atomically with the refund entry.
-    // A FULL refund cancels the order → restore every not-yet-restocked line; a
-    // PARTIAL refund → restore only the refunded lines. selectRestockLines
-    // excludes any line a prior refund already restocked, so a full-refund-after-
-    // partial (or a repeated partial) can never inflate on-hand above what was
-    // sold. Restock is scoped to the refund path (a paid order whose stock was
-    // decremented), NOT an arbitrary status change — a PUT → 'cancelled' on an
-    // unpaid order never decremented, so restocking there would inflate stock.
-    const rawItems = order.items
-      ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items)
-      : [];
-    const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
-    const priorRestockedKeys: string[] = Array.isArray(extensions.restockedLineKeys)
-      ? extensions.restockedLineKeys
-      : [];
-    const { lines: restockItems, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
-      fullRefund: type === 'full',
-      refundedItemKeys: items ?? [],
-      alreadyRestockedKeys: priorRestockedKeys,
-    });
+    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+      const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+      if (!order) {
+        // Money is already refunded; a vanished order is unrecoverable here.
+        console.error(`Refund settled at Stripe but order ${orderId} disappeared before ledger flip`);
+        return NextResponse.json({ error: 'Order not found while settling refund' }, { status: 500 });
+      }
 
-    // Add refund information to extensions
-    const updatedExtensions = {
-      ...extensions,
-      refunds: [
-        ...(extensions.refunds || []),
-        {
-          id: stripeRefund.id,
-          amount: refundAmount,
-          type,
-          reason,
-          items: items || [],
-          notes: notes || '',
-          processed_at: new Date().toISOString(),
-          stripe_refund_id: stripeRefund.id
-        }
-      ],
-      // Persist the set of lines restored so far so a later refund on this order
-      // won't restock them again (see selectRestockLines). Deduped union.
-      restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
-    };
-    // extensions is a `mode: "json"` column — assign the RAW object and let
-    // Drizzle serialize; a manual JSON.stringify would double-encode.
-    updateData.extensions = updatedExtensions;
+      const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
+      const refunds: any[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+      const idx = refunds.findIndex((r: any) => r?.id === entryId || r?.idempotency_key === idempotencyKey);
 
-    // Add cancellation reason to notes for full cancellations
-    if (type === 'full') {
-      const currentNotes = order.notes || '';
-      const cancellationNote = `CANCELLED: ${reason}${notes ? ` - ${notes}` : ''}`;
-      updateData.notes = currentNotes ? `${currentNotes}\n\n${cancellationNote}` : cancellationNote;
+      const nowIso = new Date().toISOString();
+      const settledEntry = {
+        ...(idx >= 0 ? refunds[idx] : {}),
+        id: stripeRefund.id,
+        status: 'succeeded' as const,
+        amount: refundAmount,
+        type,
+        reason,
+        items: items || [],
+        notes: notes || '',
+        idempotency_key: idempotencyKey,
+        stripe_refund_id: stripeRefund.id,
+        processed_at: nowIso,
+      };
+      const nextRefunds = idx >= 0
+        ? refunds.map((r: any, i: number) => (i === idx ? settledEntry : r))
+        : [...refunds, settledEntry];
+
+      const rawItems = order.items ? parseJson(order.items) : [];
+      const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
+      const priorRestockedKeys: string[] = Array.isArray(extensions.restockedLineKeys)
+        ? extensions.restockedLineKeys
+        : [];
+      const { lines: restockLines, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
+        fullRefund: type === 'full',
+        refundedItemKeys,
+        alreadyRestockedKeys: priorRestockedKeys,
+      });
+
+      const nextExtensions = {
+        ...extensions,
+        refunds: nextRefunds,
+        // Deduped union of lines restored so far so a later refund won't restock
+        // them again (see selectRestockLines).
+        restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
+      };
+
+      // extensions is a `mode: "json"` column — assign the RAW object and let
+      // Drizzle serialize; a manual JSON.stringify would double-encode.
+      const updateData: Record<string, unknown> = {
+        status: newStatus,
+        payment_status: newPaymentStatus,
+        extensions: nextExtensions,
+        updated_at: nowIso,
+      };
+
+      // Add cancellation reason to notes for full cancellations
+      if (type === 'full') {
+        const currentNotes = order.notes || '';
+        const cancellationNote = `CANCELLED: ${reason}${notes ? ` - ${notes}` : ''}`;
+        updateData.notes = currentNotes ? `${currentNotes}\n\n${cancellationNote}` : cancellationNote;
+      }
+
+      const [row] = await db.update(orders)
+        .set(updateData)
+        .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+        .returning();
+
+      if (row) {
+        updatedOrder = row;
+        restockItems = restockLines;
+        break;
+      }
+      // Lost the CAS race — re-read and retry the settle.
     }
 
-    // Update order
-    const [updatedOrder] = await db.update(orders)
-      .set(updateData)
-      .where(eq(orders.id, orderId))
-      .returning();
+    if (!updatedOrder) {
+      // Stripe refunded but we exhausted CAS retries writing the ledger. The
+      // pending entry (still counted) preserves the ledger, and a retry will
+      // reconcile it — surface a 500 so the caller knows to retry.
+      console.error(`Refund settled at Stripe but ledger flip failed after ${MAX_CAS_ATTEMPTS} attempts for order ${orderId}`);
+      return NextResponse.json({
+        error: 'Refund processed but order update failed due to concurrent updates; please retry'
+      }, { status: 500 });
+    }
 
-    // BMC-178: now actually restore on-hand stock for the lines selected above
-    // (the inverse of the decrement at payment success). Best-effort and wrapped:
-    // the money is already refunded and the order already written (including the
-    // restockedLineKeys record), so an inventory hiccup here must never surface as
-    // a 500 or unwind the refund. Untracked/backorder lines are handled inside
-    // restockForOrder. Recording the keys with the order write (rather than after
-    // a confirmed increment) mirrors the route's existing best-effort posture — a
-    // rare post-write restock failure is logged and left for manual reconciliation
-    // rather than risking a double-restock on retry.
+    // BMC-178: now actually restore on-hand stock for the selected lines (the
+    // inverse of the decrement at payment success). Best-effort and wrapped: the
+    // money is already refunded and the order already written (including the
+    // restockedLineKeys record), so an inventory hiccup here must never surface
+    // as a 500 or unwind the refund.
     try {
       if (restockItems.length > 0) {
         const { restocked } = await restockForOrder(restockItems);
@@ -313,20 +412,18 @@ export async function POST(request: NextRequest) {
     // mail failure can never surface as a 500 or roll back the already-processed
     // Stripe refund + D1 write (mirrors PUT /api/orders). This is the refund
     // endpoint, so money always comes back — BOTH full and partial refunds use the
-    // 'refunded' template (the 'cancelled' template omits money-back info and would
-    // misstate an admin-initiated refund). A full refund also cancels the order, so
-    // we flag it (isFullRefund) to add a "will not be shipped" line, and we always
-    // surface the refunded amount (order total for full, partial amount for partial).
+    // 'refunded' template. A full refund also cancels the order, so we flag it
+    // (isFullRefund) to add a "will not be shipped" line, and we always surface
+    // the refunded amount (remaining for full, partial amount for partial).
     try {
-      const refundAmountFormatted = Money.fromMinor(refundAmount, order.currency_code).format();
+      const refundAmountFormatted = Money.fromMinor(refundAmount, updatedOrder.currency_code).format();
       const emailData = buildRefundStatusEmail(updatedOrder, {
         isFullRefund: type === 'full',
         refundAmount: refundAmountFormatted,
       });
       // sendOrderStatusUpdateEmail() swallows Resend errors and returns
       // { success:false } rather than throwing, so inspect the result instead of
-      // logging success unconditionally — otherwise a real delivery failure (e.g.
-      // an order with no email on file) would be masked by a "sent" log line.
+      // logging success unconditionally.
       const emailResult = await sendOrderStatusUpdateEmail(emailData);
       if (emailResult.success) {
         console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
@@ -361,6 +458,50 @@ export async function POST(request: NextRequest) {
       details: errorDetails(error)
     }, { status: 500 });
   }
+}
+
+/**
+ * Flip a reserved `pending` ledger entry to a terminal status via a CAS loop.
+ * Used only for the Stripe-failure path (→ 'failed'); the success path settles
+ * inline because it also applies restock + order-status effects. Best-effort:
+ * a swallowed final failure leaves the entry `pending` (still counted, so no
+ * over-refund), which a later retry reconciles.
+ */
+async function settleRefundEntry(
+  db: Awaited<ReturnType<typeof getDbAsync>>,
+  orderId: string,
+  entryId: string,
+  nextStatus: (entry: any) => 'succeeded' | 'failed'
+): Promise<void> {
+  for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+    const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+    if (!order) return;
+
+    const extensions = order.extensions ? (parseJson(order.extensions) ?? {}) : {};
+    const refunds: any[] = Array.isArray(extensions.refunds) ? extensions.refunds : [];
+    const idx = refunds.findIndex((r: any) => r?.id === entryId || r?.idempotency_key === entryId);
+    if (idx < 0) return; // nothing to settle (already reconciled)
+
+    const status = nextStatus(refunds[idx]);
+    const nowIso = new Date().toISOString();
+    const settledEntry = {
+      ...refunds[idx],
+      status,
+      ...(status === 'failed' ? { failed_at: nowIso } : { processed_at: nowIso }),
+    };
+    const nextExtensions = {
+      ...extensions,
+      refunds: refunds.map((r: any, i: number) => (i === idx ? settledEntry : r)),
+    };
+
+    const [row] = await db.update(orders)
+      .set({ extensions: nextExtensions, updated_at: nowIso })
+      .where(and(eq(orders.id, orderId), updatedAtGuard(order.updated_at ?? null)))
+      .returning();
+    if (row) return;
+    // Lost the CAS race — re-read and retry.
+  }
+  console.error(`Failed to settle refund ledger entry ${entryId} on order ${orderId} after ${MAX_CAS_ATTEMPTS} attempts`);
 }
 
 /**

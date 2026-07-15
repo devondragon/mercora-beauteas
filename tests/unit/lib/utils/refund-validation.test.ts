@@ -55,6 +55,36 @@ describe('computeRefundedTotal', () => {
   it('ignores negative and fractional entries (defense-in-depth)', () => {
     expect(computeRefundedTotal({ refunds: [{ amount: 500 }, { amount: -200 }, { amount: 10.5 }] })).toBe(500);
   });
+
+  // BMC-193: refund entries now carry a lifecycle status. A 'pending' entry
+  // reserves an in-flight refund (counted so a concurrent refund can't over-
+  // refund the reserved amount); a 'failed' entry is a released reservation
+  // whose Stripe call never moved money (excluded); status-less legacy entries
+  // and 'succeeded' entries both count.
+  it("counts 'pending' and 'succeeded' entries (in-flight reservations reserve their amount)", () => {
+    expect(computeRefundedTotal({
+      refunds: [
+        { amount: 500, status: 'succeeded' },
+        { amount: 300, status: 'pending' },
+      ],
+    })).toBe(800);
+  });
+
+  it("excludes 'failed' entries so a released reservation frees its amount", () => {
+    expect(computeRefundedTotal({
+      refunds: [
+        { amount: 500, status: 'succeeded' },
+        { amount: 300, status: 'failed' },
+        { amount: 200, status: 'pending' },
+      ],
+    })).toBe(700);
+  });
+
+  it('treats legacy status-less entries as settled (counted)', () => {
+    expect(computeRefundedTotal({
+      refunds: [{ amount: 500 }, { amount: 300, status: 'succeeded' }],
+    })).toBe(800);
+  });
 });
 
 describe('assertRefundWithinRemaining', () => {
