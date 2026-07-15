@@ -250,6 +250,51 @@ describe("blendRecommendations", () => {
     expect(result.map((x) => x.id)).toEqual(["MULTI"]);
   });
 
+  it("keeps a backorderable variant eligible even at zero quantity", () => {
+    const src = pStock("SRC", 5);
+    // BO tracks inventory and is at 0 units, but allows backorder — so it is
+    // still purchasable and must NOT be filtered out as OOS.
+    const backorder = {
+      id: "BO",
+      name: "PBO",
+      tags: [],
+      variants: [{ id: "bo1", inventory: { track_inventory: true, quantity: 0, allow_backorder: true } }],
+    } as unknown as Product;
+    const result = blendRecommendations({
+      product: src,
+      base: [backorder],
+      allProducts: [src, backorder],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.map((x) => x.id)).toEqual(["BO"]);
+  });
+
+  it("keeps an untracked-inventory variant eligible even at zero quantity", () => {
+    const src = pStock("SRC", 5);
+    // UNTRACKED explicitly opts out of inventory tracking. Its quantity of 0 is
+    // meaningless (unlimited stock), so it must stay eligible — treating it as
+    // OOS would wrongly drop a purchasable product.
+    const untracked = {
+      id: "UNTRACKED",
+      name: "PUNTRACKED",
+      tags: [],
+      variants: [{ id: "u1", inventory: { track_inventory: false, quantity: 0 } }],
+    } as unknown as Product;
+    const result = blendRecommendations({
+      product: src,
+      base: [untracked],
+      allProducts: [src, untracked],
+      userContext: null,
+      limit: 3,
+      personalize: false,
+      excludeOwned: false,
+    });
+    expect(result.map((x) => x.id)).toEqual(["UNTRACKED"]);
+  });
+
   it("returns exactly `limit` distinct products at the exhaustion boundary", () => {
     // Eligible pool (after dropping source + owned) is exactly `limit` —
     // guards the top-up loop's `result.length >= limit` break against an

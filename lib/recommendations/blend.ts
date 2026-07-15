@@ -17,19 +17,27 @@ export interface BlendInput {
 
 /**
  * Whether a product has any purchasable stock. A product is excluded only when
- * it has variants and *every* variant reports zero available inventory (and no
- * backorder) — i.e. positive evidence of being out of stock. Products with no
- * variants, or variants with untracked inventory, are left in so we never
- * over-filter the recommendation pool on missing data. Mirrors the storefront's
- * `inventory.quantity > 0` availability convention (ProductCard/ProductDisplay).
+ * it has variants and *every* variant is positively out of stock — i.e. its
+ * inventory is tracked (`track_inventory !== false`), reports zero (or negative)
+ * quantity, and allows no backorder. Any other case keeps the product eligible.
+ *
+ * This is intentionally *more lenient* than the storefront's per-default-variant
+ * `isVariantAvailable` check (ProductCard/ProductDisplay): it scans *all*
+ * variants and deliberately keeps products with no variants, no inventory
+ * object, or untracked inventory, so we never over-filter the recommendation
+ * pool on missing/partial inventory data. A variant with `track_inventory:false`
+ * is treated as unlimited stock regardless of its quantity value.
  */
 function hasAvailableStock(pr: Product): boolean {
   const variants = pr.variants ?? [];
   if (variants.length === 0) return true;
   return variants.some((v) => {
     const inv = v.inventory;
-    if (!inv) return true; // untracked variant — treat as purchasable
+    if (!inv) return true; // no inventory record — treat as purchasable
     if (inv.allow_backorder) return true;
+    // Only *tracked* inventory can be positively out of stock; an untracked
+    // variant (track_inventory === false) is always purchasable.
+    if (inv.track_inventory === false) return true;
     const qty = typeof inv.quantity === "number" ? inv.quantity : 0;
     return qty > 0;
   });

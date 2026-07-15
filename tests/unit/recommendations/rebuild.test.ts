@@ -19,14 +19,18 @@ import { rebuildProductRecommendations } from "@/lib/recommendations/batch/rebui
 import { listProducts } from "@/lib/models/mach/products";
 import { getDbAsync } from "@/lib/db";
 
-function makeDb() {
+function makeDb(staleRow: { stale: number; oldest: string | null } = { stale: 0, oldest: null }) {
   const batch = vi.fn().mockResolvedValue([]);
+  // Staleness aggregate: db.select({...}).from(table) resolves to a rows array.
+  const from = vi.fn(() => Promise.resolve([staleRow]));
+  const select = vi.fn(() => ({ from }));
   const db = {
     delete: vi.fn(() => ({ where: vi.fn(() => ({ __op: "delete" })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ __op: "insert" })) })),
+    select,
     batch,
   };
-  return { db, batch };
+  return { db, batch, select, from };
 }
 
 function makeEnv(matches: Array<{ metadata?: { productId?: string }; score?: number }>) {
@@ -90,5 +94,54 @@ describe("rebuildProductRecommendations empty-rebuild guard", () => {
     expect(summary.productsProcessed).toBe(1);
     expect(summary.productsSkipped).toBe(0);
     expect(summary.rowsWritten).toBe(2);
+  });
+});
+
+describe("rebuildProductRecommendations staleness guard", () => {
+  it("reports stale stored recommendations and warns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { db } = makeDb({ stale: 4, oldest: "2020-01-01 00:00:00" });
+    (getDbAsync as any).mockResolvedValue(db);
+    const env = makeEnv([{ metadata: { productId: "N1" }, score: 0.9 }]);
+
+    const summary = await rebuildProductRecommendations(env);
+
+    expect(summary.staleRowCount).toBe(4);
+    expect(summary.oldestGeneratedAt).toBe("2020-01-01 00:00:00");
+    expect(summary.stalenessThresholdDays).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("older than");
+    warn.mockRestore();
+  });
+
+  it("reports zero stale rows and does not warn when data is fresh", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { db } = makeDb({ stale: 0, oldest: "2999-01-01 00:00:00" });
+    (getDbAsync as any).mockResolvedValue(db);
+    const env = makeEnv([{ metadata: { productId: "N1" }, score: 0.9 }]);
+
+    const summary = await rebuildProductRecommendations(env);
+
+    expect(summary.staleRowCount).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("does not fail the rebuild when the staleness query throws", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { db } = makeDb();
+    db.select = vi.fn(() => {
+      throw new Error("boom");
+    });
+    (getDbAsync as any).mockResolvedValue(db);
+    const env = makeEnv([{ metadata: { productId: "N1" }, score: 0.9 }]);
+
+    const summary = await rebuildProductRecommendations(env);
+
+    // Rebuild still succeeds; staleness just falls back to safe defaults.
+    expect(summary.rowsWritten).toBe(1);
+    expect(summary.staleRowCount).toBe(0);
+    expect(summary.oldestGeneratedAt).toBeNull();
+    errorSpy.mockRestore();
   });
 });

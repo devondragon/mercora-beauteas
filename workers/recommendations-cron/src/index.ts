@@ -14,6 +14,9 @@ interface RebuildSummary {
   errors?: { productId: string; error: string }[];
   durationMs?: number;
   error?: string;
+  stalenessThresholdDays?: number;
+  staleRowCount?: number;
+  oldestGeneratedAt?: string | null;
 }
 
 export default {
@@ -68,6 +71,19 @@ export default {
               `skipped=${summary.productsSkipped ?? 0}) — existing recommendations were preserved but not refreshed`
           );
           return;
+        }
+
+        // Staleness guard (age-based): even when this run wrote fresh rows, some
+        // stored recommendations may not have been touched for a long time (e.g.
+        // a product Vectorize keeps returning no neighbors for, whose rows the
+        // rebuild deliberately preserves). Surface those so aging data is visible.
+        const staleRowCount = summary.staleRowCount ?? 0;
+        if (staleRowCount > 0) {
+          console.warn(
+            `recommendations cron: ${staleRowCount} stored recommendation row(s) older than ` +
+              `${summary.stalenessThresholdDays ?? "?"}d (oldest generated_at=${summary.oldestGeneratedAt ?? "unknown"}) — ` +
+              `not refreshed this run`
+          );
         }
 
         console.log(
