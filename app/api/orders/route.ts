@@ -31,7 +31,7 @@ import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
-import { validatePutOrderStatus, protectPaymentIntentId } from "@/lib/utils/order-update-guards";
+import { validatePutOrderStatus, mergeExtensions } from "@/lib/utils/order-update-guards";
 
 
 
@@ -572,16 +572,28 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // SECURITY (BMC-158): the `extensions` JSON column holds server-owned keys
+    // the client must not clobber — `payment_intent_id` (the binding the refund
+    // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
+    // ledger computeRefundedTotal sums for the over-refund guard), plus
+    // restockedLineKeys / email / etc. A wholesale `extensions` overwrite here
+    // could rebind/drop the PI (refund fraud) or wipe the refunds ledger
+    // (resetting the over-refund guard → double refund). mergeExtensions MERGES
+    // the client's keys over the stored ones and re-pins payment_intent_id; it
+    // fails safe (rejects) if the stored extensions are corrupt rather than
+    // persisting a stripped object.
+    let mergedExtensions: Record<string, unknown> | undefined;
+    if (extensions !== undefined) {
+      const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
+      if (!mergeResult.ok) {
+        return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
+      }
+      mergedExtensions = mergeResult.extensions;
+    }
+
     // Build update data (MACH-compliant).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
-    //
-    // SECURITY (BMC-158): `extensions.payment_intent_id` is the binding the
-    // refund route trusts to locate the PaymentIntent it refunds. A wholesale
-    // `extensions` overwrite here could rebind it (refund fraud) or drop it, so
-    // protectPaymentIntentId pins it back to the currently stored value (and
-    // forbids introducing one where none existed) while passing other
-    // extensions keys through untouched.
     const updateData: any = {
       ...(status && { status }),
       ...(shipping_method && { shipping_method }),
@@ -590,7 +602,7 @@ export async function PUT(request: NextRequest) {
       ...(delivered_at && { delivered_at }),
       ...(notes && { notes }),
       ...(external_references && { external_references }),
-      ...(extensions && { extensions: protectPaymentIntentId(extensions, currentOrder.extensions) }),
+      ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
       updated_at: new Date().toISOString()
     };
 

@@ -215,3 +215,88 @@ describe('PUT /api/orders payment_intent_id protection (BMC-158)', () => {
     expect(setArg.extensions.payment_intent_id).toBe('pi_real_123');
   });
 });
+
+// An order carrying a stored refunds[] ledger. computeRefundedTotal sums this
+// to enforce the over-refund guard, so a PUT must never wipe it via a partial
+// `extensions` overwrite (BMC-158 review — double-refund vector).
+const orderWithRefunds = {
+  ...existingOrderRow,
+  extensions: {
+    payment_intent_id: 'pi_real_123',
+    refunds: [{ amount: 500 }, { amount: 250 }],
+    email: 'customer@example.com',
+    restockedLineKeys: ['sku-1'],
+  },
+};
+
+describe('PUT /api/orders extensions merge preserves refunds ledger (BMC-158)', () => {
+  it('a partial extensions overwrite ({carrier}) persists a payload that STILL contains refunds[]', async () => {
+    const selectChain = makeSelectChain([orderWithRefunds]);
+    const updateChain = makeUpdateChain([{ ...orderWithRefunds, status: 'shipped' }]);
+    vi.mocked(getDbAsync).mockResolvedValue({
+      select: vi.fn().mockReturnValue(selectChain),
+      update: vi.fn().mockReturnValue(updateChain),
+    } as any);
+
+    const res = await PUT(
+      putRequest({
+        orderId: 'WEB-TEST-1000',
+        status: 'shipped',
+        extensions: { carrier: 'X' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const setArg = updateChain.set.mock.calls[0][0];
+    // The client's key applies…
+    expect(setArg.extensions.carrier).toBe('X');
+    // …and the server-owned refund ledger survives (was NOT wiped).
+    expect(setArg.extensions.refunds).toEqual([{ amount: 500 }, { amount: 250 }]);
+    expect(setArg.extensions.email).toBe('customer@example.com');
+    expect(setArg.extensions.restockedLineKeys).toEqual(['sku-1']);
+    expect(setArg.extensions.payment_intent_id).toBe('pi_real_123');
+  });
+
+  it('a PUT omitting extensions does not write the extensions column (stored PI + refunds untouched)', async () => {
+    const selectChain = makeSelectChain([orderWithRefunds]);
+    const updateChain = makeUpdateChain([{ ...orderWithRefunds, status: 'shipped' }]);
+    vi.mocked(getDbAsync).mockResolvedValue({
+      select: vi.fn().mockReturnValue(selectChain),
+      update: vi.fn().mockReturnValue(updateChain),
+    } as any);
+
+    const res = await PUT(
+      putRequest({ orderId: 'WEB-TEST-1000', status: 'shipped' })
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateChain.set).toHaveBeenCalledTimes(1);
+    const setArg = updateChain.set.mock.calls[0][0];
+    // extensions is not in the update payload at all, so the stored value
+    // (including refunds[] + payment_intent_id) is left intact.
+    expect(setArg).not.toHaveProperty('extensions');
+  });
+
+  it('rejects (422) a PUT when the stored extensions are corrupt, without writing', async () => {
+    const corruptOrder = { ...existingOrderRow, extensions: '{ not valid json' };
+    const selectChain = makeSelectChain([corruptOrder]);
+    const updateChain = makeUpdateChain([corruptOrder]);
+    vi.mocked(getDbAsync).mockResolvedValue({
+      select: vi.fn().mockReturnValue(selectChain),
+      update: vi.fn().mockReturnValue(updateChain),
+    } as any);
+
+    const res = await PUT(
+      putRequest({
+        orderId: 'WEB-TEST-1000',
+        status: 'shipped',
+        extensions: { carrier: 'X' },
+      })
+    );
+
+    expect(res.status).toBe(422);
+    expect(updateChain.set).not.toHaveBeenCalled();
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/corrupt/i);
+  });
+});
