@@ -49,6 +49,7 @@ import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 import type { Address } from '@/lib/types';
+import { logCritical } from '@/lib/utils/observe';
 
 // Minimal shape of a cart line needed to price it from the catalog. Accepts
 // both the cart-store shape (productId/variantId) and the MACH order shape.
@@ -543,6 +544,15 @@ export async function POST(req: NextRequest) {
               cancelError
             );
           }
+          // Alert: a PaymentIntent exists (money can move) but no order backs it,
+          // and the client secret is withheld — a checkout outage / lost-order
+          // risk that must page, not just log.
+          logCritical(
+            'payment_intent',
+            'pending_order_persist_failed',
+            { orderId, paymentIntentId },
+            persistError
+          );
           return NextResponse.json(
             {
               error: 'We could not start your checkout. Please try again.',
@@ -571,6 +581,7 @@ export async function POST(req: NextRequest) {
     // client-facing message.
     const detail = error instanceof Error ? error.message : String(error);
     console.error('Error creating payment intent:', detail, error);
+    logCritical('payment_intent', 'create_failed', {}, error);
     return NextResponse.json(
       { error: 'Failed to create payment intent' },
       { status: 500 }

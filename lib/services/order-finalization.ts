@@ -54,6 +54,7 @@ import {
 } from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
+import { logCritical } from '@/lib/utils/observe';
 
 export interface FinalizePaidOrderResult {
   /** The order is paid after this call (this writer promoted it, or another already had). */
@@ -207,10 +208,15 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
       );
     }
     if (gc.errors.length) {
+      // Full detail (incl. gift-card codes) goes to Workers Logs only. Do NOT
+      // pass gc.errors to logCritical — those strings embed redeemable codes and
+      // the alert is emailed to a third party (BMC-168 security review).
       console.error(`[finalize] Gift card fulfillment errors for ${orderId}:`, gc.errors);
+      logCritical('giftcard', 'fulfillment_errors', { orderId, count: gc.errors.length });
     }
   } catch (gcError) {
     console.error(`[finalize] Gift card fulfillment failed for ${orderId}:`, gcError);
+    logCritical('giftcard', 'fulfillment_threw', { orderId }, gcError);
   }
 
   // H1: the charge gate credited an UNRESERVED gift-card balance as tender. If
@@ -249,6 +255,12 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
           `the revert to pending FAILED; the order is stranded PAID with under-collected goods — MANUAL REVIEW REQUIRED`,
         revertError
       );
+      logCritical(
+        'giftcard',
+        'tender_not_redeemed_revert_failed',
+        { orderId, giftCardTenderCents },
+        revertError
+      );
       // reverted:false signals the revert did NOT succeed. paid:false + reason
       // still routes it through the caller's not-paid-with-reason branch (logged,
       // 200/no-retry) so it is surfaced for manual review rather than thrown.
@@ -284,7 +296,11 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
       logPrefix: '[finalize]',
     });
   } catch (invError) {
+    // A throw here means the oversold-review flag may not have been written AND
+    // stock wasn't decremented on a PAID order — silently regressing the BMC-178
+    // manual-review guarantee. Alert (sibling catches in this fn already do).
     console.error(`[finalize] Inventory decrement failed for ${orderId}:`, invError);
+    logCritical('inventory', 'decrement_failed', { orderId }, invError);
   }
 
   // Confirmation email — only the CAS winner sends it, so it fires exactly once

@@ -32,6 +32,7 @@ import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
 import { validatePutOrderStatus, mergeExtensions } from "@/lib/utils/order-update-guards";
+import { logCritical } from "@/lib/utils/observe";
 
 
 
@@ -144,7 +145,18 @@ export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
     const body = await request.json() as CreateOrderRequest;
-    
+
+    // JSON.parse('null') / a non-object body doesn't throw a SyntaxError, so the
+    // field checks below would throw a TypeError that the catch misclassifies as
+    // a system fault (spurious 500 + page). Reject a non-object body as a client
+    // 400 up front (BMC-168 review).
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: ['request body must be a JSON object']
+      }, { status: 400 });
+    }
+
     // Validate required fields
 
     // Validate MACH-compliant order fields
@@ -484,14 +496,21 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Orders API error:', error);
-    
-    if (error instanceof Error) {
-      return NextResponse.json({
-        error: 'Validation failed',
-        message: error.message
-      }, { status: 400 });
+
+    // Classify (BMC-168 review): all field validation above returns 400 INLINE
+    // and never reaches this catch. The only expected client-side throw here is a
+    // malformed JSON body (request.json() → SyntaxError) — a 400, not paged.
+    // Everything else that reaches this catch is a SYSTEM fault (e.g. a re-thrown
+    // D1 insert error): those were previously mislabeled 400 and never alerted —
+    // surface a 500 and page.
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
     }
-    
+
+    logCritical('order_create', 'order_create_failed', {}, error);
     return NextResponse.json(
       { error: 'Failed to create order' },
       { status: 500 }

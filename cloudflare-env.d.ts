@@ -17,6 +17,10 @@ declare namespace Cloudflare {
 		// with wrangler.jsonc manually rather than regenerating.
 		AI_RATE_LIMITER: RateLimit;
 		PUBLIC_RATE_LIMITER: RateLimit;
+		// Money-path metrics dataset (wrangler.jsonc `analytics_engine_datasets`,
+		// BMC-168). Hand-added for the same reason as the rate-limit bindings above;
+		// keep in sync with wrangler.jsonc manually rather than regenerating.
+		ANALYTICS: AnalyticsEngineDataset;
 	}
 }
 interface CloudflareEnv extends Cloudflare.Env {}

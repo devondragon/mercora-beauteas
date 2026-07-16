@@ -71,6 +71,21 @@
           "index_name": "beauteas-index-dev"
         }
       ],
+      // Money-path metrics (BMC-168). Distinct dataset per env so dev/prod
+      // counters never mix. Dataset is auto-created on first writeDataPoint.
+      "analytics_engine_datasets": [
+        {
+          "binding": "ANALYTICS",
+          "dataset": "beauteas_money_events_dev"
+        }
+      ],
+      // Ship every invocation's traces to the observability Tail Worker (BMC-168)
+      // for exception/[critical] alerting. Deploy that Worker BEFORE this one.
+      "tail_consumers": [
+        {
+          "service": "beauteas-observability-tail-dev"
+        }
+      ],
       // Per-IP abuse limiters (BMC-180). AI_RATE_LIMITER guards the paid AI path
       // (/api/agent-chat); PUBLIC_RATE_LIMITER guards the other public POSTs
       // (tax, validate-discount, gift-cards/validate, payment-intent). Native CF
@@ -121,6 +136,20 @@
         {
           "binding": "VECTORIZE",
           "index_name": "beauteas-index"
+        }
+      ],
+      // Money-path metrics (BMC-168) — see dev env above. Distinct prod dataset.
+      "analytics_engine_datasets": [
+        {
+          "binding": "ANALYTICS",
+          "dataset": "beauteas_money_events"
+        }
+      ],
+      // Ship every invocation's traces to the observability Tail Worker (BMC-168).
+      // Deploy `beauteas-observability-tail` BEFORE deploying this Worker.
+      "tail_consumers": [
+        {
+          "service": "beauteas-observability-tail"
         }
       ],
       // Per-IP abuse limiters (BMC-180) — see dev env above. Distinct

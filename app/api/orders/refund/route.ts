@@ -62,6 +62,7 @@ import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
+import { logCritical } from '@/lib/utils/observe';
 
 interface RefundRequest {
   orderId: string;
@@ -276,6 +277,9 @@ export async function POST(request: NextRequest) {
       }
     } catch (stripeError: any) {
       console.error('Stripe refund failed:', stripeError);
+      // The customer's money was NOT returned (Stripe declined / errored / timed
+      // out). Broken money path — alert, don't just log.
+      logCritical('refund', 'stripe_refund_create_failed', { orderId }, stripeError);
       // Release the reservation (flip pending → failed) so it stops counting
       // toward the refunded total and a corrected retry isn't blocked.
       await settleRefundEntry(db, orderId, entryId, () => 'failed');
@@ -299,6 +303,7 @@ export async function POST(request: NextRequest) {
       if (!order) {
         // Money is already refunded; a vanished order is unrecoverable here.
         console.error(`Refund settled at Stripe but order ${orderId} disappeared before ledger flip`);
+        logCritical('refund', 'settled_but_order_missing', { orderId });
         return NextResponse.json({ error: 'Order not found while settling refund' }, { status: 500 });
       }
 
@@ -403,6 +408,7 @@ export async function POST(request: NextRequest) {
       // pending entry (still counted) preserves the ledger, and a retry will
       // reconcile it — surface a 500 so the caller knows to retry.
       console.error(`Refund settled at Stripe but ledger flip failed after ${MAX_CAS_ATTEMPTS} attempts for order ${orderId}`);
+      logCritical('refund', 'settled_but_ledger_flip_failed', { orderId, attempts: MAX_CAS_ATTEMPTS });
       return NextResponse.json({
         error: 'Refund processed but order update failed due to concurrent updates; please retry'
       }, { status: 500 });
@@ -479,6 +485,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Refund processing error:', error);
+    logCritical('refund', 'processing_failed', {}, error);
     return NextResponse.json({
       error: 'Failed to process refund',
       details: errorDetails(error)
