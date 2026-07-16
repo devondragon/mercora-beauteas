@@ -632,6 +632,103 @@ export async function useCoupon(code: string, customerId: string, orderId?: stri
   };
 }
 
+/** Outcome of an atomic `redeemCoupon` attempt. */
+export interface RedeemCouponResult {
+  /** The guarded CAS matched a usable row and recorded this redemption. */
+  redeemed: boolean;
+  /** New usage_count after the increment (only when redeemed). */
+  usageCount?: number;
+  /** Coupon status after the increment — 'used' once single_use/limit is reached. */
+  status?: string;
+}
+
+/**
+ * Atomically redeem a coupon at order finalization (BMC-197).
+ *
+ * `useCoupon` above does a read-modify-write across two round-trips, so two
+ * concurrent orders redeeming the same limited coupon can both read the same
+ * `usage_count` and blow past `usage_limit` (a lost update). This instead performs
+ * ONE guarded conditional UPDATE — modeled on the BMC-178 inventory decrement CAS
+ * and the gift-card redeem CAS — evaluated atomically by D1 (SQLite serializes
+ * writers, and every SET expression reads the row's pre-update values), so:
+ *
+ *   - `usage_count` is bumped by exactly one;
+ *   - a `single_use` coupon (or one that just reached `usage_limit`) flips to
+ *     `used` in the same statement;
+ *   - the WHERE guard (`status active AND (no limit OR usage_count < usage_limit)`)
+ *     means a coupon already exhausted/used matches ZERO rows — so concurrent
+ *     redemptions can never exceed the limit and a single_use code can never be
+ *     redeemed twice (the first redemption's status flip closes the guard);
+ *   - a MACHUsageRecord is appended to `extensions.usage_records[]` for the audit
+ *     trail, in the SAME atomic statement (no separate read-modify-write).
+ *
+ * Returns `{ redeemed: false }` (no throw) when the guard matched nothing — the
+ * caller (finalization) treats that as a no-op, since it means the coupon was
+ * already spent or another writer won the race. `code` is normalized here
+ * (trim + upper-case) to match the stored upper-case unique index. Idempotency
+ * across webhook redelivery is the caller's: finalization only redeems from the
+ * pending→paid CAS winner, so each order redeems its codes exactly once.
+ */
+export async function redeemCoupon(
+  code: string,
+  opts: { customerId?: string; orderId?: string; discountAmount?: unknown; channel?: string } = {}
+): Promise<RedeemCouponResult> {
+  const db = await getDbAsync();
+  const now = new Date().toISOString();
+  const normalized = code.trim().toUpperCase();
+  if (!normalized) return { redeemed: false };
+
+  const usageRecord: MACHUsageRecord = {
+    timestamp: now,
+    customer_id: opts.customerId,
+    order_id: opts.orderId,
+    discount_amount: opts.discountAmount as MACHUsageRecord['discount_amount'],
+    channel: opts.channel,
+  };
+  const usageRecordJson = JSON.stringify(usageRecord);
+
+  const rows = await db
+    .update(couponInstances)
+    .set({
+      // Every RHS below reads the PRE-update row values, so `usage_count + 1` and
+      // the CASE both see the count as it was before this redemption.
+      usageCount: sql`usage_count + 1`,
+      status: sql`CASE WHEN type = 'single_use' OR type IS NULL
+                         OR (usage_limit IS NOT NULL AND usage_count + 1 >= usage_limit)
+                       THEN 'used' ELSE status END`,
+      lastUsedAt: now,
+      lastUsedBy: opts.customerId ?? null,
+      updatedAt: now,
+      extensions: sql`json_set(
+        COALESCE(extensions, '{}'),
+        '$.usage_records',
+        json_insert(
+          COALESCE(json_extract(extensions, '$.usage_records'), '[]'),
+          '$[#]',
+          json(${usageRecordJson})
+        )
+      )`,
+    })
+    .where(
+      and(
+        eq(couponInstances.code, normalized),
+        // Treat a NULL status as active (schema default is 'active'; a legacy row
+        // could be null). An exhausted/used/disabled coupon matches nothing.
+        or(eq(couponInstances.status, 'active'), isNull(couponInstances.status)),
+        // Cap enforcement — unlimited coupons (NULL usage_limit) always pass.
+        sql`(usage_limit IS NULL OR usage_count < usage_limit)`
+      )
+    )
+    .returning({
+      id: couponInstances.id,
+      usageCount: couponInstances.usageCount,
+      status: couponInstances.status,
+    });
+
+  if (rows.length === 0) return { redeemed: false };
+  return { redeemed: true, usageCount: rows[0].usageCount, status: rows[0].status ?? undefined };
+}
+
 /**
  * Generate bulk coupon instances
  */

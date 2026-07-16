@@ -64,6 +64,8 @@ vi.mock('@/lib/models/mach/giftCard', () => ({
 vi.mock('@/lib/models/mach/couponInstance', () => ({
   getCouponInstanceByCode: vi.fn().mockResolvedValue(null),
   validateCouponInstance: vi.fn(),
+  // BMC-197: finalization redeems each applied cart-discount code on the CAS win.
+  redeemCoupon: vi.fn().mockResolvedValue({ redeemed: true, usageCount: 1, status: 'used' }),
 }));
 vi.mock('@/lib/models/mach/promotions', () => ({
   getPromotionById: vi.fn().mockResolvedValue(null),
@@ -80,6 +82,7 @@ import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
+import { redeemCoupon } from '@/lib/models/mach/couponInstance';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 
@@ -114,6 +117,7 @@ beforeEach(() => {
   vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: [] });
   vi.mocked(decrementStockForOrder).mockResolvedValue({ decremented: [], oversold: [] });
   vi.mocked(flagOversoldForReview).mockResolvedValue(undefined);
+  vi.mocked(redeemCoupon).mockResolvedValue({ redeemed: true, usageCount: 1, status: 'used' });
 });
 
 describe('finalizePaidOrder', () => {
@@ -283,5 +287,62 @@ describe('finalizePaidOrder', () => {
     const res = await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: false });
     expect(res.promotedByUs).toBe(true);
     expect(vi.mocked(sendOrderConfirmationForOrder)).not.toHaveBeenCalled();
+  });
+
+  // ── BMC-197: coupon redemption at finalization ────────────────────────────
+  describe('BMC-197 coupon redemption', () => {
+    // A discounted order carrying two applied cart-discount codes. Priced so the
+    // capture clears the (goods-only) floor and the order promotes.
+    const codedOrder = () => order({ extensions: { discount_codes: ['SAVE25', 'WELCOME15'] }, customer_id: 'cust-9' });
+
+    it('redeems each applied code exactly once on the CAS win, keyed to the order', async () => {
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(codedOrder()) as any);
+      const res = await finalizePaidOrder({ order: codedOrder(), paidAmountCents: 2999, sendEmail: true });
+      expect(res).toMatchObject({ paid: true, promotedByUs: true });
+      expect(vi.mocked(redeemCoupon)).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(redeemCoupon).mock.calls[0][0]).toBe('SAVE25');
+      expect(vi.mocked(redeemCoupon).mock.calls[1][0]).toBe('WELCOME15');
+      // Order-keyed + customer carried through for the audit record.
+      expect(vi.mocked(redeemCoupon).mock.calls[0][1]).toMatchObject({ orderId: 'WEB-GUEST-1', customerId: 'cust-9' });
+    });
+
+    it('does NOT redeem when the order carries no discount codes', async () => {
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(order()) as any);
+      await finalizePaidOrder({ order: order(), paidAmountCents: 2999, sendEmail: true });
+      expect(vi.mocked(redeemCoupon)).not.toHaveBeenCalled();
+    });
+
+    it('does NOT redeem when this writer LOSES the CAS (another writer owns the side effects)', async () => {
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casLoseAlreadyPaid(codedOrder()) as any);
+      await finalizePaidOrder({ order: codedOrder(), paidAmountCents: 2999, sendEmail: true });
+      expect(vi.mocked(redeemCoupon)).not.toHaveBeenCalled();
+    });
+
+    it('does NOT redeem when a gift-card tender revert bounces the order back to pending (H1)', async () => {
+      // The order is CAS-promoted but reverts (tender counted, not redeemed). The
+      // redemption block sits AFTER the H1 return, so a reverted order never
+      // redeems its codes.
+      const gcCoded = order({
+        extensions: { gift_card: { code: 'GC-1', amount: 2500 }, discount_codes: ['SAVE25'] },
+      });
+      vi.mocked(getGiftCardByCode).mockResolvedValue({ code: 'GC-1', status: 'active', balance: 2500 } as any);
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(gcCoded) as any);
+      vi.mocked(processGiftCardsForOrder).mockResolvedValue({ issued: 0, redeemed: 0, redeemedAmount: 0, errors: ['insufficient balance'] });
+      // The revert write succeeds here (clearAllMocks doesn't restore the factory
+      // impl a prior test may have set to reject).
+      vi.mocked(markOrderUnpaid).mockResolvedValue({ id: 'WEB-GUEST-1' } as any);
+      const res = await finalizePaidOrder({ order: gcCoded, paidAmountCents: 0, sendEmail: true });
+      expect(res).toMatchObject({ paid: false, reverted: true });
+      expect(vi.mocked(redeemCoupon)).not.toHaveBeenCalled();
+    });
+
+    it('is best-effort: a redemption throw never breaks finalization (payment already captured)', async () => {
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(codedOrder()) as any);
+      vi.mocked(redeemCoupon).mockRejectedValue(new Error('D1 unavailable'));
+      const res = await finalizePaidOrder({ order: codedOrder(), paidAmountCents: 2999, sendEmail: true });
+      // Still promoted + emailed despite the redemption failure.
+      expect(res).toMatchObject({ paid: true, promotedByUs: true });
+      expect(vi.mocked(sendOrderConfirmationForOrder)).toHaveBeenCalledTimes(1);
+    });
   });
 });
