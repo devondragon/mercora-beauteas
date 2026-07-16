@@ -144,11 +144,15 @@ function safeJson(value: unknown): string {
   }
 }
 
-/** Collapse identical alerts (by kind+title) so one fault = one line. */
+/**
+ * Collapse identical alerts so one fault = one line. Keyed by kind + source
+ * script + title so the same message from different producers (cron vs main app)
+ * isn't merged into one line, losing the source.
+ */
 export function dedupe(alerts: Alert[]): Alert[] {
   const seen = new Map<string, Alert>();
   for (const a of alerts) {
-    const key = `${a.kind}:${a.title}`;
+    const key = `${a.kind}:${a.script ?? ""}:${a.title}`;
     if (!seen.has(key)) seen.set(key, a);
   }
   return [...seen.values()];
@@ -207,7 +211,7 @@ export function renderText(alerts: Alert[], overflow: number, envName: string): 
       (a.colo ? `\n    colo: ${a.colo}` : "")
   );
   if (overflow > 0) lines.push(`…and ${overflow} more distinct fault(s) this batch.`);
-  return `BeauTeas production alert (${envName})\n\n${lines.join("\n\n")}`;
+  return `BeauTeas alert (${envName})\n\n${lines.join("\n\n")}`;
 }
 
 function renderHtml(alerts: Alert[], overflow: number, envName: string): string {
@@ -228,7 +232,7 @@ function renderHtml(alerts: Alert[], overflow: number, envName: string): string 
       : "";
   return `<div style="font-family:system-ui,Arial,sans-serif;max-width:640px">
     <h2 style="color:#c0392b;margin:0 0 4px">🚨 BeauTeas alert — ${escapeHtml(envName)}</h2>
-    <p style="color:#666;margin:0 0 16px;font-size:13px">A critical money-path failure was detected in Worker traces.</p>
+    <p style="color:#666;margin:0 0 16px;font-size:13px">A critical failure (uncaught exception or flagged money-path fault) was detected in Worker traces.</p>
     ${rows}${footer}
   </div>`;
 }
