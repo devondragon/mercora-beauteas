@@ -111,6 +111,12 @@ export function normalizeDiscountCodes(codes: string[] | string | null | undefin
  * storefront gate evaluate `product_category` from an IDENTICAL source and can't
  * drift. Ids that don't resolve simply contribute an empty list.
  *
+ * Ids are guarded to non-empty STRINGS (not just truthy): `/api/validate-discount`
+ * feeds this straight from an untrusted `request.json()` body, so a malformed
+ * `productId` (object/number/null) must be dropped here rather than reach
+ * `getProduct()` and 500 the public endpoint — bad input fails closed to no
+ * categories.
+ *
  * Exported so `/api/validate-discount` builds its per-item categories from the
  * exact same resolver the floor uses; the floor itself only needs the union
  * (`collectCatalogCategories`), which is layered on top of this.
@@ -118,7 +124,9 @@ export function normalizeDiscountCodes(codes: string[] | string | null | undefin
 export async function collectCatalogCategoriesByProduct(
   productIds: Array<string | undefined>
 ): Promise<Map<string, string[]>> {
-  const distinct = [...new Set(productIds.filter((id): id is string => !!id))];
+  const distinct = [
+    ...new Set(productIds.filter((id): id is string => typeof id === 'string' && id.length > 0)),
+  ];
   const byProduct = new Map<string, string[]>();
   await Promise.all(
     distinct.map(async (id) => {

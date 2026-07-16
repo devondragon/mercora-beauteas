@@ -304,6 +304,22 @@ describe('collectCatalogCategoriesByProduct (BMC-198 shared helper)', () => {
     expect(vi.mocked(getProduct)).toHaveBeenCalledWith('tea-1');
   });
 
+  it('drops non-string ids so a malformed untrusted body fails closed, never hitting getProduct', async () => {
+    // /api/validate-discount feeds this straight from request.json(); a bad
+    // productId (object/number/null) must be filtered here rather than reach
+    // getProduct() and 500 the public endpoint (Copilot review, BMC-198).
+    seedProducts([{ id: 'tea-1', categories: ['CAT-TEA'] }]);
+    const map = await collectCatalogCategoriesByProduct([
+      'tea-1',
+      { evil: true } as any,
+      42 as any,
+      null as any,
+    ]);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledWith('tea-1');
+    expect(map.get('tea-1')).toEqual(['CAT-TEA']);
+  });
+
   it('keeps only string categories and yields an empty list for an unknown product', async () => {
     // A catalog `categories` entry can be a non-string; only strings survive, so
     // the floor and validate-discount evaluate the identical set.
