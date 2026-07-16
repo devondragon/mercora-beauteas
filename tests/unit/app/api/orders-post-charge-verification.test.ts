@@ -405,7 +405,9 @@ describe('POST /api/orders create-or-promote (BMC-167)', () => {
     selectResults = [[], [{ id: ORDER_ID, extensions: { payment_intent_id: 'pi_test_1' } }]];
     insertShouldFail = new Error('D1_ERROR: network connection lost');
     const res = await POST(postRequest(orderBody()));
-    expect(res.status).toBe(400); // generic error handler, not an idempotent 200
+    // A D1 network failure is a SYSTEM fault (BMC-168): surfaced as a paged 500,
+    // never masked as an idempotent 200 (nor mislabeled as a client 400).
+    expect(res.status).toBe(500);
     const json = (await res.json()) as any;
     expect(json?.meta?.idempotent).toBeUndefined();
   });

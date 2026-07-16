@@ -485,17 +485,20 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Orders API error:', error);
-    
-    if (error instanceof Error) {
-      return NextResponse.json({
-        error: 'Validation failed',
-        message: error.message
-      }, { status: 400 });
+
+    // Classify (BMC-168 review): all field validation above returns 400 INLINE
+    // and never reaches this catch. The only expected client-side throw here is a
+    // malformed JSON body (request.json() → SyntaxError) — a 400, not paged.
+    // Everything else that reaches this catch is a SYSTEM fault (e.g. a re-thrown
+    // D1 insert error): those were previously mislabeled 400 and never alerted —
+    // surface a 500 and page.
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
     }
-    
-    // Unexpected (non-Error) failure → 500. Alert: this is order creation
-    // breaking at the system level, not a client validation error (those return
-    // 400 above and are intentionally not paged on).
+
     logCritical('order_create', 'order_create_failed', {}, error);
     return NextResponse.json(
       { error: 'Failed to create order' },

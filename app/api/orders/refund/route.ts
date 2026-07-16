@@ -277,6 +277,9 @@ export async function POST(request: NextRequest) {
       }
     } catch (stripeError: any) {
       console.error('Stripe refund failed:', stripeError);
+      // The customer's money was NOT returned (Stripe declined / errored / timed
+      // out). Broken money path — alert, don't just log.
+      logCritical('refund', 'stripe_refund_create_failed', { orderId }, stripeError);
       // Release the reservation (flip pending → failed) so it stops counting
       // toward the refunded total and a corrected retry isn't blocked.
       await settleRefundEntry(db, orderId, entryId, () => 'failed');

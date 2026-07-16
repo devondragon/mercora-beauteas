@@ -544,6 +544,15 @@ export async function POST(req: NextRequest) {
               cancelError
             );
           }
+          // Alert: a PaymentIntent exists (money can move) but no order backs it,
+          // and the client secret is withheld — a checkout outage / lost-order
+          // risk that must page, not just log.
+          logCritical(
+            'payment_intent',
+            'pending_order_persist_failed',
+            { orderId, paymentIntentId },
+            persistError
+          );
           return NextResponse.json(
             {
               error: 'We could not start your checkout. Please try again.',

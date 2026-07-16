@@ -159,7 +159,12 @@ export async function POST(req: NextRequest) {
     // Stripe retries.
     await releaseWebhookEventClaim(event.id);
     console.error('[webhook] Processing error:', error);
-    logCritical('webhook', 'processing_failed', { eventType: event.type, eventId: event.id }, error);
+    // Don't page on the EXPECTED retryable race (e.g. order-not-yet-persisted):
+    // it self-heals on Stripe's retry, so alerting per-retry is pure noise. Only
+    // an unexpected, non-retryable processing failure pages.
+    if (!(error instanceof WebhookRetryableError)) {
+      logCritical('webhook', 'processing_failed', { eventType: event.type, eventId: event.id }, error);
+    }
     return NextResponse.json(
       { error: 'Processing failed' },
       { status: 500 }

@@ -32,14 +32,14 @@ export interface Env {
 }
 
 /** Must match CRITICAL_MARKER in lib/utils/observe.ts. */
-const CRITICAL_MARKER = "[critical]";
+export const CRITICAL_MARKER = "[critical]";
 
 /**
  * Cap emails per tail invocation so a retry storm (e.g. a webhook 500-looping)
  * can't flood the inbox from a single batch. Distinct signatures beyond this cap
  * are summarized in the "+N more" footer rather than sent individually.
  */
-const MAX_ALERTS_PER_INVOCATION = 5;
+export const MAX_ALERTS_PER_INVOCATION = 5;
 
 interface TailLog {
   message: unknown[];
@@ -64,7 +64,7 @@ interface TailEvent {
   exceptions?: TailException[];
 }
 
-interface Alert {
+export interface Alert {
   kind: "exception" | "critical";
   title: string;
   script?: string;
@@ -74,38 +74,7 @@ interface Alert {
 
 export default {
   async tail(events: TailEvent[], env: Env, ctx: ExecutionContext): Promise<void> {
-    const alerts: Alert[] = [];
-
-    for (const ev of events) {
-      const url = ev.event?.request?.url;
-      const colo = ev.event?.request?.cf?.colo;
-
-      // Uncaught exceptions: the Worker threw and the invocation failed.
-      for (const ex of ev.exceptions ?? []) {
-        alerts.push({
-          kind: "exception",
-          title: `${ex.name}: ${ex.message}`.slice(0, 300),
-          script: ev.scriptName,
-          url,
-          colo,
-        });
-      }
-
-      // Structured critical money-path logs from logCritical().
-      for (const log of ev.logs ?? []) {
-        const text = stringifyMessage(log.message);
-        if (text.includes(CRITICAL_MARKER)) {
-          alerts.push({
-            kind: "critical",
-            title: text.replace(CRITICAL_MARKER, "").trim().slice(0, 300),
-            script: ev.scriptName,
-            url,
-            colo,
-          });
-        }
-      }
-    }
-
+    const alerts = extractAlerts(events);
     if (alerts.length === 0) return;
 
     const deduped = dedupe(alerts);
@@ -114,8 +83,48 @@ export default {
   },
 };
 
+/**
+ * Classify a batch of traces into alerts: one per uncaught exception, and one
+ * per log line carrying CRITICAL_MARKER. Pure (no I/O) so it is unit-testable.
+ */
+export function extractAlerts(events: TailEvent[]): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const ev of events) {
+    const url = ev.event?.request?.url;
+    const colo = ev.event?.request?.cf?.colo;
+
+    // Uncaught exceptions: the Worker threw and the invocation failed.
+    for (const ex of ev.exceptions ?? []) {
+      alerts.push({
+        kind: "exception",
+        title: `${ex.name}: ${ex.message}`.slice(0, 300),
+        script: ev.scriptName,
+        url,
+        colo,
+      });
+    }
+
+    // Structured critical money-path logs from logCritical().
+    for (const log of ev.logs ?? []) {
+      const text = stringifyMessage(log.message);
+      if (text.includes(CRITICAL_MARKER)) {
+        alerts.push({
+          kind: "critical",
+          title: text.replace(CRITICAL_MARKER, "").trim().slice(0, 300),
+          script: ev.scriptName,
+          url,
+          colo,
+        });
+      }
+    }
+  }
+
+  return alerts;
+}
+
 /** Flatten a console.* message array into a single searchable string. */
-function stringifyMessage(message: unknown[]): string {
+export function stringifyMessage(message: unknown[]): string {
   if (!Array.isArray(message)) return String(message);
   return message
     .map((part) => (typeof part === "string" ? part : safeJson(part)))
@@ -131,7 +140,7 @@ function safeJson(value: unknown): string {
 }
 
 /** Collapse identical alerts (by kind+title) so one fault = one line. */
-function dedupe(alerts: Alert[]): Alert[] {
+export function dedupe(alerts: Alert[]): Alert[] {
   const seen = new Map<string, Alert>();
   for (const a of alerts) {
     const key = `${a.kind}:${a.title}`;

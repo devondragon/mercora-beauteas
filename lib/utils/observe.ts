@@ -50,13 +50,32 @@ export function logCritical(
   detail: Record<string, unknown> = {},
   error?: unknown
 ): void {
-  const payload: Record<string, unknown> = { area, event, ...detail };
-  if (error !== undefined) payload.error = errorMessage(error);
-
-  // Single line, stable prefix, JSON body → reliably parsed by the Tail Worker.
-  console.error(`${CRITICAL_MARKER} ${area}.${event}`, JSON.stringify(payload));
+  // Fully guarded: this is telemetry on a money path and MUST NOT throw — a
+  // circular `detail` (JSON.stringify) or a patched console must never turn a
+  // handled failure into an unhandled one.
+  try {
+    const payload: Record<string, unknown> = { area, event, ...detail };
+    if (error !== undefined) payload.error = errorMessage(error);
+    // Single line, stable prefix, JSON body → reliably parsed by the Tail Worker.
+    console.error(`${CRITICAL_MARKER} ${area}.${event}`, safeStringify(payload));
+  } catch {
+    // Last resort: still emit the marker so the failure is at least alertable.
+    try {
+      console.error(`${CRITICAL_MARKER} ${area}.${event}`);
+    } catch {
+      /* nothing more we can safely do */
+    }
+  }
 
   writeMetric(area, event);
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '"[unserializable detail]"';
+  }
 }
 
 /**
