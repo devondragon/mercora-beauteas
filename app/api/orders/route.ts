@@ -32,6 +32,7 @@ import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
 import { validatePutOrderStatus, mergeExtensions } from "@/lib/utils/order-update-guards";
+import { logCritical } from "@/lib/utils/observe";
 
 
 
@@ -492,6 +493,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
+    // Unexpected (non-Error) failure → 500. Alert: this is order creation
+    // breaking at the system level, not a client validation error (those return
+    // 400 above and are intentionally not paged on).
+    logCritical('order_create', 'order_create_failed', {}, error);
     return NextResponse.json(
       { error: 'Failed to create order' },
       { status: 500 }

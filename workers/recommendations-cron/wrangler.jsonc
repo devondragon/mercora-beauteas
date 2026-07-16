@@ -6,6 +6,9 @@
   // Emit invocation logs (incl. console.error/warn on rebuild failures) to
   // Workers Logs so a silently-failing cron is observable.
   "observability": { "enabled": true },
+  // Alert on cron failures too (BMC-168): ship traces to the prod observability
+  // Tail Worker. Deploy `beauteas-observability-tail` before deploying this.
+  "tail_consumers": [{ "service": "beauteas-observability-tail" }],
   "triggers": {
     // Daily at 08:00 UTC. Adjust cadence as the catalog's change rate warrants.
     "crons": ["0 8 * * *"]

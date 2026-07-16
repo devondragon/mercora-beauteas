@@ -1,0 +1,38 @@
+{
+  // Observability Tail Worker (BMC-168). Consumes the main app Worker's + cron
+  // Worker's execution traces (see their `tail_consumers`) and emails an alert
+  // on uncaught exceptions or `[critical]` money-path log lines.
+  //
+  // Deploy per environment BEFORE the producers that reference it:
+  //   wrangler deploy --env dev          -> beauteas-observability-tail-dev
+  //   wrangler deploy --env production   -> beauteas-observability-tail
+  //
+  // Secrets (per env): `wrangler secret put <NAME> --env <dev|production>` here:
+  //   RESEND_API_KEY   Resend API key
+  //   ALERT_EMAIL_TO   comma-separated recipient(s), kept out of git
+  "name": "beauteas-observability-tail",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-25",
+  "observability": { "enabled": true },
+  "vars": {
+    // ALERT_EMAIL_FROM must be on a Resend-verified domain.
+    "ALERT_EMAIL_FROM": "alerts@beauteas.com",
+    "ENVIRONMENT": "production"
+  },
+  "env": {
+    "dev": {
+      "name": "beauteas-observability-tail-dev",
+      "vars": {
+        "ALERT_EMAIL_FROM": "alerts@beauteas.com",
+        "ENVIRONMENT": "dev"
+      }
+    },
+    "production": {
+      "name": "beauteas-observability-tail",
+      "vars": {
+        "ALERT_EMAIL_FROM": "alerts@beauteas.com",
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

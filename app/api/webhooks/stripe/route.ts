@@ -50,6 +50,7 @@ import {
 } from './handlers/invoice-handlers';
 import { getOrderById } from '@/lib/models/mach/orders';
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
+import { logCritical } from '@/lib/utils/observe';
 
 /**
  * POST handler for Stripe webhook events.
@@ -158,6 +159,7 @@ export async function POST(req: NextRequest) {
     // Stripe retries.
     await releaseWebhookEventClaim(event.id);
     console.error('[webhook] Processing error:', error);
+    logCritical('webhook', 'processing_failed', { eventType: event.type, eventId: event.id }, error);
     return NextResponse.json(
       { error: 'Processing failed' },
       { status: 500 }
@@ -258,7 +260,10 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       console.warn(error.message);
       throw error;
     }
+    // Swallowed (non-retryable) failure updating a PAID order — payment landed
+    // but our records may not reflect it, and Stripe will NOT retry. Alert.
     console.error('Error updating order after payment:', error);
+    logCritical('webhook', 'order_paid_update_failed', { orderId }, error);
   }
 }
 
