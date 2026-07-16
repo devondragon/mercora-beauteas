@@ -51,10 +51,12 @@ export default function DiscountCodeInput() {
       // conversion is needed at this boundary.
       const cartSubtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-      // Prepare cart items for validation
+      // Prepare cart items for validation. Categories are NOT sent (BMC-198):
+      // /api/validate-discount resolves `product_category` from the catalog
+      // server-side (the same source the charge floor uses), so the client never
+      // supplies — and can't spoof — the categories a discount gates on.
       const cartItems = items.map(item => ({
         productId: item.productId,
-        categories: [], // We'd need to fetch product details for this, skipping for now
         quantity: item.quantity,
         price: item.price, // already integer minor units (cents)
       }));

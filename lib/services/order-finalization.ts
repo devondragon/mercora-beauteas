@@ -54,6 +54,8 @@ import {
 } from '@/lib/services/gift-card-fulfillment';
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
+import { redeemCoupon } from '@/lib/models/mach/couponInstance';
+import { Money } from '@/lib/money';
 import { logCritical } from '@/lib/utils/observe';
 
 export interface FinalizePaidOrderResult {
@@ -301,6 +303,43 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
     // manual-review guarantee. Alert (sibling catches in this fn already do).
     console.error(`[finalize] Inventory decrement failed for ${orderId}:`, invError);
     logCritical('inventory', 'decrement_failed', { orderId }, invError);
+  }
+
+  // Coupon redemption (BMC-197) — record each applied cart-discount code's usage
+  // exactly once per order. This runs ONLY here, on the pending→paid CAS winner
+  // (and AFTER the H1 revert block, which `return`s), so webhook redelivery /
+  // client+webhook double-fire can't double-count — the same once-per-order
+  // idempotency the inventory decrement above relies on. `redeemCoupon` is a
+  // guarded atomic CAS: an already-spent code (single_use, or one at its
+  // usage_limit) matches nothing and is a silent no-op, so a code that no longer
+  // resolves to a usable coupon never blocks finalization. Best-effort: payment is
+  // already captured + recorded, so a redemption failure must never throw out of
+  // finalization (worst case an under-counted coupon, not a stuck/duplicated
+  // order). The codes were persisted on the order at PaymentIntent creation.
+  if (discountCodes?.length) {
+    const redeemCustomerId = finalOrder.customer_id || order.customer_id || 'guest';
+    // Record the discount on the usage audit trail. `charge.discountCents` is the
+    // TOTAL cart discount the floor recomputed across ALL codes (deduped by
+    // promotion), so it maps cleanly to a single code but would over-report if
+    // split across several. Attribute it only when exactly one code was applied;
+    // with multiple, leave discount_amount unset rather than misattribute.
+    const discountAmount =
+      discountCodes.length === 1 && charge.discountCents > 0
+        ? Money.fromMinor(charge.discountCents, finalOrder.currency_code || 'USD').toMach()
+        : undefined;
+    for (const code of discountCodes) {
+      try {
+        const result = await redeemCoupon(code, { orderId, customerId: redeemCustomerId, channel: 'web', discountAmount });
+        if (result.redeemed) {
+          console.log(
+            `[finalize] Redeemed coupon ${code} for ${orderId} (usage_count=${result.usageCount}, status=${result.status})`
+          );
+        }
+      } catch (redeemError) {
+        console.error(`[finalize] Coupon redemption failed for ${code} on ${orderId}:`, redeemError);
+        logCritical('promotion', 'coupon_redeem_failed', { orderId }, redeemError);
+      }
+    }
   }
 
   // Confirmation email — only the CAS winner sends it, so it fires exactly once

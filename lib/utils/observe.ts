@@ -34,7 +34,11 @@ export type CriticalArea =
   | "webhook"
   | "refund"
   | "giftcard"
-  | "inventory";
+  | "inventory"
+  // Coupon redemption at finalization (BMC-197): a failure here means single_use /
+  // usage_limit enforcement silently didn't record, so a one-shot code could be
+  // reused — a promotions-integrity gap worth alerting on.
+  | "promotion";
 
 /**
  * Record a critical money-path failure: log an alertable line and (best effort)

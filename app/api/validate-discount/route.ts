@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
 import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
+import { collectCatalogCategoriesByProduct } from '@/lib/services/discount-pricing';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 import type { Promotion } from '@/lib/types';
 
@@ -17,15 +18,28 @@ import type { Promotion } from '@/lib/types';
 const MAX_CODE_LENGTH = 128;
 const MAX_CART_ITEMS = 200;
 
+// A client-supplied cart line. `categories` is intentionally NOT accepted here
+// (BMC-198): `product_category` conditions are evaluated against catalog-derived
+// categories resolved server-side, the SAME source the charge floor uses
+// (lib/services/discount-pricing.ts), so the storefront gate and the floor can't
+// drift. Any `categories` a client sends is ignored.
 interface DiscountValidationRequest {
   code: string;
   cartSubtotal?: number;
   cartItems?: Array<{
     productId: string;
-    categories: string[];
     quantity: number;
     price: number;
   }>;
+}
+
+// The line shape the internal condition/amount helpers work on, with categories
+// resolved authoritatively from the catalog (never from the client).
+interface EvalCartItem {
+  productId: string;
+  categories: string[];
+  quantity: number;
+  price: number;
 }
 
 interface DiscountValidationResponse {
@@ -99,8 +113,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Resolve each line's categories from the CATALOG (never the client, BMC-198),
+    // but only when this promotion actually gates on `product_category` — so an
+    // ordinary cart-subtotal promo pays no extra catalog reads (parity with the
+    // charge floor's lazy resolution in lib/services/discount-pricing.ts). Both
+    // the condition check and the item-level amount math below then evaluate
+    // categories from the same source the floor credits against.
+    const evalItems = await resolveEvalItems(promotion, cartItems);
+
     // Validate promotion conditions
-    const isValidPromotion = validatePromotionConditions(promotion, cartSubtotal, cartItems);
+    const isValidPromotion = validatePromotionConditions(promotion, cartSubtotal, evalItems);
     if (!isValidPromotion.valid) {
       return NextResponse.json({
         valid: false,
@@ -109,7 +131,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate discount amount
-    const discountCalculation = calculateDiscountAmount(promotion, cartSubtotal, cartItems);
+    const discountCalculation = calculateDiscountAmount(promotion, cartSubtotal, evalItems);
 
     const response: DiscountValidationResponse = {
       valid: true,
@@ -135,12 +157,41 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Whether a promotion evaluates any `product_category` condition. Only then does
+ * the route resolve catalog categories (an extra read per distinct product), so a
+ * cart-subtotal-only promotion stays a single indexed coupon/promotion lookup.
+ * Covers the item-level branch too: `calculateDiscountAmount`'s
+ * `item_percentage_discount` only narrows by category when a `product_category`
+ * condition is present, so condition-presence is the exact gate for both.
+ */
+function promotionUsesCategories(promotion: Promotion): boolean {
+  return (promotion.rules.conditions ?? []).some((c) => c.type === 'product_category');
+}
+
+/**
+ * Attach each line's CATALOG categories (BMC-198). Returns items with empty
+ * categories when the promotion doesn't gate on category (no catalog read needed);
+ * otherwise resolves them server-side via the shared floor helper so the
+ * storefront gate and the charge floor evaluate `product_category` identically.
+ */
+async function resolveEvalItems(
+  promotion: Promotion,
+  cartItems: Array<{ productId: string; quantity: number; price: number }>
+): Promise<EvalCartItem[]> {
+  if (!promotionUsesCategories(promotion)) {
+    return cartItems.map((i) => ({ ...i, categories: [] }));
+  }
+  const byProduct = await collectCatalogCategoriesByProduct(cartItems.map((i) => i.productId));
+  return cartItems.map((i) => ({ ...i, categories: byProduct.get(i.productId) ?? [] }));
+}
+
+/**
  * Validate promotion conditions against cart state
  */
 function validatePromotionConditions(
   promotion: Promotion,
   cartSubtotal: number,
-  cartItems: Array<{ productId: string; categories: string[]; quantity: number; price: number; }>
+  cartItems: EvalCartItem[]
 ): { valid: boolean; error?: string } {
   if (!promotion.rules.conditions || promotion.rules.conditions.length === 0) {
     return { valid: true };
@@ -192,7 +243,7 @@ function validatePromotionConditions(
 function calculateDiscountAmount(
   promotion: Promotion,
   cartSubtotal: number,
-  cartItems: Array<{ productId: string; categories: string[]; quantity: number; price: number; }>
+  cartItems: EvalCartItem[]
 ): { amount: number; type: 'percentage' | 'fixed'; value: number } {
   const action = promotion.rules.actions[0]; // Take first action for simplicity
   
