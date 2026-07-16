@@ -64,10 +64,13 @@ vi.mock('@/lib/services/order-finalization', () => ({
   finalizePaidOrder: vi.fn(),
 }));
 
+vi.mock('@/lib/utils/observe', () => ({ logCritical: vi.fn() }));
+
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/webhooks/stripe/route';
 import { getOrderById } from '@/lib/models/mach/orders';
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
+import { logCritical } from '@/lib/utils/observe';
 import { releaseWebhookEventClaim } from '@/lib/models/mach/subscriptions';
 
 function order(overrides: Record<string, any> = {}): any {
@@ -128,6 +131,9 @@ describe('POST /api/webhooks/stripe payment_intent.succeeded (BMC-131 + BMC-167)
     const res = await POST(makeRequest());
     expect(res.status).toBe(500);
     expect(vi.mocked(releaseWebhookEventClaim)).toHaveBeenCalledWith(fakeEvent.id);
+    // BMC-168: the transient failure becomes a WebhookRetryableError that
+    // self-heals on Stripe's retry — it must NOT page (avoid alert-storm noise).
+    expect(vi.mocked(logCritical)).not.toHaveBeenCalled();
   });
 
   it('THE EXPLOIT: permanent underpayment ({ paid:false, reason }) → 200, NO retry', async () => {

@@ -53,11 +53,32 @@ Three moving parts:
 | `webhook` | `app/api/webhooks/stripe/route.ts` | `processing_failed`, `order_paid_update_failed` |
 | `refund` | `app/api/orders/refund/route.ts` | `settled_but_order_missing`, `settled_but_ledger_flip_failed`, `processing_failed` |
 | `giftcard` | `lib/services/order-finalization.ts` | `fulfillment_errors`, `fulfillment_threw`, `tender_not_redeemed_revert_failed` |
+| `inventory` | `lib/services/order-finalization.ts` | `decrement_failed` (oversold-review flag may be lost on a PAID order — BMC-178) |
 
 Uncaught exceptions anywhere in the app are caught by the Tail Worker regardless
 of instrumentation.
 
+### What's in the alert (and what isn't)
+
+The alert email is forwarded to a **third-party relay (Resend)**, so `logCritical`
+deliberately emits only non-sensitive data: the `area`, `event`, the caller's
+`detail` (ids/counts only — keep it PII-free), and the error's **class** (e.g.
+`StripeError`), **never the error message**. Raw error text can echo customer PII
+(a Stripe error repeating a shipping address) or secrets (gift-card codes in
+fulfillment error strings), so the full message stays in the caller's sibling
+`console.error`, which drains to access-controlled Workers Logs only. When an
+alert fires, open Workers Logs for the full detail.
+
 ## Deploy & configure
+
+> ⚠️ **Deploy ordering is load-bearing.** A producer whose `tail_consumers`
+> service doesn't exist yet **fails to deploy** ("Tail Worker does not exist").
+> The main app + cron Worker now reference `beauteas-observability-tail[-dev]`, so
+> that Worker must be deployed to the target account **first** — otherwise the
+> next `npm run deploy:dev` / `deploy:production` (and the manual
+> `workflow_dispatch` production deploy) will fail. It is NOT auto-triggered on
+> merge to `main`, so merging this alone won't break CI — but the first deploy
+> after merge will fail until the Tail Worker exists.
 
 The Tail Worker deploys **separately and BEFORE** the producers that reference it
 (a `tail_consumers` service must already exist). From `workers/observability-tail/`:

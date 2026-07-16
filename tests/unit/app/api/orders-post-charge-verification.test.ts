@@ -53,6 +53,8 @@ vi.mock('@/lib/db', () => ({
   getDbAsync: vi.fn(),
 }));
 
+vi.mock('@/lib/utils/observe', () => ({ logCritical: vi.fn() }));
+
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { POST } from '@/app/api/orders/route';
@@ -60,6 +62,7 @@ import { getDbAsync } from '@/lib/db';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { getProduct } from '@/lib/models/mach/products';
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
+import { logCritical } from '@/lib/utils/observe';
 
 const ORDER_ID = 'WEB-GUEST-1000';
 
@@ -408,7 +411,31 @@ describe('POST /api/orders create-or-promote (BMC-167)', () => {
     // A D1 network failure is a SYSTEM fault (BMC-168): surfaced as a paged 500,
     // never masked as an idempotent 200 (nor mislabeled as a client 400).
     expect(res.status).toBe(500);
+    expect(vi.mocked(logCritical)).toHaveBeenCalledWith(
+      'order_create',
+      'order_create_failed',
+      expect.anything(),
+      expect.anything()
+    );
     const json = (await res.json()) as any;
     expect(json?.meta?.idempotent).toBeUndefined();
+  });
+
+  it('BMC-168: a non-object JSON body (null) is a client 400, not a paged 500', async () => {
+    const res = await POST(postRequest(null));
+    expect(res.status).toBe(400);
+    expect(vi.mocked(logCritical)).not.toHaveBeenCalled();
+  });
+
+  it('BMC-168: a malformed (unparseable) JSON body is a client 400, not a paged 500', async () => {
+    const req = new NextRequest('http://localhost/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not valid json',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toBe('Invalid request body');
+    expect(vi.mocked(logCritical)).not.toHaveBeenCalled();
   });
 });

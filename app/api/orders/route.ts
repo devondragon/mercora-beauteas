@@ -145,7 +145,18 @@ export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
     const body = await request.json() as CreateOrderRequest;
-    
+
+    // JSON.parse('null') / a non-object body doesn't throw a SyntaxError, so the
+    // field checks below would throw a TypeError that the catch misclassifies as
+    // a system fault (spurious 500 + page). Reject a non-object body as a client
+    // 400 up front (BMC-168 review).
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: ['request body must be a JSON object']
+      }, { status: 400 });
+    }
+
     // Validate required fields
 
     // Validate MACH-compliant order fields

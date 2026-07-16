@@ -33,16 +33,25 @@ export type CriticalArea =
   | "payment_intent"
   | "webhook"
   | "refund"
-  | "giftcard";
+  | "giftcard"
+  | "inventory";
 
 /**
  * Record a critical money-path failure: log an alertable line and (best effort)
  * a metric. Never throws.
  *
+ * SECURITY (BMC-168 review): the `[critical]` line this emits is forwarded to a
+ * THIRD-PARTY email relay (Resend) by the Tail Worker, so it must not carry raw
+ * error text — a Stripe error can echo customer PII (name/address) and gift-card
+ * error strings embed redeemable codes. Therefore only the error *class* (via
+ * {@link errorLabel}) is included here; the full message stays in the caller's
+ * sibling `console.error`, which drains to access-controlled Workers Logs only.
+ * Keep `detail` limited to non-PII identifiers/counts for the same reason.
+ *
  * @param area   which money path failed (drives alerting + metric grouping)
  * @param event  short stable event name, e.g. "order_create_failed"
  * @param detail small, non-PII context (ids, statuses) — serialized into the log
- * @param error  the caught error, if any (name + message are extracted)
+ * @param error  the caught error, if any (only its class/type is emitted)
  */
 export function logCritical(
   area: CriticalArea,
@@ -54,8 +63,10 @@ export function logCritical(
   // circular `detail` (JSON.stringify) or a patched console must never turn a
   // handled failure into an unhandled one.
   try {
-    const payload: Record<string, unknown> = { area, event, ...detail };
-    if (error !== undefined) payload.error = errorMessage(error);
+    // area/event are spread LAST so a caller's `detail` key can never clobber the
+    // real classification the Tail Worker/metrics rely on.
+    const payload: Record<string, unknown> = { ...detail, area, event };
+    if (error !== undefined) payload.errorType = errorLabel(error);
     // Single line, stable prefix, JSON body → reliably parsed by the Tail Worker.
     console.error(`${CRITICAL_MARKER} ${area}.${event}`, safeStringify(payload));
   } catch {
@@ -99,7 +110,12 @@ function writeMetric(area: CriticalArea, event: string): void {
   }
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return String(error);
+/**
+ * The error's CLASS/type only — never its message. This is what may be forwarded
+ * to the alert email, so it must not contain error content (which can carry PII
+ * or secrets). Full detail remains in the caller's sibling `console.error`.
+ */
+function errorLabel(error: unknown): string {
+  if (error instanceof Error) return error.name || "Error";
+  return typeof error;
 }

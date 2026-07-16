@@ -91,6 +91,11 @@ export function extractAlerts(events: TailEvent[]): Alert[] {
   const alerts: Alert[] = [];
 
   for (const ev of events) {
+    // Bound the work, not just the email: in a retry storm a single batch could
+    // carry thousands of failing invocations. Stop scanning well past the email
+    // cap (dedupe + slice still trim to MAX_ALERTS_PER_INVOCATION downstream).
+    if (alerts.length >= MAX_ALERTS_PER_INVOCATION * 10) break;
+
     const url = ev.event?.request?.url;
     const colo = ev.event?.request?.cf?.colo;
 
@@ -149,7 +154,7 @@ export function dedupe(alerts: Alert[]): Alert[] {
   return [...seen.values()];
 }
 
-async function sendAlertEmail(alerts: Alert[], env: Env): Promise<void> {
+export async function sendAlertEmail(alerts: Alert[], env: Env): Promise<void> {
   if (!env.RESEND_API_KEY || !env.ALERT_EMAIL_TO || !env.ALERT_EMAIL_FROM) {
     // Misconfigured alerter is itself a problem — log it (visible in this
     // Worker's own logs) but there's nowhere to send.
@@ -193,7 +198,7 @@ async function sendAlertEmail(alerts: Alert[], env: Env): Promise<void> {
   }
 }
 
-function renderText(alerts: Alert[], overflow: number, envName: string): string {
+export function renderText(alerts: Alert[], overflow: number, envName: string): string {
   const lines = alerts.map(
     (a) =>
       `• [${a.kind}] ${a.title}` +
@@ -228,7 +233,7 @@ function renderHtml(alerts: Alert[], overflow: number, envName: string): string 
   </div>`;
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

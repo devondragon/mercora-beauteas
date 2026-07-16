@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the Cloudflare context so logCritical's best-effort Analytics Engine
 // write is observable and controllable (present / absent / throwing).
@@ -19,6 +19,10 @@ describe('logCritical', () => {
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
   it('emits a single stable [critical] <area>.<event> line with a JSON payload', () => {
     logCritical('order_create', 'order_create_failed', { orderId: 'o1' }, new Error('db down'));
 
@@ -30,8 +34,30 @@ describe('logCritical', () => {
       area: 'order_create',
       event: 'order_create_failed',
       orderId: 'o1',
-      error: 'Error: db down',
+      // Only the error CLASS is emitted — never the message (BMC-168 security).
+      errorType: 'Error',
     });
+  });
+
+  it('never forwards raw error message text into the payload (PII/secret guard)', () => {
+    logCritical(
+      'payment_intent',
+      'create_failed',
+      {},
+      new Error('Stripe API Error: invalid postal_code for John Q Public, 123 Main St')
+    );
+    const json = errorSpy.mock.calls[0][1] as string;
+    expect(json).toContain('"errorType":"Error"');
+    expect(json).not.toContain('John Q Public');
+    expect(json).not.toContain('123 Main St');
+  });
+
+  it('does not let a colliding detail key clobber the real area/event', () => {
+    logCritical('refund', 'processing_failed', { area: 'not-real', event: 'nope', orderId: 'o1' });
+    const payload = JSON.parse(errorSpy.mock.calls[0][1] as string);
+    expect(payload.area).toBe('refund');
+    expect(payload.event).toBe('processing_failed');
+    expect(payload.orderId).toBe('o1');
   });
 
   it('writes a best-effort Analytics Engine data point grouped by area', () => {
