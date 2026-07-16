@@ -31,7 +31,7 @@ vi.mock('@/lib/models/mach/products', () => ({
   getProduct: vi.fn(),
 }));
 
-import { resolveCartDiscountCents, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
+import { resolveCartDiscountCents, collectCatalogCategoriesByProduct, MAX_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
 import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
 import { getProduct } from '@/lib/models/mach/products';
@@ -283,5 +283,33 @@ describe('resolveCartDiscountCents (BMC-177)', () => {
     await resolveCartDiscountCents(many, 10000);
     // Only the first MAX_DISCOUNT_CODES distinct codes drive a lookup.
     expect(vi.mocked(getCouponInstanceByCode).mock.calls.length).toBe(MAX_DISCOUNT_CODES);
+  });
+});
+
+describe('collectCatalogCategoriesByProduct (BMC-198 shared helper)', () => {
+  it('maps each distinct product id to its catalog categories', async () => {
+    seedProducts([
+      { id: 'tea-1', categories: ['CAT-TEA', 'CAT-ORGANIC'] },
+      { id: 'mug-1', categories: ['CAT-MERCH'] },
+    ]);
+    const map = await collectCatalogCategoriesByProduct(['tea-1', 'mug-1']);
+    expect(map.get('tea-1')).toEqual(['CAT-TEA', 'CAT-ORGANIC']);
+    expect(map.get('mug-1')).toEqual(['CAT-MERCH']);
+  });
+
+  it('reads the catalog once per DISTINCT id and skips falsy ids', async () => {
+    seedProducts([{ id: 'tea-1', categories: ['CAT-TEA'] }]);
+    await collectCatalogCategoriesByProduct(['tea-1', 'tea-1', undefined, '']);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledWith('tea-1');
+  });
+
+  it('keeps only string categories and yields an empty list for an unknown product', async () => {
+    // A catalog `categories` entry can be a non-string; only strings survive, so
+    // the floor and validate-discount evaluate the identical set.
+    seedProducts([{ id: 'tea-1', categories: ['CAT-TEA', 42 as any, null as any] }]);
+    const map = await collectCatalogCategoriesByProduct(['tea-1', 'ghost']);
+    expect(map.get('tea-1')).toEqual(['CAT-TEA']);
+    expect(map.get('ghost')).toEqual([]);
   });
 });

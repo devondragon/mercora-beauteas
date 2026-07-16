@@ -103,24 +103,49 @@ export function normalizeDiscountCodes(codes: string[] | string | null | undefin
 }
 
 /**
- * Union of the catalog categories for the cart's products, resolved SERVER-SIDE
- * from the catalog (`getProduct().categories`) — never from client-supplied
- * categories, which the charge floor must not trust. One `getProduct` per
- * distinct product id, run concurrently. Only called when a resolved promotion
- * actually gates on `product_category`, so ordinary discounted checkouts pay no
- * extra catalog reads.
+ * Resolve each distinct product id to its catalog categories, SERVER-SIDE from the
+ * catalog (`getProduct().categories`) — never from client-supplied categories,
+ * which neither the charge floor nor `/api/validate-discount` may trust (BMC-198).
+ * One `getProduct` per distinct id, run concurrently. Only string categories are
+ * kept (a catalog `categories` entry can be a non-string), so the floor and the
+ * storefront gate evaluate `product_category` from an IDENTICAL source and can't
+ * drift. Ids that don't resolve simply contribute an empty list.
+ *
+ * Exported so `/api/validate-discount` builds its per-item categories from the
+ * exact same resolver the floor uses; the floor itself only needs the union
+ * (`collectCatalogCategories`), which is layered on top of this.
  */
-async function collectCatalogCategories(items: DiscountCartLine[]): Promise<Set<string>> {
-  const productIds = [...new Set(items.map((i) => i.product_id).filter((id): id is string => !!id))];
-  const categories = new Set<string>();
+export async function collectCatalogCategoriesByProduct(
+  productIds: Array<string | undefined>
+): Promise<Map<string, string[]>> {
+  const distinct = [...new Set(productIds.filter((id): id is string => !!id))];
+  const byProduct = new Map<string, string[]>();
   await Promise.all(
-    productIds.map(async (id) => {
+    distinct.map(async (id) => {
       const product = await getProduct(id);
+      const cats: string[] = [];
       for (const c of product?.categories ?? []) {
-        if (typeof c === 'string') categories.add(c);
+        if (typeof c === 'string') cats.push(c);
       }
+      byProduct.set(id, cats);
     })
   );
+  return byProduct;
+}
+
+/**
+ * Union of the catalog categories for the cart's products, resolved SERVER-SIDE
+ * (via `collectCatalogCategoriesByProduct`) — never from client-supplied
+ * categories, which the charge floor must not trust. Only called when a resolved
+ * promotion actually gates on `product_category`, so ordinary discounted checkouts
+ * pay no extra catalog reads.
+ */
+async function collectCatalogCategories(items: DiscountCartLine[]): Promise<Set<string>> {
+  const byProduct = await collectCatalogCategoriesByProduct(items.map((i) => i.product_id));
+  const categories = new Set<string>();
+  for (const cats of byProduct.values()) {
+    for (const c of cats) categories.add(c);
+  }
   return categories;
 }
 
