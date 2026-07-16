@@ -55,6 +55,7 @@ import {
 import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
 import { redeemCoupon } from '@/lib/models/mach/couponInstance';
+import { Money } from '@/lib/money';
 import { logCritical } from '@/lib/utils/observe';
 
 export interface FinalizePaidOrderResult {
@@ -317,9 +318,18 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
   // order). The codes were persisted on the order at PaymentIntent creation.
   if (discountCodes?.length) {
     const redeemCustomerId = finalOrder.customer_id || order.customer_id || 'guest';
+    // Record the discount on the usage audit trail. `charge.discountCents` is the
+    // TOTAL cart discount the floor recomputed across ALL codes (deduped by
+    // promotion), so it maps cleanly to a single code but would over-report if
+    // split across several. Attribute it only when exactly one code was applied;
+    // with multiple, leave discount_amount unset rather than misattribute.
+    const discountAmount =
+      discountCodes.length === 1 && charge.discountCents > 0
+        ? Money.fromMinor(charge.discountCents, finalOrder.currency_code || 'USD').toMach()
+        : undefined;
     for (const code of discountCodes) {
       try {
-        const result = await redeemCoupon(code, { orderId, customerId: redeemCustomerId, channel: 'web' });
+        const result = await redeemCoupon(code, { orderId, customerId: redeemCustomerId, channel: 'web', discountAmount });
         if (result.redeemed) {
           console.log(
             `[finalize] Redeemed coupon ${code} for ${orderId} (usage_count=${result.usageCount}, status=${result.status})`

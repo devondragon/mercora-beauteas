@@ -82,7 +82,8 @@ import { sendOrderConfirmationForOrder } from '@/lib/services/order-confirmation
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
 import { decrementStockForOrder, flagOversoldForReview } from '@/lib/services/inventory-adjustment';
-import { redeemCoupon } from '@/lib/models/mach/couponInstance';
+import { redeemCoupon, getCouponInstanceByCode, validateCouponInstance } from '@/lib/models/mach/couponInstance';
+import { getPromotionById, checkTimeValidity } from '@/lib/models/mach/promotions';
 
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 
@@ -304,6 +305,36 @@ describe('finalizePaidOrder', () => {
       expect(vi.mocked(redeemCoupon).mock.calls[1][0]).toBe('WELCOME15');
       // Order-keyed + customer carried through for the audit record.
       expect(vi.mocked(redeemCoupon).mock.calls[0][1]).toMatchObject({ orderId: 'WEB-GUEST-1', customerId: 'cust-9' });
+    });
+
+    it('attributes the recomputed discount to the usage record when a single code was applied', async () => {
+      // One code + a resolvable coupon → the floor recomputes the discount, which
+      // is attributed to that code's audit record as MACH money.
+      const oneCode = order({ extensions: { discount_codes: ['SAVE25'] } });
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(oneCode) as any);
+      // Make the real charge gate resolve a 25%-off cart coupon so discountCents > 0.
+      vi.mocked(getCouponInstanceByCode).mockResolvedValue({ id: 'ci', code: 'SAVE25', promotion_id: 'p25', status: 'active' } as any);
+      vi.mocked(validateCouponInstance).mockReturnValue({ isValid: true, canBeUsed: true, errors: [], warnings: [] } as any);
+      vi.mocked(getPromotionById).mockResolvedValue({ id: 'p25', type: 'cart', status: 'active', rules: { actions: [{ type: 'percentage_discount', value: 25 }] } } as any);
+      vi.mocked(checkTimeValidity).mockReturnValue(true as any);
+
+      await finalizePaidOrder({ order: oneCode, paidAmountCents: 2999, sendEmail: true });
+      expect(vi.mocked(redeemCoupon)).toHaveBeenCalledTimes(1);
+      // 25% of $25.00 goods = $6.25 → MACH money.
+      expect(vi.mocked(redeemCoupon).mock.calls[0][1]).toMatchObject({
+        discountAmount: { amount: 6.25, currency: 'USD' },
+      });
+    });
+
+    it('omits discount_amount when multiple codes are applied (avoids misattributing the total)', async () => {
+      // No resolvable coupon needed — with 2 codes, discount_amount is omitted
+      // regardless of the recomputed total.
+      vi.mocked(getCouponInstanceByCode).mockResolvedValue(null as any);
+      const twoCodes = order({ extensions: { discount_codes: ['SAVE25', 'TENOFF'] } });
+      vi.mocked(promoteOrderToPaid).mockResolvedValue(casWin(twoCodes) as any);
+      await finalizePaidOrder({ order: twoCodes, paidAmountCents: 2999, sendEmail: true });
+      expect(vi.mocked(redeemCoupon).mock.calls[0][1]).toMatchObject({ discountAmount: undefined });
+      expect(vi.mocked(redeemCoupon).mock.calls[1][1]).toMatchObject({ discountAmount: undefined });
     });
 
     it('does NOT redeem when the order carries no discount codes', async () => {
