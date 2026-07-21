@@ -1,238 +1,277 @@
 # BeauTeas: Shopify → Mercora Production Cutover Runbook
 
-**Goal:** Take the completed v1.0 build from its current state (dev-only, no production infra, never run against live data) to **beauteas.com serving live traffic on Mercora**, with no loss of orders, customers, reviews, or search rankings.
+**Goal:** Take the finished v1.0 build to **beauteas.com serving live traffic on Mercora**, taking real orders on real credit cards — with no loss of orders, customers, reviews, or search rankings.
 
 **Audience:** Operator running the cutover (Devon).
+
+---
+
+## Read this first
+
+**All development is done.** Every launch-blocking code ticket is merged and audited — auth (fail-closed), inventory decrement/oversell, refund idempotency, server-side tax with charge floors, coupon redemption tracking, order-status gating, and observability. There is **no code left to write** to launch. There is also now an automated test suite (Vitest + Playwright, gated in CI).
+
+**Everything below is operational** — standing up live services, flipping to live keys, **promoting the curated catalog from dev to prod**, and switching DNS. None of it has been exercised end-to-end against live Stripe/Clerk yet, so the manual verification steps (Phases 9 and 11) are the safety net.
+
+**What's already provisioned** (don't redo): prod D1 (`beauteas-db`, id `5dbae836-…`), R2 (`beauteas-images`), and Vectorize (`beauteas-index`) all exist. Migrations **0001–0012 are applied to prod**. `app/robots.ts` exists. Wallets are wired in `PaymentForm.tsx`.
+
+**Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
+
+**Do it in order.** Each phase depends on the ones before it. Check the box, move on.
+
 **Status legend:** ☐ not started · ◐ in progress · ☑ done
 
-> **Reality check:** The *code* for the three launch blockers (SEO, subscriptions, data migration) is built and audited. Everything below is the **operational work that has never been executed**: standing up production infra, running the migration against real data, flipping services to live mode, and the DNS switch. Nothing here has been exercised end-to-end against live Stripe/Clerk/Shopify yet.
-
 ---
 
-## 0. P0 Blockers — MUST fix before any production deploy
+## Phase 0 — Accounts & decisions (get these first; they have lead time)
 
-These are hard gates. Do not deploy to production until all are resolved.
+You can't do anything else until these exist. None of it is code — it's account setup and business decisions.
 
-### 0.1 ☑ Re-enable API authentication (SECURITY — inherited from upstream Mercora) — **FIXED**
-- **Was:** `lib/auth/unified-auth.ts → authenticateRequest()` returned `{ success: true, permissions: ["admin:*"] }` **unconditionally**, leaving `app/api/orders/route.ts`, `app/api/orders/refund/route.ts` (**refunds!**) and the admin order page unauthenticated in production.
-- **Fix applied:** `authenticateRequest()` now fails closed and accepts two credential types:
-  1. **API token** — the `ADMIN_VECTORIZE_TOKEN` service secret, or an `api_tokens` row matched by SHA-256 hash, with AND-combined permission checks (wildcard-aware).
-  2. **Clerk session** — for the browser admin UI (which sends no token); granted admin via `isUserAdmin()` or Clerk metadata `role === "admin"`. Dev parity: any signed-in user is admin when `NODE_ENV === "development"` only (never true in the deployed Worker), matching `admin-middleware.ts`.
-  - Verified: `tsc --noEmit` clean, `next lint` clean, all 3 call sites reviewed. Customer order browsing is unaffected (it uses Clerk `auth()` + userId match, not `authenticateRequest`).
-- **Still required at deploy time:**
-  - ☐ Runtime check: unauthenticated `curl` to prod `/api/orders?admin=true` and `/api/orders/refund` → expect **401/403** (covered in §8).
-  - ☐ Seed `admin_users` with admin Clerk IDs (§0.2) — otherwise admins can't reach the orders UI in prod. Same applies to **local dev only if** you set `NODE_ENV=production` locally.
-  - ☑ Server-to-server token auth tooling restored — `scripts/manage-tokens.ts` (`npm run token:generate|list|revoke`) mints/lists/revokes `api_tokens` rows via `wrangler d1 execute`. Hashing verified to match the verifier (`unified-auth.ts`). Targets remote D1 by default; use `--env=production`. Only needed for non-Clerk service callers (carrier webhooks, automation); the admin UI uses the Clerk-session path. To mint a prod token: `npm run token:generate -- --name=<n> --preset=WEBHOOKS_CARRIER --env=production`.
-
-### 0.2 ☐ Seed the admin allow-list
-- `admin-middleware.ts` calls `isUserAdmin(userId)` against the `admin_users` table (migration `0002`). In production that table must contain your Clerk user ID(s), or **no one can reach `/admin`.**
-- **Action:** After Clerk production instance exists, insert your admin user ID into `admin_users` on the prod DB.
-
-### 0.3 ☐ Set a strong `ADMIN_VECTORIZE_TOKEN` production secret
-- Used for server-to-server admin calls (vectorize reindex, etc.). Do not reuse the upstream default (`voltique-admin` / `mercora-dev-bypass`).
-
----
-
-## 1. Pre-flight — accounts & decisions (T-7 days)
-
-- ☐ Cloudflare account on Workers **paid** plan; note Account ID.
-- ☐ **Clerk production instance** created (separate from the `pk_test_…dev` instance). Get `pk_live_…` + `sk_live_…`.
-- ☐ **Stripe** business verification complete, **Stripe Tax** enabled, account in **Live** mode available.
-- ☐ **Stripe Tax registrations/nexus configured in the LIVE account** (BMC-187). This is a hard go-live gate, not just "enable Stripe Tax": `/api/tax` uses nexus-aware Stripe Tax, but falls back to a **flat 7% rate** (`FALLBACK_TAX_RATE` in `app/api/tax/route.ts`) whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is unset in the runtime. If registrations/nexus aren't set up in live Stripe, **every production order mischarges tax** at the flat rate. Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered, then confirm a live checkout returns `"calculated_by": "stripe"` (not `"fallback"`) from `/api/tax`. Watch `wrangler tail --env production` for the loud `[tax] STRIPE_SECRET_KEY not configured` / Stripe Tax failure logs during the smoke test.
+- ☐ **Cloudflare** account on the Workers **paid** plan; note the Account ID.
+- ☐ **Clerk production instance** (separate from the `pk_test…` dev instance). Get `pk_live_…` + `sk_live_…`.
+- ☐ **Stripe** business verification complete, **Live mode** available.
+- ☐ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). **This is a hard gate, not just "enable Stripe Tax."** `/api/tax` uses nexus-aware Stripe Tax but **falls back to a flat 7% rate** whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is missing. If your live nexus isn't registered, **every order mischarges tax.** Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered. (Confirmed working later when a live checkout's `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)
+- ☐ **R2 API token** (Account ID + Access Key ID + Secret) — used to copy image objects from the **dev** bucket to the **prod** bucket (Phase 8).
+- ☐ *(Shopify Admin API + Judge.me creds were used for the already-completed dev ETL and are **not** needed again — prod is populated by copying the curated dev catalog, not a fresh Shopify pull. Only revisit if you later decide to migrate order/customer history.)*
+- ☐ Decide **subscription economics**: frequencies (e.g. every 2 weeks / monthly / every 2 months) + discount % (e.g. 10%).
 - ☐ Decide the **maintenance/migration window** (low-traffic, e.g. overnight). Budget 2–4h.
 - ☐ Confirm Shopify data scale (expected: <1K customers, few hundred orders, ~30 products).
-- ☐ Obtain **Shopify Admin API** credentials (custom app: API key + secret + store URL) with read scopes for products, customers, orders, content/pages.
-- ☐ Obtain **Judge.me** API token (reviews export).
-- ☐ Create **R2 API token** (Account ID + Access Key ID + Secret) for the migration's image uploader.
-- ☐ Decide subscription economics: frequencies (every 2 weeks / monthly / every 2 months) + discount % (e.g. 10%).
 
 ---
 
-## 2. Provision production infrastructure (T-5 days)
+## Phase 1 — Fill the config placeholders (code)
+
+Two placeholders remain in `wrangler.jsonc` under the **production** env (the prod D1 id is already real):
+
+- ☐ `"NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY"` → your `pk_live_…`
+- ☐ `"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY"` → your `pk_live_…`
+
+Commit these. (Publishable keys are safe to commit; **secret** keys go in Phase 2, never in the file.)
+
+---
+
+## Phase 2 — Set production secrets
 
 ```bash
-# Production Cloudflare resources
-wrangler d1 create beauteas-db
-wrangler r2 bucket create beauteas-images
-wrangler vectorize create beauteas-index --dimensions=1024 --metric=cosine
+wrangler secret put CLERK_SECRET_KEY        --env production   # sk_live_…
+wrangler secret put STRIPE_SECRET_KEY       --env production   # sk_live_…
+wrangler secret put RESEND_API_KEY          --env production
+wrangler secret put ADMIN_VECTORIZE_TOKEN   --env production   # strong random — do NOT reuse the dev/upstream default
+wrangler secret put EMAIL_UNSUBSCRIBE_SECRET --env production  # strong random — REQUIRED or review-reminder emails skip entirely (BMC-184)
+# STRIPE_WEBHOOK_SECRET is set later, in Phase 4, once the live webhook exists.
 ```
 
-- ☐ Resources created.
-- ☐ **Update `wrangler.jsonc` production env** — replace the three placeholders that are currently committed:
-  - `"database_id": "REPLACE_WITH_PRD_DATABASE_ID"` → real prod D1 id
-  - `"NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY"` → `pk_live_…`
-  - `"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY"` → `pk_live_…`
-- ☐ **Set production secrets:**
-  ```bash
-  wrangler secret put CLERK_SECRET_KEY      --env production   # sk_live_…
-  wrangler secret put STRIPE_SECRET_KEY     --env production   # sk_live_…
-  wrangler secret put STRIPE_WEBHOOK_SECRET --env production   # whsec_… (from §4)
-  wrangler secret put RESEND_API_KEY        --env production
-  wrangler secret put ADMIN_VECTORIZE_TOKEN --env production   # strong random
-  ```
-- ☐ Apply schema to production DB:
-  ```bash
-  wrangler d1 migrations apply beauteas-db --env production --remote
-  # Confirms migrations 0001–0008 (incl. 0007 subscriptions, 0008 redirect_map)
-  ```
-- ☐ Verify tables exist:
+- ☐ All five secrets above set. (`STRIPE_WEBHOOK_SECRET` deferred to Phase 4.)
+
+---
+
+## Phase 3 — Apply the remaining prod migrations
+
+Prod is at migration **0012**. Migrations **0013–0018** are new and pending (recommendations, policy/legal pages, subscription shipping address, email-unsubscribe suppression list). One command applies all pending:
+
+```bash
+wrangler d1 migrations apply beauteas-db --env production --remote
+```
+
+- ☐ Applied. Confirm tables and the last migration:
   ```bash
   wrangler d1 execute beauteas-db --env production --remote \
     --command="SELECT name FROM sqlite_master WHERE type='table';"
   ```
-- ☐ **Do NOT run `data/d1/seed.sql` or `data/d1/seed-dev.sql` on production** — production data comes from the Shopify migration, not the sample seeds. `seed-dev.sql` re-adds the local MCP `test-agent` credential and must stay dev-only (BMC-136).
-- ☐ **Apply migration `0012_remove_seeded_test_agent`** (BMC-136/C9) so the public `test-agent` MCP credential is deleted from prod: `wrangler d1 migrations apply beauteas-db --env production --remote`. Then rotate **all** MCP agent credentials (git history is compromised for MCP keys) and verify the row is gone: `wrangler d1 execute beauteas-db --env production --remote --command="SELECT agent_id FROM mcp_agents WHERE agent_id='test-agent';"`.
+- ☐ **Do NOT run `data/d1/seed.sql` or `data/d1/seed-dev.sql` against prod** — prod data comes from the Shopify migration. `seed-dev.sql` re-adds the public MCP `test-agent` credential and must stay dev-only (BMC-136).
 
 ---
 
-## 3. Configure Stripe for live subscriptions (T-5 days)
+## Phase 4 — Configure Stripe live mode (BMC-76)
 
-The base deployment doc only wires payment events. Subscriptions need more.
+In **Stripe Live mode**:
 
-- ☐ In **Stripe Live mode**, create the **discount coupon** (e.g. 10% off, forever) → note the coupon/promotion id.
-- ☐ Recurring **Prices** per subscribable product: the codebase auto-creates Stripe prices for plans (commit `f4f858d`) — confirm this path runs in live mode, or pre-create prices for the 3 frequencies.
-- ☐ Create the **production webhook endpoint** → `https://beauteas.com/api/webhooks/stripe`, subscribed to:
+- ☐ Create the **subscription discount coupon** (e.g. 10% off, forever) → note the coupon/promotion id.
+- ☐ Recurring **Prices** for subscribable products — the app auto-creates these; confirm the path runs in live mode, or pre-create prices for the 3 frequencies.
+- ☐ Create the **webhook endpoint** → `https://beauteas.com/api/webhooks/stripe`, subscribed to:
   - `payment_intent.succeeded`, `payment_intent.payment_failed`, `checkout.session.completed`
   - `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`
   - `invoice.payment_succeeded`, `invoice.payment_failed`, `invoice.upcoming`
-- ☐ Copy the live signing secret → that's the `STRIPE_WEBHOOK_SECRET` set in §2.
-- ☐ Test webhook signature handling against prod with the Stripe CLI before cutover:
+- ☐ Copy the live signing secret and set it:
+  ```bash
+  wrangler secret put STRIPE_WEBHOOK_SECRET --env production   # whsec_…
+  ```
+- ☐ Test signature handling before cutover:
   `stripe listen --forward-to https://beauteas.com/api/webhooks/stripe` then `stripe trigger customer.subscription.created`.
 
 ---
 
-## 4. Migration rehearsal — run against DEV first (T-4 days)
+## Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202)
 
-**Always rehearse the full pipeline against the dev DB before touching production.** The orchestrator defaults to `D1_ENV=dev` / `beauteas-db-dev`.
-
-Orchestrator: `npx tsx scripts/shopify-migration/migrate-all.ts` (run order: schema → categories → products → customers → orders → reviews → pages → redirects → validate). It saves an ID map and continues on per-entity failure.
+**Critical ordering.** The production Worker config lists `tail_consumers: [{ service: "beauteas-observability-tail" }]`. That binding is **load-bearing**: if the Tail Worker doesn't exist yet, **`npm run deploy:production` in Phase 7 will FAIL**. Deploy it first, and set its two secrets.
 
 ```bash
-# Dry-run dependencies & env (file or api extraction mode)
-export EXTRACTION_MODE=api          # or 'file' with DATA_DIR pointing at a Shopify export
-export SHOPIFY_API_KEY=...
-export SHOPIFY_API_SECRET=...
-export SHOPIFY_STORE_URL=...
-export CLERK_SECRET_KEY=sk_live_...   # customer import → Clerk (use the prod instance)
-export R2_ACCESS_KEY_ID=...
-export R2_SECRET_ACCESS_KEY=...
-export R2_ACCOUNT_ID=...
-
-# Rehearse against DEV
-export D1_DATABASE_NAME=beauteas-db-dev
-export D1_ENV=dev
-
-npx tsx scripts/shopify-migration/migrate-all.ts --entity=categories   # one at a time first
-npx tsx scripts/shopify-migration/migrate-all.ts                       # then full run
+cd workers/observability-tail
+wrangler secret put RESEND_API_KEY  --env production   # Resend key (can be the same as the app's)
+wrangler secret put ALERT_EMAIL_TO  --env production   # comma-separated recipient list for alerts
+wrangler deploy --env production
+cd ../..
 ```
 
-- ☐ Rehearsal completes; review `scripts/shopify-migration/output/migration-report.txt`.
-- ☐ `--entity=validate` passes (record counts match per table).
-- ☐ Spot-check on dev site: 5 products (price/inventory/images from R2), 5 orders (dates/status), 5 reviews (ratings recalculated), a few CMS pages.
-- ☐ Test a migrated customer: trigger Clerk password reset → log in.
-- ☐ Test redirects: `curl -I https://beauteas-dev.<subdomain>.workers.dev/products/<slug>` → **301** to `/product/<slug>`.
-- ☐ **Customer-import caution:** customers were imported into the **dev** Clerk instance during rehearsal. Use a throwaway/test Clerk instance for rehearsal, OR scope rehearsal customer import to a handful — do **not** spam real customers with reset emails during a rehearsal.
-
----
-
-## 5. Deploy production build (T-2 days)
-
-- ☐ `npm install`
-- ☐ Re-enable auth (§0.1) merged to `main`.
-- ☐ Close the minor SEO gap if desired: add `app/robots.ts` (currently still the static `public/robots.txt`).
-- ☐ Build + deploy:
-  ```bash
-  npm run deploy:production       # clean + opennextjs build + deploy --env production
-  ```
-- ☐ Add custom domain in Cloudflare (Workers → beauteas → Settings → Domains) — but **keep DNS pointed at Shopify** for now (use the `*.workers.dev` URL or a staging host for validation).
-- ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, admin login (after §0.2), AI chat. **Note:** This deploy uses live Stripe keys — test cards will be rejected. Either run a real low-value checkout + immediate refund, or temporarily swap to Stripe test keys for this smoke-test step only, then re-set the live key before DNS cutover.
-- ☐ **(Optional) Recommendations rebuild cron:** only needed if `recommendations.strategy` is set to `ai_batch` (the default `deterministic` strategy needs no batch job). Deploy the standalone Worker from `workers/recommendations-cron/`:
+- ☐ Tail Worker deployed and both secrets set. (`ALERT_EMAIL_FROM` / `ENVIRONMENT` are already vars in its config — must be a Resend-verified from-domain.)
+- ☐ **(Optional) Recommendations rebuild cron** — only if you set `recommendations.strategy` to `ai_batch` (the default `deterministic` needs no cron). Confirm `REBUILD_URL` in `workers/recommendations-cron/wrangler.jsonc` points at `https://beauteas.com/api/admin/recommendations/rebuild`, then:
   ```bash
   cd workers/recommendations-cron
   wrangler secret put ADMIN_TOKEN    # same value as the app's ADMIN_VECTORIZE_TOKEN
   wrangler deploy
+  cd ../..
   ```
-  Confirm `REBUILD_URL` in that dir's `wrangler.jsonc` points at the live host (`https://beauteas.com/api/admin/recommendations/rebuild`) before deploying.
 
 ---
 
-## 6. Production data migration (cutover day, start of window)
+## Phase 6 — DEV is the golden source (ETL already done)
 
-- ☐ **Put Shopify in read-only / password-protected mode** (freeze new orders) — fallback if cutover aborts.
-- ☐ **Back up the (empty) prod DB** as a baseline:
+> **Status: done (BMC-67).** The Shopify ETL has already run into dev and the catalog was hand-curated there. **Dev is now the golden source that Phase 8 promotes to prod** — so finish any catalog/content cleanup in dev *before* cutover. Prod is not fed by a fresh Shopify pull. The original rehearsal steps are kept below for reference.
+
+**Always rehearse the full pipeline against dev before touching prod.** Validated for catalog/pages/images on 2026-06-29.
+
+⚠️ **`D1_REMOTE=true` is required** or the ETL writes to your **local** D1 instead of remote.
+
+⚠️ **Customer-import caution:** rehearsal imports customers into whatever Clerk instance `CLERK_SECRET_KEY` points at, which sends real password-reset emails. Use a throwaway Clerk instance for rehearsal, or scope the import to a handful — do **not** spam real customers.
+
+```bash
+export EXTRACTION_MODE=api            # or 'file' with DATA_DIR pointing at a Shopify export
+export SHOPIFY_API_KEY=...
+export SHOPIFY_API_SECRET=...
+export SHOPIFY_STORE_URL=...
+export CLERK_SECRET_KEY=sk_test_...   # rehearsal → throwaway/test Clerk instance
+export R2_ACCESS_KEY_ID=...
+export R2_SECRET_ACCESS_KEY=...
+export R2_ACCOUNT_ID=...
+
+export D1_ENV=dev
+export D1_DATABASE_NAME=beauteas-db-dev
+export D1_REMOTE=true
+
+npx tsx scripts/shopify-migration/migrate-all.ts --entity=categories   # one entity first
+npx tsx scripts/shopify-migration/migrate-all.ts                       # then the full run
+```
+
+- ☐ Rehearsal completes; review `scripts/shopify-migration/output/migration-report.txt`.
+- ☐ `--entity=validate` passes (per-table record counts match).
+- ☐ Spot-check on the dev site: 5 products (price/inventory/images), 5 orders, 5 reviews, a few CMS pages.
+- ☐ A migrated test customer can complete Clerk password reset → login.
+- ☐ Redirect works: `curl -I https://beauteas-dev.<subdomain>.workers.dev/products/<slug>` → **301** to `/product/<slug>`.
+
+---
+
+## Phase 7 — Deploy the app to prod + seed admins + smoke test (DNS still on Shopify)
+
+- ☐ **Seed `admin_users` with your production Clerk user ID** (BMC-77). Without it, **no one can reach `/admin`** (orders, refunds) in prod:
   ```bash
-  wrangler d1 export beauteas-db --env production --remote --output=backup-pre-migration.sql
+  wrangler d1 execute beauteas-db --env production --remote \
+    --command="INSERT INTO admin_users (clerk_user_id, role) VALUES ('<your_prod_clerk_id>', 'admin');"
   ```
-- ☐ Run the migration against **production**:
+- ☐ Deploy (Tail Worker from Phase 5 must already be live):
   ```bash
-  export D1_DATABASE_NAME=beauteas-db
-  export D1_ENV=production
-  export CLERK_SECRET_KEY=sk_live_...        # PROD Clerk instance
-  # (Shopify + R2 vars as in §4)
-  npx tsx scripts/shopify-migration/migrate-all.ts
+  npm run deploy:production
   ```
-- ☐ Review migration report; re-run any failed entity with `--entity=NAME` (ID map persists, so it resumes cleanly).
-- ☐ `--entity=validate` passes against production.
-- ☐ **Index AI search** on real catalog:
+- ☐ Add the custom domain in Cloudflare (Workers → beauteas → Settings → Domains) — but **keep DNS pointed at Shopify** for now; validate on the `*.workers.dev` URL.
+- ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, admin login, AI chat.
+  - **Note:** this deploy uses **live** Stripe keys, so test cards are rejected. Either do a real low-value checkout + immediate refund, or temporarily swap in Stripe **test** keys for this step only, then re-set live keys before Phase 10.
+
+---
+
+## Phase 8 — Promote the curated catalog + content from DEV → PROD
+
+Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy the **curated catalog/content** from dev. **Prereq: Phase 3 (migrations 0013–0018) applied**, so dev and prod schemas match exactly.
+
+> **Use `scripts/promote-dev-to-prod.mjs`.** It exports the whitelisted tables from dev (`--no-schema`), rewrites `INSERT` → `INSERT OR REPLACE`, loads them into prod, then delegates to `sync-images.mjs` to copy the R2 images (dev → prod) and prints the Vectorize rebuild curl. It is **dry-run by default** (reads only) and **preflights migration parity** — it aborts unless prod already has the 0013–0018 tables. Run the dry run first, then `--execute`:
+> ```bash
+> node scripts/promote-dev-to-prod.mjs            # dry run: preview row counts + copy/exclude sets
+> node scripts/promote-dev-to-prod.mjs --execute  # write catalog/content + images to prod
+> ```
+> The manual `wrangler d1 export --table … | d1 execute --file …` path below is the fallback if you need to copy tables individually.
+
+- ☐ **Put Shopify in read-only** (freeze new orders) — fallback if cutover aborts.
+- ☐ Back up the prod DB baseline:
+  ```bash
+  wrangler d1 export beauteas-db --env production --remote --output=backup-pre-promote.sql
+  ```
+- ☐ **Copy R2 image objects** dev → prod. Image refs in D1 are **relative keys** (`products/{slug}.{ext}`), so they map 1:1 — just copy the objects from `beauteas-images-dev` → `beauteas-images` (S3 API / rclone with your R2 token). Then confirm **`img.beauteas.com` is a custom domain on the prod `beauteas-images` bucket**.
+- ☐ **Copy the curated D1 tables** dev → prod — **catalog/content only**, table-scoped, `INSERT OR REPLACE` (prod already holds migration-seeded CMS/legal/gift-card-product rows, so a blind dump collides). Copy set:
+  ```
+  categories · product_types · products · product_variants · inventory · pricing · media
+  pages · page_versions · page_templates · redirect_map
+  product_reviews · review_media · blog_categories · blog_posts
+  subscription_plans · admin_settings
+  ```
+- ☐ **Do NOT copy** — credentials / admin / customer / transactional / dev-noise:
+  ```
+  admin_users · api_tokens · mcp_agents · mcp_sessions · mcp_usage · mcp_rate_limits
+  customers · addresses · orders · order_webhooks
+  customer_subscriptions · subscription_events · processed_webhook_events
+  chat_sessions · chat_messages · gift_cards · gift_card_transactions
+  review_reminders · email_unsubscribes
+  ```
+  …and **never** `d1_migrations` (prod tracks its own migration state).
+- ☐ **Rebuild Vectorize** from prod (the index is not copyable):
   ```bash
   curl -X POST "https://beauteas.com/api/admin/vectorize" \
     -H "Authorization: Bearer <ADMIN_VECTORIZE_TOKEN>"
-  # Expect ~30 products (+ knowledge articles) indexed
+  # Expect the real catalog (+ knowledge articles) indexed
   ```
-- ☐ Confirm `redirect_map` populated:
+- ☐ Spot-check on prod (workers.dev URL): products with prices/inventory/images, categories, CMS + legal pages, reviews on PDPs, and redirects populated:
   ```bash
-  wrangler d1 execute beauteas-db --env production --remote \
-    --command="SELECT COUNT(*) FROM redirect_map;"
+  wrangler d1 execute beauteas-db --env production --remote --command="SELECT COUNT(*) FROM redirect_map;"
   ```
 
 ---
 
-## 7. Cutover — DNS switch
+## Phase 9 — Final pre-switch verification + Apple Pay
 
-- ☐ Final pre-switch verification on production (workers.dev URL): products, images, orders visible in `/admin`, reviews on PDPs, one **live** subscription end-to-end (real card, small charge), confirm webhook → D1 → email fired.
-- ☐ Apple Pay: add `public/.well-known/apple-developer-merchantid-domain-association` and register `beauteas.com` in Stripe (wallets already configured in `PaymentForm.tsx`).
+Still on the workers.dev URL, before touching DNS:
+
+- ☐ Products, images, orders visible in `/admin`; reviews on PDPs.
+- ☐ **One live subscription end-to-end** (real card, small charge): confirm webhook → D1 → confirmation email fired, with a working "Manage Subscription" link and human-readable product names.
+- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` (does not exist yet) and register `beauteas.com` in the Stripe dashboard.
+
+---
+
+## Phase 10 — Cutover: the DNS switch (BMC-83)
+
+This is the point of no easy return — everything above must be green first.
+
 - ☐ Point **beauteas.com DNS** at the Worker custom domain.
-- ☐ Update **Clerk** allowed domains/redirect URLs to `beauteas.com`.
-- ☐ Verify Stripe live webhook is hitting `https://beauteas.com/...` (not the workers.dev host).
-- ☐ Submit `https://beauteas.com/sitemap.xml` to **Google Search Console**.
-- ☐ Send the **customer migration email** (password-reset link) to all migrated customers — *only after* DNS is live so reset links resolve.
+- ☐ Update **Clerk** allowed domains / redirect URLs to `beauteas.com`.
+- ☐ Verify the Stripe **live webhook** is hitting `https://beauteas.com/...` (not the workers.dev host).
+- ☐ Submit `https://beauteas.com/sitemap.xml` to **Google Search Console** (BMC-85).
+- ☐ *(No customer migration email — prod starts fresh; customers register on the new site. BMC-84 stays canceled.)*
 
 ---
 
-## 8. Post-cutover verification (first 60 min, then 24h)
+## Phase 11 — Post-cutover verification (first 60 min, then 24h)
 
-First hour:
-- ☐ `curl -I https://beauteas.com/products/<old-slug>` → **301** (legacy Shopify URLs).
+**First hour:**
+- ☐ `curl -I https://beauteas.com/products/<old-slug>` → **301**.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
-- ☐ Place one real order; confirm confirmation email (Resend) + order in `/admin`.
-- ☐ Create + immediately cancel a real subscription; confirm lifecycle emails have working "Manage Subscription" links → `/subscriptions` and human-readable product names.
-- ☐ Unauthenticated `curl` to `/api/orders` and `/api/orders/refund` → **401/403** (confirms §0.1 fix is live).
-- ☐ `wrangler tail --env production` clean of errors.
+- ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
+- ☐ Create + immediately cancel a real subscription; confirm lifecycle emails + working manage links.
+- ☐ **Auth check:** unauthenticated `curl` to `/api/orders` and `/api/orders/refund` → **401/403**.
+- ☐ `/api/tax` on a live checkout returns `"calculated_by": "stripe"` (not `"fallback"`) — confirms Phase 0 tax registration.
+- ☐ `wrangler tail --env production` clean of errors; a forced error produces an **alert email** (confirms the Tail Worker).
 
-First 24h:
-- ☐ Watch Stripe dashboard for payment/subscription success rate and webhook delivery (no failures).
-- ☐ Watch Search Console for crawl errors / redirect issues.
-- ☐ Confirm a sample of migrated customers can complete password reset + login.
-
----
-
-## 9. Rollback plan
-
-Trigger if: data validation fails badly, payments don't process, or auth/security regression found.
-
-- **Before DNS switch (steps 0–6):** trivial — Shopify is still authoritative and live. Fix forward on Worker, re-run migration (`wrangler d1 export` backup → wipe → re-run), no customer impact.
-- **After DNS switch (step 7+):** revert beauteas.com DNS back to Shopify (still in read-only mode = clean fallback). Lift Shopify read-only. Orders placed on Mercora during the brief live window must be reconciled manually. Keep Shopify as fallback for **at least 1–2 weeks** before decommissioning.
+**First 24h:**
+- ☐ Stripe dashboard: payment/subscription success rate + webhook delivery (no failures).
+- ☐ Search Console: no crawl / redirect errors.
+- ☐ A **new** customer can register + log in (prod Clerk), place an order, and see it in their account.
 
 ---
 
-## 10. Known gaps / explicitly deferred (NOT cutover blockers)
+## Rollback plan
 
-Per the migration plan these are post-launch; the store operates without them:
-- Blog system — **not built**
-- Klaviyo marketing integration — **not built** (transactional email via Resend works)
-- Gift cards — deferred (fast-follow within first month)
-- UX parity: search autocomplete, wishlist, social sharing, recently-viewed — not built
-- **No automated test framework** — all verification is manual; treat steps 4/6/8 as the safety net.
+- **Before the DNS switch (Phases 0–9):** trivial — Shopify is still authoritative. Fix forward, re-run the migration (`wrangler d1 export` backup → wipe → re-run). No customer impact.
+- **After the DNS switch (Phase 10+):** revert beauteas.com DNS back to Shopify (still in read-only = clean fallback), lift Shopify read-only. Manually reconcile any orders placed on Mercora during the brief live window. **Keep Shopify as fallback for 1–2 weeks** before decommissioning.
+
+---
+
+## Not blockers — post-launch backlog (the store runs fine without these)
+
+All Low/Medium, deliberately deferred: Chai mascot asset (BMC-89), gift-card-validate rate limit (BMC-124), pending-order TTL sweep (BMC-195), order-read path unification (BMC-191), storefront polish bundle (BMC-190), recommendations merchandising controls (BMC-166), review-reminder scale hardening (BMC-199), N+1 perf (BMC-185, descoped — catalog is <10 SKUs), Klaviyo marketing (BMC-71), UX parity: search autocomplete / wishlist / social share / recently-viewed (BMC-73).
 
 ---
 
@@ -240,12 +279,13 @@ Per the migration plan these are post-launch; the store operates without them:
 
 | Action | Command |
 |---|---|
-| Apply prod schema | `wrangler d1 migrations apply beauteas-db --env production --remote` |
+| Set a prod secret | `wrangler secret put <NAME> --env production` |
+| Apply prod migrations | `wrangler d1 migrations apply beauteas-db --env production --remote` |
+| Deploy Tail Worker (do first!) | `cd workers/observability-tail && wrangler deploy --env production` |
+| Deploy the app | `npm run deploy:production` |
 | Backup prod DB | `wrangler d1 export beauteas-db --env production --remote --output=backup.sql` |
-| Full migration | `D1_ENV=production D1_DATABASE_NAME=beauteas-db npx tsx scripts/shopify-migration/migrate-all.ts` |
-| Single entity | `… migrate-all.ts --entity=products` |
-| Validate | `… migrate-all.ts --entity=validate` |
-| Reindex AI | `curl -X POST "https://beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
-| Deploy prod | `npm run deploy:production` |
+| Export a dev table (data only) | `wrangler d1 export beauteas-db-dev --env dev --remote --table=<t> --no-schema --output=<t>.sql` |
+| Load a table into prod | `wrangler d1 execute beauteas-db --env production --remote --file=<t>.sql` |
+| Copy R2 objects dev→prod | S3 API / rclone: `beauteas-images-dev` → `beauteas-images` |
+| Rebuild Vectorize (prod) | `curl -X POST "https://beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
 | Live logs | `wrangler tail --env production` |
-| Set secret | `wrangler secret put <NAME> --env production` |
