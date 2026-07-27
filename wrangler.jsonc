@@ -115,6 +115,15 @@
     // === PRODUCTION ENVIRONMENT ===
     "production": {
       "name": "beauteas",
+      // Custom domains. `shop.` is the STAGING/validation host while Shopify
+      // still serves customers on www — adding a subdomain does not touch the
+      // www or apex records. At cutover (runbook Phase 10) add
+      // { "pattern": "www.beauteas.com", "custom_domain": true }, which TAKES
+      // OVER the www DNS record currently pointing at Shopify — that flip is
+      // the cutover itself.
+      "routes": [
+        { "pattern": "shop.beauteas.com", "custom_domain": true }
+      ],
       "ai": {
         "binding": "AI"
       },

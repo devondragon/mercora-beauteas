@@ -43,9 +43,9 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | # | Blocker | Status | Blocked by |
 |---|---|---|---|
 | ~~1~~ | ~~R2 API token~~ | ⊘ | **not needed** — `sync-images.mjs` uses wrangler, not the S3 API (verified 2026-07-27) |
-| 2 | **Deploy app to prod** (Phase 7) | ☐ | nothing — **ready now** |
-| 3 | **Promote catalog + images dev → prod** (Phase 8) | ☐ | #2 |
-| 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☐ | #3 |
+| 2 | **Deploy app to prod** (Phase 7) | ☑ | done 2026-07-27 — `shop.beauteas.com` live, version `e5e28fd7` |
+| 3 | **Promote catalog + images dev → prod** (Phase 8) | ◐ | done 2026-07-27 except the **Vectorize rebuild** (needs an admin credential — see Phase 8) |
+| 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☐ | **next** |
 | 5 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #4 |
 | 6 | **Post-cutover checks** (Phase 11) | ☐ | #5 |
 
