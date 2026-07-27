@@ -251,9 +251,23 @@ cd ../..
   wrangler secret put ALERT_EMAIL_TO --env dev
   cd ../..
   ```
-  - ☐ Production secrets set · ☐ Dev secrets set
-  - ☐ Confirm `ALERT_EMAIL_FROM` (`alerts@beauteas.com`, a config var) is on the **Resend-verified domain** — it will silently fail to send otherwise.
-  - ☐ Verified end-to-end by forcing an error and receiving the alert email (Phase 11 already has this check).
+  - ☑ **Production secrets set** (2026-07-27) — `RESEND_API_KEY` + `ALERT_EMAIL_TO` both present; a `Source: Secret Change` deployment (`e1ac525d-…`, 22:08:15Z) confirms it independently.
+  - ⛔ **DEV secrets NOT set** — `wrangler secret list --env dev` returns `[]`. The dev Tail Worker is deployed but cannot alert. Dev failures are silent until these are added.
+  - ☐ Confirm `ALERT_EMAIL_FROM` (`alerts@beauteas.com`, a config var) is on the **Resend-verified domain** — it fails silently otherwise.
+
+### Smoke test run 2026-07-27 — what was and wasn't proven
+
+A temporary producer Worker (`beauteas-tail-smoketest`) was deployed with `tail_consumers` → `beauteas-observability-tail`, used to fire both alert paths, then **deleted** (deletion verified: `code: 10007, Worker does not exist`).
+
+**Proven:**
+- The `tail_consumers` wiring resolves — wrangler confirmed *"Your Worker is sending Tail events to: beauteas-observability-tail"* at deploy.
+- Traces genuinely flow and carry the alert payloads. Producer tail captured:
+  `GET /critical - Ok` → `(log) [critical] {"area":"webhook","event":"smoketest_critical"}` — i.e. a real `CRITICAL_MARKER` line reached the trace pipeline.
+- Triggered: **2 uncaught exceptions** + **1 `[critical]` log line**.
+
+**NOT proven — needs an inbox check:** that Resend actually delivered. `sendAlertEmail` (`src/index.ts:179-202`) **logs nothing on success** — it only logs on a thrown request or a non-OK HTTP status. Tailing a tail-consumer Worker produced no output, so silence there is ambiguous rather than positive evidence.
+
+- ☐ **Confirm the alert emails arrived** at `ALERT_EMAIL_TO`. Expect subjects like `🚨 [BeauTeas production] Error: TAIL-SMOKETEST: intentional uncaught exception`. If nothing arrived, the most likely cause is `ALERT_EMAIL_FROM` (`alerts@beauteas.com`) not being on the Resend-verified domain.
 
 - ☑ **(Optional) Recommendations rebuild cron — correctly SKIPPED.** Verified against prod: `recommendations.strategy` is `"deterministic"`, which needs no cron. Only required if switched to `ai_batch`.
   > Fixed 2026-07-27 while checking: `REBUILD_URL` pointed at the **apex** (`https://beauteas.com/...`). After cutover the apex only 301s to www, and this is a **POST** — redirect handling can drop the method/body, so the rebuild would have silently failed. Now `https://www.beauteas.com/api/admin/recommendations/rebuild`. If deploying against staging first, override to `shop.beauteas.com`.
