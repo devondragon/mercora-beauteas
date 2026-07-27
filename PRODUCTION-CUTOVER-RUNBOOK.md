@@ -24,7 +24,7 @@
 
 **⚠️ The one thing still untested: the email code paths themselves.** Configuration is done and the Tail Worker proves Resend delivers — but *no order confirmation, gift card, subscription, or review email has ever been rendered and sent by this app*. Those are server-rendered templates that fail on undefined fields and broken image URLs. See the Phase 9 email smoke test.
 
-**Next up:** Phase 4 (Stripe live config — coupon, prices, webhook endpoint on `2026-06-24.dahlia`) and Phase 7 (deploy the app). Phase 8 is blocked on the **R2 API token** from Phase 0.
+**Next up:** Phase 4 (Stripe live config — coupon, prices, webhook endpoint on `2026-06-24.dahlia`) and Phase 7 (deploy the app). Phase 8's R2 prerequisite turned out not to exist — nothing is blocked on you.
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -42,9 +42,9 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 
 | # | Blocker | Status | Blocked by |
 |---|---|---|---|
-| 1 | **R2 API token** (Phase 0) | ☐ | you — needed to copy images dev → prod |
-| 2 | **Deploy app to prod** (Phase 7) | ☐ | nothing — ready now |
-| 3 | **Promote catalog + images dev → prod** (Phase 8) | ☐ | #1, #2 |
+| ~~1~~ | ~~R2 API token~~ | ⊘ | **not needed** — `sync-images.mjs` uses wrangler, not the S3 API (verified 2026-07-27) |
+| 2 | **Deploy app to prod** (Phase 7) | ☐ | nothing — **ready now** |
+| 3 | **Promote catalog + images dev → prod** (Phase 8) | ☐ | #2 |
 | 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☐ | #3 |
 | 5 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #4 |
 | 6 | **Post-cutover checks** (Phase 11) | ☐ | #5 |
@@ -67,7 +67,7 @@ You can't do anything else until these exist. None of it is code — it's accoun
 - ☑ **Clerk production instance** (separate from the `pk_test…` dev instance). Get `pk_live_…` + `sk_live_…`. *(Done 2026-07-27.)*
 - ☑ **Stripe** business verification complete, **Live mode** available. *(Done 2026-07-27.)*
 - ☑ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). *(Done 2026-07-27 — still verify at first live checkout that `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)* **This is a hard gate, not just "enable Stripe Tax."** `/api/tax` uses nexus-aware Stripe Tax but **falls back to a flat 7% rate** whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is missing. If your live nexus isn't registered, **every order mischarges tax.** Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered. (Confirmed working later when a live checkout's `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)
-- ☐ **R2 API token** (Account ID + Access Key ID + Secret) — used to copy image objects from the **dev** bucket to the **prod** bucket (Phase 8).
+- ⊘ **NOT NEEDED — verified 2026-07-27.** The runbook previously claimed an R2 API token (Access Key ID + Secret) was required for the dev→prod image copy via "S3 API / rclone". It isn't: `scripts/sync-images.mjs` shells out to `wrangler r2 object put/get` (`:86`, `:130`), so it inherits the existing `CLOUDFLARE_API_TOKEN`. Confirmed by writing a test object to the prod `beauteas-images` bucket and deleting it — both succeeded.
 - ☐ *(Shopify Admin API + Judge.me creds were used for the already-completed dev ETL and are **not** needed again — prod is populated by copying the curated dev catalog, not a fresh Shopify pull. Only revisit if you later decide to migrate order/customer history.)*
 - ☐ Decide **subscription economics**: frequencies (e.g. every 2 weeks / monthly / every 2 months) + discount % (e.g. 10%).
 - ☐ Decide the **maintenance/migration window** (low-traffic, e.g. overnight). Budget 2–4h.
@@ -386,7 +386,7 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
   ```bash
   wrangler d1 export beauteas-db --env production --remote --output=backup-pre-promote.sql
   ```
-- ☐ **Copy R2 image objects** dev → prod. Image refs in D1 are **relative keys** (`products/{slug}.{ext}`), so they map 1:1 — just copy the objects from `beauteas-images-dev` → `beauteas-images` (S3 API / rclone with your R2 token). Then confirm **`img.beauteas.com` is a custom domain on the prod `beauteas-images` bucket**.
+- ☐ **Copy R2 image objects** dev → prod. Image refs in D1 are **relative keys** (`products/{slug}.{ext}`), so they map 1:1. `scripts/promote-dev-to-prod.mjs` handles this by delegating to `sync-images.mjs pull --env dev` then `push --env production` — **no R2 API token needed**, it uses wrangler and your existing `CLOUDFLARE_API_TOKEN` (verified 2026-07-27). Then confirm **`img.beauteas.com` is a custom domain on the prod `beauteas-images` bucket**.
 - ☐ **Copy the curated D1 tables** dev → prod — **catalog/content only**, table-scoped, `INSERT OR REPLACE` (prod already holds migration-seeded CMS/legal/gift-card-product rows, so a blind dump collides). Copy set:
   ```
   categories · product_types · products · product_variants · inventory · pricing · media
