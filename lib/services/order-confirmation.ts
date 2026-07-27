@@ -21,6 +21,7 @@ import type { Order } from '@/lib/types/order';
 import { Money } from '@/lib/money';
 import { buildOrderEmailTotals } from '@/lib/utils/order-email-totals';
 import { sendOrderConfirmationEmail, type OrderData } from '@/lib/utils/email';
+import { logCritical } from '@/lib/utils/observe';
 
 /** Coerce a possibly-i18n address city field to a plain display string. */
 function coerceCity(city: unknown): string {
@@ -114,9 +115,20 @@ export async function sendOrderConfirmationForOrder(
     if (emailResult.success) {
       console.log(`[order-confirmation] Sent for ${order.id}:`, emailResult.id);
     } else {
+      // The customer PAID and got no confirmation. Nothing retries this, and the
+      // failure is swallowed so it can't break order finalization — which means a
+      // plain console.error would leave a broken Resend config (bad key,
+      // unverified domain, suspended account) silently eating every confirmation
+      // with nobody paged. Route it to the money-path alerting instead (BMC-168).
       console.error(`[order-confirmation] Failed for ${order.id}:`, emailResult.error);
+      logCritical(
+        'email',
+        'order_confirmation_send_failed',
+        { orderId: order.id, reason: emailResult.error },
+      );
     }
   } catch (emailError) {
     console.error(`[order-confirmation] Preparation failed for ${order?.id}:`, emailError);
+    logCritical('email', 'order_confirmation_prep_failed', { orderId: order?.id }, emailError);
   }
 }

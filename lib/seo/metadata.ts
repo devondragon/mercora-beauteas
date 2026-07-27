@@ -15,8 +15,21 @@
  * - resolveImageUrl: Resolves a MACHMedia-shaped object to an absolute image URL
  */
 
-/** Production site base URL for canonical and Open Graph absolute URLs */
-export const BASE_URL = "https://beauteas.com";
+/**
+ * Site base URL for canonical tags, Open Graph absolute URLs, the sitemap,
+ * JSON-LD, and email links.
+ *
+ * Driven by `NEXT_PUBLIC_SITE_URL` (set per environment in `wrangler.jsonc`
+ * `vars`, injected at build time by `scripts/build-with-env.mjs`) so the
+ * staging host at `shop.beauteas.com` emits its own canonicals instead of
+ * pointing search engines and customer emails at the production site.
+ *
+ * The fallback is the FINAL canonical host: **www**.beauteas.com. Shopify
+ * serves `www` today with apex → www, and www keeps the accumulated link
+ * equity at cutover, so www — not the apex — is the permanent home.
+ * (Decided 2026-07-27.)
+ */
+export const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.beauteas.com";
 
 /** Brand name used for og:site_name and title template suffix */
 export const SITE_NAME = "BeauTeas";

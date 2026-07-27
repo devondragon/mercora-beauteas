@@ -18,11 +18,19 @@
 
 **Progress as of 2026-07-27:** Phases 0, 1, and 2 are essentially complete — Cloudflare paid plan, Clerk production instance, Stripe live + tax registrations, live publishable keys in `wrangler.jsonc`, and **all 6 production secrets set and verified**. Two things surfaced during that work that must be resolved before Phase 7:
 
-> ⛔ **BLOCKER — see Phase 1.** `NEXT_PUBLIC_*` keys in `wrangler.jsonc` do **not** reach the browser bundle. A production deploy today would ship **test** Stripe keys to the client while the server uses live keys. Checkout would be broken on day one.
+> ☑ **RESOLVED — `NEXT_PUBLIC_*` build-time blocker.** Fixed 2026-07-27 via `scripts/build-with-env.mjs`; verified end-to-end with a real production build. See Phase 1.
 >
-> ⚠️ **Resend was never configured** for this domain — see Phase 2. No email has ever sent from this app in any environment; the whole email surface is unexercised.
+> ⚠️ **Resend was never configured** for this domain — see Phase 2. The domain is now verified in Resend, but no email has ever *sent* from this app in any environment, so the whole email surface is unexercised. See the Phase 9 email smoke test.
 
-**⏳ OPEN DECISION — final hostname (blocks Phases 4, 7, 9, 10).** This runbook still assumes a straight flip of the apex `beauteas.com` to the Worker, with **no `www` story** — but Shopify serves `www.beauteas.com` today with apex → www, and `lib/seo/metadata.ts:19` hardcodes `BASE_URL = "https://beauteas.com"` (matching neither). The proposal under discussion is to stand the new site up at `shop.beauteas.com` alongside Shopify, then flip. **Decide before configuring anything else domain-bound**, because it determines the Stripe webhook URL, the Clerk primary domain, the Apple Pay registrations, and whether `BASE_URL` needs to become env-driven. Recommendation on the table: keep **www** as the permanent canonical, use `shop.` (behind Cloudflare Access) as a temporary staging host only. Phase 10 needs rewriting once this is settled.
+**☑ DECIDED 2026-07-27 — hostnames.**
+
+| Host | Role |
+|---|---|
+| `shop.beauteas.com` | **Staging/validation.** Custom domain on the **production** Worker (prod D1/R2/Vectorize, live keys), gated behind Cloudflare Access. Shopify keeps serving customers on `www` throughout. |
+| `www.beauteas.com` | **Permanent production canonical.** What `BASE_URL` resolves to after cutover; keeps the link equity Shopify accumulated. |
+| `beauteas.com` (apex) | 301 → `www`, via a Cloudflare Redirect Rule (today this redirect is a Shopify feature and goes inert when DNS leaves). |
+
+`BASE_URL` is now env-driven off `NEXT_PUBLIC_SITE_URL` (`lib/seo/metadata.ts`), set per environment in `wrangler.jsonc` and injected at build time. It is currently `https://shop.beauteas.com` so staging emits its own canonicals rather than pointing crawlers and customer emails at the Shopify store. **Flipping it to `https://www.beauteas.com` is a Phase 10 step and requires a rebuild + redeploy** — it is baked into the bundle, so editing the config alone does nothing.
 
 **Do it in order.** Each phase depends on the ones before it. Check the box, move on.
 
@@ -73,18 +81,33 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_51ToUo…
 
 So a production deploy today ships a bundle with **test** publishable keys while the server holds **live** secret keys. The failure mode: the server creates a live PaymentIntent, the browser confirms it with a test-mode key, Stripe rejects on key/mode mismatch — **checkout is broken, and no amount of correct `wrangler.jsonc` config fixes it.**
 
-- ☐ **Fix before deploying.** Ensure the live values are present in the **build** environment, e.g. export them inline in the `deploy:production` script rather than relying on `wrangler.jsonc` vars. Adding a `.env.production` file is **not** sufficient on its own — `.env.local` outranks it.
-- ☐ **Verify after building, before deploying:** grep the built client bundle for a test key and confirm zero hits:
-  ```bash
-  grep -ro "pk_test_[A-Za-z0-9]*" .open-next/assets | head
-  # must return NOTHING. If it returns anything, the build picked up .env.local.
-  ```
-- ☑ **Clerk is confirmed affected too**, not just Stripe. Verified 2026-07-27 against the existing build — both keys are inlined into client chunks, and there is no `pk_live` anywhere in `.open-next/assets`:
+- ☑ **Clerk was affected too**, not just Stripe. Verified against the pre-fix build — both keys were inlined into client chunks, with no `pk_live` anywhere:
   ```
   common-c3373795-*.js  : pk_test_51ToUo   ← Stripe
   vendors-d43c352d-*.js : pk_test_YnVzeS   ← Clerk
   ```
-  So `@clerk/nextjs` does **not** pick up the runtime var — it inlines at build time like any other `NEXT_PUBLIC_*`. Both keys need the build-env fix.
+  `@clerk/nextjs` does **not** read the runtime var — it inlines at build time like any other `NEXT_PUBLIC_*`.
+
+### ☑ FIXED 2026-07-27 — `scripts/build-with-env.mjs`
+
+`deploy:dev` and `deploy:production` now route the build through `scripts/build-with-env.mjs <env>`, which:
+
+1. Parses `wrangler.jsonc` (comment-aware, no new dependency) and reads `env.<target>.vars`.
+2. Spawns the build with the `NEXT_PUBLIC_*` values already in `process.env`. This works because `@next/env` snapshots `process.env` *before* loading any `.env` file and **only assigns keys not already present** — so parent-process env beats `.env.local`. `wrangler.jsonc` is now the single source of truth for both build and runtime, with no second copy to drift.
+3. **Fails the build** if a wrong-mode key was inlined (`pk_test_` in a production bundle, or `pk_live_` in a dev one), so this class of bug cannot reach a deploy.
+
+> The guard matches the prefix **plus ≥16 chars of key material**. A bare-prefix search false-positives: both the Clerk and Stripe SDKs ship constants like `let i="pk_live_"` for mode detection, which flags every bundle containing those SDKs.
+
+**Verified end-to-end** with a real `opennextjs-cloudflare build`:
+
+```
+[build-with-env] Building for "production" with:
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY  = pk_live_Y2xlcmsuYmVhdXRl…
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = pk_live_51ToUnwFqgbQQDjY…
+[build-with-env] ✓ Bundle check passed — no "pk_test_" key in the production build.
+```
+
+Both live keys now land in the exact chunks that previously held test keys; zero test keys remain. Nothing further is needed here — just use `npm run deploy:production` as normal.
 - ☐ After deploying, confirm in the browser that the page loads `clerk.beauteas.com` (production FAPI), **not** `*.clerk.accounts.dev`.
 
 ---
@@ -160,7 +183,13 @@ In **Stripe Live mode**:
 
   > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
 
-- ☐ ⚠️ **Set the endpoint's API version to `2025-08-27.basil`** — matching `lib/stripe.ts:75`. `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription`, which only exists in that shape. On an older version the field is `undefined`, `getSubscriptionIdFromInvoice()` returns `null`, and **every subscription invoice is silently skipped as a "non-subscription invoice"** — renewals just quietly stop creating orders, with only a benign-looking log line.
+- ☐ ⚠️ **Set the endpoint's API version to `2025-08-27.basil`** — matching `lib/stripe.ts:75`/`:117`. **Do not set it to the newest available version.**
+
+  `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription` — a Basil-era shape. If the endpoint renders events under a *different* version and that path moved again, `getSubscriptionIdFromInvoice()` returns `null` and **every subscription invoice is silently skipped as a "non-subscription invoice"**: renewals quietly stop creating orders, with only a benign-looking log line and no error.
+
+  Stripe's own guidance is to match the endpoint version to the version your SDK is pinned to — *"it's recommended to match your webhook endpoint API version to the version pinned by your SDK"*, and *"for successful deserialization of event objects, the API version set for webhook endpoints should match the version used to generate the SDK."*
+
+  > **`2026-06-24.dahlia` was proposed on 2026-07-27 as "the current version."** It is newer than the pinned SDK version, so adopting it is an **API upgrade, not a config choice** — Stripe's upgrade path is: bump the SDK → update `apiVersion` in `lib/stripe.ts` (both call sites) → re-verify every event field path the handlers read (especially the `invoice.parent.*` chain) → test against the new version → then move the endpoint, with a 72-hour rollback window. Worth doing, but as a deliberate post-launch task with test coverage — not as part of the cutover, where a silent renewal failure would be very expensive to notice.
 
 - ☑ Live signing secret set (2026-07-27). Take it from the **live-mode** endpoint — test and live `whsec_…` look identical and the failure mode is a 400 on every delivery:
   ```bash
@@ -287,7 +316,7 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
   …and **never** `d1_migrations` (prod tracks its own migration state).
 - ☐ **Rebuild Vectorize** from prod (the index is not copyable):
   ```bash
-  curl -X POST "https://beauteas.com/api/admin/vectorize" \
+  curl -X POST "https://shop.beauteas.com/api/admin/vectorize" \
     -H "Authorization: Bearer <ADMIN_VECTORIZE_TOKEN>"
   # Expect the real catalog (+ knowledge articles) indexed
   ```
@@ -298,24 +327,46 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
 
 ---
 
-## Phase 9 — Final pre-switch verification + Apple Pay
+## Phase 9 — Final pre-switch verification on `shop.beauteas.com`
 
-Still on the workers.dev URL, before touching DNS:
+Shopify is still serving customers on `www` throughout this phase.
 
+- ☐ Add `shop.beauteas.com` as a **Custom Domain** on the production Worker, and put **Cloudflare Access** in front of it. Access (not just `noindex`) is the right gate: it prevents duplicate-content indexing of the real catalog, and prevents a stray real order or a real customer receiving a test email from the staging host.
 - ☐ Products, images, orders visible in `/admin`; reviews on PDPs.
-- ☐ **One live subscription end-to-end** (real card, small charge): confirm webhook → D1 → confirmation email fired, with a working "Manage Subscription" link and human-readable product names.
-- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` (does not exist yet) and register `beauteas.com` in the Stripe dashboard.
+- ☐ **Auth is on the production Clerk instance** — confirm the page loads `clerk.beauteas.com` (prod FAPI), **not** `*.clerk.accounts.dev`. *(The live key `pk_live_Y2xlcmsu…` base64-decodes to `clerk.beauteas.com$`, matching the CSP entry at `lib/security-headers.ts:31`.)*
+- ☐ **One live subscription end-to-end** (real card, small charge): webhook → D1 → confirmation email, with a working "Manage Subscription" link and human-readable product names.
+
+### ☐ Email smoke test — nothing here has ever run
+
+Resend has never successfully sent from this app, so all four paths are unexercised. Trigger each against a real inbox and check rendering, not just delivery — these are server-rendered templates that fail on undefined fields and broken image URLs:
+
+| Path | How to trigger |
+|---|---|
+| Order confirmation (`lib/utils/email.ts:96`) | Place a real order on `shop.` |
+| Gift card delivery (`:491`) | Buy a gift-card variant |
+| Subscription lifecycle (`:632`) | The live subscription test above (create → cancel) |
+| Review notifications (`lib/utils/review-notifications.ts`) | Submit a review; for the reminder, insert a `review_reminders` row with a past due date |
+
+Check on each: images actually load (they resolve against `img.beauteas.com`, not a relative path), totals match the order, and **every link points at `shop.beauteas.com`** — not the apex and not the Shopify site. Also click the unsubscribe link end-to-end; it is signed with `EMAIL_UNSUBSCRIBE_SECRET` and without it the review-reminder sender skips silently.
+
+> ⚠️ The `from:` address is hardcoded to `hello@beauteas.com` in 6 places (`lib/utils/email.ts` ×4, `review-notifications.ts` ×2). **Staging sends real, live-branded email.** Use your own addresses for every test, and never point a staging test at a real customer record.
+
+- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` (does not exist yet). Register **both** `shop.beauteas.com` (to test now) and `www.beauteas.com` (for cutover) in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice.
 
 ---
 
-## Phase 10 — Cutover: the DNS switch (BMC-83)
+## Phase 10 — Cutover: shop → www (BMC-83)
 
 This is the point of no easy return — everything above must be green first.
 
-- ☐ Point **beauteas.com DNS** at the Worker custom domain.
-- ☐ Update **Clerk** allowed domains / redirect URLs to `beauteas.com`.
-- ☐ Verify the Stripe **live webhook** is hitting `https://beauteas.com/...` (not the workers.dev host).
-- ☐ Submit `https://beauteas.com/sitemap.xml` to **Google Search Console** (BMC-85).
+- ☐ **Rebuild + redeploy with the final canonical.** Set `NEXT_PUBLIC_SITE_URL` to `https://www.beauteas.com` in `wrangler.jsonc` (production `vars`), then `npm run deploy:production`. **This must be a rebuild** — the value is inlined into the bundle at build time, so editing the config without redeploying changes nothing. Skipping this leaves every canonical tag, sitemap URL, JSON-LD node and email link pointing at `shop.`
+- ☐ Add **`www.beauteas.com`** as a Custom Domain on the production Worker. This takes over the DNS record currently pointing at Shopify — that *is* the cutover.
+- ☐ Add a Cloudflare **Redirect Rule** for apex → `www` (301). Today this redirect is a Shopify feature and goes inert the moment DNS leaves; without the rule, `beauteas.com` stops resolving to the store.
+- ☐ Keep records **proxied** (orange cloud) so rollback is seconds, not a TTL wait. *(Exception: the Clerk `clerk.`/`accounts.` CNAMEs must stay **DNS-only** / grey cloud — Clerk's validation fails behind the CF proxy.)*
+- ☐ **Edit the existing Stripe webhook endpoint's URL** to `https://www.beauteas.com/api/webhooks/stripe`. Edit it — do not create a second endpoint — so the signing secret carries over and `STRIPE_WEBHOOK_SECRET` needs no change.
+- ☐ Update **Clerk** allowed domains / redirect URLs for `www.beauteas.com`.
+- ☐ Remove the Cloudflare Access gate from `shop.`, and 301 `shop.` → `www` (or retire it).
+- ☐ Submit `https://www.beauteas.com/sitemap.xml` to **Google Search Console** (BMC-85). No Change of Address needed — `www` was already the canonical under Shopify, which is the whole reason for choosing it.
 - ☐ *(No customer migration email — prod starts fresh; customers register on the new site. BMC-84 stays canceled.)*
 
 ---
@@ -323,7 +374,7 @@ This is the point of no easy return — everything above must be green first.
 ## Phase 11 — Post-cutover verification (first 60 min, then 24h)
 
 **First hour:**
-- ☐ `curl -I https://beauteas.com/products/<old-slug>` → **301**.
+- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
 - ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
 - ☐ Create + immediately cancel a real subscription; confirm lifecycle emails + working manage links.
@@ -363,5 +414,5 @@ All Low/Medium, deliberately deferred: Chai mascot asset (BMC-89), gift-card-val
 | Export a dev table (data only) | `wrangler d1 export beauteas-db-dev --env dev --remote --table=<t> --no-schema --output=<t>.sql` |
 | Load a table into prod | `wrangler d1 execute beauteas-db --env production --remote --file=<t>.sql` |
 | Copy R2 objects dev→prod | S3 API / rclone: `beauteas-images-dev` → `beauteas-images` |
-| Rebuild Vectorize (prod) | `curl -X POST "https://beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
+| Rebuild Vectorize (prod) | `curl -X POST "https://shop.beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
 | Live logs | `wrangler tail --env production` |

@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { BASE_URL } from '@/lib/seo/metadata';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
 import { Money } from '@/lib/money';
@@ -531,7 +532,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
   const amountDisplay = Money.fromMinor(data.amount, data.currency || 'USD').format();
   // Only allow an absolute https URL; otherwise fall back to the brand origin.
   const redeemUrl =
-    data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : 'https://beauteas.com';
+    data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : BASE_URL;
 
   return `
     <!DOCTYPE html>

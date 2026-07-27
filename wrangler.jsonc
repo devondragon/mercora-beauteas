@@ -105,7 +105,10 @@
       ],
       "vars": {
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YnVzeS1zaHJpbXAtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj"
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj",
+        // Canonical host for this environment — drives canonical tags, OG URLs,
+        // sitemap, JSON-LD and email links (lib/seo/metadata.ts).
+        "NEXT_PUBLIC_SITE_URL": "https://beauteas-dev.workers.dev"
       }
     },
 
@@ -167,9 +170,18 @@
         }
       ],
       "vars": {
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY",
-        "NEXT_PUBLIC_IMAGE_CDN": "https://img.beauteas.com"
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuYmVhdXRlYXMuY29tJA",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51ToUnwFqgbQQDjYVOBmnslSy2KuWoO7QzGrK2YqzcIkMRzwRFArKZKdKmiYzHwVhlP8AH4BSe4wxEBrFu3wUoP4A00pcTyYHLm",
+        "NEXT_PUBLIC_IMAGE_CDN": "https://img.beauteas.com",
+        // ⚠️ CUTOVER ACTION (runbook Phase 10): change to "https://www.beauteas.com"
+        // and REBUILD + REDEPLOY. This is baked into the client bundle at build
+        // time, so editing it without a rebuild has no effect.
+        //
+        // Currently set to the staging host so that while the production Worker
+        // is validated on shop.beauteas.com (Shopify still live on www), its
+        // canonicals, sitemap, JSON-LD and email links point at shop — not at
+        // the Shopify store.
+        "NEXT_PUBLIC_SITE_URL": "https://shop.beauteas.com"
       }
     }
   }

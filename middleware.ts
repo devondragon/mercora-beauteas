@@ -73,10 +73,18 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     return NextResponse.next();
   }
   
-  // Skip maintenance check for admin routes and MCP API - always accessible
-  if (pathname.startsWith('/admin') || 
-      pathname.startsWith('/api/admin') || 
-      pathname.startsWith('/api/mcp')) {
+  // Skip maintenance check for admin routes, MCP API, and inbound webhooks —
+  // always accessible.
+  //
+  // /api/webhooks MUST be exempt: maintenance mode would otherwise return a 503
+  // HTML page to Stripe. Stripe treats that as a delivery failure and retries
+  // with backoff, so payment/subscription events would pile up undelivered
+  // during exactly the window (a migration or cutover) when maintenance mode is
+  // most likely to be on.
+  if (pathname.startsWith('/admin') ||
+      pathname.startsWith('/api/admin') ||
+      pathname.startsWith('/api/mcp') ||
+      pathname.startsWith('/api/webhooks')) {
     return NextResponse.next();
   }
   
