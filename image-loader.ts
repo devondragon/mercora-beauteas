@@ -48,6 +48,19 @@ import type { ImageLoaderProps } from "next/image";
 //   dev  → unset → images are served same-origin via the /media R2 route
 const IMAGE_CDN = process.env.NEXT_PUBLIC_IMAGE_CDN;
 
+// Whether to route images through Cloudflare Image Transformations
+// (`/cdn-cgi/image/...`). This REQUIRES Transformations to be enabled for the
+// zone — when it is off, every transform URL 404s and the entire storefront
+// renders with broken images. That is exactly what happened on 2026-07-27:
+// prod sets NEXT_PUBLIC_IMAGE_CDN and so used transforms, while dev leaves it
+// unset and falls back to the /media route, so the fault never appeared in dev.
+//
+// Fallback path: set NEXT_PUBLIC_IMAGE_TRANSFORMS="false" and redeploy. Images
+// are then served as raw objects straight from the CDN host — larger (no
+// resizing; ~917KB vs ~108KB for a typical product shot) but never broken.
+// Kept as an explicit switch so recovery is a config change, not a code change.
+const IMAGE_TRANSFORMS_ENABLED = process.env.NEXT_PUBLIC_IMAGE_TRANSFORMS !== "false";
+
 // The prod CDN host, recognized even when hardcoded into a stored src so we can
 // re-route it to the active host (e.g. the /media route in dev).
 const LEGACY_CDN = "https://img.beauteas.com";
@@ -100,6 +113,10 @@ export default function cloudflareLoader({
   if (key === null) return src;
 
   if (IMAGE_CDN) {
+    // Fallback: raw object straight off the CDN host. No resizing, but it does
+    // not depend on Transformations being enabled for the zone.
+    if (!IMAGE_TRANSFORMS_ENABLED) return `${IMAGE_CDN}/${key}`;
+
     // Production: Cloudflare Images transformation on the CDN domain
     const params = [`width=${width}`, "format=auto"];
     if (quality) params.push(`quality=${quality}`);
