@@ -18,7 +18,13 @@
   },
   "vars": {
     // Set REBUILD_URL per environment at deploy time.
-    "REBUILD_URL": "https://beauteas.com/api/admin/recommendations/rebuild"
+    //
+    // MUST be the canonical host (www), NOT the apex. After cutover the apex
+    // only 301s to www, and this is a POST — redirect handling can drop the
+    // method/body, so pointing at the apex would silently fail the rebuild.
+    // Before cutover, override to https://shop.beauteas.com/... if deploying
+    // against the staging host.
+    "REBUILD_URL": "https://www.beauteas.com/api/admin/recommendations/rebuild"
   }
   // ADMIN_TOKEN is a secret: `wrangler secret put ADMIN_TOKEN` in this dir.
 }

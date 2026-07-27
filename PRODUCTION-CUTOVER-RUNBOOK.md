@@ -222,7 +222,7 @@ In **Stripe Live mode**:
 
 ---
 
-## Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202)
+## ◐ Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202) *(deployed 2026-07-27; secrets pending)*
 
 **Critical ordering.** The production Worker config lists `tail_consumers: [{ service: "beauteas-observability-tail" }]`. That binding is **load-bearing**: if the Tail Worker doesn't exist yet, **`npm run deploy:production` in Phase 7 will FAIL**. Deploy it first, and set its two secrets.
 
@@ -234,8 +234,29 @@ wrangler deploy --env production
 cd ../..
 ```
 
-- ☐ Tail Worker deployed and both secrets set. (`ALERT_EMAIL_FROM` / `ENVIRONMENT` are already vars in its config — must be a Resend-verified from-domain.)
-- ☐ **(Optional) Recommendations rebuild cron** — only if you set `recommendations.strategy` to `ai_batch` (the default `deterministic` needs no cron). Confirm `REBUILD_URL` in `workers/recommendations-cron/wrangler.jsonc` points at `https://beauteas.com/api/admin/recommendations/rebuild`, then:
+- ☑ **Tail Worker DEPLOYED 2026-07-27 — both environments.** Neither existed before; Phase 7 would have failed.
+  | Worker | Version ID |
+  |---|---|
+  | `beauteas-observability-tail` (production) | `1a6c4ab7-da1a-48de-b454-f56be3fc9711` |
+  | `beauteas-observability-tail-dev` | `2499f103-6f43-4b1d-9bf0-4d692d201930` |
+
+  Dev was deployed too because the **dev app Worker carries the same `tail_consumers` binding** — `npm run deploy:dev` would have hit the identical failure. Deploying without secrets is safe: `sendAlertEmail` (`src/index.ts:161-169`) checks for them and logs-and-returns rather than throwing, so it can never break the producing Worker.
+
+- ⛔ **NOT YET ALERTING — two secrets still required.** The Worker is deployed and consuming traces, but with no secrets it silently drops every alert. **This is worse than not deployed, because it looks covered.** Both values are ones only you can supply (`RESEND_API_KEY` is write-only in Cloudflare, so it cannot be copied from the app Worker):
+  ```bash
+  cd workers/observability-tail
+  wrangler secret put RESEND_API_KEY --env production   # same key as the app's
+  wrangler secret put ALERT_EMAIL_TO --env production   # comma-separated recipients
+  wrangler secret put RESEND_API_KEY --env dev
+  wrangler secret put ALERT_EMAIL_TO --env dev
+  cd ../..
+  ```
+  - ☐ Production secrets set · ☐ Dev secrets set
+  - ☐ Confirm `ALERT_EMAIL_FROM` (`alerts@beauteas.com`, a config var) is on the **Resend-verified domain** — it will silently fail to send otherwise.
+  - ☐ Verified end-to-end by forcing an error and receiving the alert email (Phase 11 already has this check).
+
+- ☑ **(Optional) Recommendations rebuild cron — correctly SKIPPED.** Verified against prod: `recommendations.strategy` is `"deterministic"`, which needs no cron. Only required if switched to `ai_batch`.
+  > Fixed 2026-07-27 while checking: `REBUILD_URL` pointed at the **apex** (`https://beauteas.com/...`). After cutover the apex only 301s to www, and this is a **POST** — redirect handling can drop the method/body, so the rebuild would have silently failed. Now `https://www.beauteas.com/api/admin/recommendations/rebuild`. If deploying against staging first, override to `shop.beauteas.com`.
   ```bash
   cd workers/recommendations-cron
   wrangler secret put ADMIN_TOKEN    # same value as the app's ADMIN_VECTORIZE_TOKEN
