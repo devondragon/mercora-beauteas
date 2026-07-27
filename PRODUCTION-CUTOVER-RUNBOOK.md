@@ -12,7 +12,7 @@
 
 **Everything below is operational** — standing up live services, flipping to live keys, **promoting the curated catalog from dev to prod**, and switching DNS. None of it has been exercised end-to-end against live Stripe/Clerk yet, so the manual verification steps (Phases 9 and 11) are the safety net.
 
-**What's already provisioned** (don't redo): prod D1 (`beauteas-db`, id `5dbae836-…`), R2 (`beauteas-images`), and Vectorize (`beauteas-index`) all exist. Migrations **0001–0012 are applied to prod**. `app/robots.ts` exists. Wallets are wired in `PaymentForm.tsx`.
+**What's already provisioned** (don't redo): prod D1 (`beauteas-db`, id `5dbae836-…`), R2 (`beauteas-images`), and Vectorize (`beauteas-index`) all exist. Migrations **0001–0018 are ALL applied to prod** (0013–0018 applied 2026-07-27; `migrations list` reports none pending). `app/robots.ts` exists. Wallets are wired in `PaymentForm.tsx`.
 
 **Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
 
@@ -149,20 +149,33 @@ Note: email failure is fully swallowed and never throws, so it cannot block `fin
 
 ---
 
-## Phase 3 — Apply the remaining prod migrations
+## ☑ Phase 3 — Apply the remaining prod migrations *(COMPLETE 2026-07-27)*
 
-Prod is at migration **0012**. Migrations **0013–0018** are new and pending (recommendations, policy/legal pages, subscription shipping address, email-unsubscribe suppression list). One command applies all pending:
+Migrations **0013–0018** applied to `beauteas-db`. `wrangler d1 migrations list` now reports **"No migrations to apply!"**
 
 ```bash
 wrangler d1 migrations apply beauteas-db --env production --remote
 ```
 
-- ☐ Applied. Confirm tables and the last migration:
-  ```bash
-  wrangler d1 execute beauteas-db --env production --remote \
-    --command="SELECT name FROM sqlite_master WHERE type='table';"
-  ```
-- ☐ **Do NOT run `data/d1/seed.sql` or `data/d1/seed-dev.sql` against prod** — prod data comes from the Shopify migration. `seed-dev.sql` re-adds the public MCP `test-agent` credential and must stay dev-only (BMC-136).
+**Pre-flight checks run first:**
+
+- ☑ **Backup taken** before applying — `wrangler d1 export` (40.4 KB, pre-catalog). Prod held only migration-seeded rows; no customers or orders exist yet.
+- ☑ **D1 50-char LIKE cap checked** on the data-only migrations. 0016's guards are `'%We do not sell, trade%'` (24 chars) and `'%to be bound by the terms%'` (26) — well clear of the cap that would otherwise silently roll the whole migration back.
+- ☑ **Confirmed the 0016 guards actually match prod content** before applying, rather than assuming. Unlike remote dev — which lacks the 0003-seeded pages, so UPDATE-guarded data migrations silently no-op there — **prod did have them**, so 0016 genuinely applied and 0017's backfill correctly did nothing.
+
+**Verified after applying** (checked the effects, not just the ✅ status):
+
+| Migration | Verification |
+|---|---|
+| 0013 | `product_recommendations` table exists |
+| 0014 | `contact`, `refund-policy`, `shipping-policy` pages seeded *(note: the slug is `refund-policy`, not `refund-return-policy`)* |
+| 0015 | `shipping_address` column present on `customer_subscriptions` |
+| 0016 | `privacy-policy` 604 → **6951** chars, `terms-of-service` 542 → **4586** chars — the boilerplate really was replaced |
+| 0017 | Correctly a no-op (0016 matched) |
+| 0018 | `email_unsubscribes` table exists |
+| 0016 rollback safety | 4 `page_versions` snapshots written, preserving the pre-rewrite content |
+
+- ☑ **Did NOT run `data/d1/seed.sql` or `data/d1/seed-dev.sql` against prod** — prod data comes from the dev promotion (Phase 8). `seed-dev.sql` re-adds the public MCP `test-agent` credential and must stay dev-only (BMC-136).
 
 ---
 
@@ -193,7 +206,7 @@ In **Stripe Live mode**:
   > - `current_period_start/end` already read from the **item** (`firstItem?.current_period_start`), which is where dahlia keeps them — the field that most often breaks on Stripe subscription upgrades was already correct.
   > - 899 unit tests pass; OpenNext production build succeeds.
 
-- ⚠️ **Unrelated version sprawl worth knowing about.** `getStripeClient()` (`lib/stripe.ts:299-315`) returns the hand-rolled `CloudflareStripe` in production, and that class sends `Stripe-Version: 2020-08-27` (`lib/stripe.ts:157`) — **six years old**. So live `createPaymentIntent` / `retrievePaymentIntent` do *not* run on dahlia; only the SDK paths (subscriptions, webhook signature verification) do. It reads only long-stable fields (`id`, `client_secret`, `status`, `amount_received`, `metadata`), so it works — but it is a second, much older API version sitting on the money path. Not a cutover blocker; worth a follow-up ticket.
+- ⚠️ **Unrelated version sprawl — tracked as [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe).** `getStripeClient()` (`lib/stripe.ts:299-315`) returns the hand-rolled `CloudflareStripe` in production, and that class sends `Stripe-Version: 2020-08-27` (`lib/stripe.ts:157`) — **six years old**. So live `createPaymentIntent` / `retrievePaymentIntent` do *not* run on dahlia; only the SDK paths (subscriptions, webhook signature verification) do. It reads only long-stable fields (`id`, `client_secret`, `status`, `amount_received`, `metadata`), so it works. **Not a cutover blocker.**
 
 - ☑ Live signing secret set (2026-07-27). Take it from the **live-mode** endpoint — test and live `whsec_…` look identical and the failure mode is a 400 on every delivery:
   ```bash
@@ -318,6 +331,9 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
   review_reminders · email_unsubscribes
   ```
   …and **never** `d1_migrations` (prod tracks its own migration state).
+- ☐ **Upload the knowledge articles to prod R2** under `knowledge_md/`. ⚠️ `data/r2/knowledge_md/*.md` is the git source of truth but **there is no sync script** — the files reach R2 only via the admin UI (`/admin/knowledge` → `MEDIA.put`, `app/api/admin/knowledge/route.ts:166-175`) or a manual `wrangler r2 object put`. Editing the repo files changes nothing on its own.
+
+  These were updated 2026-07-27 to tell customers to email **`info@beauteas.com`** (was `hello@`), matching the new From address. Chai answers from the **Vectorize index**, not from R2 or git directly, so this only takes effect after the upload *and* the rebuild below. Until then Chai will keep giving out the old address.
 - ☐ **Rebuild Vectorize** from prod (the index is not copyable):
   ```bash
   curl -X POST "https://shop.beauteas.com/api/admin/vectorize" \

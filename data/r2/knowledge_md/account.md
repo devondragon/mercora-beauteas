@@ -21,4 +21,4 @@ If you subscribe to a blend, you can pause, skip, change, or cancel anytime from
 
 ## Email Issues
 
-Not seeing our emails? Check your spam or promotions folder for login links and order confirmations, and add hello@beauteas.com to your contacts.
+Not seeing our emails? Check your spam or promotions folder for login links and order confirmations, and add info@beauteas.com to your contacts.

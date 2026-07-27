@@ -35,4 +35,4 @@ If an item is temporarily out of stock, we'll let you know the expected restock 
 
 ## Changing or Canceling an Order
 
-Orders can't be modified once submitted. If you need to cancel, contact us as soon as possible at hello@beauteas.com and we'll do our best to help before it ships.
+Orders can't be modified once submitted. If you need to cancel, contact us as soon as possible at info@beauteas.com and we'll do our best to help before it ships.

@@ -18,7 +18,7 @@ Your glow is our goal. If you're not happy with your BeauTeas order, reach out w
 
 ## How to Start a Return
 
-Email us at hello@beauteas.com with your order number and we'll send return instructions.
+Email us at info@beauteas.com with your order number and we'll send return instructions.
 
 ## Refunds
 
