@@ -36,9 +36,26 @@
 
 `BASE_URL` is now env-driven off `NEXT_PUBLIC_SITE_URL` (`lib/seo/metadata.ts`), set per environment in `wrangler.jsonc` and injected at build time. It is currently `https://shop.beauteas.com` so staging emits its own canonicals rather than pointing crawlers and customer emails at the Shopify store. **Flipping it to `https://www.beauteas.com` is a Phase 10 step and requires a rebuild + redeploy** — it is baked into the bundle, so editing the config alone does nothing.
 
+## ⇒ CRITICAL PATH TO CUTOVER
+
+Everything genuinely blocking go-live, in order. Anything not on this list is optional or post-launch — **do not let it consume cutover time.**
+
+| # | Blocker | Status | Blocked by |
+|---|---|---|---|
+| 1 | **R2 API token** (Phase 0) | ☐ | you — needed to copy images dev → prod |
+| 2 | **Deploy app to prod** (Phase 7) | ☐ | nothing — ready now |
+| 3 | **Promote catalog + images dev → prod** (Phase 8) | ☐ | #1, #2 |
+| 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☐ | #3 |
+| 5 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #4 |
+| 6 | **Post-cutover checks** (Phase 11) | ☐ | #5 |
+
+**Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
+
+---
+
 **Do it in order.** Each phase depends on the ones before it. Check the box, move on.
 
-**Status legend:** ☐ not started · ◐ in progress · ☑ done
+**Status legend:** ☐ not started · ◐ in progress · ☑ done · ⊘ not needed for launch
 
 ---
 
@@ -195,8 +212,8 @@ wrangler d1 migrations apply beauteas-db --env production --remote
 
 In **Stripe Live mode**:
 
-- ☐ Create the **subscription discount coupon** (e.g. 10% off, forever) → note the coupon/promotion id.
-- ☐ Recurring **Prices** for subscribable products — the app auto-creates these; confirm the path runs in live mode, or pre-create prices for the 3 frequencies.
+- ⊘ **NOT AT LAUNCH (decided 2026-07-27).** Subscription discount coupon — subscriptions are not being sold at launch.
+- ⊘ **NOT AT LAUNCH (decided 2026-07-27).** Recurring Prices for subscribable products. The app auto-creates these on first use, so nothing needs pre-creating if subscriptions are enabled later.
 - ☑ **Endpoint created (2026-07-27, self-reported).** One webhook endpoint → `/api/webhooks/stripe`.
   > ⚠️ **Confirm which host it points at.** It should be **`https://shop.beauteas.com/api/webhooks/stripe`** for now. `www` and the apex are still Shopify, so an endpoint pointed there delivers into the old store and every event is lost — silently, because Stripe just records delivery failures you aren't watching. At cutover, **edit this endpoint's URL** to `www` rather than creating a second one, so the signing secret carries over. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
 
@@ -409,7 +426,7 @@ Shopify is still serving customers on `www` throughout this phase.
 - ☐ Add `shop.beauteas.com` as a **Custom Domain** on the production Worker, and put **Cloudflare Access** in front of it. Access (not just `noindex`) is the right gate: it prevents duplicate-content indexing of the real catalog, and prevents a stray real order or a real customer receiving a test email from the staging host.
 - ☐ Products, images, orders visible in `/admin`; reviews on PDPs.
 - ☐ **Auth is on the production Clerk instance** — confirm the page loads `clerk.beauteas.com` (prod FAPI), **not** `*.clerk.accounts.dev`. *(The live key `pk_live_Y2xlcmsu…` base64-decodes to `clerk.beauteas.com$`, matching the CSP entry at `lib/security-headers.ts:31`.)*
-- ☐ **One live subscription end-to-end** (real card, small charge): webhook → D1 → confirmation email, with a working "Manage Subscription" link and human-readable product names.
+- ⊘ **DEFERRED — subscriptions not sold at launch.** (When enabled: one live subscription end-to-end — webhook → D1 → confirmation email, working "Manage Subscription" link, human-readable product names.) **A one-off order test still required** — see the checkout item below.
 
 ### ☐ Email smoke test — nothing here has ever run
 
@@ -452,7 +469,7 @@ This is the point of no easy return — everything above must be green first.
 - ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
 - ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
-- ☐ Create + immediately cancel a real subscription; confirm lifecycle emails + working manage links.
+- ⊘ **DEFERRED** — subscriptions not sold at launch.
 - ☐ **Auth check:** unauthenticated `curl` to `/api/orders` and `/api/orders/refund` → **401/403**.
 - ☐ `/api/tax` on a live checkout returns `"calculated_by": "stripe"` (not `"fallback"`) — confirms Phase 0 tax registration.
 - ☐ `wrangler tail --env production` clean of errors; a forced error produces an **alert email** (confirms the Tail Worker).
