@@ -197,9 +197,10 @@ In **Stripe Live mode**:
 
 - ☐ Create the **subscription discount coupon** (e.g. 10% off, forever) → note the coupon/promotion id.
 - ☐ Recurring **Prices** for subscribable products — the app auto-creates these; confirm the path runs in live mode, or pre-create prices for the 3 frequencies.
-- ☐ Create **one** webhook endpoint → `/api/webhooks/stripe` on whichever host you launch on. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
+- ☑ **Endpoint created (2026-07-27, self-reported).** One webhook endpoint → `/api/webhooks/stripe`.
+  > ⚠️ **Confirm which host it points at.** It should be **`https://shop.beauteas.com/api/webhooks/stripe`** for now. `www` and the apex are still Shopify, so an endpoint pointed there delivers into the old store and every event is lost — silently, because Stripe just records delivery failures you aren't watching. At cutover, **edit this endpoint's URL** to `www` rather than creating a second one, so the signing secret carries over. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
 
-- ☐ **Subscribe to exactly these 9 events** — this is the full `switch` in `app/api/webhooks/stripe/route.ts:103-145`; anything else falls to `default:` and only logs:
+- ☑ **Events subscribed (2026-07-27, self-reported)** — exactly these 9 — this is the full `switch` in `app/api/webhooks/stripe/route.ts:103-145`; anything else falls to `default:` and only logs:
   - `payment_intent.succeeded` ← **the money path** (`finalizePaidOrder`, gift cards, confirmation email)
   - `payment_intent.payment_failed` (handler is a stub — logs only)
   - `checkout.session.completed` (handler is a stub; you use Payment Element, not Checkout Sessions — **safe to omit**)
@@ -208,7 +209,7 @@ In **Stripe Live mode**:
 
   > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
 
-- ☐ ⚠️ **Set the endpoint's API version to `2026-06-24.dahlia`** — matching `lib/stripe.ts:75`/`:117`.
+- ☑ ⚠️ **API version set to `2026-06-24.dahlia` (2026-07-27, self-reported)** — matching `lib/stripe.ts:75`/`:117`.
 
   Stripe's guidance is to match the endpoint version to the version your SDK pins: *"for successful deserialization of event objects, the API version set for webhook endpoints should match the version used to generate the SDK."* A mismatch is silent, not loud — `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription`, and if that path is absent `getSubscriptionIdFromInvoice()` returns `null` and **every subscription invoice is skipped as a "non-subscription invoice"**: renewals quietly stop creating orders, with only a benign-looking log line.
 
@@ -225,12 +226,14 @@ In **Stripe Live mode**:
   wrangler secret put STRIPE_WEBHOOK_SECRET --env production   # whsec_…
   ```
 
-- ☐ ⚠️ **Add `/api/webhooks` to the maintenance-mode exemption list before cutover.** `middleware.ts:77-81` exempts only `/admin`, `/api/admin`, and `/api/mcp` — so flipping maintenance mode on during the migration window returns a **503 HTML page to Stripe**. It self-heals (Stripe retries with backoff for ~3 days), but you'd be accumulating undelivered payment events during the exact window you care most about.
+- ☑ **`/api/webhooks` exempted from maintenance mode** (commit `951c5be`). Previously `middleware.ts` exempted only `/admin`, `/api/admin`, and `/api/mcp`, so enabling maintenance mode during the migration window would have returned a **503 HTML page to Stripe** — self-healing via retries, but accumulating undelivered payment events during exactly the window you care most about.
 
 - ☐ Test signature handling before cutover:
   `stripe listen --forward-to <host>/api/webhooks/stripe` then `stripe trigger customer.subscription.created`.
 
-- ☐ **Gap, not a blocker:** there is no `charge.refunded` or `charge.dispute.*` handler anywhere. A refund issued **from the Stripe Dashboard** will not touch D1 orders or the ledger (only `/api/orders/refund` does), and chargebacks surface via Stripe email only. Subscribing to the events wouldn't help — these are code gaps. Backlog them.
+- ☑ **Gaps filed as tickets (2026-07-27).** Both are code gaps — subscribing the events alone would not help.
+  - **[BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) (High)** — no `charge.refunded` handler. Worse than first assessed: the over-refund guard computes its total *exclusively* from `orders.extensions.refunds[]` (`lib/payments/refund-ledger.ts:101-105`), which a Dashboard refund never writes. So a Dashboard refund followed by an app refund **returns the money twice**. Also skips inventory restock and the `refund.*` policy settings.
+  - **[BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) (Medium)** — no `charge.dispute.*` handling. Chargebacks are invisible to the app; the only signal is Stripe's email, so a missed evidence deadline is an automatic loss. Sequence **after** BMC-213 and reuse its reconciliation.
 
 ---
 
