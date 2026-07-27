@@ -22,9 +22,15 @@ const sendOrderConfirmationEmail = vi.fn(async (_data: EmailPayload) => ({
   id: 'email_test',
 }));
 const getProduct = vi.fn(async (_id: string): Promise<unknown> => null);
+const sendNewOrderMerchantNotification = vi.fn(async (_data: EmailPayload) => ({
+  success: true as const,
+  id: 'merchant_test',
+}));
 
 vi.mock('@/lib/utils/email', () => ({
   sendOrderConfirmationEmail: (data: EmailPayload) => sendOrderConfirmationEmail(data),
+  sendNewOrderMerchantNotification: (data: EmailPayload) =>
+    sendNewOrderMerchantNotification(data),
 }));
 vi.mock('@/lib/models/mach/products', () => ({
   getProduct: (id: string) => getProduct(id),
@@ -106,5 +112,46 @@ describe('order confirmation email — product images', () => {
 
     const payload = sendOrderConfirmationEmail.mock.calls[0][0];
     expect(payload.items[0].imageUrl).toBe('products/persisted.jpg');
+  });
+});
+
+/**
+ * Merchant new-order notification (stopgap for BMC-216).
+ *
+ * Before this existed, the only signal that an order had arrived was Stripe's
+ * payment email — which says money moved, but not what to ship or where.
+ */
+describe('merchant new-order notification', () => {
+  it('notifies the shop owner after a successful customer confirmation', async () => {
+    const { sendOrderConfirmationForOrder } = await import('@/lib/services/order-confirmation');
+    await sendOrderConfirmationForOrder(orderFixture());
+
+    expect(sendNewOrderMerchantNotification).toHaveBeenCalledTimes(1);
+    const payload = sendNewOrderMerchantNotification.mock.calls[0][0];
+    expect(payload.items[0].imageUrl).toBe(IMAGE_KEY);
+  });
+
+  it('still notifies the merchant when the CUSTOMER email fails', async () => {
+    // The owner must learn about the order even if the customer's copy bounced —
+    // otherwise a Resend fault silently costs a shipment.
+    sendOrderConfirmationEmail.mockResolvedValueOnce({
+      success: false as unknown as true,
+      id: '',
+    });
+
+    const { sendOrderConfirmationForOrder } = await import('@/lib/services/order-confirmation');
+    await sendOrderConfirmationForOrder(orderFixture());
+
+    expect(sendNewOrderMerchantNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('a merchant-notification failure never throws out of the confirmation path', async () => {
+    sendNewOrderMerchantNotification.mockRejectedValueOnce(new Error('resend down'));
+
+    const { sendOrderConfirmationForOrder } = await import('@/lib/services/order-confirmation');
+    await expect(sendOrderConfirmationForOrder(orderFixture())).resolves.toBeUndefined();
+
+    // The customer still got their confirmation.
+    expect(sendOrderConfirmationEmail).toHaveBeenCalledTimes(1);
   });
 });

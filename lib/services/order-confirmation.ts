@@ -20,7 +20,11 @@
 import type { Order } from '@/lib/types/order';
 import { Money } from '@/lib/money';
 import { buildOrderEmailTotals } from '@/lib/utils/order-email-totals';
-import { sendOrderConfirmationEmail, type OrderData } from '@/lib/utils/email';
+import {
+  sendOrderConfirmationEmail,
+  sendNewOrderMerchantNotification,
+  type OrderData,
+} from '@/lib/utils/email';
 import { logCritical } from '@/lib/utils/observe';
 import { getProduct } from '@/lib/models/mach/products';
 
@@ -170,6 +174,23 @@ export async function sendOrderConfirmationForOrder(
         'email',
         'order_confirmation_send_failed',
         { orderId: order.id, reason: emailResult.error },
+      );
+    }
+
+    // Tell the shop owner an order needs fulfilling (stopgap for BMC-216 — the
+    // only prior signal was Stripe's payment email, which says money moved but
+    // not what to ship). Sent AFTER the customer's confirmation so a merchant
+    // failure can never delay or displace it, and alerted on separately: a
+    // silently missed order is exactly the failure this exists to prevent.
+    const merchantResult = await sendNewOrderMerchantNotification(orderData);
+    if (merchantResult.success) {
+      console.log(`[merchant-notification] Sent for ${order.id}:`, merchantResult.id);
+    } else {
+      console.error(`[merchant-notification] Failed for ${order.id}:`, merchantResult.error);
+      logCritical(
+        'email',
+        'merchant_order_notification_failed',
+        { orderId: order.id, reason: merchantResult.error },
       );
     }
   } catch (emailError) {
