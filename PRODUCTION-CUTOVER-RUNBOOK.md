@@ -16,6 +16,14 @@
 
 **Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
 
+**Progress as of 2026-07-27:** Phases 0, 1, and 2 are essentially complete — Cloudflare paid plan, Clerk production instance, Stripe live + tax registrations, live publishable keys in `wrangler.jsonc`, and **all 6 production secrets set and verified**. Two things surfaced during that work that must be resolved before Phase 7:
+
+> ⛔ **BLOCKER — see Phase 1.** `NEXT_PUBLIC_*` keys in `wrangler.jsonc` do **not** reach the browser bundle. A production deploy today would ship **test** Stripe keys to the client while the server uses live keys. Checkout would be broken on day one.
+>
+> ⚠️ **Resend was never configured** for this domain — see Phase 2. No email has ever sent from this app in any environment; the whole email surface is unexercised.
+
+**⏳ OPEN DECISION — final hostname (blocks Phases 4, 7, 9, 10).** This runbook still assumes a straight flip of the apex `beauteas.com` to the Worker, with **no `www` story** — but Shopify serves `www.beauteas.com` today with apex → www, and `lib/seo/metadata.ts:19` hardcodes `BASE_URL = "https://beauteas.com"` (matching neither). The proposal under discussion is to stand the new site up at `shop.beauteas.com` alongside Shopify, then flip. **Decide before configuring anything else domain-bound**, because it determines the Stripe webhook URL, the Clerk primary domain, the Apple Pay registrations, and whether `BASE_URL` needs to become env-driven. Recommendation on the table: keep **www** as the permanent canonical, use `shop.` (behind Cloudflare Access) as a temporary staging host only. Phase 10 needs rewriting once this is settled.
+
 **Do it in order.** Each phase depends on the ones before it. Check the box, move on.
 
 **Status legend:** ☐ not started · ◐ in progress · ☑ done
@@ -26,10 +34,10 @@
 
 You can't do anything else until these exist. None of it is code — it's account setup and business decisions.
 
-- ☐ **Cloudflare** account on the Workers **paid** plan; note the Account ID.
-- ☐ **Clerk production instance** (separate from the `pk_test…` dev instance). Get `pk_live_…` + `sk_live_…`.
-- ☐ **Stripe** business verification complete, **Live mode** available.
-- ☐ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). **This is a hard gate, not just "enable Stripe Tax."** `/api/tax` uses nexus-aware Stripe Tax but **falls back to a flat 7% rate** whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is missing. If your live nexus isn't registered, **every order mischarges tax.** Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered. (Confirmed working later when a live checkout's `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)
+- ☑ **Cloudflare** account on the Workers **paid** plan; note the Account ID. *(Done 2026-07-27 — account `e230c667ec437820d64caf703df479b6`.)*
+- ☑ **Clerk production instance** (separate from the `pk_test…` dev instance). Get `pk_live_…` + `sk_live_…`. *(Done 2026-07-27.)*
+- ☑ **Stripe** business verification complete, **Live mode** available. *(Done 2026-07-27.)*
+- ☑ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). *(Done 2026-07-27 — still verify at first live checkout that `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)* **This is a hard gate, not just "enable Stripe Tax."** `/api/tax` uses nexus-aware Stripe Tax but **falls back to a flat 7% rate** whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is missing. If your live nexus isn't registered, **every order mischarges tax.** Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered. (Confirmed working later when a live checkout's `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)
 - ☐ **R2 API token** (Account ID + Access Key ID + Secret) — used to copy image objects from the **dev** bucket to the **prod** bucket (Phase 8).
 - ☐ *(Shopify Admin API + Judge.me creds were used for the already-completed dev ETL and are **not** needed again — prod is populated by copying the curated dev catalog, not a fresh Shopify pull. Only revisit if you later decide to migrate order/customer history.)*
 - ☐ Decide **subscription economics**: frequencies (e.g. every 2 weeks / monthly / every 2 months) + discount % (e.g. 10%).
@@ -40,27 +48,81 @@ You can't do anything else until these exist. None of it is code — it's accoun
 
 ## Phase 1 — Fill the config placeholders (code)
 
-Two placeholders remain in `wrangler.jsonc` under the **production** env (the prod D1 id is already real):
-
-- ☐ `"NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY"` → your `pk_live_…`
-- ☐ `"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY"` → your `pk_live_…`
+- ☑ `"NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"` → `pk_live_Y2xlcmsu…` *(Done 2026-07-27.)*
+- ☑ `"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"` → `pk_live_51ToUnwF…` *(Done 2026-07-27.)*
+- ☑ Verified zero `REPLACE_WITH` placeholders remain in `wrangler.jsonc`.
 
 Commit these. (Publishable keys are safe to commit; **secret** keys go in Phase 2, never in the file.)
+
+### ⛔ BLOCKER — `NEXT_PUBLIC_*` in `wrangler.jsonc` does NOT reach the browser
+
+**Found 2026-07-27. This will break live checkout on day one if not fixed before Phase 7.**
+
+`wrangler.jsonc` `vars` populate the **Worker's runtime `env`**. But Next.js inlines `NEXT_PUBLIC_*` into the **client bundle at build time**, and `lib/stripe.ts:39` captures the key in a module-scope `const`:
+
+```ts
+const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+```
+
+`npm run deploy:production` runs `opennextjs-cloudflare build` → `next build` with **no environment scoping**, and Next.js loads `.env.local` for production builds at *higher* precedence than `.env.production`. `.env.local` currently holds:
+
+```
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YnVzeS…
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_51ToUo…
+```
+
+So a production deploy today ships a bundle with **test** publishable keys while the server holds **live** secret keys. The failure mode: the server creates a live PaymentIntent, the browser confirms it with a test-mode key, Stripe rejects on key/mode mismatch — **checkout is broken, and no amount of correct `wrangler.jsonc` config fixes it.**
+
+- ☐ **Fix before deploying.** Ensure the live values are present in the **build** environment, e.g. export them inline in the `deploy:production` script rather than relying on `wrangler.jsonc` vars. Adding a `.env.production` file is **not** sufficient on its own — `.env.local` outranks it.
+- ☐ **Verify after building, before deploying:** grep the built client bundle for a test key and confirm zero hits:
+  ```bash
+  grep -ro "pk_test_[A-Za-z0-9]*" .open-next/assets | head
+  # must return NOTHING. If it returns anything, the build picked up .env.local.
+  ```
+- ☑ **Clerk is confirmed affected too**, not just Stripe. Verified 2026-07-27 against the existing build — both keys are inlined into client chunks, and there is no `pk_live` anywhere in `.open-next/assets`:
+  ```
+  common-c3373795-*.js  : pk_test_51ToUo   ← Stripe
+  vendors-d43c352d-*.js : pk_test_YnVzeS   ← Clerk
+  ```
+  So `@clerk/nextjs` does **not** pick up the runtime var — it inlines at build time like any other `NEXT_PUBLIC_*`. Both keys need the build-env fix.
+- ☐ After deploying, confirm in the browser that the page loads `clerk.beauteas.com` (production FAPI), **not** `*.clerk.accounts.dev`.
 
 ---
 
 ## Phase 2 — Set production secrets
 
+**☑ All production secrets are set (verified 2026-07-27 via `wrangler secret list --env production`):**
+
+| Secret | Status |
+|---|---|
+| `CLERK_SECRET_KEY` | ☑ set |
+| `STRIPE_SECRET_KEY` | ☑ set |
+| `STRIPE_WEBHOOK_SECRET` | ☑ set |
+| `RESEND_API_KEY` | ☑ set |
+| `ADMIN_VECTORIZE_TOKEN` | ☑ set — generated `openssl rand -hex 32`, piped straight to wrangler, **never displayed or written to disk** |
+| `EMAIL_UNSUBSCRIBE_SECRET` | ☑ set — same method |
+| `CLERK_PUBLISHABLE_KEY` | ⚠️ set, but **unused** — the app reads `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from `vars`, not this. Harmless; delete to avoid confusion. |
+
+Both generated tokens are **unrecoverable by design** — Cloudflare secrets are write-only. Neither needs to be known by a human:
+
+- `EMAIL_UNSUBSCRIBE_SECRET` is a pure internal HMAC signing key (`lib/email/unsubscribe-token.ts`).
+- `ADMIN_VECTORIZE_TOKEN` is only needed for `curl`-based admin calls; the admin UI triggers vectorize via the Clerk session (`ProductManagement.tsx`, `settings/page.tsx`, `KnowledgeManagement.tsx`). **If you ever need the raw value, just re-run `wrangler secret put` with a new one** — nothing else stores a copy, so rotation is free.
+
+To re-generate either without ever seeing the value:
 ```bash
-wrangler secret put CLERK_SECRET_KEY        --env production   # sk_live_…
-wrangler secret put STRIPE_SECRET_KEY       --env production   # sk_live_…
-wrangler secret put RESEND_API_KEY          --env production
-wrangler secret put ADMIN_VECTORIZE_TOKEN   --env production   # strong random — do NOT reuse the dev/upstream default
-wrangler secret put EMAIL_UNSUBSCRIBE_SECRET --env production  # strong random — REQUIRED or review-reminder emails skip entirely (BMC-184)
-# STRIPE_WEBHOOK_SECRET is set later, in Phase 4, once the live webhook exists.
+openssl rand -hex 32 | npx wrangler secret put <NAME> --env production
 ```
 
-- ☐ All five secrets above set. (`STRIPE_WEBHOOK_SECRET` deferred to Phase 4.)
+### ⚠️ Resend was never configured for this domain
+
+Found 2026-07-27: `RESEND_API_KEY` was the untouched `re_your_…` placeholder inherited from the upstream Mercora fork, and was absent from `.dev.vars` entirely. **No email has ever sent from this app, in any environment.** The prod secret is now set, but that means every email path is unexercised:
+
+- ☐ Verify `beauteas.com` in Resend (use their default `send.beauteas.com` subdomain flow for SPF/Return-Path — it avoids any collision with Shopify's existing apex SPF while Shopify is still live).
+- ☐ Set the key in **all three** places, per the `.dev.vars` gotcha: `.env.local` (for `next dev`), `.dev.vars` (for `preview:dev` + Workers runtime), and `wrangler secret put --env dev`.
+- ☐ Smoke-test all four paths against a real inbox: order confirmation (`lib/utils/email.ts:96`), gift card delivery (`:491`), subscription lifecycle (`:632`), review notifications (`lib/utils/review-notifications.ts`).
+- ☐ **Wire email failure into alerting.** `order-confirmation.ts:118` logs `console.error`, not `logCritical` — so a misconfigured Resend in prod means every customer silently gets no confirmation and **nothing pages you** (BMC-168 only alerts on `logCritical`). Upgrade this before launch; it sits on the money path.
+
+Note: email failure is fully swallowed and never throws, so it cannot block `finalizePaidOrder` or trigger webhook retries. Enabling Resend is safe and isolated.
 
 ---
 
@@ -87,16 +149,30 @@ In **Stripe Live mode**:
 
 - ☐ Create the **subscription discount coupon** (e.g. 10% off, forever) → note the coupon/promotion id.
 - ☐ Recurring **Prices** for subscribable products — the app auto-creates these; confirm the path runs in live mode, or pre-create prices for the 3 frequencies.
-- ☐ Create the **webhook endpoint** → `https://beauteas.com/api/webhooks/stripe`, subscribed to:
-  - `payment_intent.succeeded`, `payment_intent.payment_failed`, `checkout.session.completed`
-  - `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`
-  - `invoice.payment_succeeded`, `invoice.payment_failed`, `invoice.upcoming`
-- ☐ Copy the live signing secret and set it:
+- ☐ Create **one** webhook endpoint → `/api/webhooks/stripe` on whichever host you launch on. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
+
+- ☐ **Subscribe to exactly these 9 events** — this is the full `switch` in `app/api/webhooks/stripe/route.ts:103-145`; anything else falls to `default:` and only logs:
+  - `payment_intent.succeeded` ← **the money path** (`finalizePaidOrder`, gift cards, confirmation email)
+  - `payment_intent.payment_failed` (handler is a stub — logs only)
+  - `checkout.session.completed` (handler is a stub; you use Payment Element, not Checkout Sessions — **safe to omit**)
+  - `customer.subscription.created` / `.updated` / `.deleted`
+  - `invoice.payment_succeeded` ← creates renewal orders · `invoice.payment_failed` · `invoice.upcoming`
+
+  > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
+
+- ☐ ⚠️ **Set the endpoint's API version to `2025-08-27.basil`** — matching `lib/stripe.ts:75`. `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription`, which only exists in that shape. On an older version the field is `undefined`, `getSubscriptionIdFromInvoice()` returns `null`, and **every subscription invoice is silently skipped as a "non-subscription invoice"** — renewals just quietly stop creating orders, with only a benign-looking log line.
+
+- ☑ Live signing secret set (2026-07-27). Take it from the **live-mode** endpoint — test and live `whsec_…` look identical and the failure mode is a 400 on every delivery:
   ```bash
   wrangler secret put STRIPE_WEBHOOK_SECRET --env production   # whsec_…
   ```
+
+- ☐ ⚠️ **Add `/api/webhooks` to the maintenance-mode exemption list before cutover.** `middleware.ts:77-81` exempts only `/admin`, `/api/admin`, and `/api/mcp` — so flipping maintenance mode on during the migration window returns a **503 HTML page to Stripe**. It self-heals (Stripe retries with backoff for ~3 days), but you'd be accumulating undelivered payment events during the exact window you care most about.
+
 - ☐ Test signature handling before cutover:
-  `stripe listen --forward-to https://beauteas.com/api/webhooks/stripe` then `stripe trigger customer.subscription.created`.
+  `stripe listen --forward-to <host>/api/webhooks/stripe` then `stripe trigger customer.subscription.created`.
+
+- ☐ **Gap, not a blocker:** there is no `charge.refunded` or `charge.dispute.*` handler anywhere. A refund issued **from the Stripe Dashboard** will not touch D1 orders or the ledger (only `/api/orders/refund` does), and chargebacks surface via Stripe email only. Subscribing to the events wouldn't help — these are code gaps. Backlog them.
 
 ---
 
