@@ -183,13 +183,17 @@ In **Stripe Live mode**:
 
   > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
 
-- ☐ ⚠️ **Set the endpoint's API version to `2025-08-27.basil`** — matching `lib/stripe.ts:75`/`:117`. **Do not set it to the newest available version.**
+- ☐ ⚠️ **Set the endpoint's API version to `2026-06-24.dahlia`** — matching `lib/stripe.ts:75`/`:117`.
 
-  `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription` — a Basil-era shape. If the endpoint renders events under a *different* version and that path moved again, `getSubscriptionIdFromInvoice()` returns `null` and **every subscription invoice is silently skipped as a "non-subscription invoice"**: renewals quietly stop creating orders, with only a benign-looking log line and no error.
+  Stripe's guidance is to match the endpoint version to the version your SDK pins: *"for successful deserialization of event objects, the API version set for webhook endpoints should match the version used to generate the SDK."* A mismatch is silent, not loud — `invoice-handlers.ts:30-39` reads the subscription id from `invoice.parent.subscription_details.subscription`, and if that path is absent `getSubscriptionIdFromInvoice()` returns `null` and **every subscription invoice is skipped as a "non-subscription invoice"**: renewals quietly stop creating orders, with only a benign-looking log line.
 
-  Stripe's own guidance is to match the endpoint version to the version your SDK is pinned to — *"it's recommended to match your webhook endpoint API version to the version pinned by your SDK"*, and *"for successful deserialization of event objects, the API version set for webhook endpoints should match the version used to generate the SDK."*
+  > **SDK upgraded 2026-07-27: `stripe` 18.5.0 → 22.3.2**, which pins exactly `2026-06-24.dahlia`. Both `apiVersion` call sites in `lib/stripe.ts` updated to match. Verified across the four-major jump:
+  > - `tsc` clean against the v22 types. All webhook handlers are typed as `Stripe.Invoice` / `Stripe.Subscription`, so the compiler validated **every** field access against the dahlia shapes.
+  > - `invoice.parent.subscription_details.subscription` still present and still `string | Subscription`.
+  > - `current_period_start/end` already read from the **item** (`firstItem?.current_period_start`), which is where dahlia keeps them — the field that most often breaks on Stripe subscription upgrades was already correct.
+  > - 899 unit tests pass; OpenNext production build succeeds.
 
-  > **`2026-06-24.dahlia` was proposed on 2026-07-27 as "the current version."** It is newer than the pinned SDK version, so adopting it is an **API upgrade, not a config choice** — Stripe's upgrade path is: bump the SDK → update `apiVersion` in `lib/stripe.ts` (both call sites) → re-verify every event field path the handlers read (especially the `invoice.parent.*` chain) → test against the new version → then move the endpoint, with a 72-hour rollback window. Worth doing, but as a deliberate post-launch task with test coverage — not as part of the cutover, where a silent renewal failure would be very expensive to notice.
+- ⚠️ **Unrelated version sprawl worth knowing about.** `getStripeClient()` (`lib/stripe.ts:299-315`) returns the hand-rolled `CloudflareStripe` in production, and that class sends `Stripe-Version: 2020-08-27` (`lib/stripe.ts:157`) — **six years old**. So live `createPaymentIntent` / `retrievePaymentIntent` do *not* run on dahlia; only the SDK paths (subscriptions, webhook signature verification) do. It reads only long-stable fields (`id`, `client_secret`, `status`, `amount_received`, `metadata`), so it works — but it is a second, much older API version sitting on the money path. Not a cutover blocker; worth a follow-up ticket.
 
 - ☑ Live signing secret set (2026-07-27). Take it from the **live-mode** endpoint — test and live `whsec_…` look identical and the failure mode is a 400 on every delivery:
   ```bash

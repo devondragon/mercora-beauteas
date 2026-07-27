@@ -38,13 +38,13 @@ Essential context for Claude when working on **BeauTeas**, an AI-enhanced eComme
 - **Storage:** Cloudflare **R2** (product/knowledge media + ISR incremental cache)
 - **AI:** Cloudflare **Workers AI** (text gen + embeddings) + **Vectorize**
 - **Auth:** Clerk `^6.39.5` (`@clerk/nextjs`, `@clerk/backend`)
-- **Payments:** Stripe `^18` (`stripe`, `@stripe/react-stripe-js`, `@stripe/stripe-js`)
+- **Payments:** Stripe `^22` (API `2026-06-24.dahlia`) (`stripe`, `@stripe/react-stripe-js`, `@stripe/stripe-js`)
 
 ### Key dependencies (exact)
 ```
 next ^15.5.19 · react ^19 · drizzle-orm ^0.45.2 · drizzle-kit ^0.31.4
 @opennextjs/cloudflare ^1.20.1 · wrangler ^4.105.0 · @cloudflare/workers-types ^4.20250726.0
-@clerk/nextjs ^6.39.5 · stripe ^18.4.0 · zustand ^5.0.6 · resend ^4.8.0
+@clerk/nextjs ^6.39.5 · stripe ^22.3.2 · zustand ^5.0.6 · resend ^4.8.0
 tailwindcss ^3.4.1 · tsx ^4.20.3 (script runner) · @aws-sdk/client-s3 ^3 (R2/migration tooling)
 ```
 

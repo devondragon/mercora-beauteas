@@ -38,7 +38,7 @@ export async function POST(
     const stripe = getStripeForWorkers();
 
     // Retrieve the Stripe subscription to get the current period end
-    // Stripe API 2025-08-27.basil: period dates are on SubscriptionItem
+    // Stripe API 2026-06-24.dahlia: period dates are on SubscriptionItem, not the Subscription
     const stripeSubscription = await stripe.subscriptions.retrieve(
       subscription.stripe_subscription_id
     );

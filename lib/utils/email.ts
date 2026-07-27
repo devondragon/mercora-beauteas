@@ -100,7 +100,7 @@ export async function sendOrderConfirmationEmail(orderData: OrderData): Promise<
     const resendClient = getResendClient();
     
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [orderData.customerEmail],
       subject: `Order Confirmation #${orderData.orderNumber} - BeauTeas`,
       html: emailHtml,
@@ -452,7 +452,7 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
     }
 
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [orderData.customerEmail],
       subject: `${subject} - BeauTeas`,
       html: emailHtml,
@@ -492,7 +492,7 @@ export async function sendGiftCardDeliveryEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [data.recipientEmail],
       subject: `You've received a BeauTeas gift card`,
       html: emailHtml,
@@ -633,7 +633,7 @@ export async function sendSubscriptionEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [data.customerEmail],
       subject,
       html: emailHtml,

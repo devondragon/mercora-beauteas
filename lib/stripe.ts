@@ -72,7 +72,7 @@ export const loadStripe = (): Promise<Stripe | null> => {
  */
 export const stripe = secretKey 
   ? new StripeServer(secretKey, {
-      apiVersion: '2025-08-27.basil',
+      apiVersion: '2026-06-24.dahlia',
       typescript: true,
     })
   : null;
@@ -114,7 +114,7 @@ export function getStripeForWorkers(): StripeServer {
     throw new Error('Missing STRIPE_SECRET_KEY environment variable');
   }
   return new StripeServer(secretKey, {
-    apiVersion: '2025-08-27.basil',
+    apiVersion: '2026-06-24.dahlia',
     httpClient: StripeServer.createFetchHttpClient(),
     typescript: true,
   });

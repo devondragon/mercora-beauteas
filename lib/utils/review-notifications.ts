@@ -94,7 +94,7 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <hello@beauteas.com>',
+    from: 'BeauTeas Reviews <info@beauteas.com>',
     to: [input.email],
     subject,
     html,
@@ -138,7 +138,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <hello@beauteas.com>',
+    from: 'BeauTeas Reviews <info@beauteas.com>',
     to: [input.email],
     subject: `How's your ${input.productName}?`,
     html,
@@ -146,7 +146,9 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
       // RFC 2369 + RFC 8058: expose the unsubscribe to the mail client and let
       // supporting providers (Gmail/Yahoo) do a one-click POST. One-click is
       // always a POST, so it can't be triggered by link pre-fetch.
-      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:hello@beauteas.com?subject=unsubscribe>`,
+      // Kept in sync with the From address above: RFC 8058 expects the mailto
+      // unsubscribe target to be an address the sender actually monitors.
+      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:info@beauteas.com?subject=unsubscribe>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   });
