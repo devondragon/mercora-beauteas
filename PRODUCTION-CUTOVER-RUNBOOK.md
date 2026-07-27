@@ -16,11 +16,15 @@
 
 **Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
 
-**Progress as of 2026-07-27:** Phases 0, 1, and 2 are essentially complete — Cloudflare paid plan, Clerk production instance, Stripe live + tax registrations, live publishable keys in `wrangler.jsonc`, and **all 6 production secrets set and verified**. Two things surfaced during that work that must be resolved before Phase 7:
+**Progress as of 2026-07-27 — Phases 0, 1, 2, 3, and 5 are COMPLETE.** Cloudflare paid plan · Clerk production instance · Stripe live + tax registrations · live publishable keys · all 7 production secrets · prod D1 fully migrated (`0001`–`0018`) · observability Tail Worker deployed to both environments with alert delivery verified end-to-end.
 
-> ☑ **RESOLVED — `NEXT_PUBLIC_*` build-time blocker.** Fixed 2026-07-27 via `scripts/build-with-env.mjs`; verified end-to-end with a real production build. See Phase 1.
+> ☑ **RESOLVED — `NEXT_PUBLIC_*` build-time blocker.** Fixed via `scripts/build-with-env.mjs`; verified with a real production build. Would have shipped test Stripe/Clerk keys to the browser against live server keys. See Phase 1.
 >
-> ⚠️ **Resend was never configured** for this domain — see Phase 2. The domain is now verified in Resend, but no email has ever *sent* from this app in any environment, so the whole email surface is unexercised. See the Phase 9 email smoke test.
+> ☑ **RESOLVED — Resend.** Was never configured (placeholder key inherited from the upstream fork). Domain now verified, key set in all four locations, and email failures now route to `logCritical`. See Phase 2.
+
+**⚠️ The one thing still untested: the email code paths themselves.** Configuration is done and the Tail Worker proves Resend delivers — but *no order confirmation, gift card, subscription, or review email has ever been rendered and sent by this app*. Those are server-rendered templates that fail on undefined fields and broken image URLs. See the Phase 9 email smoke test.
+
+**Next up:** Phase 4 (Stripe live config — coupon, prices, webhook endpoint on `2026-06-24.dahlia`) and Phase 7 (deploy the app). Phase 8 is blocked on the **R2 API token** from Phase 0.
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -112,7 +116,7 @@ Both live keys now land in the exact chunks that previously held test keys; zero
 
 ---
 
-## Phase 2 — Set production secrets
+## ☑ Phase 2 — Set production secrets *(COMPLETE 2026-07-27)*
 
 **☑ All production secrets are set (verified 2026-07-27 via `wrangler secret list --env production`):**
 
@@ -136,14 +140,22 @@ To re-generate either without ever seeing the value:
 openssl rand -hex 32 | npx wrangler secret put <NAME> --env production
 ```
 
-### ⚠️ Resend was never configured for this domain
+### ☑ Resend — was never configured for this domain; now set up across all envs
 
 Found 2026-07-27: `RESEND_API_KEY` was the untouched `re_your_…` placeholder inherited from the upstream Mercora fork, and was absent from `.dev.vars` entirely. **No email has ever sent from this app, in any environment.** The prod secret is now set, but that means every email path is unexercised:
 
-- ☐ Verify `beauteas.com` in Resend (use their default `send.beauteas.com` subdomain flow for SPF/Return-Path — it avoids any collision with Shopify's existing apex SPF while Shopify is still live).
-- ☐ Set the key in **all three** places, per the `.dev.vars` gotcha: `.env.local` (for `next dev`), `.dev.vars` (for `preview:dev` + Workers runtime), and `wrangler secret put --env dev`.
-- ☐ Smoke-test all four paths against a real inbox: order confirmation (`lib/utils/email.ts:96`), gift card delivery (`:491`), subscription lifecycle (`:632`), review notifications (`lib/utils/review-notifications.ts`).
-- ☐ **Wire email failure into alerting.** `order-confirmation.ts:118` logs `console.error`, not `logCritical` — so a misconfigured Resend in prod means every customer silently gets no confirmation and **nothing pages you** (BMC-168 only alerts on `logCritical`). Upgrade this before launch; it sits on the money path.
+- ☑ **`beauteas.com` verified in Resend.** Independently confirmed 2026-07-27: the Tail Worker's Phase 5 smoke test delivered 3 alert emails from `alerts@beauteas.com`, which is only possible on a verified domain.
+- ☑ **Key set in all four places** (verified 2026-07-27 by presence check, values never printed):
+  | Location | Purpose | Status |
+  |---|---|---|
+  | `.env.local` | `next dev` | ☑ real key (not the `re_your_` placeholder) |
+  | `.dev.vars` | `preview:dev` + local Workers runtime | ☑ real key — **same key as `.env.local`** (fingerprint-matched) |
+  | app Worker `--env dev` | deployed dev | ☑ `RESEND_API_KEY` present |
+  | app Worker `--env production` | deployed prod | ☑ `RESEND_API_KEY` present |
+
+  Both local files are gitignored (`.gitignore:32`, `:46`) and untracked — confirmed, no key is committed. The dev app Worker also now carries the full 7-secret set, matching production.
+- ☐ Smoke-test all four paths against a real inbox: order confirmation (`lib/utils/email.ts:96`), gift card delivery (`:491`), subscription lifecycle (`:632`), review notifications (`lib/utils/review-notifications.ts`). **Still outstanding — see the Phase 9 email smoke test.** Nothing has ever sent through these code paths.
+- ☑ **Email failure wired into alerting** (commit `951c5be`). `order-confirmation.ts` now calls `logCritical` under a new `"email"` area on both the send-failure and preparation-failure branches, so a broken Resend config pages instead of vanishing into `console.error`. The Tail Worker matches on `CRITICAL_MARKER`, not an area allowlist, so it picked this up with no change.
 
 Note: email failure is fully swallowed and never throws, so it cannot block `finalizePaidOrder` or trigger webhook retries. Enabling Resend is safe and isolated.
 
@@ -222,7 +234,7 @@ In **Stripe Live mode**:
 
 ---
 
-## ☑ Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202) *(prod COMPLETE + delivery verified 2026-07-27; dev secrets pending)*
+## ☑ Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202) *(COMPLETE 2026-07-27 — both envs, delivery verified)*
 
 **Critical ordering.** The production Worker config lists `tail_consumers: [{ service: "beauteas-observability-tail" }]`. That binding is **load-bearing**: if the Tail Worker doesn't exist yet, **`npm run deploy:production` in Phase 7 will FAIL**. Deploy it first, and set its two secrets.
 
@@ -252,7 +264,7 @@ cd ../..
   cd ../..
   ```
   - ☑ **Production secrets set** (2026-07-27) — `RESEND_API_KEY` + `ALERT_EMAIL_TO` both present; a `Source: Secret Change` deployment (`e1ac525d-…`, 22:08:15Z) confirms it independently.
-  - ⛔ **DEV secrets NOT set** — `wrangler secret list --env dev` returns `[]`. The dev Tail Worker is deployed but cannot alert. Dev failures are silent until these are added.
+  - ☑ **Dev secrets set** (2026-07-27) — `RESEND_API_KEY` + `ALERT_EMAIL_TO` both present on `beauteas-observability-tail-dev`. Both environments can now alert.
   - ☐ Confirm `ALERT_EMAIL_FROM` (`alerts@beauteas.com`, a config var) is on the **Resend-verified domain** — it fails silently otherwise.
 
 ### Smoke test run 2026-07-27 — what was and wasn't proven
