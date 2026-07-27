@@ -222,7 +222,7 @@ In **Stripe Live mode**:
 
 ---
 
-## ◐ Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202) *(deployed 2026-07-27; secrets pending)*
+## ☑ Phase 5 — Deploy the observability Tail Worker ⚠️ BEFORE the app (BMC-202) *(prod COMPLETE + delivery verified 2026-07-27; dev secrets pending)*
 
 **Critical ordering.** The production Worker config lists `tail_consumers: [{ service: "beauteas-observability-tail" }]`. That binding is **load-bearing**: if the Tail Worker doesn't exist yet, **`npm run deploy:production` in Phase 7 will FAIL**. Deploy it first, and set its two secrets.
 
@@ -265,9 +265,14 @@ A temporary producer Worker (`beauteas-tail-smoketest`) was deployed with `tail_
   `GET /critical - Ok` → `(log) [critical] {"area":"webhook","event":"smoketest_critical"}` — i.e. a real `CRITICAL_MARKER` line reached the trace pipeline.
 - Triggered: **2 uncaught exceptions** + **1 `[critical]` log line**.
 
-**NOT proven — needs an inbox check:** that Resend actually delivered. `sendAlertEmail` (`src/index.ts:179-202`) **logs nothing on success** — it only logs on a thrown request or a non-OK HTTP status. Tailing a tail-consumer Worker produced no output, so silence there is ambiguous rather than positive evidence.
+- ☑ **DELIVERY CONFIRMED** — **3 alert emails received** at `ALERT_EMAIL_TO`, matching the 3 triggered events exactly (2 uncaught exceptions + 1 `[critical]` line). The full chain is verified end-to-end: trace → Tail Worker → Resend → inbox. This also confirms `ALERT_EMAIL_FROM` (`alerts@beauteas.com`) is accepted by Resend.
 
-- ☐ **Confirm the alert emails arrived** at `ALERT_EMAIL_TO`. Expect subjects like `🚨 [BeauTeas production] Error: TAIL-SMOKETEST: intentional uncaught exception`. If nothing arrived, the most likely cause is `ALERT_EMAIL_FROM` (`alerts@beauteas.com`) not being on the Resend-verified domain.
+  *(Worth noting because `sendAlertEmail` (`src/index.ts:179-202`) **logs nothing on success** — it only logs on a thrown request or non-OK HTTP status, and tailing a tail-consumer Worker yields no output. So the inbox is currently the **only** positive signal that alerting works. See the alert-observability follow-up below.)*
+
+### ⚠️ Two behaviours this test exposed
+
+1. **No cross-batch deduplication.** 3 events produced 3 separate emails. `dedupe()` only collapses duplicates *within a single invocation batch*, and `MAX_ALERTS_PER_INVOCATION` caps per-email volume — but nothing limits the number of *emails*. A sustained fault (e.g. every webhook 500ing during cutover) would generate an email per trace batch, which could mean hundreds. Consider a cooldown or digest window before go-live.
+2. **A silently broken alerter is indistinguishable from a healthy one.** If the Resend key rots or the domain verification lapses, the pipeline fails exactly as quietly as the faults it exists to catch. A synthetic heartbeat, or logging Resend's message id on success, would make this observable.
 
 - ☑ **(Optional) Recommendations rebuild cron — correctly SKIPPED.** Verified against prod: `recommendations.strategy` is `"deterministic"`, which needs no cron. Only required if switched to `ai_batch`.
   > Fixed 2026-07-27 while checking: `REBUILD_URL` pointed at the **apex** (`https://beauteas.com/...`). After cutover the apex only 301s to www, and this is a **POST** — redirect handling can drop the method/body, so the rebuild would have silently failed. Now `https://www.beauteas.com/api/admin/recommendations/rebuild`. If deploying against staging first, override to `shop.beauteas.com`.
