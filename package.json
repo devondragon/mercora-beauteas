@@ -26,6 +26,7 @@
     "token:generate": "tsx scripts/manage-tokens.ts generate",
     "token:list": "tsx scripts/manage-tokens.ts list",
     "token:revoke": "tsx scripts/manage-tokens.ts revoke",
+    "images:pages": "tsx scripts/migrate-page-images.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
