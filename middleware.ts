@@ -196,7 +196,17 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   // Slug-level mappings (where handles changed) take priority, then structural
   // pattern redirects (/products/:slug -> /product/:slug) apply as fallback.
   try {
-    if (pathname.startsWith('/products/') || pathname.startsWith('/collections/') || pathname.startsWith('/pages/')) {
+    // /blogs/ and /policies/ are exact-match only: the structural fallback below
+    // has no branch for them (Shopify nests blogs under /blogs/:blog/:slug, and
+    // /policies/* slugs don't map positionally), so an unmatched path falls
+    // through to a normal 404 rather than a guessed redirect.
+    if (
+      pathname.startsWith('/products/') ||
+      pathname.startsWith('/collections/') ||
+      pathname.startsWith('/pages/') ||
+      pathname.startsWith('/blogs/') ||
+      pathname.startsWith('/policies/')
+    ) {
       const db = await getDbAsync();
       const [redirectRow] = await db
         .select({ target_path: redirect_map.target_path, status_code: redirect_map.status_code })

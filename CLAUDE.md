@@ -93,8 +93,8 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | D1 database | `beauteas-db-dev` (`f88149dc-…`) + preview (`0a037b06-…`) | `beauteas-db` (`5dbae836-ff0f-420c-9ac0-16088ceb60ee`) |
 | R2 (`MEDIA` + `NEXT_INC_CACHE_R2_BUCKET`) | `beauteas-images-dev` (+ `-dev-preview`) | `beauteas-images` |
 | Vectorize | `beauteas-index-dev` | `beauteas-index` (both 768-dim, cosine) |
-| Clerk publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_CLERK_KEY` |
-| Stripe publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_STRIPE_KEY` |
+| Clerk publishable key | `pk_test_…` (set) | ✅ `pk_live_…` (set) |
+| Stripe publishable key | `pk_test_…` (set) | ✅ `pk_live_…` (set) |
 
 - **Shared bindings** (inherited): `ASSETS` (`.open-next/assets`), `AI`, observability enabled, empty `durable_objects`.
 - **Rate-limit bindings** (per-env `ratelimits`, BMC-180): `AI_RATE_LIMITER` (20/60s — guards the paid `/api/agent-chat` AI path) and `PUBLIC_RATE_LIMITER` (60/60s — guards `tax`, `validate-discount`, `gift-cards/validate`, `payment-intent`, `shipping-options`). Native Cloudflare rate limiting (best-effort, per-colo); enforced via `lib/rate-limit.ts` (`enforceRateLimit`), which **fails open** if the binding is absent (e.g. plain `next dev`). Distinct `namespace_id`s per env so dev/prod counters don't share.
@@ -151,6 +151,35 @@ npx wrangler d1 migrations apply beauteas-db     --remote --env production     #
 npx wrangler d1 migrations apply beauteas-db-dev --local --env dev             # local sim
 npx wrangler d1 migrations list  beauteas-db-dev --remote --env dev            # show pending
 ```
+
+---
+
+## Redirects & Environment Data
+
+> **`migrations/data/*.sql` is environment data, NOT schema.** These files are deliberately **not** numbered `NNNN_*.sql` — Wrangler tracks migrations by filename, and re-running seed data on a fresh DB should be a deliberate act, not an automatic one. Apply them by hand with `d1 execute --file`. Every file uses `INSERT OR REPLACE` / `INSERT OR IGNORE` so it is re-runnable.
+
+| File | Contents |
+|---|---|
+| `migrations/data/redirects.sql` | 51 Shopify→Mercora 301s in `redirect_map` |
+| `migrations/data/blog-content.sql` | 21 blog posts + the `learn` blog category |
+
+```bash
+npx wrangler d1 execute beauteas-db     --env production --remote --file=migrations/data/redirects.sql
+npx wrangler d1 execute beauteas-db-dev --env dev        --remote --file=migrations/data/redirects.sql
+```
+
+### How redirects resolve (`middleware.ts`)
+
+1. For a path under `/products/`, `/collections/`, `/pages/`, `/blogs/`, or `/policies/`, look up an exact `source_path` in `redirect_map` → 301 to `target_path`.
+2. No row → **structural fallback**, which exists only for the first three prefixes:
+   `/products/:slug`→`/product/:slug` · `/collections/:slug`→`/category/:slug` · `/pages/:slug`→`/:slug`
+3. `/blogs/` and `/policies/` are **exact-match only** — the fallback chain has no branch for them, so an unmatched path 404s honestly instead of being mangled (Shopify nests blogs as `/blogs/:blog/:slug`, and `/policies/*` slugs don't map positionally).
+
+**Only add rows where the slug or shape actually CHANGED.** A row whose target equals what the fallback already produces is dead weight. At cutover every `/products/*` and `/collections/*` handle survived the ETL intact, so the 51 rows cover only: 21 nested `/collections/:c/products/:p` (the fallback would mangle these), 22 blog URLs, 5 `/policies/*`, and 3 legal pages deleted by migration `0016`.
+
+**Blog images** were rehosted from Shopify's CDN into R2 under `blog/` in **both** buckets and are referenced as absolute `https://img.beauteas.com/blog/<file>` URLs — the raw (non-`/cdn-cgi/image/`) path, so they survive Image Transformations being off. Because the URLs are absolute, the dev Worker also serves blog images from the **prod** bucket; the `beauteas-images-dev` copy is insurance, not what dev actually reads.
+
+> ⚠️ **Known issue — the app soft-404s.** A path that matches a dynamic route but whose entity doesn't exist returns **HTTP 200** with a "Page Not Found"/"Product Not Found" body (`/nope`, `/product/nope`, `/category/nope`, `/blog/nope`). Only unrouted paths (`/a/b/c`) return a real 404. This is bad for SEO — Google keeps soft-404s indexed — and it makes "did the redirect work?" checks unreliable: **verify redirect targets by page title, not status code.**
 
 ---
 
@@ -259,8 +288,10 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0011` applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live); `0012_remove_seeded_test_agent` (BMC-136/C9) applied to all three 2026-07-06 — `test-agent` row verified gone from prod + remote dev. Local dev auto-restores the agent from `data/d1/seed-dev.sql`; to keep it on the **deployed dev** Worker for manual testing, re-run that dev-only seed against remote dev (`npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-dev.sql`) — never against prod.
 
+**Redirects + blog content loaded (2026-07-27):** the `redirect_map` table was empty in both envs (the ETL never populated it). It now holds **51 rows** in prod *and* dev, and the Shopify `/blogs/learn` blog (**21 posts**, 44 images) has been migrated. See [Redirects & Environment Data](#redirects--environment-data).
+
 **Operational work still remaining before go-live:**
-- Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`, strong `EMAIL_UNSUBSCRIBE_SECRET` — without it review reminders skip entirely, BMC-184).
+- ✅ Prod **live keys** (`pk_live_…` Clerk + Stripe) are in `wrangler.jsonc`, and all six prod **secrets** are set (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET`) — verified via `wrangler secret list --env production` 2026-07-27.
 - Seed `admin_users` with production Clerk IDs.
 - Configure Stripe live: subscription prices/coupons + webhook endpoint.
 - **Run the Shopify ETL** (`scripts/shopify-migration/migrate-all.ts`, supports `--entity=<name>`) — rehearse against dev, then run against prod. See **[`SHOPIFY-ETL.md`](SHOPIFY-ETL.md)** for full steps/gotchas (notably: set `D1_REMOTE=true` or it writes to the local D1). ✅ Validated against dev 2026-06-29 (catalog + pages + images). **Prod run still pending.**
