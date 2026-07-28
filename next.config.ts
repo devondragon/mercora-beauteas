@@ -93,8 +93,9 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Permanent redirects for URL changes — /about → /about-us closes the loop
-  // after migration 0019 archives the placeholder /about page.
+  // Static permanent redirects for URL changes (e.g., archived CMS page slugs).
+  // This is distinct from dynamic Shopify/redirect_map redirects in middleware.ts.
+  // /about → /about-us closes the loop after migration 0019 archives the placeholder.
   async redirects() {
     return [
       {
