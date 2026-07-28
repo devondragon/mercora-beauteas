@@ -11,8 +11,11 @@
  * allowlist has been applied.
  */
 
-/** Paragraphs holding nothing but whitespace/&nbsp; were used as Shopify spacers. */
-const EMPTY_PARAGRAPH = /<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi;
+/**
+ * Paragraphs and divs holding nothing but whitespace/&nbsp; were used as Shopify spacers.
+ * Matches both `<p>...</p>` and `<div>...</div>` after their attributes are stripped.
+ */
+const EMPTY_ELEMENT = /(?:<p>|<div>)(?:\s|&nbsp;|<br\s*\/?>)*(?:<\/p>|<\/div>)/gi;
 
 /** Hidden divs and stray <meta> tags the export scattered through the body. */
 const HIDDEN_DIV = /<div[^>]*style=["'][^"']*display:\s*none[^"']*["'][^>]*>\s*<\/div>/gi;
@@ -42,6 +45,6 @@ export function normalizePageHtml(html: string): string {
       // must stay paragraphs, or legal pages sprout spurious sections.
       return text.endsWith("?") ? `<h2>${text}</h2>` : match;
     })
-    .replace(EMPTY_PARAGRAPH, "")
+    .replace(EMPTY_ELEMENT, "")
     .trim();
 }

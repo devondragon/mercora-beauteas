@@ -42,4 +42,19 @@ describe("normalizePageHtml", () => {
     const once = normalizePageHtml(html);
     expect(normalizePageHtml(once)).toBe(once);
   });
+
+  it("drops empty divs after style attribute removal", () => {
+    const html = '<div style="text-align: left;"></div><p>Copy.</p>';
+    expect(normalizePageHtml(html)).toBe("<p>Copy.</p>");
+  });
+
+  it("preserves divs with content (like images) but strips style attribute", () => {
+    const html = '<div style="text-align: center;"><img src="/media/pages/x.jpg" alt=""></div>';
+    expect(normalizePageHtml(html)).toBe('<div><img src="/media/pages/x.jpg" alt=""></div>');
+  });
+
+  it("preserves divs containing text", () => {
+    const html = '<div style="text-align: left;">Important info</div>';
+    expect(normalizePageHtml(html)).toBe("<div>Important info</div>");
+  });
 });
