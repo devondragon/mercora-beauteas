@@ -64,7 +64,19 @@ function wrangler(args: string[]): void {
 
 let cachedAccountId: string | undefined;
 
-/** Resolve the Cloudflare account id — env var first, else `wrangler whoami --json`. */
+/**
+ * Resolve the Cloudflare account id used for the existence check — explicit
+ * env var first, else `wrangler whoami --json`.
+ *
+ * This resolution is independent of whatever account `wrangler r2 object
+ * put` itself targets (there's no `account_id` in wrangler.jsonc, so
+ * wrangler does its own resolution for the actual upload). On a token
+ * scoped to more than one account, guessing here could silently point the
+ * existence check at a *different* account than the upload — so on
+ * ambiguity we fail fast rather than picking one. When resolution succeeds
+ * via `wrangler whoami`, we log the account id used, so an operator can
+ * always see which account the existence check ran against.
+ */
 function resolveAccountId(): string {
   if (cachedAccountId) return cachedAccountId;
   if (process.env.CLOUDFLARE_ACCOUNT_ID) {
@@ -82,14 +94,24 @@ function resolveAccountId(): string {
       `Could not resolve a Cloudflare account id: \`wrangler whoami\` failed (${(error as Error).message}). Set CLOUDFLARE_ACCOUNT_ID or run \`wrangler login\`.`
     );
   }
-  const accountId = (JSON.parse(out) as { accounts?: { id: string }[] }).accounts?.[0]?.id;
-  if (!accountId) {
+  const accounts = (JSON.parse(out) as { accounts?: { id: string; name?: string }[] }).accounts ?? [];
+  if (accounts.length === 0) {
     throw new Error(
-      "Could not resolve a Cloudflare account id from `wrangler whoami --json`. Set CLOUDFLARE_ACCOUNT_ID explicitly."
+      "Could not resolve a Cloudflare account id: `wrangler whoami --json` returned no accounts. Set CLOUDFLARE_ACCOUNT_ID explicitly."
     );
   }
-  cachedAccountId = accountId;
-  return accountId;
+  if (accounts.length > 1) {
+    throw new Error(
+      `\`wrangler whoami --json\` returned ${accounts.length} accounts (${accounts
+        .map((a) => `${a.name ?? "?"} [${a.id}]`)
+        .join(
+          ", "
+        )}) — refusing to guess which one the existence check should use, since it could silently diverge from whatever account \`wrangler r2 object put\` resolves to. Set CLOUDFLARE_ACCOUNT_ID explicitly to the account that owns these buckets.`
+    );
+  }
+  cachedAccountId = accounts[0].id;
+  console.log(`(resolved Cloudflare account for existence check: ${accounts[0].name ?? "?"} [${cachedAccountId}])`);
+  return cachedAccountId;
 }
 
 /** True if `key` already exists in `bucket`, via the R2 objects-list API (see header). */
@@ -137,12 +159,13 @@ function resolveEnv(): keyof typeof BUCKETS {
 async function main() {
   const env = resolveEnv();
   const bucket = BUCKETS[env];
+  const accountId = resolveAccountId();
 
   const workDir = mkdtempSync(join(tmpdir(), "page-images-"));
   try {
     for (const image of IMAGES) {
       if (await objectExists(bucket, image.key)) {
-        console.log(`skip   ${image.key} (already in ${bucket})`);
+        console.log(`skip   ${image.key} (already in ${bucket}, account ${accountId})`);
         continue;
       }
 
@@ -164,7 +187,7 @@ async function main() {
         "image/jpeg",
         "--remote",
       ]);
-      console.log(`upload ${image.key} -> ${bucket}`);
+      console.log(`upload ${image.key} -> ${bucket} (existence check ran against account ${accountId})`);
     }
   } finally {
     rmSync(workDir, { recursive: true, force: true });
