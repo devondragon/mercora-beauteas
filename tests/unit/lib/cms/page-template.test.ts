@@ -42,6 +42,32 @@ describe("resolveTemplate", () => {
     expect(resolveTemplate("contact").showRail).toBe(false);
     expect(resolveTemplate("story").showRail).toBe(false);
   });
+
+  it("rejects Object.prototype keys like constructor, toString, valueOf", () => {
+    expect(resolveTemplate("constructor").kind).toBe("story");
+    expect(resolveTemplate("constructor").eyebrow).toBe("OUR STORY");
+    expect(resolveTemplate("toString").kind).toBe("story");
+    expect(resolveTemplate("valueOf").kind).toBe("story");
+  });
+
+  it("returns a frozen CTA structure that cannot be mutated", () => {
+    const config = resolveTemplate("guide");
+    const originalActionsLength = config.cta?.actions.length ?? 0;
+
+    // Attempt to mutate the actions array (should fail silently in frozen objects)
+    try {
+      config.cta?.actions.push({
+        label: "Malicious",
+        href: "/malicious",
+        variant: "primary",
+      });
+    } catch {
+      // expected in strict mode
+    }
+
+    // Verify mutation did not occur
+    expect(config.cta?.actions.length).toBe(originalActionsLength);
+  });
 });
 
 describe("shouldShowRail", () => {
@@ -61,5 +87,19 @@ describe("POLICY_LINKS", () => {
       "/privacy-policy",
       "/terms-of-service",
     ]);
+  });
+
+  it("is frozen and cannot be mutated", () => {
+    const originalLength = POLICY_LINKS.length;
+
+    // Attempt to mutate the array (should fail silently in frozen objects)
+    try {
+      POLICY_LINKS.push({ label: "Malicious", href: "/malicious" });
+    } catch {
+      // expected in strict mode
+    }
+
+    // Verify mutation did not occur
+    expect(POLICY_LINKS.length).toBe(originalLength);
   });
 });

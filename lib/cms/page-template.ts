@@ -33,78 +33,78 @@ export interface PageTemplateConfig {
 /** Below this, a contents rail is noise rather than navigation. */
 export const MIN_SECTIONS_FOR_RAIL = 3;
 
-export const POLICY_LINKS = [
-  { label: "Shipping Policy", href: "/shipping-policy" },
-  { label: "Refund & Returns", href: "/refund-policy" },
-  { label: "Privacy Policy", href: "/privacy-policy" },
-  { label: "Terms of Service", href: "/terms-of-service" },
-];
+export const POLICY_LINKS = Object.freeze([
+  Object.freeze({ label: "Shipping Policy", href: "/shipping-policy" }),
+  Object.freeze({ label: "Refund & Returns", href: "/refund-policy" }),
+  Object.freeze({ label: "Privacy Policy", href: "/privacy-policy" }),
+  Object.freeze({ label: "Terms of Service", href: "/terms-of-service" }),
+]);
 
-const SHOP: PageCtaAction = {
+const SHOP: PageCtaAction = Object.freeze({
   label: "Shop the teas",
   href: "/category/clearly-calendula",
   variant: "primary",
-};
+});
 
-const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = {
-  guide: {
+const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = Object.freeze({
+  guide: Object.freeze({
     kind: "guide",
     eyebrow: "CARE GUIDE",
     showRail: true,
-    cta: {
+    cta: Object.freeze({
       heading: "Ready to brew?",
       body: "Explore the Clearly Calendula collection.",
-      actions: [SHOP, { label: "Ask Chai", href: "/agent", variant: "secondary" }],
+      actions: Object.freeze([SHOP, Object.freeze({ label: "Ask Chai", href: "/agent", variant: "secondary" })]),
       showPolicyLinks: false,
-    },
-  },
-  faq: {
+    }),
+  }),
+  faq: Object.freeze({
     kind: "faq",
     eyebrow: "GOOD QUESTIONS",
     showRail: true,
-    cta: {
+    cta: Object.freeze({
       heading: "Still have a question?",
       body: "We answer every email within 1–2 business days.",
-      actions: [
-        { label: "Contact us", href: "/contact", variant: "primary" },
-        { label: "Ask Chai", href: "/agent", variant: "secondary" },
-      ],
+      actions: Object.freeze([
+        Object.freeze({ label: "Contact us", href: "/contact", variant: "primary" }),
+        Object.freeze({ label: "Ask Chai", href: "/agent", variant: "secondary" }),
+      ]),
       showPolicyLinks: false,
-    },
-  },
-  legal: {
+    }),
+  }),
+  legal: Object.freeze({
     kind: "legal",
     eyebrow: "THE FINE PRINT",
     showRail: true,
-    cta: {
+    cta: Object.freeze({
       heading: "Need a hand?",
       body: "If anything here is unclear, we're happy to explain.",
-      actions: [{ label: "Contact us", href: "/contact", variant: "primary" }],
+      actions: Object.freeze([Object.freeze({ label: "Contact us", href: "/contact", variant: "primary" })]),
       showPolicyLinks: true,
-    },
-  },
-  contact: {
+    }),
+  }),
+  contact: Object.freeze({
     kind: "contact",
     eyebrow: "SAY HELLO",
     showRail: false,
     // The contact page is itself the call to action.
     cta: null,
-  },
-  story: {
+  }),
+  story: Object.freeze({
     kind: "story",
     eyebrow: "OUR STORY",
     showRail: false,
-    cta: {
+    cta: Object.freeze({
       heading: "Build your beauty from within.",
       body: "",
-      actions: [SHOP, { label: "See subscriptions", href: "/subscriptions", variant: "secondary" }],
+      actions: Object.freeze([SHOP, Object.freeze({ label: "See subscriptions", href: "/subscriptions", variant: "secondary" })]),
       showPolicyLinks: false,
-    },
-  },
-};
+    }),
+  }),
+});
 
 export function resolveTemplate(template: string | null | undefined): PageTemplateConfig {
-  if (template && template in TEMPLATES) {
+  if (template && Object.prototype.hasOwnProperty.call(TEMPLATES, template)) {
     return TEMPLATES[template as PageTemplateKind];
   }
   // `default` and the legacy `about` template both land here.
