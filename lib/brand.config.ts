@@ -129,7 +129,7 @@ export const brand = {
       { label: "Subscriptions", href: "/subscriptions" }, // CMS page (published)
       { label: "Gift Cards", href: "/gift-cards" },        // /gift-cards route
       { label: "Brewing Guide", href: "/brewing-directions" }, // CMS page (published)
-      { label: "About Us", href: "/about" },               // CMS page (published)
+      { label: "About Us", href: "/about-us" },            // CMS page (real founder story)
     ],
     column3: [
       { label: "Contact Us", href: "/contact" },           // CMS page (migration 0014)
