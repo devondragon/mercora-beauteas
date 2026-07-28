@@ -1,21 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-labelledby="chai-title chai-desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="chai-title chai-desc">
   <title id="chai-title">Chai</title>
-  <desc id="chai-desc">BeauTeas mascot: a teacup with a botanical leaf and rising steam.</desc>
-  <!-- Badge disc: cream fill with a soft rose ring so the mark reads on both cream and rose backgrounds -->
-  <circle cx="24" cy="24" r="22" fill="#fdf8f6" stroke="#cf8577" stroke-width="2" />
-  <!-- Steam wisps -->
-  <path d="M16.5 17c-1.9-1.7-1.9-3.8 0-5.5" stroke="#c4a87c" stroke-width="1.4" stroke-linecap="round" opacity="0.85" />
-  <path d="M31.5 17c1.9-1.7 1.9-3.8 0-5.5" stroke="#c4a87c" stroke-width="1.4" stroke-linecap="round" opacity="0.85" />
-  <!-- Botanical leaf rising from the cup -->
-  <path d="M22 19c-3-5-2-11 2.5-14 3.5 4 2.5 10-2.5 14z" fill="#446b52" />
-  <path d="M23 18c0-4 .6-7 2.2-9.6" stroke="#eef4ee" stroke-width="1" stroke-linecap="round" />
-  <!-- Saucer -->
-  <ellipse cx="24" cy="34" rx="11" ry="2.1" fill="#cf8577" />
-  <ellipse cx="24" cy="33.6" rx="7.6" ry="1" fill="#ebc3bb" />
-  <!-- Cup handle (drawn behind the body) -->
-  <path d="M31 22.5c4.4.4 4.4 5.4-.5 5" stroke="#cf8577" stroke-width="2.4" stroke-linecap="round" />
-  <!-- Cup body -->
-  <path d="M13 20h18l-2 8q0 4-5 4t-5-4z" fill="#cf8577" />
-  <!-- Rim highlight -->
-  <ellipse cx="24" cy="20" rx="8.6" ry="1.7" fill="#ebc3bb" />
+  <desc id="chai-desc">BeauTeas mascot: a smiling teacup with a calendula sprig and rising steam.</desc>
+  <g fill="none" stroke="#99544a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Steam wisps -->
+    <path d="M15.8 18C13.6 15.2 15.8 13 14.2 10.2" stroke="#c4a87c" stroke-width="1.9"/>
+    <path d="M32.2 18C34.4 15.2 32.2 13 33.8 10.2" stroke="#c4a87c" stroke-width="1.9"/>
+
+    <!-- Sprig: stem, two leaves, calendula bud (behind the cup) -->
+    <path d="M24 20.5V11" stroke="#446b52" stroke-width="1.4"/>
+    <path d="M23.6 17.6C19.1 17.1 16.6 13.6 17.1 9.6C21.6 10.6 23.9 13.6 23.6 17.6Z" fill="#446b52"/>
+    <path d="M24.4 17.6C28.9 17.1 31.4 13.6 30.9 9.6C26.4 10.6 24.1 13.6 24.4 17.6Z" fill="#446b52"/>
+    <circle cx="24" cy="8.2" r="2.9" fill="#c4a87c"/>
+    <circle cx="24" cy="8.2" r="1.1" fill="#99544a" stroke="none"/>
+
+    <!-- Saucer (behind the cup) -->
+    <ellipse cx="24" cy="40" rx="14.4" ry="2.7" fill="#cf8577"/>
+
+    <!-- Handle (behind the body) -->
+    <path d="M35.6 23.4C41.8 23 42.6 31.4 34.8 32" stroke="#99544a" stroke-width="4.8"/>
+    <path d="M35.6 23.4C41.8 23 42.6 31.4 34.8 32" stroke="#cf8577" stroke-width="2.3"/>
+
+    <!-- Cup body: wide + shallow -->
+    <path d="M11.5 20.5H36.5L33.6 32.4C33.2 36.2 29.6 38.2 24 38.2C18.4 38.2 14.8 36.2 14.4 32.4Z" fill="#cf8577"/>
+
+    <!-- Rim -->
+    <ellipse cx="24" cy="20.5" rx="12.5" ry="2.7" fill="#f3dcd4"/>
+
+    <!-- Face -->
+    <circle cx="17.3" cy="30.2" r="2" fill="#ebc3bb" stroke="none"/>
+    <circle cx="30.7" cy="30.2" r="2" fill="#ebc3bb" stroke="none"/>
+    <circle cx="20" cy="27" r="1.55" fill="#6a3d38" stroke="none"/>
+    <circle cx="28" cy="27" r="1.55" fill="#6a3d38" stroke="none"/>
+    <path d="M20.8 30.4Q24 33.2 27.2 30.4" stroke="#6a3d38" stroke-width="1.5"/>
+  </g>
 </svg>

@@ -100,8 +100,18 @@ export default function cloudflareLoader({
   width,
   quality,
 }: ImageLoaderProps) {
-  // Local, bundled assets are served straight from /public — never route through R2/CDN
-  if (src.startsWith("/placeholder") || src.startsWith("/logo")) return src;
+  // Local, bundled assets are served straight from /public — never route through R2/CDN.
+  // `/chai` covers the mascot marks (chai.svg, chai-mark.svg). Omitting them sent the
+  // mascot to R2, where a public/-bundled file does not exist, so it rendered broken in
+  // every deployed environment while still working under `next dev` (which returns src
+  // untouched below) — which is why it went unnoticed.
+  if (
+    src.startsWith("/placeholder") ||
+    src.startsWith("/logo") ||
+    src.startsWith("/chai")
+  ) {
+    return src;
+  }
 
   // Local dev server: serve as-is (no optimization, faster builds)
   if (process.env.NODE_ENV === "development") {

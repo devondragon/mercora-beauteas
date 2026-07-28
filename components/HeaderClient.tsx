@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Home, Search, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3, User, Gift } from "lucide-react";
+import { Home, LogIn, ChevronDown, ChevronRight, ShoppingCart, Menu, X, Grid3X3, User, Gift } from "lucide-react";
 import AgentDrawer from "@/components/agent/AgentDrawer";
 import ClerkLogin from "@/components/login/ClerkLogin";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -507,7 +507,12 @@ export default function HeaderClient({
                     }
                   }}
                 >
-                  <Search className="h-5 w-5" />
+                  {/* Chai replaces the magnifier only here: at 20px the mark is
+                      legible, and this full-width row's "Help & Search" label
+                      carries the search affordance. The desktop trigger in
+                      AgentDrawer keeps the magnifier, where a 16px face would
+                      read as noise. */}
+                  <Image src="/chai-mark.svg" alt="" width={20} height={20} />
                   <span>Help & Search</span>
                 </button>
                 {isSignedIn && (

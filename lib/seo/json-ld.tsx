@@ -236,7 +236,7 @@ export function buildOrganizationJsonLd(): JsonLdBase {
     name: brand.name,
     description: brand.description,
     url: BASE_URL,
-    logo: `${BASE_URL}/favicon.ico`,
+    logo: `${BASE_URL}/logo.png`,
   };
 
   if (socialLinks.length > 0) {
