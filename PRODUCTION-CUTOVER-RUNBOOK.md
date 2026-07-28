@@ -16,15 +16,17 @@
 
 **Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
 
-**Progress as of 2026-07-27 — Phases 0, 1, 2, 3, and 5 are COMPLETE.** Cloudflare paid plan · Clerk production instance · Stripe live + tax registrations · live publishable keys · all 7 production secrets · prod D1 fully migrated (`0001`–`0018`) · observability Tail Worker deployed to both environments with alert delivery verified end-to-end.
+**Progress as of 2026-07-28 — Phases 0, 1, 2, 3, 5, 7, and 8 are COMPLETE; Phase 9 is nearly done.** Cloudflare paid plan · Clerk production instance (certs issued, `clerk.beauteas.com` FAPI live) · Stripe live + tax registrations · live publishable keys · all 7 production secrets · prod D1 fully migrated (`0001`–`0018`) · Tail Worker alerting verified · **app deployed and serving on `shop.beauteas.com`** · **catalog, images, knowledge, and Vectorize promoted to prod** · **one real live order placed end-to-end** with correct Stripe tax, webhook, inventory decrement, and confirmation email.
 
 > ☑ **RESOLVED — `NEXT_PUBLIC_*` build-time blocker.** Fixed via `scripts/build-with-env.mjs`; verified with a real production build. Would have shipped test Stripe/Clerk keys to the browser against live server keys. See Phase 1.
 >
 > ☑ **RESOLVED — Resend.** Was never configured (placeholder key inherited from the upstream fork). Domain now verified, key set in all four locations, and email failures now route to `logCritical`. See Phase 2.
 
-**⚠️ The one thing still untested: the email code paths themselves.** Configuration is done and the Tail Worker proves Resend delivers — but *no order confirmation, gift card, subscription, or review email has ever been rendered and sent by this app*. Those are server-rendered templates that fail on undefined fields and broken image URLs. See the Phase 9 email smoke test.
+> ☑ **RESOLVED — order-confirmation email path.** It has now rendered and delivered for a real order. Two bugs found and fixed doing it: line items carried no image (resolved at send time from product media, commit `6dc60e6`), and there was **no merchant notification at all** — the shop owner had no signal an order needed fulfilling beyond Stripe's payment email (commit `a4376e5`, stopgap for BMC-216).
 
-**Next up:** Phase 4 (Stripe live config — coupon, prices, webhook endpoint on `2026-06-24.dahlia`) and Phase 7 (deploy the app). Phase 8's R2 prerequisite turned out not to exist — nothing is blocked on you.
+**⚠️ Still untested: the gift-card, subscription, and review email paths.** Explicitly **not** launch blockers (see the critical path below) — but they have still never rendered, and they are server-rendered templates that fail on undefined fields.
+
+**Next up: Phase 10 (the cutover itself).** The only thing between here and DNS is the short open list in Phase 9 — chiefly **gating `shop.` behind Cloudflare Access**, which is currently wide open and fully crawlable (see below).
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -43,11 +45,12 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | # | Blocker | Status | Blocked by |
 |---|---|---|---|
 | ~~1~~ | ~~R2 API token~~ | ⊘ | **not needed** — `sync-images.mjs` uses wrangler, not the S3 API (verified 2026-07-27) |
-| 2 | **Deploy app to prod** (Phase 7) | ☑ | done 2026-07-27 — `shop.beauteas.com` live, version `e5e28fd7` |
-| 3 | **Promote catalog + images dev → prod** (Phase 8) | ◐ | done 2026-07-27 except the **Vectorize rebuild** (needs an admin credential — see Phase 8) |
-| 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☐ | **next** |
-| 5 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #4 |
-| 6 | **Post-cutover checks** (Phase 11) | ☐ | #5 |
+| 2 | **Deploy app to prod** (Phase 7) | ☑ | done 2026-07-27 — `shop.beauteas.com` live |
+| 3 | **Promote catalog + images dev → prod** (Phase 8) | ☑ | done 2026-07-27 — 10 products / 6 categories / 13 pages / 47 images / **18 vectors** indexed |
+| 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☑ | done 2026-07-27 — order `WEB-GUEST-1785194376707`, `calculated_by: stripe`, webhook OK, inventory 250→249, email delivered |
+| 5 | **Gate `shop.` behind Cloudflare Access** (Phase 9) | ☐ | **← the only open blocker.** It is public and crawlable right now |
+| 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #5 |
+| 7 | **Post-cutover checks** (Phase 11) | ☐ | #6 |
 
 **Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
 
@@ -129,7 +132,7 @@ So a production deploy today ships a bundle with **test** publishable keys while
 ```
 
 Both live keys now land in the exact chunks that previously held test keys; zero test keys remain. Nothing further is needed here — just use `npm run deploy:production` as normal.
-- ☐ After deploying, confirm in the browser that the page loads `clerk.beauteas.com` (production FAPI), **not** `*.clerk.accounts.dev`.
+- ☑ Confirmed after deploying: the page loads `clerk.beauteas.com` (production FAPI), **not** `*.clerk.accounts.dev`. See Phase 9.
 
 ---
 
@@ -171,7 +174,7 @@ Found 2026-07-27: `RESEND_API_KEY` was the untouched `re_your_…` placeholder i
   | app Worker `--env production` | deployed prod | ☑ `RESEND_API_KEY` present |
 
   Both local files are gitignored (`.gitignore:32`, `:46`) and untracked — confirmed, no key is committed. The dev app Worker also now carries the full 7-secret set, matching production.
-- ☐ Smoke-test all four paths against a real inbox: order confirmation (`lib/utils/email.ts:96`), gift card delivery (`:491`), subscription lifecycle (`:632`), review notifications (`lib/utils/review-notifications.ts`). **Still outstanding — see the Phase 9 email smoke test.** Nothing has ever sent through these code paths.
+- ◐ Smoke-test the four paths against a real inbox. **Order confirmation now PASSES** (real order, 2026-07-27 — see Phase 9). Gift card (`:495`), subscription (`:636`), and review notifications remain unexercised; none is a launch blocker.
 - ☑ **Email failure wired into alerting** (commit `951c5be`). `order-confirmation.ts` now calls `logCritical` under a new `"email"` area on both the send-failure and preparation-failure branches, so a broken Resend config pages instead of vanishing into `console.error`. The Tail Worker matches on `CRITICAL_MARKER`, not an area allowlist, so it picked this up with no change.
 
 Note: email failure is fully swallowed and never throws, so it cannot block `finalizePaidOrder` or trigger webhook retries. Enabling Resend is safe and isolated.
@@ -245,8 +248,8 @@ In **Stripe Live mode**:
 
 - ☑ **`/api/webhooks` exempted from maintenance mode** (commit `951c5be`). Previously `middleware.ts` exempted only `/admin`, `/api/admin`, and `/api/mcp`, so enabling maintenance mode during the migration window would have returned a **503 HTML page to Stripe** — self-healing via retries, but accumulating undelivered payment events during exactly the window you care most about.
 
-- ☐ Test signature handling before cutover:
-  `stripe listen --forward-to <host>/api/webhooks/stripe` then `stripe trigger customer.subscription.created`.
+- ☑ **Signature handling proven in production 2026-07-27** — by something better than `stripe listen`: the live order `WEB-GUEST-1785194376707` produced a real `payment_intent.succeeded` that Stripe signed, the Worker verified, and the handler processed (order promoted to paid, inventory decremented). That exercises the live `STRIPE_WEBHOOK_SECRET` on the live endpoint at the dahlia API version — the exact combination a CLI test only approximates.
+  > At cutover you **edit this endpoint's URL** to `www` rather than creating a second one, so this verified secret carries over unchanged.
 
 - ☑ **Gaps filed as tickets (2026-07-27).** Both are code gaps — subscribing the events alone would not help.
   - **[BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) (High)** — no `charge.refunded` handler. Worse than first assessed: the over-refund guard computes its total *exclusively* from `orders.extensions.refunds[]` (`lib/payments/refund-ledger.ts:101-105`), which a Dashboard refund never writes. So a Dashboard refund followed by an app refund **returns the money twice**. Also skips inventory restock and the `refund.*` policy settings.
@@ -285,7 +288,7 @@ cd ../..
   ```
   - ☑ **Production secrets set** (2026-07-27) — `RESEND_API_KEY` + `ALERT_EMAIL_TO` both present; a `Source: Secret Change` deployment (`e1ac525d-…`, 22:08:15Z) confirms it independently.
   - ☑ **Dev secrets set** (2026-07-27) — `RESEND_API_KEY` + `ALERT_EMAIL_TO` both present on `beauteas-observability-tail-dev`. Both environments can now alert.
-  - ☐ Confirm `ALERT_EMAIL_FROM` (`alerts@beauteas.com`, a config var) is on the **Resend-verified domain** — it fails silently otherwise.
+  - ☑ `ALERT_EMAIL_FROM` (`alerts@beauteas.com`) confirmed on the **Resend-verified domain** — proven by the 3 alert emails actually delivered in the smoke test below.
 
 ### Smoke test run 2026-07-27 — what was and wasn't proven
 
@@ -353,24 +356,29 @@ npx tsx scripts/shopify-migration/migrate-all.ts                       # then th
 
 ---
 
-## Phase 7 — Deploy the app to prod + seed admins + smoke test (DNS still on Shopify)
+## ☑ Phase 7 — Deploy the app to prod + seed admins + smoke test *(COMPLETE 2026-07-27 — DNS still on Shopify)*
 
-- ☐ **Seed `admin_users` with your production Clerk user ID** (BMC-77). Without it, **no one can reach `/admin`** (orders, refunds) in prod:
-  ```bash
-  wrangler d1 execute beauteas-db --env production --remote \
-    --command="INSERT INTO admin_users (clerk_user_id, role) VALUES ('<your_prod_clerk_id>', 'admin');"
-  ```
-- ☐ Deploy (Tail Worker from Phase 5 must already be live):
-  ```bash
-  npm run deploy:production
-  ```
-- ☐ Add the custom domain in Cloudflare (Workers → beauteas → Settings → Domains) — but **keep DNS pointed at Shopify** for now; validate on the `*.workers.dev` URL.
-- ☐ Smoke test on the workers.dev URL: homepage, product page, category, cart, admin login, AI chat.
-  - **Note:** this deploy uses **live** Stripe keys, so test cards are rejected. Either do a real low-value checkout + immediate refund, or temporarily swap in Stripe **test** keys for this step only, then re-set live keys before Phase 10.
+- ☑ **`admin_users` seeded** (BMC-77) — verified in prod: `user_3H6h7g2w4I30VDXsdY8lOTvG5Fp` / `super_admin` / `is_active=1`. **Confirmed working, not just present:** the row carries a real `last_login` (2026-07-28T00:51Z), so the full Clerk-session → `isUserAdmin()` → `/admin` path has actually executed in production.
+  > The column is `user_id`, **not** `clerk_user_id` — the command previously printed here would have errored. Correct form:
+  > ```bash
+  > wrangler d1 execute beauteas-db --env production --remote \
+  >   --command="INSERT INTO admin_users (user_id, email, display_name, role, created_by, is_active) VALUES ('<clerk_id>','<email>','<name>','super_admin','cutover-seed',1);"
+  > ```
+- ☑ **Deployed** via `npm run deploy:production` (Tail Worker was already live, so the `tail_consumers` binding resolved).
+- ☑ **Custom domain added** — `shop.beauteas.com`, declared in `wrangler.jsonc` production `routes` with `custom_domain: true`. `www` and the apex remain on Shopify, untouched.
+  > Note: adding `routes` **disables the `*.workers.dev` URL** for this Worker, so validation happens on `shop.` rather than workers.dev as originally written.
+- ☑ **Smoke tested on `shop.`** — homepage, PDP, category nav, cart, `/admin`, and Chai all load. Two production-only faults were found and fixed here, neither reproducible in dev:
+  - **Every product image 404'd.** `image-loader.ts` routed everything through `/cdn-cgi/image/...`, which requires Image Transformations enabled for the zone — it wasn't. Now enabled, plus a `NEXT_PUBLIC_IMAGE_TRANSFORMS=false` escape hatch that serves raw objects instead (commit `eaa1245`, regression-tested). Dev never hit this because it has no `NEXT_PUBLIC_IMAGE_CDN` and falls back to `/media`.
+  - **`/admin` hung on "Checking access permissions."** Clerk had not yet issued SSL certs for `clerk.beauteas.com` / `accounts.beauteas.com`, so `clerk.browser.js` 403'd and `AdminGuard` never left `isLoaded=false`. Resolved once Clerk finished DNS verification and issued the certs.
+- ☑ **Live-key checkout confirmed** — a real low-value order was placed rather than swapping in test keys. See Phase 9.
 
 ---
 
-## Phase 8 — Promote the curated catalog + content from DEV → PROD
+## ☑ Phase 8 — Promote the curated catalog + content from DEV → PROD *(COMPLETE 2026-07-27)*
+
+**Verified live in prod 2026-07-28:** 10 products · 6 categories · 13 pages · 47 R2 images · 8 knowledge articles · **Vectorize index rebuilt to 18 vectors** (10 products + 8 knowledge, `processedUpTo` 2026-07-27T22:58Z).
+
+> ⚠️ **`redirect_map` is EMPTY — 0 rows in prod *and* in dev.** The promotion copied it faithfully; there was simply never anything to copy. Impact is limited but real: only the **structural** fallback redirect applies (`/products/:slug` → 301 `/product/:slug`, `middleware.ts:214-223` — verified working on `shop.`). Any Shopify URL whose **slug** changed during the ETL will 301 to a product that doesn't exist → 404, losing that page's link equity. With ~10 SKUs this is a 10-minute check, not a project: compare the live Shopify product/collection slugs against prod `products.slug`, and insert a `redirect_map` row for each mismatch before Phase 10. See the Phase 11 redirect check.
 
 Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy the **curated catalog/content** from dev. **Prereq: Phase 3 (migrations 0013–0018) applied**, so dev and prod schemas match exactly.
 
@@ -381,20 +389,20 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
 > ```
 > The manual `wrangler d1 export --table … | d1 execute --file …` path below is the fallback if you need to copy tables individually.
 
-- ☐ **Put Shopify in read-only** (freeze new orders) — fallback if cutover aborts.
-- ☐ Back up the prod DB baseline:
+- ☐ **Put Shopify in read-only** (freeze new orders) — fallback if cutover aborts. *(Still to do — this belongs to the Phase 10 window, not the catalog promotion.)*
+- ☑ Back up the prod DB baseline:
   ```bash
   wrangler d1 export beauteas-db --env production --remote --output=backup-pre-promote.sql
   ```
-- ☐ **Copy R2 image objects** dev → prod. Image refs in D1 are **relative keys** (`products/{slug}.{ext}`), so they map 1:1. `scripts/promote-dev-to-prod.mjs` handles this by delegating to `sync-images.mjs pull --env dev` then `push --env production` — **no R2 API token needed**, it uses wrangler and your existing `CLOUDFLARE_API_TOKEN` (verified 2026-07-27). Then confirm **`img.beauteas.com` is a custom domain on the prod `beauteas-images` bucket**.
-- ☐ **Copy the curated D1 tables** dev → prod — **catalog/content only**, table-scoped, `INSERT OR REPLACE` (prod already holds migration-seeded CMS/legal/gift-card-product rows, so a blind dump collides). Copy set:
+- ☑ **Copied R2 image objects** dev → prod — 47 objects. Image refs in D1 are **relative keys** (`products/{slug}.{ext}`), so they map 1:1. `scripts/promote-dev-to-prod.mjs` handles this by delegating to `sync-images.mjs pull --env dev` then `push --env production` — **no R2 API token needed**, it uses wrangler and your existing `CLOUDFLARE_API_TOKEN` (verified 2026-07-27). `img.beauteas.com` is confirmed as a custom domain on the prod `beauteas-images` bucket and serving.
+- ☑ **Copied the curated D1 tables** dev → prod — **catalog/content only**, table-scoped, `INSERT OR REPLACE` (prod already holds migration-seeded CMS/legal/gift-card-product rows, so a blind dump collides). Copy set:
   ```
   categories · product_types · products · product_variants · inventory · pricing · media
   pages · page_versions · page_templates · redirect_map
   product_reviews · review_media · blog_categories · blog_posts
   subscription_plans · admin_settings
   ```
-- ☐ **Do NOT copy** — credentials / admin / customer / transactional / dev-noise:
+- ☑ **Did NOT copy** — credentials / admin / customer / transactional / dev-noise:
   ```
   admin_users · api_tokens · mcp_agents · mcp_sessions · mcp_usage · mcp_rate_limits
   customers · addresses · orders · order_webhooks
@@ -403,47 +411,63 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
   review_reminders · email_unsubscribes
   ```
   …and **never** `d1_migrations` (prod tracks its own migration state).
-- ☐ **Upload the knowledge articles to prod R2** under `knowledge_md/`. ⚠️ `data/r2/knowledge_md/*.md` is the git source of truth but **there is no sync script** — the files reach R2 only via the admin UI (`/admin/knowledge` → `MEDIA.put`, `app/api/admin/knowledge/route.ts:166-175`) or a manual `wrangler r2 object put`. Editing the repo files changes nothing on its own.
-
-  These were updated 2026-07-27 to tell customers to email **`info@beauteas.com`** (was `hello@`), matching the new From address. Chai answers from the **Vectorize index**, not from R2 or git directly, so this only takes effect after the upload *and* the rebuild below. Until then Chai will keep giving out the old address.
-- ☐ **Rebuild Vectorize** from prod (the index is not copyable):
+- ☑ **Knowledge articles uploaded to prod R2** under `knowledge_md/` — all 8, verified to contain `info@beauteas.com`. ⚠️ `data/r2/knowledge_md/*.md` is the git source of truth but **there is no sync script** — the files reach R2 only via the admin UI (`/admin/knowledge` → `MEDIA.put`, `app/api/admin/knowledge/route.ts:166-175`) or a manual `wrangler r2 object put`. Editing the repo files changes nothing on its own.
+  > This bit once: the first promotion left prod R2 holding the **stale** `hello@` copies, because the promote script syncs `products/` images but not `knowledge_md/`. Re-pushed manually. If you edit knowledge content again, push it *and* rebuild Vectorize.
+- ☑ **Vectorize rebuilt** from prod (the index is not copyable) — **18 vectors** (10 products + 8 knowledge articles), `processedUpToDatetime` 2026-07-27T22:58Z. Confirm with `wrangler vectorize info beauteas-index`.
   ```bash
   curl -X POST "https://shop.beauteas.com/api/admin/vectorize" \
     -H "Authorization: Bearer <ADMIN_VECTORIZE_TOKEN>"
-  # Expect the real catalog (+ knowledge articles) indexed
   ```
-- ☐ Spot-check on prod (workers.dev URL): products with prices/inventory/images, categories, CMS + legal pages, reviews on PDPs, and redirects populated:
-  ```bash
-  wrangler d1 execute beauteas-db --env production --remote --command="SELECT COUNT(*) FROM redirect_map;"
-  ```
+- ☑ Spot-checked on prod (`shop.beauteas.com`): products with prices/inventory/images, category nav, CMS + legal pages all render.
+- ☐ **Confirm Chai now gives out `info@beauteas.com`.** The knowledge re-push and the index rebuild happened close together — ask Chai "how do I contact you?" on `shop.` and check the address in the answer. If it still says `hello@`, just re-run the rebuild curl above.
+  > Related: Chai has separately been observed inventing a contact address rather than quoting the knowledge base — filed as a backlog ticket (some queries should be answered deterministically, not generatively). Not a launch blocker, but it means a correct index does not *guarantee* a correct answer.
 
 ---
 
-## Phase 9 — Final pre-switch verification on `shop.beauteas.com`
+## ◐ Phase 9 — Final pre-switch verification on `shop.beauteas.com`
 
 Shopify is still serving customers on `www` throughout this phase.
 
-- ☐ Add `shop.beauteas.com` as a **Custom Domain** on the production Worker, and put **Cloudflare Access** in front of it. Access (not just `noindex`) is the right gate: it prevents duplicate-content indexing of the real catalog, and prevents a stray real order or a real customer receiving a test email from the staging host.
-- ☐ Products, images, orders visible in `/admin`; reviews on PDPs.
-- ☐ **Auth is on the production Clerk instance** — confirm the page loads `clerk.beauteas.com` (prod FAPI), **not** `*.clerk.accounts.dev`. *(The live key `pk_live_Y2xlcmsu…` base64-decodes to `clerk.beauteas.com$`, matching the CSP entry at `lib/security-headers.ts:31`.)*
-- ⊘ **DEFERRED — subscriptions not sold at launch.** (When enabled: one live subscription end-to-end — webhook → D1 → confirmation email, working "Manage Subscription" link, human-readable product names.) **A one-off order test still required** — see the checkout item below.
+- ☑ `shop.beauteas.com` added as a **Custom Domain** on the production Worker.
+- ⛔ **NOT DONE — `shop.` is NOT gated. This is the one open cutover blocker.** Verified 2026-07-28: `GET /` returns **200 to anyone**, `robots.txt` says `Allow: /`, `/sitemap.xml` is served *and advertised in robots*, and every page self-canonicals to `https://shop.beauteas.com/...`. So the full real catalog is publicly crawlable on a second hostname while `www` still serves Shopify.
 
-### ☐ Email smoke test — nothing here has ever run
+  Two distinct harms, both cheap to avoid and expensive to undo:
+  1. **Duplicate-content indexing.** If Google indexes `shop.` before cutover, the post-cutover `www` pages compete with an already-indexed twin of themselves — the opposite of the reason `www` was chosen as canonical.
+  2. **A stranger can place a real order on staging**, on live Stripe keys, and receive real live-branded email from `info@beauteas.com`.
 
-Resend has never successfully sent from this app, so all four paths are unexercised. Trigger each against a real inbox and check rendering, not just delivery — these are server-rendered templates that fail on undefined fields and broken image URLs:
+  **Fix: put Cloudflare Access in front of `shop.`** (Zero Trust → Access → Applications → self-hosted, host `shop.beauteas.com`, policy = your email). Access is the right gate rather than a `noindex`: `app/robots.ts` is not environment-aware — it derives from `BASE_URL` and hardcodes `Allow: /` — so making robots env-conditional would be a code change plus a rebuild, and it would still leave the host open to orders.
+- ☑ Products, images, and orders visible in `/admin` — confirmed with the live order below.
+- ☑ **Auth is on the production Clerk instance.** Verified end-to-end 2026-07-27: `clerk.beauteas.com` serves a cert with `CN=clerk.beauteas.com`, `clerk.browser.js` returns 200, and `/v1/client` returns 200. The `admin_users` row shows a real `last_login`, so a production Clerk session genuinely authenticated. *(The live key `pk_live_Y2xlcmsu…` base64-decodes to `clerk.beauteas.com$`, matching the CSP entry at `lib/security-headers.ts:31`.)*
+  > `accounts.beauteas.com` (Account Portal) returns 403 to `curl` even with browser headers, but the response carries a `server-timing: chlray` — a Cloudflare **challenge**, not the earlier error-1000 misconfiguration. Worth one real-browser click to confirm, since that host handles password reset and email verification.
+- ⊘ **DEFERRED — subscriptions not sold at launch.**
 
-| Path | How to trigger |
+### ☑ Live order test — PASSED 2026-07-27
+
+One real order on live Stripe keys: **`WEB-GUEST-1785194376707`**, $21.47, guest checkout.
+
+| Check | Result |
 |---|---|
-| Order confirmation (`lib/utils/email.ts:96`) | Place a real order on `shop.` |
-| Gift card delivery (`:491`) | Buy a gift-card variant |
-| Subscription lifecycle (`:632`) | The live subscription test above (create → cancel) |
-| Review notifications (`lib/utils/review-notifications.ts`) | Submit a review; for the reminder, insert a `review_reminders` row with a past due date |
+| Order state | `paid` / `processing` |
+| **Stripe Tax** | tax computed at **3.27%** — i.e. `calculated_by: "stripe"`, **not** the 7% fallback. This is the Phase 0 nexus gate, confirmed. |
+| Webhook | `payment_intent.succeeded` received and processed on the dahlia endpoint |
+| Inventory | decremented 250 → 249 |
+| Confirmation email | delivered and rendered |
+
+### ◐ Email smoke test — order confirmation PASSED; the rest are unexercised
+
+| Path | Status |
+|---|---|
+| Order confirmation (`lib/utils/email.ts:103`) | ☑ **delivered and rendered.** Two bugs found: missing line-item images (fixed, `6dc60e6`) and no merchant notification (added, `a4376e5`). |
+| Merchant new-order notification (`:893`) | ◐ **built and unit-tested, not yet observed in production.** Place one more order — or refund/re-place — and confirm the owner email arrives. This is the only signal that an order needs fulfilling. |
+| Gift card delivery (`:495`) | ☐ not a launch blocker |
+| Subscription lifecycle (`:636`) | ⊘ not sold at launch |
+| Review notifications (`lib/utils/review-notifications.ts`) | ☐ not a launch blocker |
 
 Check on each: images actually load (they resolve against `img.beauteas.com`, not a relative path), totals match the order, and **every link points at `shop.beauteas.com`** — not the apex and not the Shopify site. Also click the unsubscribe link end-to-end; it is signed with `EMAIL_UNSUBSCRIBE_SECRET` and without it the review-reminder sender skips silently.
 
-> ⚠️ The `from:` address is hardcoded to `hello@beauteas.com` in 6 places (`lib/utils/email.ts` ×4, `review-notifications.ts` ×2). **Staging sends real, live-branded email.** Use your own addresses for every test, and never point a staging test at a real customer record.
+> ⚠️ All `from:` addresses are now **`info@beauteas.com`** (updated 2026-07-27; was `hello@`, in 6 places). **Staging sends real, live-branded email.** Use your own addresses for every test, and never point a staging test at a real customer record.
 
-- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` (does not exist yet). Register **both** `shop.beauteas.com` (to test now) and `www.beauteas.com` (for cutover) in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice.
+- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` — **confirmed still missing 2026-07-28** (`public/.well-known/` does not exist). Register **both** `shop.beauteas.com` and `www.beauteas.com` in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice. *Card checkout works without this; only the Apple Pay wallet button is affected.*
 
 ---
 
@@ -466,7 +490,7 @@ This is the point of no easy return — everything above must be green first.
 ## Phase 11 — Post-cutover verification (first 60 min, then 24h)
 
 **First hour:**
-- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**.
+- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**. ⚠️ `redirect_map` is empty, so only the structural `/products/:slug` → `/product/:slug` rule fires. Check that the 301 **target actually resolves** (`curl -IL`, expect a final 200) — a 301 into a 404 is worse than no redirect. Test every old Shopify product and collection URL, not one.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
 - ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
 - ⊘ **DEFERRED** — subscriptions not sold at launch.
@@ -505,6 +529,8 @@ All Low/Medium, deliberately deferred: Chai mascot asset (BMC-89), gift-card-val
 | Backup prod DB | `wrangler d1 export beauteas-db --env production --remote --output=backup.sql` |
 | Export a dev table (data only) | `wrangler d1 export beauteas-db-dev --env dev --remote --table=<t> --no-schema --output=<t>.sql` |
 | Load a table into prod | `wrangler d1 execute beauteas-db --env production --remote --file=<t>.sql` |
-| Copy R2 objects dev→prod | S3 API / rclone: `beauteas-images-dev` → `beauteas-images` |
+| Promote catalog + images dev→prod | `node scripts/promote-dev-to-prod.mjs --execute` *(dry-run without the flag)* |
+| Copy R2 objects dev→prod only | `node scripts/sync-images.mjs pull --env dev` then `push --env production` (wrangler-based; no R2 API token) |
+| Check the Vectorize index | `wrangler vectorize info beauteas-index` |
 | Rebuild Vectorize (prod) | `curl -X POST "https://shop.beauteas.com/api/admin/vectorize" -H "Authorization: Bearer <TOKEN>"` |
 | Live logs | `wrangler tail --env production` |
