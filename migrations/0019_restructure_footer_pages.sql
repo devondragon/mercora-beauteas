@@ -26,15 +26,64 @@
 -- Timestamps use unixepoch() (INTEGER), matching page_versions.created_at's
 -- column default and pages.updated_at's column type -- NOT CURRENT_TIMESTAMP,
 -- which returns a TEXT datetime string and would store the wrong type.
+--
+-- Snapshot pattern mirrors 0016: each page_versions INSERT below carries the
+-- exact same guard as the UPDATE it precedes (content guard for the three
+-- content-rewriting pages, `excerpt IS NULL` for the three lede-only pages,
+-- a `column != new-value` guard for the four pages that only get a template
+-- or status flip). That way a snapshot is captured only once, right before
+-- the row it documents actually changes -- re-running this file by hand
+-- inserts nothing new into page_versions.
 
--- Snapshot every page we are about to touch (mirrors the 0016 pattern).
+-- Brewing Directions: snapshot before the full content rewrite below.
 INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
 SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
-FROM pages
-WHERE slug IN (
-  'brewing-directions', 'faq', 'contact', 'subscriptions', 'about-us', 'about',
-  'shipping-policy', 'refund-policy', 'privacy-policy', 'terms-of-service'
-);
+FROM pages WHERE slug = 'brewing-directions' AND content NOT LIKE '%class="blend"%';
+
+-- About Us: snapshot before its Shopify image URL is repointed to R2.
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'about-us' AND content LIKE '%85A6329%';
+
+-- Subscriptions: snapshot before its Shopify image URL is repointed to R2.
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'subscriptions' AND content LIKE '%85A6547%';
+
+-- FAQ / Shipping / Refund: snapshot before their one-time lede is set.
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'faq' AND excerpt IS NULL;
+
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'shipping-policy' AND excerpt IS NULL;
+
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'refund-policy' AND excerpt IS NULL;
+
+-- Contact: snapshot before its template flips from 'default' to 'contact'.
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'contact' AND template != 'contact';
+
+-- Privacy / Terms: snapshot only if their template isn't already 'legal'
+-- (it already is, seeded that way by 0003, so this is a no-op guard on
+-- fresh and existing DBs alike -- included for parity with the other two
+-- legal pages and to protect against a future re-seed that doesn't set it).
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'privacy-policy' AND template != 'legal';
+
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'terms-of-service' AND template != 'legal';
+
+-- About: snapshot before it is archived below.
+INSERT INTO page_versions (page_id, version, title, content, excerpt, created_at, created_by)
+SELECT id, version, title, content, excerpt, unixepoch(), 'migration-0019'
+FROM pages WHERE slug = 'about' AND status != 'archived';
 
 -- ── Templates ────────────────────────────────────────────────────────────────
 UPDATE pages SET template = 'guide'   WHERE slug = 'brewing-directions';
