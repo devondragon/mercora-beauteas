@@ -19,7 +19,7 @@
   "compatibility_date": "2026-06-25",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  // Shared configuration (inherited by all environments)
+  // Shared configuration (inherited by all environments, except bindings).
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"
@@ -126,6 +126,11 @@
       ],
       "ai": {
         "binding": "AI"
+      },
+      // Bindings are not inherited by Wrangler environments. Keep this explicit
+      // (even though it is empty) to match dev and prevent deploy warnings.
+      "durable_objects": {
+        "bindings": []
       },
       "d1_databases": [
         {
