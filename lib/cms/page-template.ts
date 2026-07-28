@@ -33,74 +33,91 @@ export interface PageTemplateConfig {
 /** Below this, a contents rail is noise rather than navigation. */
 export const MIN_SECTIONS_FOR_RAIL = 3;
 
-export const POLICY_LINKS = Object.freeze([
-  Object.freeze({ label: "Shipping Policy", href: "/shipping-policy" }),
-  Object.freeze({ label: "Refund & Returns", href: "/refund-policy" }),
-  Object.freeze({ label: "Privacy Policy", href: "/privacy-policy" }),
-  Object.freeze({ label: "Terms of Service", href: "/terms-of-service" }),
+/**
+ * Deep-freezes an object or array and all nested objects/arrays recursively.
+ * Returns the same value at the type level (preserving mutability in TypeScript),
+ * but the runtime value is frozen to prevent accidental mutations.
+ */
+function deepFreeze<T>(value: T): T {
+  Object.freeze(value);
+  if (typeof value === "object" && value !== null) {
+    Object.values(value).forEach((item) => {
+      if (typeof item === "object" && item !== null) {
+        deepFreeze(item);
+      }
+    });
+  }
+  return value;
+}
+
+export const POLICY_LINKS = deepFreeze([
+  { label: "Shipping Policy", href: "/shipping-policy" },
+  { label: "Refund & Returns", href: "/refund-policy" },
+  { label: "Privacy Policy", href: "/privacy-policy" },
+  { label: "Terms of Service", href: "/terms-of-service" },
 ]);
 
-const SHOP: PageCtaAction = Object.freeze({
+const SHOP: PageCtaAction = {
   label: "Shop the teas",
   href: "/category/clearly-calendula",
   variant: "primary",
-});
+};
 
-const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = Object.freeze({
-  guide: Object.freeze({
+const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = deepFreeze({
+  guide: {
     kind: "guide",
     eyebrow: "CARE GUIDE",
     showRail: true,
-    cta: Object.freeze({
+    cta: {
       heading: "Ready to brew?",
       body: "Explore the Clearly Calendula collection.",
-      actions: Object.freeze([SHOP, Object.freeze({ label: "Ask Chai", href: "/agent", variant: "secondary" })]),
+      actions: [SHOP, { label: "Ask Chai", href: "/agent", variant: "secondary" }],
       showPolicyLinks: false,
-    }),
-  }),
-  faq: Object.freeze({
+    },
+  },
+  faq: {
     kind: "faq",
     eyebrow: "GOOD QUESTIONS",
     showRail: true,
-    cta: Object.freeze({
+    cta: {
       heading: "Still have a question?",
       body: "We answer every email within 1–2 business days.",
-      actions: Object.freeze([
-        Object.freeze({ label: "Contact us", href: "/contact", variant: "primary" }),
-        Object.freeze({ label: "Ask Chai", href: "/agent", variant: "secondary" }),
-      ]),
+      actions: [
+        { label: "Contact us", href: "/contact", variant: "primary" },
+        { label: "Ask Chai", href: "/agent", variant: "secondary" },
+      ],
       showPolicyLinks: false,
-    }),
-  }),
-  legal: Object.freeze({
+    },
+  },
+  legal: {
     kind: "legal",
     eyebrow: "THE FINE PRINT",
     showRail: true,
-    cta: Object.freeze({
+    cta: {
       heading: "Need a hand?",
       body: "If anything here is unclear, we're happy to explain.",
-      actions: Object.freeze([Object.freeze({ label: "Contact us", href: "/contact", variant: "primary" })]),
+      actions: [{ label: "Contact us", href: "/contact", variant: "primary" }],
       showPolicyLinks: true,
-    }),
-  }),
-  contact: Object.freeze({
+    },
+  },
+  contact: {
     kind: "contact",
     eyebrow: "SAY HELLO",
     showRail: false,
     // The contact page is itself the call to action.
     cta: null,
-  }),
-  story: Object.freeze({
+  },
+  story: {
     kind: "story",
     eyebrow: "OUR STORY",
     showRail: false,
-    cta: Object.freeze({
+    cta: {
       heading: "Build your beauty from within.",
       body: "",
-      actions: Object.freeze([SHOP, Object.freeze({ label: "See subscriptions", href: "/subscriptions", variant: "secondary" })]),
+      actions: [SHOP, { label: "See subscriptions", href: "/subscriptions", variant: "secondary" }],
       showPolicyLinks: false,
-    }),
-  }),
+    },
+  },
 });
 
 export function resolveTemplate(template: string | null | undefined): PageTemplateConfig {

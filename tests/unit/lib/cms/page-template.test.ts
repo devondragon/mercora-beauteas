@@ -52,21 +52,26 @@ describe("resolveTemplate", () => {
 
   it("returns a frozen CTA structure that cannot be mutated", () => {
     const config = resolveTemplate("guide");
-    const originalActionsLength = config.cta?.actions.length ?? 0;
 
-    // Attempt to mutate the actions array (should fail silently in frozen objects)
-    try {
-      config.cta?.actions.push({
+    // Verify the CTA and its actions array are both frozen
+    expect(Object.isFrozen(config.cta)).toBe(true);
+    expect(Object.isFrozen(config.cta?.actions)).toBe(true);
+    // Verify nested action objects are also frozen
+    expect(Object.isFrozen(config.cta?.actions[0])).toBe(true);
+
+    // Attempt to mutate the actions array; should throw in strict mode
+    expect(() => {
+      (config.cta!.actions as unknown as unknown[]).push({
         label: "Malicious",
         href: "/malicious",
         variant: "primary",
       });
-    } catch {
-      // expected in strict mode
-    }
+    }).toThrow();
 
-    // Verify mutation did not occur
-    expect(config.cta?.actions.length).toBe(originalActionsLength);
+    // Attempt to mutate a nested action property; should throw in strict mode
+    expect(() => {
+      (config.cta!.actions[0] as any).label = "Hacked";
+    }).toThrow();
   });
 });
 
@@ -90,16 +95,20 @@ describe("POLICY_LINKS", () => {
   });
 
   it("is frozen and cannot be mutated", () => {
-    const originalLength = POLICY_LINKS.length;
+    // Verify the POLICY_LINKS array itself is frozen
+    expect(Object.isFrozen(POLICY_LINKS)).toBe(true);
+    // Verify each individual policy link object is also frozen
+    expect(Object.isFrozen(POLICY_LINKS[0])).toBe(true);
+    expect(Object.isFrozen(POLICY_LINKS[3])).toBe(true);
 
-    // Attempt to mutate the array (should fail silently in frozen objects)
-    try {
-      POLICY_LINKS.push({ label: "Malicious", href: "/malicious" });
-    } catch {
-      // expected in strict mode
-    }
+    // Attempt to mutate the array; should throw in strict mode
+    expect(() => {
+      (POLICY_LINKS as unknown[]).push({ label: "Malicious", href: "/malicious" });
+    }).toThrow();
 
-    // Verify mutation did not occur
-    expect(POLICY_LINKS.length).toBe(originalLength);
+    // Attempt to mutate a nested policy link property; should throw in strict mode
+    expect(() => {
+      (POLICY_LINKS[0] as any).href = "https://malicious.com";
+    }).toThrow();
   });
 });
