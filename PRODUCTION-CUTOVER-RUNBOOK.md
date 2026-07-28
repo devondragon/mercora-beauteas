@@ -26,7 +26,7 @@
 
 **⚠️ Still untested: the gift-card, subscription, and review email paths.** Explicitly **not** launch blockers (see the critical path below) — but they have still never rendered, and they are server-rendered templates that fail on undefined fields.
 
-**Next up: Phase 10 (the cutover itself).** The only thing between here and DNS is the short open list in Phase 9 — chiefly **gating `shop.` behind Cloudflare Access**, which is currently wide open and fully crawlable (see below).
+**Next up: Phase 10 — the cutover itself. Nothing is blocking it.** Leaving `shop.` public and ungated is an accepted risk given the <48h window (Phase 9). The one task worth doing *before* DNS is populating `redirect_map`, which is empty (Phase 8) — everything else on the open list is post-launch.
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -48,8 +48,8 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | 2 | **Deploy app to prod** (Phase 7) | ☑ | done 2026-07-27 — `shop.beauteas.com` live |
 | 3 | **Promote catalog + images dev → prod** (Phase 8) | ☑ | done 2026-07-27 — 10 products / 6 categories / 13 pages / 47 images / **18 vectors** indexed |
 | 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☑ | done 2026-07-27 — order `WEB-GUEST-1785194376707`, `calculated_by: stripe`, webhook OK, inventory 250→249, email delivered |
-| 5 | **Gate `shop.` behind Cloudflare Access** (Phase 9) | ☐ | **← the only open blocker.** It is public and crawlable right now |
-| 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | #5 |
+| ~~5~~ | ~~Gate `shop.` behind Cloudflare Access~~ | ⊘ | **accepted risk, decided 2026-07-28** — cutover is inside 48h; see Phase 9 |
+| 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | **← next. Nothing is blocking it.** |
 | 7 | **Post-cutover checks** (Phase 11) | ☐ | #6 |
 
 **Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
@@ -429,13 +429,15 @@ Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy t
 Shopify is still serving customers on `www` throughout this phase.
 
 - ☑ `shop.beauteas.com` added as a **Custom Domain** on the production Worker.
-- ⛔ **NOT DONE — `shop.` is NOT gated. This is the one open cutover blocker.** Verified 2026-07-28: `GET /` returns **200 to anyone**, `robots.txt` says `Allow: /`, `/sitemap.xml` is served *and advertised in robots*, and every page self-canonicals to `https://shop.beauteas.com/...`. So the full real catalog is publicly crawlable on a second hostname while `www` still serves Shopify.
+- ⊘ **`shop.` is public and ungated — ACCEPTED RISK, decided 2026-07-28.** Not a blocker; do not spend cutover time on it.
 
-  Two distinct harms, both cheap to avoid and expensive to undo:
-  1. **Duplicate-content indexing.** If Google indexes `shop.` before cutover, the post-cutover `www` pages compete with an already-indexed twin of themselves — the opposite of the reason `www` was chosen as canonical.
-  2. **A stranger can place a real order on staging**, on live Stripe keys, and receive real live-branded email from `info@beauteas.com`.
+  State of it, verified 2026-07-28: `GET /` returns 200 to anyone, `robots.txt` says `Allow: /`, `/sitemap.xml` is served *and advertised in robots*, and every page self-canonicals to `https://shop.beauteas.com/...`. The full catalog is publicly crawlable on a second hostname while `www` still serves Shopify.
 
-  **Fix: put Cloudflare Access in front of `shop.`** (Zero Trust → Access → Applications → self-hosted, host `shop.beauteas.com`, policy = your email). Access is the right gate rather than a `noindex`: `app/robots.ts` is not environment-aware — it derives from `BASE_URL` and hardcodes `Allow: /` — so making robots env-conditional would be a code change plus a rebuild, and it would still leave the host open to orders.
+  **Why that's acceptable here:** cutover is planned inside 48 hours, and the host is unadvertised — nothing links to it, so realistic crawl and stranger-traffic volume is near zero. The two theoretical harms are both bounded:
+  1. *Duplicate-content indexing* — self-healing. Phase 10 already 301s `shop.` → `www`, which consolidates any signal Google did pick up onto the canonical host rather than stranding it.
+  2. *A stranger placing a real order on live keys* — it would be a genuine, fulfillable order on the real catalog at the real price, not a broken one. Annoying, not damaging.
+
+  If the window slips past a few days, revisit: the gate is Cloudflare Access (Zero Trust → Access → Applications → self-hosted, host `shop.beauteas.com`, policy = your email). A `noindex` is *not* the cheaper alternative — `app/robots.ts` derives from `BASE_URL` and hardcodes `Allow: /`, so making it environment-aware is a code change plus a rebuild, and it would still leave checkout open.
 - ☑ Products, images, and orders visible in `/admin` — confirmed with the live order below.
 - ☑ **Auth is on the production Clerk instance.** Verified end-to-end 2026-07-27: `clerk.beauteas.com` serves a cert with `CN=clerk.beauteas.com`, `clerk.browser.js` returns 200, and `/v1/client` returns 200. The `admin_users` row shows a real `last_login`, so a production Clerk session genuinely authenticated. *(The live key `pk_live_Y2xlcmsu…` base64-decodes to `clerk.beauteas.com$`, matching the CSP entry at `lib/security-headers.ts:31`.)*
   > `accounts.beauteas.com` (Account Portal) returns 403 to `curl` even with browser headers, but the response carries a `server-timing: chlray` — a Cloudflare **challenge**, not the earlier error-1000 misconfiguration. Worth one real-browser click to confirm, since that host handles password reset and email verification.
