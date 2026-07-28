@@ -31,7 +31,7 @@ export interface ParsedPage {
 }
 
 const H2_SPLIT = /<h2[^>]*>([\s\S]*?)<\/h2>/gi;
-const SPECS_LIST = /<ul class="specs">([\s\S]*?)<\/ul>/i;
+const SPECS_LIST = /<ul class="specs">([\s\S]*?)<\/ul>/gi;
 const BLEND_FIGURE = /<figure class="blend">([\s\S]*?)<\/figure>/gi;
 const BLOCKQUOTE = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi;
 const LIST_ITEM = /<li[^>]*>([\s\S]*?)<\/li>/gi;
@@ -61,13 +61,12 @@ function extractConventions(html: string): Omit<PageSection, "id" | "heading"> {
   let body = html;
 
   const specs: string[] = [];
-  const specsMatch = body.match(SPECS_LIST);
-  if (specsMatch) {
+  for (const specsMatch of body.matchAll(SPECS_LIST)) {
     for (const item of specsMatch[1].matchAll(LIST_ITEM)) {
       specs.push(toText(item[1]));
     }
-    body = body.replace(SPECS_LIST, "");
   }
+  body = body.replace(SPECS_LIST, "");
 
   let productSlug: string | null = null;
   body = body.replace(BLEND_FIGURE, (_match, inner: string) => {

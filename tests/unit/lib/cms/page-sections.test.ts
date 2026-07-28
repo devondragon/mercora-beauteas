@@ -77,6 +77,14 @@ describe("parsePageHtml", () => {
     expect(sections[0].html).toBe("<p>Body.</p>");
   });
 
+  it("extracts multiple ul.specs lists and removes all of them from the section html", () => {
+    const { sections } = parsePageHtml(
+      '<h2>Black Teas</h2><ul class="specs"><li>205–212°F</li></ul><p>Body.</p><ul class="specs"><li>Steep 3–5 min</li></ul>',
+    );
+    expect(sections[0].specs).toEqual(["205–212°F", "Steep 3–5 min"]);
+    expect(sections[0].html).toBe("<p>Body.</p>");
+  });
+
   it("leaves an ordinary ul in the section html", () => {
     const { sections } = parsePageHtml("<h2>Methods</h2><ul><li>Standard</li></ul>");
     expect(sections[0].specs).toEqual([]);
