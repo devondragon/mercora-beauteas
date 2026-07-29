@@ -8,7 +8,8 @@
  * invoice.payment_failed records failure details and updates status to past_due.
  * invoice.upcoming creates an audit event for observability (skip-next logic deferred to Phase 3 SUBX-06).
  *
- * NOTE: In Stripe API version 2025-08-27.basil, the `subscription` field on Invoice
+ * NOTE: As of Stripe API version 2025-08-27.basil (still true in 2026-06-24.dahlia,
+ * verified against stripe-node v22), the `subscription` field on Invoice
  * has been replaced by `parent.subscription_details.subscription`.
  */
 
@@ -28,7 +29,8 @@ import { createSubscriptionOrder } from './subscription-order';
 
 /**
  * Extract the Stripe subscription ID from an invoice's parent field.
- * In API version 2025-08-27.basil, invoice.subscription was replaced by
+ * Since API version 2025-08-27.basil (unchanged in 2026-06-24.dahlia),
+ * invoice.subscription was replaced by
  * invoice.parent.subscription_details.subscription.
  */
 function getSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {

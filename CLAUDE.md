@@ -38,13 +38,13 @@ Essential context for Claude when working on **BeauTeas**, an AI-enhanced eComme
 - **Storage:** Cloudflare **R2** (product/knowledge media + ISR incremental cache)
 - **AI:** Cloudflare **Workers AI** (text gen + embeddings) + **Vectorize**
 - **Auth:** Clerk `^6.39.5` (`@clerk/nextjs`, `@clerk/backend`)
-- **Payments:** Stripe `^18` (`stripe`, `@stripe/react-stripe-js`, `@stripe/stripe-js`)
+- **Payments:** Stripe `^22` (API `2026-06-24.dahlia`) (`stripe`, `@stripe/react-stripe-js`, `@stripe/stripe-js`)
 
 ### Key dependencies (exact)
 ```
 next ^15.5.19 · react ^19 · drizzle-orm ^0.45.2 · drizzle-kit ^0.31.4
 @opennextjs/cloudflare ^1.20.1 · wrangler ^4.105.0 · @cloudflare/workers-types ^4.20250726.0
-@clerk/nextjs ^6.39.5 · stripe ^18.4.0 · zustand ^5.0.6 · resend ^4.8.0
+@clerk/nextjs ^6.39.5 · stripe ^22.3.2 · zustand ^5.0.6 · resend ^4.8.0
 tailwindcss ^3.4.1 · tsx ^4.20.3 (script runner) · @aws-sdk/client-s3 ^3 (R2/migration tooling)
 ```
 
@@ -93,8 +93,8 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | D1 database | `beauteas-db-dev` (`f88149dc-…`) + preview (`0a037b06-…`) | `beauteas-db` (`5dbae836-ff0f-420c-9ac0-16088ceb60ee`) |
 | R2 (`MEDIA` + `NEXT_INC_CACHE_R2_BUCKET`) | `beauteas-images-dev` (+ `-dev-preview`) | `beauteas-images` |
 | Vectorize | `beauteas-index-dev` | `beauteas-index` (both 768-dim, cosine) |
-| Clerk publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_CLERK_KEY` |
-| Stripe publishable key | `pk_test_…` (set) | ⚠️ `REPLACE_WITH_LIVE_STRIPE_KEY` |
+| Clerk publishable key | `pk_test_…` (set) | ✅ `pk_live_…` (set) |
+| Stripe publishable key | `pk_test_…` (set) | ✅ `pk_live_…` (set) |
 
 - **Shared bindings** (inherited): `ASSETS` (`.open-next/assets`), `AI`, observability enabled, empty `durable_objects`.
 - **Rate-limit bindings** (per-env `ratelimits`, BMC-180): `AI_RATE_LIMITER` (20/60s — guards the paid `/api/agent-chat` AI path) and `PUBLIC_RATE_LIMITER` (60/60s — guards `tax`, `validate-discount`, `gift-cards/validate`, `payment-intent`, `shipping-options`). Native Cloudflare rate limiting (best-effort, per-colo); enforced via `lib/rate-limit.ts` (`enforceRateLimit`), which **fails open** if the binding is absent (e.g. plain `next dev`). Distinct `namespace_id`s per env so dev/prod counters don't share.
@@ -129,12 +129,12 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | `0010_add_gift_cards.sql` | `gift_cards`, `gift_card_transactions` + seeded gift-card product type/product/denomination variants |
 | `0011_hash_mcp_api_keys.sql` | Renames `mcp_agents.api_key` → `api_key_hash` (store SHA-256, not plaintext) + re-seeds the dev `test-agent` hash (BMC-141/BMC-155; no new tables) |
 | `0012_remove_seeded_test_agent.sql` | Deletes the seeded `test-agent` MCP row from every DB — its key (`test-key-123`) is public in the repo, so the row was a live prod credential (BMC-136/C9; no new tables). Local dev restores it from the dev-only `data/d1/seed-dev.sql` |
-| `0013_add_product_recommendations.sql` | `product_recommendations` (precomputed per-product recs for the `ai_batch` provider) + seeds `recommendations.*` admin settings (`strategy`, `personalize`, `limit`, `exclude_owned`). Applied to local, remote dev, and dev preview; **production applies at cutover** |
+| `0013_add_product_recommendations.sql` | `product_recommendations` (precomputed per-product recs for the `ai_batch` provider) + seeds `recommendations.*` admin settings (`strategy`, `personalize`, `limit`, `exclude_owned`). Applied to local, remote dev, dev preview, **and production (2026-07-27)** |
 | `0014_add_policy_pages.sql` | Seeds published Refund/Return, Shipping, and Contact CMS pages the footer + checkout link to (BMC-173; data-only, placeholder legal copy pending counsel) |
 | `0015_add_subscription_shipping_address.sql` | Adds shipping-address columns to `customer_subscriptions` |
 | `0016_rewrite_legal_pages.sql` | Rewrites the boilerplate Privacy Policy + Terms of Service seeded by 0003 with real processor/rights/retention/cookie disclosures + business address, and deletes the dead Shopify `ccpa-opt-out`/`ccpa-compliance`/`gdpr-compliance` pages (BMC-183; data-only, guarded/idempotent, snapshots into `page_versions`). Fresh DBs are seeded correctly by the updated 0003 + `data/d1/seed.sql` (CCPA rows removed) |
 | `0017_backfill_legal_pages.sql` | Backfills Privacy/Terms rows on DBs where the 0016 `UPDATE` matched no row (BMC-183; data-only, idempotent) |
-| `0018_add_email_unsubscribes.sql` | `email_unsubscribes` (CAN-SPAM opt-out suppression list: `(email, scope)` PK). The review-reminder sender checks it before sending; the public `/api/email/unsubscribe` route writes it (BMC-184). **Production applies at cutover** |
+| `0018_add_email_unsubscribes.sql` | `email_unsubscribes` (CAN-SPAM opt-out suppression list: `(email, scope)` PK). The review-reminder sender checks it before sending; the public `/api/email/unsubscribe` route writes it (BMC-184). **Applied to production 2026-07-27** |
 
 > ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0019_*` (`0011`–`0018` are taken).
 >
@@ -151,6 +151,35 @@ npx wrangler d1 migrations apply beauteas-db     --remote --env production     #
 npx wrangler d1 migrations apply beauteas-db-dev --local --env dev             # local sim
 npx wrangler d1 migrations list  beauteas-db-dev --remote --env dev            # show pending
 ```
+
+---
+
+## Redirects & Environment Data
+
+> **`migrations/data/*.sql` is environment data, NOT schema.** These files are deliberately **not** numbered `NNNN_*.sql` — Wrangler tracks migrations by filename, and re-running seed data on a fresh DB should be a deliberate act, not an automatic one. Apply them by hand with `d1 execute --file`. Every file uses `INSERT OR REPLACE` / `INSERT OR IGNORE` so it is re-runnable.
+
+| File | Contents |
+|---|---|
+| `migrations/data/redirects.sql` | 51 Shopify→Mercora 301s in `redirect_map` |
+| `migrations/data/blog-content.sql` | 21 blog posts + the `learn` blog category |
+
+```bash
+npx wrangler d1 execute beauteas-db     --env production --remote --file=migrations/data/redirects.sql
+npx wrangler d1 execute beauteas-db-dev --env dev        --remote --file=migrations/data/redirects.sql
+```
+
+### How redirects resolve (`middleware.ts`)
+
+1. For a path under `/products/`, `/collections/`, `/pages/`, `/blogs/`, or `/policies/`, look up an exact `source_path` in `redirect_map` → 301 to `target_path`.
+2. No row → **structural fallback**, which exists only for the first three prefixes:
+   `/products/:slug`→`/product/:slug` · `/collections/:slug`→`/category/:slug` · `/pages/:slug`→`/:slug`
+3. `/blogs/` and `/policies/` are **exact-match only** — the fallback chain has no branch for them, so an unmatched path 404s honestly instead of being mangled (Shopify nests blogs as `/blogs/:blog/:slug`, and `/policies/*` slugs don't map positionally).
+
+**Only add rows where the slug or shape actually CHANGED.** A row whose target equals what the fallback already produces is dead weight. At cutover every `/products/*` and `/collections/*` handle survived the ETL intact, so the 51 rows cover only: 21 nested `/collections/:c/products/:p` (the fallback would mangle these), 22 blog URLs, 5 `/policies/*`, and 3 legal pages deleted by migration `0016`.
+
+**Blog images** were rehosted from Shopify's CDN into R2 under `blog/` in **both** buckets and are referenced as absolute `https://img.beauteas.com/blog/<file>` URLs — the raw (non-`/cdn-cgi/image/`) path, so they survive Image Transformations being off. Because the URLs are absolute, the dev Worker also serves blog images from the **prod** bucket; the `beauteas-images-dev` copy is insurance, not what dev actually reads.
+
+> ⚠️ **Known issue — the app soft-404s.** A path that matches a dynamic route but whose entity doesn't exist returns **HTTP 200** with a "Page Not Found"/"Product Not Found" body (`/nope`, `/product/nope`, `/category/nope`, `/blog/nope`). Only unrouted paths (`/a/b/c`) return a real 404. This is bad for SEO — Google keeps soft-404s indexed — and it makes "did the redirect work?" checks unreliable: **verify redirect targets by page title, not status code.**
 
 ---
 
@@ -255,10 +284,14 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Built & audited (code-complete):** SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
+**Migration status (2026-07-27): `beauteas-db` (prod) is fully caught up — `0001`–`0018` all applied, `wrangler d1 migrations list` reports none pending.** `0013`–`0018` were applied 2026-07-27 with a pre-flight `d1 export` backup and post-apply verification of each migration's *effects* (tables created, legal-page content actually rewritten 604→6951 / 542→4586 chars, `shipping_address` column present, 4 `page_versions` snapshots written).
+
 **Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0011` applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live); `0012_remove_seeded_test_agent` (BMC-136/C9) applied to all three 2026-07-06 — `test-agent` row verified gone from prod + remote dev. Local dev auto-restores the agent from `data/d1/seed-dev.sql`; to keep it on the **deployed dev** Worker for manual testing, re-run that dev-only seed against remote dev (`npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-dev.sql`) — never against prod.
 
+**Redirects + blog content loaded (2026-07-27):** the `redirect_map` table was empty in both envs (the ETL never populated it). It now holds **51 rows** in prod *and* dev, and the Shopify `/blogs/learn` blog (**21 posts**, 44 images) has been migrated. See [Redirects & Environment Data](#redirects--environment-data).
+
 **Operational work still remaining before go-live:**
-- Fill prod **live keys** in `wrangler.jsonc` (`REPLACE_WITH_LIVE_CLERK_KEY`, `REPLACE_WITH_LIVE_STRIPE_KEY`) and set prod **secrets** (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, strong `ADMIN_VECTORIZE_TOKEN`, strong `EMAIL_UNSUBSCRIBE_SECRET` — without it review reminders skip entirely, BMC-184).
+- ✅ Prod **live keys** (`pk_live_…` Clerk + Stripe) are in `wrangler.jsonc`, and all six prod **secrets** are set (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET`) — verified via `wrangler secret list --env production` 2026-07-27.
 - Seed `admin_users` with production Clerk IDs.
 - Configure Stripe live: subscription prices/coupons + webhook endpoint.
 - **Run the Shopify ETL** (`scripts/shopify-migration/migrate-all.ts`, supports `--entity=<name>`) — rehearse against dev, then run against prod. See **[`SHOPIFY-ETL.md`](SHOPIFY-ETL.md)** for full steps/gotchas (notably: set `D1_REMOTE=true` or it writes to the local D1). ✅ Validated against dev 2026-06-29 (catalog + pages + images). **Prod run still pending.**
@@ -275,7 +308,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 The repo was forked from a prior project (**Voltique** outdoor gear / **Mercora**). The AI assistant has been renamed **Volt → Chai** and given a warm, girlie beauty-bestie voice across the chat UI + `app/api/agent-chat/route.ts`. Remaining leftover branding to clean up over time:
 - ✅ **Outdoor-gear copy outside the assistant — rebranded (BMC-90).** MCP tools (`lib/mcp/tools/*`) are now catalog-driven (recommendations/bundles derive from `listCategories`/product categories, not hardcoded tents/backpacks; capabilities endpoint built from the live catalog via `lib/mcp/catalog.ts`); transactional emails (`lib/utils/email.ts`), marketing copy (`app/page.tsx`, `components/HeaderClient.tsx`, `app/[slug]/PageRenderer.tsx`), admin AI prompts (`app/admin/pages/PageManagement.tsx`, `app/api/admin/generate-product-description/route.ts`) and admin placeholders (`components/admin/ProductEditor.tsx`, `app/admin/knowledge/KnowledgeManagement.tsx`) now use tea/skincare copy. Seeded CMS pages fixed in `migrations/0003` (fresh DBs) + `migrations/0009` (updates existing rows).
 - ⚠️ **Sample vector-source content** in `data/r2/products_md/*.md` still has placeholder outdoor names (e.g. "Vivid Mission Pack", military/tactical tags). This is seed data for the Vectorize index that the Shopify ETL replaces at cutover (the real catalog lives in `data/d1/seed.sql` and is already tea-branded). Not user-facing; left for the ETL.
-- The chat **mascot asset** is still `data/r2/volt.svg` (referenced as `/volt.svg`); rename when the image itself is updated for Chai. *(Tracked separately.)*
+- ✅ **Chat mascot asset — done.** Chai is now a purpose-drawn teacup character in brand colours, shipped as two hand-authored SVGs: `public/chai.svg` (48px viewBox, full character — sprig, steam, saucer) for 32px+ renders, and `public/chai-mark.svg` (24px viewBox, simplified — one leaf, no steam, thicker strokes) for 16–24px renders. The legacy 2MB `data/r2/volt.svg` is deleted. **Pick the mark by rendered size, not by context** — the full character mushes below ~32px, which is why the mobile launcher, chat avatars and admin AI buttons all use `chai-mark.svg`.
 - "voltique"/"mercora" strings linger in docs (`PRODUCTION-CUTOVER-RUNBOOK.md`, `docs/`, `.planning/`) and the `x-dev-admin: mercora-dev-bypass` header value.
 - `package.json` name is still `mercora` (intentional — platform name).
 

@@ -311,7 +311,7 @@ export default function AgentDrawer({
                   <div key={i} className="flex items-start space-x-2">
                     <div className="h-6 w-6 flex items-center justify-center">
                       <Image
-                        src="/chai.svg"
+                        src="/chai-mark.svg"
                         alt="Chai mascot"
                         width={20}
                         height={20}

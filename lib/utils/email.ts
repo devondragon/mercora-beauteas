@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { BASE_URL } from '@/lib/seo/metadata';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
 import { Money } from '@/lib/money';
@@ -99,7 +100,7 @@ export async function sendOrderConfirmationEmail(orderData: OrderData): Promise<
     const resendClient = getResendClient();
     
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [orderData.customerEmail],
       subject: `Order Confirmation #${orderData.orderNumber} - BeauTeas`,
       html: emailHtml,
@@ -451,7 +452,7 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
     }
 
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [orderData.customerEmail],
       subject: `${subject} - BeauTeas`,
       html: emailHtml,
@@ -491,7 +492,7 @@ export async function sendGiftCardDeliveryEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [data.recipientEmail],
       subject: `You've received a BeauTeas gift card`,
       html: emailHtml,
@@ -531,7 +532,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
   const amountDisplay = Money.fromMinor(data.amount, data.currency || 'USD').format();
   // Only allow an absolute https URL; otherwise fall back to the brand origin.
   const redeemUrl =
-    data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : 'https://beauteas.com';
+    data.redeemUrl && /^https:\/\//i.test(data.redeemUrl) ? data.redeemUrl : BASE_URL;
 
   return `
     <!DOCTYPE html>
@@ -632,7 +633,7 @@ export async function sendSubscriptionEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas<hello@beauteas.com>',
+      from: 'BeauTeas <info@beauteas.com>',
       to: [data.customerEmail],
       subject,
       html: emailHtml,
@@ -793,5 +794,117 @@ function getTypeSpecificContent(
         body: 'Your subscription has been canceled. We are sorry to see you go! If you change your mind, you can start a new subscription at any time.',
         extra: '',
       };
+  }
+}
+
+// ─── Merchant new-order notification (stopgap for BMC-216) ──────────────────
+
+/**
+ * Recipient for internal new-order notifications. Overridable per environment
+ * so a staging host can notify a test inbox instead of the real one.
+ */
+const MERCHANT_NOTIFICATION_EMAIL =
+  process.env.MERCHANT_NOTIFICATION_EMAIL || 'info@beauteas.com';
+
+/**
+ * Notify the shop owner that an order needs fulfilling.
+ *
+ * WHY THIS EXISTS: BeauTeas has no fulfillment flow (BMC-216). Before this, the
+ * only signal that an order had arrived was Stripe's payment email — which says
+ * money moved, but not what to ship or where. Confirmed missing against the
+ * first live production order on 2026-07-27.
+ *
+ * Deliberately minimal: everything needed to pick, pack and ship, in plain
+ * text, plus a link into the admin order view. It is a stopgap, NOT a
+ * fulfillment feature — the real flow is scoped in BMC-216.
+ *
+ * Reuses the {@link OrderData} already assembled for the customer confirmation,
+ * so it adds one email send and no extra database reads.
+ *
+ * Best-effort by contract: returns a result and never throws, so it can never
+ * break order finalization or the customer's confirmation email.
+ */
+export async function sendNewOrderMerchantNotification(
+  orderData: OrderData
+): Promise<EmailResult> {
+  try {
+    const addr = orderData.shippingAddress;
+    const shipTo = [
+      orderData.customerName,
+      addr?.street,
+      [addr?.city, addr?.state, addr?.zipCode].filter(Boolean).join(', '),
+      addr?.country,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const lines = orderData.items
+      .map((i) => `  ${i.quantity} x ${i.name} — ${i.lineTotal}`)
+      .join('\n');
+
+    const adminUrl = `${BASE_URL}/admin/orders`;
+
+    const text = [
+      `New order ${orderData.orderNumber}`,
+      '',
+      'ITEMS TO SHIP',
+      lines,
+      '',
+      `Subtotal: ${orderData.subtotal}`,
+      `Shipping: ${orderData.shipping}`,
+      `Tax:      ${orderData.tax}`,
+      `TOTAL:    ${orderData.total}`,
+      '',
+      'SHIP TO',
+      shipTo,
+      '',
+      `Customer email: ${orderData.customerEmail}`,
+      '',
+      `Manage this order: ${adminUrl}`,
+    ].join('\n');
+
+    const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px">
+      <h2 style="margin:0 0 4px">New order ${escapeHtml(orderData.orderNumber)}</h2>
+      <p style="color:#64748b;margin:0 0 20px">${escapeHtml(orderData.total)} · ${escapeHtml(orderData.customerEmail)}</p>
+      <h3 style="margin:0 0 8px;font-size:15px">Items to ship</h3>
+      <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
+        ${orderData.items
+          .map(
+            (i) => `<tr>
+              <td style="padding:6px 0;border-bottom:1px solid #e2e8f0"><strong>${i.quantity} &times;</strong> ${escapeHtml(i.name)}</td>
+              <td style="padding:6px 0;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(i.lineTotal)}</td>
+            </tr>`
+          )
+          .join('')}
+      </table>
+      <h3 style="margin:0 0 8px;font-size:15px">Ship to</h3>
+      <p style="margin:0 0 20px;line-height:1.5">${escapeHtml(shipTo).replace(/\n/g, '<br>')}</p>
+      <p style="margin:0 0 20px">
+        Subtotal ${escapeHtml(orderData.subtotal)} &middot;
+        Shipping ${escapeHtml(orderData.shipping)} &middot;
+        Tax ${escapeHtml(orderData.tax)} &middot;
+        <strong>Total ${escapeHtml(orderData.total)}</strong>
+      </p>
+      <p><a href="${adminUrl}" style="display:inline-block;padding:10px 18px;background:#c4a87c;color:#fff;border-radius:6px;text-decoration:none">Manage this order</a></p>
+    </div>`;
+
+    const resendClient = getResendClient();
+    const { data, error } = await resendClient.emails.send({
+      from: 'BeauTeas Orders <info@beauteas.com>',
+      to: [MERCHANT_NOTIFICATION_EMAIL],
+      replyTo: orderData.customerEmail,
+      subject: `New order ${orderData.orderNumber} — ${orderData.total}`,
+      html,
+      text,
+    });
+
+    if (error) {
+      console.error('[merchant-notification] send failed:', error);
+      return { success: false, error: error.message || 'Merchant notification failed' };
+    }
+    return { success: true, id: data?.id };
+  } catch (error) {
+    console.error('[merchant-notification] threw:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

@@ -14,6 +14,7 @@
  * List-Unsubscribe=One-Click`, which providers always send as a POST).
  */
 
+import { BASE_URL } from '@/lib/seo/metadata';
 import { verifyUnsubscribeToken } from '@/lib/email/unsubscribe-token';
 import { recordUnsubscribe } from '@/lib/models/email-preferences';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
@@ -131,7 +132,7 @@ export async function POST(req: Request): Promise<Response> {
       'Unsubscribed',
       `<h1>You're unsubscribed</h1>
        <p><strong>${escapeHtml(email)}</strong> will no longer receive review-reminder emails. Order and subscription emails are unaffected.</p>
-       <p><a href="https://beauteas.com">Return to BeauTeas</a></p>`,
+       <p><a href="${BASE_URL}">Return to BeauTeas</a></p>`,
     ),
   );
 }

@@ -19,7 +19,7 @@
   "compatibility_date": "2026-06-25",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  // Shared configuration (inherited by all environments)
+  // Shared configuration (inherited by all environments, except bindings).
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"
@@ -105,15 +105,32 @@
       ],
       "vars": {
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_YnVzeS1zaHJpbXAtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj"
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj",
+        // Canonical host for this environment — drives canonical tags, OG URLs,
+        // sitemap, JSON-LD and email links (lib/seo/metadata.ts).
+        "NEXT_PUBLIC_SITE_URL": "https://beauteas-dev.workers.dev"
       }
     },
 
     // === PRODUCTION ENVIRONMENT ===
     "production": {
       "name": "beauteas",
+      // Custom domains. `shop.` is the STAGING/validation host while Shopify
+      // still serves customers on www — adding a subdomain does not touch the
+      // www or apex records. At cutover (runbook Phase 10) add
+      // { "pattern": "www.beauteas.com", "custom_domain": true }, which TAKES
+      // OVER the www DNS record currently pointing at Shopify — that flip is
+      // the cutover itself.
+      "routes": [
+        { "pattern": "shop.beauteas.com", "custom_domain": true }
+      ],
       "ai": {
         "binding": "AI"
+      },
+      // Bindings are not inherited by Wrangler environments. Keep this explicit
+      // (even though it is empty) to match dev and prevent deploy warnings.
+      "durable_objects": {
+        "bindings": []
       },
       "d1_databases": [
         {
@@ -167,9 +184,24 @@
         }
       ],
       "vars": {
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_CLERK_KEY",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "REPLACE_WITH_LIVE_STRIPE_KEY",
-        "NEXT_PUBLIC_IMAGE_CDN": "https://img.beauteas.com"
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuYmVhdXRlYXMuY29tJA",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51ToUnwFqgbQQDjYVOBmnslSy2KuWoO7QzGrK2YqzcIkMRzwRFArKZKdKmiYzHwVhlP8AH4BSe4wxEBrFu3wUoP4A00pcTyYHLm",
+        "NEXT_PUBLIC_IMAGE_CDN": "https://img.beauteas.com",
+        // Cloudflare Image Transformations (/cdn-cgi/image/...). REQUIRES
+        // Transformations enabled for the beauteas.com zone — it was off on
+        // 2026-07-27 and every product image 404'd. Enabled since.
+        // ESCAPE HATCH: set to "false" and redeploy to serve raw objects from
+        // the CDN host instead (bigger, ~917KB vs ~108KB, but never broken).
+        "NEXT_PUBLIC_IMAGE_TRANSFORMS": "true",
+        // ⚠️ CUTOVER ACTION (runbook Phase 10): change to "https://www.beauteas.com"
+        // and REBUILD + REDEPLOY. This is baked into the client bundle at build
+        // time, so editing it without a rebuild has no effect.
+        //
+        // Currently set to the staging host so that while the production Worker
+        // is validated on shop.beauteas.com (Shopify still live on www), its
+        // canonicals, sitemap, JSON-LD and email links point at shop — not at
+        // the Shopify store.
+        "NEXT_PUBLIC_SITE_URL": "https://shop.beauteas.com"
       }
     }
   }

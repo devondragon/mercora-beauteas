@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="cm-title cm-desc">
+  <title id="cm-title">Chai</title>
+  <desc id="cm-desc">BeauTeas mascot: a smiling teacup on a saucer with a leaf.</desc>
+  <g fill="none" stroke="#99544a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Leaf, angled, tucked behind the rim -->
+    <path d="M8.4 7.6C6 6.7 4.9 4.1 5.9 1.8C8.4 2.9 9.4 5.4 8.4 7.6Z" fill="#446b52"/>
+
+    <!-- Saucer (behind) -->
+    <ellipse cx="11" cy="20.4" rx="9.4" ry="1.7" fill="#cf8577"/>
+
+    <!-- Handle (behind the body) -->
+    <path d="M17.9 11.4C21.8 11.2 22.2 16.2 17.6 16.6" stroke="#99544a" stroke-width="4.2"/>
+    <path d="M17.9 11.4C21.8 11.2 22.2 16.2 17.6 16.6" stroke="#cf8577" stroke-width="2"/>
+
+    <!-- Cup body: wide + shallow so it reads as a cup, not a nut -->
+    <path d="M3.8 9H18.2L16.9 16.3C16.7 18.3 14.7 19.3 11 19.3C7.3 19.3 5.3 18.3 5.1 16.3Z" fill="#cf8577"/>
+
+    <!-- Rim -->
+    <ellipse cx="11" cy="9" rx="7.2" ry="1.6" fill="#f3dcd4"/>
+
+    <!-- Face -->
+    <circle cx="8.7" cy="12.5" r="1.1" fill="#6a3d38" stroke="none"/>
+    <circle cx="13.3" cy="12.5" r="1.1" fill="#6a3d38" stroke="none"/>
+    <path d="M9.6 15Q11 16.4 12.4 15" stroke="#6a3d38" stroke-width="1.25"/>
+  </g>
+</svg>

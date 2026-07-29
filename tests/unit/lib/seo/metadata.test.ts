@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   BASE_URL,
   SITE_NAME,
@@ -7,8 +7,30 @@ import {
 } from '@/lib/seo/metadata';
 
 describe('constants', () => {
-  it('BASE_URL is the production URL', () => {
-    expect(BASE_URL).toBe('https://beauteas.com');
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  // BASE_URL is env-driven (NEXT_PUBLIC_SITE_URL, set per environment in
+  // wrangler.jsonc) so the staging host emits its own canonicals instead of
+  // pointing search engines and customer emails at the production site.
+  it('BASE_URL falls back to the www canonical when NEXT_PUBLIC_SITE_URL is unset', () => {
+    expect(BASE_URL).toBe('https://www.beauteas.com');
+  });
+
+  it('BASE_URL is NOT the bare apex — www is the canonical host', () => {
+    // Guards the cutover decision (2026-07-27): Shopify served www with
+    // apex → www, and www keeps the accumulated link equity, so the apex must
+    // never become the canonical.
+    expect(BASE_URL).not.toBe('https://beauteas.com');
+  });
+
+  it('BASE_URL honours NEXT_PUBLIC_SITE_URL when set (staging host)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://shop.beauteas.com');
+    vi.resetModules();
+    const { BASE_URL: staged } = await import('@/lib/seo/metadata');
+    expect(staged).toBe('https://shop.beauteas.com');
   });
 
   it('SITE_NAME is BeauTeas', () => {

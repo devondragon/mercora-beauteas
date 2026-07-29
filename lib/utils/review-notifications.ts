@@ -94,7 +94,7 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <hello@beauteas.com>',
+    from: 'BeauTeas Reviews <info@beauteas.com>',
     to: [input.email],
     subject,
     html,
@@ -124,7 +124,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
         <p style="margin: 12px 0 0; color: #d1d5db; line-height: 24px;">
           We hope you're putting <strong>${input.productName}</strong> to good use. When you have a moment, we'd love to hear how it's working out. You'll find the prompt alongside order <strong>${input.orderId}</strong> in your history.
         </p>
-        <a href="https://beauteas.com/orders" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #c4a87c, #a88f5f); color: #fff; border-radius: 9999px; text-decoration: none; font-weight: 600;">Share your review</a>
+        <a href="${BASE_URL}/orders" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #c4a87c, #a88f5f); color: #fff; border-radius: 9999px; text-decoration: none; font-weight: 600;">Share your review</a>
         <p style="margin: 24px 0 0; color: #9ca3af; font-size: 14px; line-height: 22px;">
           Reviews help other shoppers make confident choices and give our team insight into what to improve next.
         </p>
@@ -138,7 +138,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <hello@beauteas.com>',
+    from: 'BeauTeas Reviews <info@beauteas.com>',
     to: [input.email],
     subject: `How's your ${input.productName}?`,
     html,
@@ -146,7 +146,9 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
       // RFC 2369 + RFC 8058: expose the unsubscribe to the mail client and let
       // supporting providers (Gmail/Yahoo) do a one-click POST. One-click is
       // always a POST, so it can't be triggered by link pre-fetch.
-      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:hello@beauteas.com?subject=unsubscribe>`,
+      // Kept in sync with the From address above: RFC 8058 expects the mailto
+      // unsubscribe target to be an address the sender actually monitors.
+      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:info@beauteas.com?subject=unsubscribe>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   });

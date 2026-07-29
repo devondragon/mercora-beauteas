@@ -20,7 +20,50 @@
 import type { Order } from '@/lib/types/order';
 import { Money } from '@/lib/money';
 import { buildOrderEmailTotals } from '@/lib/utils/order-email-totals';
-import { sendOrderConfirmationEmail, type OrderData } from '@/lib/utils/email';
+import {
+  sendOrderConfirmationEmail,
+  sendNewOrderMerchantNotification,
+  type OrderData,
+} from '@/lib/utils/email';
+import { logCritical } from '@/lib/utils/observe';
+import { getProduct } from '@/lib/models/mach/products';
+
+/**
+ * Resolve a product-image key for each line item.
+ *
+ * Order line items do NOT persist an image (they carry only product_id,
+ * product_name, sku, quantity and prices), so the confirmation email used to
+ * render "No image" for every item — confirmed on the first live production
+ * order, WEB-GUEST-1785194376707, 2026-07-27.
+ *
+ * Resolving at send time rather than persisting on the order means this also
+ * fixes already-placed orders, and keeps one source of truth for product media.
+ * Best-effort by design: a lookup failure yields no image, never a failed email.
+ *
+ * Returns a map of product_id → relative R2 key (e.g. "products/foo.jpg"),
+ * which the email template turns into an absolute CDN URL.
+ */
+async function resolveItemImages(productIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(productIds.filter(Boolean))];
+
+  await Promise.all(
+    unique.map(async (id) => {
+      try {
+        const product = await getProduct(id);
+        const media = (product as any)?.media;
+        const first = Array.isArray(media) ? media[0] : undefined;
+        const url = typeof first === 'string' ? first : first?.url;
+        if (typeof url === 'string' && url.length > 0) out.set(id, url);
+      } catch (err) {
+        // Never let an image lookup break the confirmation email.
+        console.warn(`[order-confirmation] image lookup failed for product ${id}:`, err);
+      }
+    }),
+  );
+
+  return out;
+}
 
 /** Coerce a possibly-i18n address city field to a plain display string. */
 function coerceCity(city: unknown): string {
@@ -80,6 +123,11 @@ export async function sendOrderConfirmationForOrder(
       giftCardAmount: opts?.giftCardTenderCents ?? 0,
     });
 
+    // Line items carry no image, so look one up per product (see above).
+    const itemImages = await resolveItemImages(
+      (order.items ?? []).map((i) => i.product_id).filter(Boolean) as string[],
+    );
+
     const orderData: OrderData = {
       orderNumber: order.id || '',
       customerName,
@@ -94,7 +142,9 @@ export async function sendOrderConfirmationForOrder(
           price: unitPrice.format(),
           lineTotal: unitPrice.times(item.quantity).format(),
           quantity: item.quantity,
-          imageUrl: (item as any).imageUrl || '',
+          // Prefer an image persisted on the line item (future-proofing); fall
+          // back to the product's first media entry resolved above.
+          imageUrl: (item as any).imageUrl || itemImages.get(item.product_id as string) || '',
         };
       }),
       ...emailTotals,
@@ -114,9 +164,37 @@ export async function sendOrderConfirmationForOrder(
     if (emailResult.success) {
       console.log(`[order-confirmation] Sent for ${order.id}:`, emailResult.id);
     } else {
+      // The customer PAID and got no confirmation. Nothing retries this, and the
+      // failure is swallowed so it can't break order finalization — which means a
+      // plain console.error would leave a broken Resend config (bad key,
+      // unverified domain, suspended account) silently eating every confirmation
+      // with nobody paged. Route it to the money-path alerting instead (BMC-168).
       console.error(`[order-confirmation] Failed for ${order.id}:`, emailResult.error);
+      logCritical(
+        'email',
+        'order_confirmation_send_failed',
+        { orderId: order.id, reason: emailResult.error },
+      );
+    }
+
+    // Tell the shop owner an order needs fulfilling (stopgap for BMC-216 — the
+    // only prior signal was Stripe's payment email, which says money moved but
+    // not what to ship). Sent AFTER the customer's confirmation so a merchant
+    // failure can never delay or displace it, and alerted on separately: a
+    // silently missed order is exactly the failure this exists to prevent.
+    const merchantResult = await sendNewOrderMerchantNotification(orderData);
+    if (merchantResult.success) {
+      console.log(`[merchant-notification] Sent for ${order.id}:`, merchantResult.id);
+    } else {
+      console.error(`[merchant-notification] Failed for ${order.id}:`, merchantResult.error);
+      logCritical(
+        'email',
+        'merchant_order_notification_failed',
+        { orderId: order.id, reason: merchantResult.error },
+      );
     }
   } catch (emailError) {
     console.error(`[order-confirmation] Preparation failed for ${order?.id}:`, emailError);
+    logCritical('email', 'order_confirmation_prep_failed', { orderId: order?.id }, emailError);
   }
 }

@@ -17,4 +17,4 @@ We pack our teas to preserve freshness and flavor. Store your tea in a cool, dry
 
 ## If Something's Not Right
 
-If your order arrives damaged, or the quality isn't what you expected, email hello@beauteas.com with your order number and a photo. We'll make it right — see our Happiness Guarantee in Returns & Refunds.
+If your order arrives damaged, or the quality isn't what you expected, email info@beauteas.com with your order number and a photo. We'll make it right — see our Happiness Guarantee in Returns & Refunds.

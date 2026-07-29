@@ -38,7 +38,12 @@ export type CriticalArea =
   // Coupon redemption at finalization (BMC-197): a failure here means single_use /
   // usage_limit enforcement silently didn't record, so a one-shot code could be
   // reused — a promotions-integrity gap worth alerting on.
-  | "promotion";
+  | "promotion"
+  // Transactional email on the money path. Sends are deliberately swallowed so a
+  // mail failure can't break order finalization — which means without alerting, a
+  // broken Resend config (bad key, unverified domain, suspended account) silently
+  // eats every order confirmation with nobody paged.
+  | "email";
 
 /**
  * Record a critical money-path failure: log an alertable line and (best effort)
