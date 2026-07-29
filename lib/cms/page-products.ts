@@ -32,7 +32,15 @@ function imageKeyFor(primaryImage: unknown): string {
       typeof primaryImage === "string" && primaryImage.startsWith("{")
         ? JSON.parse(primaryImage)
         : primaryImage;
-    const url = (data as { url?: string })?.url;
+    // Mirrors lib/seo/metadata.ts:resolveImageUrl's shape handling (plain
+    // `.url` vs. the spec-standard MACHMedia `.file.url`), but returns a bare
+    // R2 object key rather than an absolute CDN URL — the Next image loader
+    // (image-loader.ts) expects a bare key here, not a prefixed URL. Not
+    // reused directly because resolveImageUrl's absolute-URL output would
+    // have to be re-stripped back to a key, which breaks in plain `next dev`
+    // (the loader short-circuits there and returns its input unmodified).
+    const obj = data as { url?: string; file?: { url?: string } };
+    const url = obj?.url ?? obj?.file?.url;
     return url ? url.replace(/^\//, "") : "/placeholder.svg";
   } catch {
     return "/placeholder.svg";
