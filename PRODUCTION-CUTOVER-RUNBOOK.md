@@ -52,6 +52,21 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | **← next. Nothing is blocking it.** |
 | 7 | **Post-cutover checks** (Phase 11) | ☐ | #6 |
 
+> ⚠️ **Ordering constraint — migration `0019` (footer page design, PR #98).** Deploy the app to prod **first**, then apply the migration. `0019` archives the duplicate `about` page, and the currently-deployed code still serves `/about` from the DB; migrating first would 404 a URL that is listed in the live sitemap. The `/about` → `/about-us` redirect ships with the app, not with the migration.
+>
+> ```bash
+> npm run deploy:production
+> # then, and only then:
+> npx wrangler d1 migrations apply beauteas-db --remote --env production
+> ```
+>
+> Before applying, confirm nobody edited Brewing Directions in the admin — `0019` replaces its content wholesale and would overwrite their copy:
+>
+> ```bash
+> npx wrangler d1 execute beauteas-db --remote --env production \
+>   --command "SELECT length(content) FROM pages WHERE slug='brewing-directions'"   # expect 2748
+> ```
+
 **Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
 
 ---
