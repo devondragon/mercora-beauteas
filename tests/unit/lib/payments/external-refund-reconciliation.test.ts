@@ -131,7 +131,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       stripeRefunds: [{ id: 're_app_1', amount: 5000, status: 'succeeded' }],
     });
 
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000 });
+    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
   });
 
   it('no-ops while the app refund is still PENDING (reserved before Stripe)', () => {
@@ -146,7 +146,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       totalAmount: TOTAL,
     });
 
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000 });
+    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
   });
 
   it('is idempotent — replaying the same event after it landed is a no-op', () => {
@@ -163,7 +163,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       chargeAmountRefunded: 3000,
       totalAmount: TOTAL,
     });
-    expect(replay).toEqual({ action: 'noop', ledgerRefunded: 3000, floorAdvance: 3000 });
+    expect(replay).toEqual({ action: 'noop', ledgerRefunded: 3000, floorAdvance: 3000, unattributedRefundIds: [] });
   });
 
   it('counts a RELEASED (failed) reservation as unrefunded', () => {
@@ -225,7 +225,7 @@ describe('decideExternalRefundReconciliation — cumulative partials', () => {
       chargeAmountRefunded: 4999,
       totalAmount: TOTAL,
     });
-    expect(under).toEqual({ action: 'noop', ledgerRefunded: 4999, floorAdvance: 4999 });
+    expect(under).toEqual({ action: 'noop', ledgerRefunded: 4999, floorAdvance: 4999, unattributedRefundIds: [] });
 
     const exact = decideExternalRefundReconciliation(ledger, {
       chargeAmountRefunded: 5000,
@@ -427,6 +427,108 @@ describe('stripeRefundedFloor — the guard survives a shrinking ledger', () => 
   });
 });
 
+describe('shadowing — an in-flight reservation masking a real external refund', () => {
+  it('surfaces the unattributed id when a pending entry hides a Dashboard refund', () => {
+    // Review finding. Order $50, nothing refunded. Operator refunds $20 in the
+    // Dashboard; before that webhook commits, an admin reserves a full $50 app
+    // refund. The pending $50 counts, so delta = 20 - 50 <= 0 and NO ledger entry
+    // is written for the $20. The ids make that visible to the caller.
+    const pendingLedger: RefundRecord[] = [
+      { id: 'refund:abc', status: 'pending', amount: 5000, type: 'full' },
+    ];
+    const decision = decideExternalRefundReconciliation(pendingLedger, {
+      chargeAmountRefunded: 2000,
+      totalAmount: TOTAL,
+      stripeRefunds: [{ id: 're_dashboard_1', amount: 2000, status: 'succeeded' }],
+    });
+
+    expect(decision).toEqual({
+      action: 'noop',
+      ledgerRefunded: 5000,
+      floorAdvance: 2000,
+      unattributedRefundIds: ['re_dashboard_1'],
+    });
+  });
+
+  it('reports nothing unattributed once the app refund has stamped its id', () => {
+    // The benign steady state — no false alarm.
+    const decision = decideExternalRefundReconciliation([appRefund(5000, 're_app_1')], {
+      chargeAmountRefunded: 5000,
+      totalAmount: TOTAL,
+      stripeRefunds: [{ id: 're_app_1', amount: 5000, status: 'succeeded' }],
+    });
+
+    expect(decision).toMatchObject({ action: 'noop', unattributedRefundIds: [] });
+  });
+
+  it('OUR guard — not just Stripe — still blocks the follow-up refund', async () => {
+    // The review addendum claimed Stripe's own per-charge limit is the only thing
+    // preventing a double refund in this interleaving. It is not: the floor
+    // recorded during the shadowed no-op rejects the retry on our side first.
+    //
+    // Continue the scenario: the app's $50 refund is rejected by Stripe (only $30
+    // was refundable), so the route releases its reservation to `failed` and the
+    // ledger total collapses to 0 — while $20 really did leave.
+    const releasedLedger: RefundRecord[] = [
+      { id: 'refund:abc', status: 'failed', amount: 5000, type: 'full' },
+    ];
+    expect(computeRefundedTotal({ refunds: releasedLedger })).toBe(0);
+
+    const retry = await decideRefundLedgerAction(releasedLedger, {
+      orderId: ORDER,
+      type: 'full',
+      totalAmount: TOTAL,
+      stripeRefundedFloor: 2000, // recorded by the shadowed no-op
+    });
+    expect(retry).toMatchObject({ action: 'reject', status: 409 });
+
+    // A partial beyond the true remaining balance is refused too.
+    const tooMuch = await decideRefundLedgerAction(releasedLedger, {
+      orderId: ORDER,
+      type: 'partial',
+      amount: 3001,
+      items: ['prod-1'],
+      totalAmount: TOTAL,
+      stripeRefundedFloor: 2000,
+    });
+    expect(tooMuch).toMatchObject({ action: 'reject', status: 409 });
+
+    // ...but the genuinely-remaining $30 is still refundable, so the operator is
+    // not locked out of legitimate work.
+    const remaining = await decideRefundLedgerAction(releasedLedger, {
+      orderId: ORDER,
+      type: 'partial',
+      amount: 3000,
+      items: ['prod-1'],
+      totalAmount: TOTAL,
+      stripeRefundedFloor: 2000,
+    });
+    expect(remaining).toMatchObject({ action: 'reserve', refundAmount: 3000 });
+  });
+
+  it('self-heals when the concurrent app refund SUCCEEDS', async () => {
+    // The addendum's second variant. If the app's $30 refund succeeds, its own
+    // charge.refunded fires with the cumulative $50 — which reconciles the $20
+    // the shadowed event never recorded. Only the failure branch leaks.
+    const ledger: RefundRecord[] = [appRefund(3000, 're_app_1')];
+    const decision = decideExternalRefundReconciliation(ledger, {
+      chargeAmountRefunded: 5000,
+      totalAmount: TOTAL,
+      stripeRefunds: [
+        { id: 're_dashboard_1', amount: 2000, status: 'succeeded' },
+        { id: 're_app_1', amount: 3000, status: 'succeeded' },
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      action: 'record',
+      amount: 2000,
+      reconciledTotal: 5000,
+      unattributedRefundIds: ['re_dashboard_1'],
+    });
+  });
+});
+
 describe('decideExternalRefundReconciliation — provenance ids', () => {
   it('reports only Stripe refund ids no ledger entry already references', () => {
     const ledger: RefundRecord[] = [appRefund(3000, 're_app_1')];
@@ -495,7 +597,7 @@ describe('decideExternalRefundReconciliation — defensive input handling', () =
       chargeAmountRefunded: value as number,
       totalAmount: TOTAL,
     });
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 0, floorAdvance: null });
+    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 0, floorAdvance: null, unattributedRefundIds: [] });
   });
 
   it('never reports fully refunded when the order total is unknown', () => {

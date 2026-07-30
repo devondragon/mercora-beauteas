@@ -82,6 +82,17 @@ export type ExternalRefundReconciliation =
        * the floor must be recorded even when no ledger entry is needed.
        */
       floorAdvance: number | null;
+      /**
+       * Stripe refund ids no ledger entry references. On the `noop` path a
+       * NON-EMPTY value means an external refund was SHADOWED by an unrelated
+       * in-flight `pending` reservation: the money is still guarded by the floor,
+       * but that refund has no audit line and the event will not be redelivered.
+       *
+       * Expect transient false positives — an app refund's own webhook can beat
+       * its Phase 3 settle, so its id looks unattributed while its entry is still
+       * `pending`. Callers should only escalate when nothing is pending.
+       */
+      unattributedRefundIds: string[];
     }
   | {
       /** Stripe has refunded more than the ledger knows — record the shortfall. */
@@ -159,18 +170,17 @@ export function decideExternalRefundReconciliation(
     typeof recordedFloor === 'number' && Number.isFinite(recordedFloor) ? recordedFloor : 0;
   const floorAdvance = stripeRefunded > priorFloor ? stripeRefunded : null;
 
-  const delta = stripeRefunded - ledgerRefunded;
-  if (delta <= 0) {
-    // Still report a floor advance: the ledger can legitimately SHRINK later
-    // (a `pending` reservation flipping to `failed`), and if that reservation's
-    // money actually did leave Stripe, the remembered floor is the only thing
-    // that keeps the over-refund guard honest. See `stripeRefundedFloor`.
-    return { action: 'noop', ledgerRefunded, floorAdvance };
-  }
-
   // Provenance: ids Stripe reports that no ledger entry already references.
   // 'failed'/'canceled' Stripe refunds moved no money and are excluded, matching
   // how computeRefundedTotal drops 'failed' ledger entries.
+  //
+  // Computed BEFORE the delta check (review finding) because it matters on the
+  // `noop` path too: an in-flight `pending` reservation for a DIFFERENT refund
+  // inflates the ledger total enough to mask a real external refund, so the
+  // delta reads <= 0 and no entry is written. The aggregate floor still guards
+  // the money, but that refund's own audit line is lost — and since the event is
+  // marked processed, it never gets a second chance. Surfacing the unattributed
+  // ids here lets the caller SEE that shadowing happened.
   const known = new Set(
     refunds.flatMap((r) => {
       const ids: string[] = [];
@@ -184,6 +194,15 @@ export function decideExternalRefundReconciliation(
     .filter((r) => r?.id && r.status !== 'failed' && r.status !== 'canceled')
     .map((r) => r.id)
     .filter((id) => !known.has(id));
+
+  const delta = stripeRefunded - ledgerRefunded;
+  if (delta <= 0) {
+    // Still report a floor advance: the ledger can legitimately SHRINK later
+    // (a `pending` reservation flipping to `failed`), and if that reservation's
+    // money actually did leave Stripe, the remembered floor is the only thing
+    // that keeps the over-refund guard honest. See `stripeRefundedFloor`.
+    return { action: 'noop', ledgerRefunded, floorAdvance, unattributedRefundIds };
+  }
 
   const reconciledTotal = ledgerRefunded + delta;
   return {

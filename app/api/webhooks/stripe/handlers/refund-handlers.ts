@@ -128,11 +128,13 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
   const restockEnabled = await shouldRestockOnExternalRefund();
 
   let recorded: { amount: number; isFullyRefunded: boolean; refundIds: string[] } | null = null;
+  let shadowed: { ids: string[]; hasPending: boolean } | null = null;
   let restockLines: any[] = [];
 
   const result = await mutateRefundLedger(db, orderId, (ctx) => {
     // Reset per attempt — the CAS loop may re-run this callback.
     recorded = null;
+    shadowed = null;
     restockLines = [];
 
     const totalAmount = ctx.order.total_amount
@@ -147,6 +149,21 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
     });
 
     if (decision.action === 'noop') {
+      // Record whether this event's refund got SHADOWED by an unrelated in-flight
+      // reservation (see `unattributedRefundIds`). Captured here, escalated after
+      // the CAS loop so a retry can't emit it twice.
+      shadowed =
+        decision.unattributedRefundIds.length > 0
+          ? {
+              ids: decision.unattributedRefundIds,
+              // A `pending` entry explains the mismatch benignly: an app refund's
+              // own webhook can beat its Phase 3 settle, so its Stripe id is not
+              // on the ledger YET. With nothing pending there is no such
+              // explanation — a real refund has gone unrecorded.
+              hasPending: ctx.refunds.some((r: any) => r?.status === 'pending'),
+            }
+          : null;
+
       // Nothing to add to the ledger — but if this event raises Stripe's
       // observed high-water mark, persist that alone. It is what keeps the
       // over-refund guard correct if the ledger later shrinks (a `pending`
@@ -249,6 +266,32 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
     // Throw so the route returns 500 and Stripe redelivers — the decision is a
     // cumulative delta, so a retry is safe and self-correcting.
     throw new Error(`Failed to reconcile external refund for order ${order.id}: ${reason}`);
+  }
+
+  // Emitted once, after the CAS settles, so a retried attempt can't double-report.
+  const shadow = shadowed as { ids: string[]; hasPending: boolean } | null;
+  if (shadow) {
+    const detail = `order ${order.id}, charge ${charge.id}, stripe refunds ${shadow.ids.join(',')}`;
+    if (shadow.hasPending) {
+      // Benign and self-resolving: an in-flight app refund simply hasn't stamped
+      // its Stripe id onto its ledger entry yet.
+      console.log(
+        `[webhook] charge.refunded: refund id(s) not yet attributed while a reservation is in flight (${detail})`
+      );
+    } else {
+      // No in-flight reservation to explain it — a real refund that Stripe
+      // performed has no ledger line, and this event will not be redelivered.
+      // The floor still guards the money; the AUDIT TRAIL is what is lost.
+      console.error(
+        `[webhook] charge.refunded: external refund left unrecorded in the ledger (${detail})`
+      );
+      logCritical('webhook', 'external_refund_unrecorded', {
+        orderId: order.id,
+        chargeId: charge.id,
+        stripeRefundIds: shadow.ids,
+        amountRefunded: charge.amount_refunded ?? 0,
+      });
+    }
   }
 
   if (result.skipped || !recorded) {
