@@ -37,6 +37,7 @@
  */
 
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { getCategoryBySlug } from "@/lib/models";
 import { getProductsByCategory } from "@/lib/models/mach/products";
 import CategoryDisplay from "./CategoryDisplay";
@@ -110,7 +111,9 @@ export default async function CategoryPage({
   const category = await getCategoryBySlug(slug);
 
   if (!category) {
-    return <div>Category not found for slug: {slug}</div>;
+    // notFound() so the response carries a real 404, not a 200 with
+    // "not found" text — a soft 404 gets indexed as a live page.
+    notFound();
   }
   
   let products: any[] = [];
