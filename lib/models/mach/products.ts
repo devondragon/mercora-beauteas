@@ -1,31 +1,89 @@
 
 /**
+ * Slug may be stored as a plain string or as a localizable object; match either.
+ */
+function rowMatchesSlug(p: any, slug: string): boolean {
+  if (!p.slug) return false;
+  if (typeof p.slug === 'string') return p.slug === slug;
+  if (typeof p.slug === 'object' && p.slug !== null) {
+    return Object.values(p.slug).includes(slug);
+  }
+  return false;
+}
+
+/**
  * Get a product by its slug (MACH-compliant)
  * @param slug - The URL-friendly product identifier
  * @returns Promise<Product | null>
  */
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const db = await getDb();
-  
+
   // Get the product first
   const results = await db.select().from(products);
-  const match = results.find((p: any) => {
-    if (!p.slug) return false;
-    if (typeof p.slug === 'string') return p.slug === slug;
-    if (typeof p.slug === 'object' && p.slug !== null) {
-      return Object.values(p.slug).includes(slug);
-    }
-    return false;
-  });
-  
+  const match = results.find((p: any) => rowMatchesSlug(p, slug));
+
   if (!match) return null;
-  
+
   // Get the product variants
   const variants = await db.select().from(product_variants).where(eq(product_variants.product_id, match.id));
-  
+
   // Deserialize the product and include variants
   const product = deserializeProduct(match);
-  product.variants = variants.map((v: any) => {
+  product.variants = variants.map(mapVariantRow);
+
+  return product;
+}
+
+/**
+ * Resolve several slugs in one pass — one products scan plus one variants query,
+ * rather than the N full-table scans that calling getProductBySlug in a loop
+ * costs. Callers rendering a page with multiple product references (CMS blend
+ * figures) should use this. Slugs that match nothing are simply absent from
+ * the returned map.
+ */
+export async function getProductsBySlugs(slugs: string[]): Promise<Map<string, Product>> {
+  const resolved = new Map<string, Product>();
+  const wanted = [...new Set(slugs)].filter(Boolean);
+  if (wanted.length === 0) return resolved;
+
+  const db = await getDb();
+  const rows = await db.select().from(products);
+
+  const matches: { slug: string; row: any }[] = [];
+  for (const slug of wanted) {
+    const row = rows.find((p: any) => rowMatchesSlug(p, slug));
+    if (row) matches.push({ slug, row });
+  }
+  if (matches.length === 0) return resolved;
+
+  const variantRows = await db
+    .select()
+    .from(product_variants)
+    .where(inArray(product_variants.product_id, matches.map(({ row }) => row.id)));
+
+  const variantsByProduct = new Map<string, any[]>();
+  for (const v of variantRows) {
+    const list = variantsByProduct.get(v.product_id) ?? [];
+    list.push(v);
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  for (const { slug, row } of matches) {
+    const product = deserializeProduct(row);
+    product.variants = (variantsByProduct.get(row.id) ?? []).map(mapVariantRow);
+    resolved.set(slug, product);
+  }
+
+  return resolved;
+}
+
+/**
+ * Deserialize one product_variants row. Price and inventory columns hold either
+ * a JSON object, a JSON string, or a legacy plain number, so every read has to
+ * tolerate all three.
+ */
+function mapVariantRow(v: any) {
     try {
       // Helper function to parse price or inventory fields that might be JSON strings or plain numbers
       const parseMoneyField = (field: any) => {
@@ -118,9 +176,6 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
         updated_at: v.updated_at
       };
     }
-  });
-  
-  return product;
 }
 /**
  * MACH Alliance Product Entity - Business Model
