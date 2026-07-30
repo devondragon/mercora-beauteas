@@ -27,6 +27,7 @@ import {
 } from '@/lib/utils/email';
 import { logCritical } from '@/lib/utils/observe';
 import { getProduct } from '@/lib/models/mach/products';
+import { getOrderCustomerEmail } from '@/lib/orders/customer-email';
 
 /**
  * Resolve a product-image key for each line item.
@@ -104,7 +105,10 @@ export async function sendOrderConfirmationForOrder(
       }
     }
 
-    const customerEmail = ext.email || shippingAddr?.email || '';
+    // Single source of truth for extensions.email || shipping_address.email —
+    // the shipping email and the guest order-status token bind to the same
+    // normalized value (BMC-216A).
+    const customerEmail = getOrderCustomerEmail(order);
     if (!customerEmail) {
       console.warn(`[order-confirmation] Order ${order.id}: no customer email; skipping confirmation`);
       return;
