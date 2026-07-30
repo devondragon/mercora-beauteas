@@ -1,12 +1,19 @@
 /**
- * Copies the CMS page images still hosted on the old Shopify CDN into R2.
+ * Uploads the CMS page images into R2.
  *
- * These images do not currently render: the sanitizer only permits image
- * sources under https://img.beauteas.com/ or relative paths, so a
- * cdn.shopify.com `src` is stripped at render time. Once uploaded they are
- * served through the existing /media/[...key] R2 proxy route.
+ * These images do not render while they point at Shopify: the sanitizer only
+ * permits image sources under https://img.beauteas.com/ or relative paths, so a
+ * cdn.shopify.com `src` is stripped at render time. Migration 0019 repoints the
+ * page HTML at https://img.beauteas.com/pages/<file>, which this populates.
  *
- * Usage:  npx tsx scripts/migrate-page-images.ts --env dev|production
+ * The bytes come from `data/r2/pages/`, committed alongside this script —
+ * deliberately NOT re-downloaded from cdn.shopify.com. This runs during a
+ * Shopify cutover; once that store is torn down those URLs 404 and a
+ * download-based script would be unrunnable exactly when it is needed, with the
+ * correct bytes sitting in the working tree the whole time.
+ *
+ * Usage:  npm run images:pages -- --env dev|production
+ * Requires CLOUDFLARE_API_TOKEN (same token wrangler authenticates with).
  * Re-runnable: existing keys are skipped, never overwritten.
  *
  * Existence check: this deliberately does NOT use `wrangler r2 object get` to
@@ -20,27 +27,17 @@
  * immediately after an upload, so that's what's used here.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-const IMAGES = [
-  {
-    source:
-      "https://cdn.shopify.com/s/files/1/0554/7288/1831/files/85A6329_e90889c6-2175-4c97-ab75-96eac46c1115_1024x1024.jpg?v=1626361061",
-    key: "pages/about-us-vanity-ritual.jpg",
-  },
-  {
-    source:
-      "https://cdn.shopify.com/s/files/1/0554/7288/1831/files/85A6494_1024x1024.jpg?v=1625358797",
-    key: "pages/brewing-iced-tea-pour.jpg",
-  },
-  {
-    source:
-      "https://cdn.shopify.com/s/files/1/0554/7288/1831/files/85A6547_1024x1024.jpg?v=1625358249",
-    key: "pages/subscriptions-vanity-flatlay.jpg",
-  },
+/** R2 keys, resolved against data/r2/<key> in the repo. */
+const IMAGE_KEYS = [
+  "pages/about-us-vanity-ritual.jpg",
+  "pages/brewing-iced-tea-pour.jpg",
+  "pages/subscriptions-vanity-flatlay.jpg",
 ] as const;
+
+const SOURCE_ROOT = join(process.cwd(), "data", "r2");
 
 const BUCKETS = {
   dev: "beauteas-images-dev",
@@ -161,36 +158,34 @@ async function main() {
   const bucket = BUCKETS[env];
   const accountId = resolveAccountId();
 
-  const workDir = mkdtempSync(join(tmpdir(), "page-images-"));
-  try {
-    for (const image of IMAGES) {
-      if (await objectExists(bucket, image.key)) {
-        console.log(`skip   ${image.key} (already in ${bucket}, account ${accountId})`);
-        continue;
-      }
+  // Fail before touching R2 if the repo copy is missing, rather than uploading
+  // a partial set and reporting success.
+  const sources = IMAGE_KEYS.map((key) => ({ key, path: join(SOURCE_ROOT, key) }));
+  const missing = sources.filter(({ path }) => !existsSync(path));
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing source image(s) in the repo:\n${missing.map(({ path }) => `  ${path}`).join("\n")}`,
+    );
+  }
 
-      const response = await fetch(image.source);
-      if (!response.ok) {
-        throw new Error(`Failed to download ${image.source}: HTTP ${response.status}`);
-      }
-      const localPath = join(workDir, image.key.replace(/\//g, "-"));
-      writeFileSync(localPath, Buffer.from(await response.arrayBuffer()));
-
-      wrangler([
-        "r2",
-        "object",
-        "put",
-        `${bucket}/${image.key}`,
-        "--file",
-        localPath,
-        "--content-type",
-        "image/jpeg",
-        "--remote",
-      ]);
-      console.log(`upload ${image.key} -> ${bucket} (existence check ran against account ${accountId})`);
+  for (const { key, path } of sources) {
+    if (await objectExists(bucket, key)) {
+      console.log(`skip   ${key} (already in ${bucket}, account ${accountId})`);
+      continue;
     }
-  } finally {
-    rmSync(workDir, { recursive: true, force: true });
+
+    wrangler([
+      "r2",
+      "object",
+      "put",
+      `${bucket}/${key}`,
+      "--file",
+      path,
+      "--content-type",
+      "image/jpeg",
+      "--remote",
+    ]);
+    console.log(`upload ${key} -> ${bucket} (existence check ran against account ${accountId})`);
   }
 }
 

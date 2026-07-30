@@ -55,10 +55,20 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 > ⚠️ **Ordering constraint — migration `0019` (footer page design, PR #98).** Deploy the app to prod **first**, then apply the migration. `0019` archives the duplicate `about` page, and the currently-deployed code still serves `/about` from the DB; migrating first would 404 a URL that is listed in the live sitemap. The `/about` → `/about-us` redirect ships with the app, not with the migration.
 >
 > ```bash
+> npm run images:pages -- --env production   # page images into R2 (see below)
 > npm run deploy:production
 > # then, and only then:
 > npx wrangler d1 migrations apply beauteas-db --remote --env production
 > ```
+>
+> `0019` repoints three page images at `https://img.beauteas.com/pages/…`, so those
+> objects must exist in the `beauteas-images` bucket **before** the migration runs or
+> About Us, Subscriptions and Brewing Directions render broken images. `images:pages`
+> uploads them from the committed `data/r2/pages/` bytes (it does **not** depend on
+> Shopify still being up) and skips keys that already exist, so it is safe to re-run.
+>
+> `0020` seeds the `page_templates` rows that make the new layouts selectable in the
+> admin editor. It has no ordering constraint of its own — applying it with `0019` is fine.
 >
 > Before applying, confirm nobody edited Brewing Directions in the admin — `0019` replaces its content wholesale and would overwrite their copy:
 >

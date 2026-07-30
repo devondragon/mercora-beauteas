@@ -11,10 +11,10 @@
 -- intro paragraph, the additive convention markup on Brewing Directions, and
 -- the R2 image URLs for the two remaining Shopify-hosted images.
 --
--- NOT included: any redirect_map row. middleware.ts only consults
--- redirect_map for paths under /products/, /collections/, /pages/, so a
--- /about row there would never fire; the /about -> /about-us redirect is
--- handled in next.config.ts by Task 10 instead. The duplicate `about`
+-- NOT included: any redirect_map row. middleware.ts consults redirect_map only
+-- for paths under /products/, /collections/, /pages/, /blogs/ and /policies/ —
+-- a bare /about matches none of them, so a row there would never fire; the
+-- /about -> /about-us redirect is handled in next.config.ts instead. The duplicate `about`
 -- placeholder page (seeded by 0003, "an AI-powered eCommerce platform") is
 -- simply archived and pulled from nav below; `about-us` holds the real
 -- founder story and is the page every link should point to.
@@ -133,7 +133,7 @@ UPDATE pages SET
 <h2>Iced Teas</h2>
 <ul class="specs"><li>Cold brew 2+ hours</li><li>1 bag per 8–16 oz</li></ul>
 <p>Iced tea can be a super refreshing way to drink your tea, especially in warm weather, or at the gym.  Luckily it''s easy to make!  You can easily brew up a large amount of tea, using multiple tea bags in a pitcher.  Generally you will want one bag for every 8-16 oz of water, depending on how strong you like it.</p>
-<p><img src="/media/pages/brewing-iced-tea-pour.jpg" alt="Pouring freshly brewed iced tea into a travel bottle"></p>
+<p><img src="https://img.beauteas.com/pages/brewing-iced-tea-pour.jpg" alt="Pouring freshly brewed iced tea into a travel bottle"></p>
 <p>Black teas must be hot brewed, using the directions above, and then chilled.  It''s usually best to let the hot tea cool to room temperature on your counter, and then move it into the refrigerator.</p>
 <p>For Green and Herbal teas, you can hot brew, and then chill like with Black teas. However you can also cold brew these teas as well, which might be easier.  Cold brewing is basically just adding your tea bags to cold water, and letting it steep for at least two hours and up to several days.</p>
 <p>You can do this inside a water bottle, mason jar, or large pitcher.  You can drink it with ice, or just chilled from the fridge.</p>
@@ -147,7 +147,7 @@ UPDATE pages SET
   content = replace(
     content,
     'https://cdn.shopify.com/s/files/1/0554/7288/1831/files/85A6329_e90889c6-2175-4c97-ab75-96eac46c1115_1024x1024.jpg?v=1626361061',
-    '/media/pages/about-us-vanity-ritual.jpg'
+    'https://img.beauteas.com/pages/about-us-vanity-ritual.jpg'
   ),
   version = version + 1,
   updated_at = unixepoch()
@@ -157,7 +157,7 @@ UPDATE pages SET
   content = replace(
     content,
     'https://cdn.shopify.com/s/files/1/0554/7288/1831/files/85A6547_1024x1024.jpg?v=1625358249',
-    '/media/pages/subscriptions-vanity-flatlay.jpg'
+    'https://img.beauteas.com/pages/subscriptions-vanity-flatlay.jpg'
   ),
   version = version + 1,
   updated_at = unixepoch()
