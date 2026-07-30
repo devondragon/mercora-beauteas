@@ -12,16 +12,25 @@
  */
 
 /**
- * Paragraphs and divs holding nothing but whitespace/&nbsp; were used as Shopify spacers.
- * Matches both `<p>...</p>` and `<div>...</div>` after their attributes are stripped.
+ * Paragraphs and divs holding nothing but whitespace/&nbsp; were used as Shopify
+ * spacers. Attributes are tolerated: the sanitizer keeps `class` on every tag
+ * ("*": ["class"]), so real exported spacers survive as
+ * `<div class="privy-embed-form"></div>` — a bare-tag match would miss them and
+ * they are still in the seeded content today. The backreference keeps the pair
+ * matched, so a mismatched `<p>…</div>` is not collapsed.
  */
-const EMPTY_ELEMENT = /(?:<p>|<div>)(?:\s|&nbsp;|<br\s*\/?>)*(?:<\/p>|<\/div>)/gi;
+const EMPTY_ELEMENT = /<(p|div)\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/\1>/gi;
 
-/** Hidden divs and stray <meta> tags the export scattered through the body. */
+/**
+ * Defense-in-depth only. On the render path the sanitizer has already dropped
+ * `style` (not in allowedAttributes) and `<meta>` (not in allowedTags), so none
+ * of these three match — the emptied `<div>` a stripped `style` leaves behind is
+ * removed by EMPTY_ELEMENT instead. They are kept because normalizePageHtml is
+ * also exercised directly by tests and is safe to point at raw ETL output, where
+ * sanitization has not run.
+ */
 const HIDDEN_DIV = /<div[^>]*style=["'][^"']*display:\s*none[^"']*["'][^>]*>\s*<\/div>/gi;
 const STRAY_META = /<meta[^>]*>/gi;
-
-/** `style` is not on the sanitizer allowlist, but legacy stored HTML still has it. */
 const STYLE_ATTR = /\s+style=["'][^"']*["']/gi;
 
 /**
@@ -35,7 +44,7 @@ function stripTags(html: string): string {
 }
 
 export function normalizePageHtml(html: string): string {
-  return html
+  let normalized = html
     .replace(HIDDEN_DIV, "")
     .replace(STRAY_META, "")
     .replace(STYLE_ATTR, "")
@@ -45,6 +54,16 @@ export function normalizePageHtml(html: string): string {
       // must stay paragraphs, or legal pages sprout spurious sections.
       return text.endsWith("?") ? `<h2>${text}</h2>` : match;
     })
-    .replace(EMPTY_ELEMENT, "")
-    .trim();
+    .replace(EMPTY_ELEMENT, "");
+
+  // Removing an empty element can leave its parent empty in turn
+  // (`<div><p></p></div>`), which one left-to-right pass cannot catch. Bounded
+  // so a pathological input cannot spin.
+  for (let pass = 0; pass < 5; pass++) {
+    const collapsed = normalized.replace(EMPTY_ELEMENT, "");
+    if (collapsed === normalized) break;
+    normalized = collapsed;
+  }
+
+  return normalized.trim();
 }

@@ -10,7 +10,7 @@ import { PageSelect } from "@/lib/db/schema/pages";
 import { sanitizePageHtmlServer } from "@/lib/utils/sanitize-html-server";
 import { parsePageHtml } from "@/lib/cms/page-sections";
 import { resolveTemplate, shouldShowRail } from "@/lib/cms/page-template";
-import { resolveSectionBlends } from "@/lib/cms/page-products";
+import { resolveSectionBlends, type BlendCardData } from "@/lib/cms/page-products";
 import PageHero from "@/components/pages/PageHero";
 import PageRail from "@/components/pages/PageRail";
 import PageCta from "@/components/pages/PageCta";
@@ -37,10 +37,19 @@ export default async function PageRenderer({ page, customJsEnabled = false }: Pa
 
   // A stored excerpt is the authored lede; otherwise promote the page's own
   // first paragraph rather than inventing copy.
-  const parsed = parsePageHtml(sanitized, { promoteLede: !page.excerpt });
+  // Conventions and the "Last Updated" pill are only lifted for the templates
+  // that render them; extracting for a template that does not would delete the
+  // markup from the page with nothing putting it back.
+  const parsed = parsePageHtml(sanitized, {
+    promoteLede: !page.excerpt,
+    extractConventions: template.kind === "guide",
+    liftUpdatedLabel: template.kind === "legal",
+  });
   const lede = page.excerpt || parsed.lede;
 
-  const blends =
+  // Annotated: a bare `new Map()` infers Map<any, any>, which would widen the
+  // union and silently disable the BlendCardData prop check on SectionCard.
+  const blends: Map<string, BlendCardData> =
     template.kind === "guide" ? await resolveSectionBlends(parsed.sections) : new Map();
   const withRail = shouldShowRail(template, parsed.sections.length);
 
@@ -61,7 +70,7 @@ export default async function PageRenderer({ page, customJsEnabled = false }: Pa
           </div>
         );
       case "faq":
-        return <FaqAccordion sections={parsed.sections} />;
+        return <FaqAccordion sections={parsed.sections} lead={parsed.lead} />;
       case "contact":
         return <ContactGrid sections={parsed.sections} lead={parsed.lead} />;
       case "legal":

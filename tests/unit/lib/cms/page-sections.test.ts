@@ -99,11 +99,80 @@ describe("parsePageHtml", () => {
     expect(sections[0].html).toBe("<p>Body.</p>");
   });
 
-  it("ignores a figure.blend whose link is not a product URL", () => {
+  it("keeps a figure.blend inline when its link is not a product URL", () => {
     const { sections } = parsePageHtml(
       '<h2>Black Teas</h2><figure class="blend"><a href="https://example.com">Nope</a></figure>',
     );
     expect(sections[0].productSlug).toBeNull();
+    // Nothing renders an unresolved blend, so removing it would delete the
+    // author's figure outright.
+    expect(sections[0].html).toContain("https://example.com");
+  });
+
+  it("accepts an absolute product link in a figure.blend", () => {
+    const { sections } = parsePageHtml(
+      '<h2>Black Teas</h2><figure class="blend"><a href="https://beauteas.com/product/morning-blend">Morning</a></figure>',
+    );
+    expect(sections[0].productSlug).toBe("morning-blend");
+  });
+
+  it("keeps a second figure.blend inline, since only one slug can be represented", () => {
+    const { sections } = parsePageHtml(
+      '<h2>Black Teas</h2><figure class="blend"><a href="/product/one">One</a></figure>' +
+        '<figure class="blend"><a href="/product/two">Two</a></figure>',
+    );
+    expect(sections[0].productSlug).toBe("one");
+    expect(sections[0].html).toContain("/product/two");
+  });
+
+  it("matches conventions that carry extra classes or attributes", () => {
+    const { sections } = parsePageHtml(
+      '<h2>Black Teas</h2><ul class="specs mt-4"><li>205F</li></ul>' +
+        '<figure id="f1" class="blend rounded"><a href="/product/morning">Morning</a></figure>',
+    );
+    expect(sections[0].specs).toEqual(["205F"]);
+    expect(sections[0].productSlug).toBe("morning");
+    expect(sections[0].html).not.toContain("<ul");
+  });
+
+  it("does not split on an h2 nested inside a wrapper element", () => {
+    // Splitting at any depth would emit an unclosed <div> as the lead and a
+    // stray </div> into the section, straight into dangerouslySetInnerHTML.
+    const { lead, sections } = parsePageHtml('<div class="wrap"><h2>Wrapped</h2><p>Body.</p></div>', {
+      promoteLede: false,
+    });
+    expect(sections).toEqual([]);
+    expect(lead).toBe('<div class="wrap"><h2>Wrapped</h2><p>Body.</p></div>');
+  });
+
+  it("splits on top-level headings while leaving nested ones inline", () => {
+    const { sections } = parsePageHtml(
+      "<h2>Real</h2><blockquote><h2>Quoted</h2></blockquote><p>Body.</p>",
+    );
+    expect(sections.map((s) => s.heading)).toEqual(["Real"]);
+    expect(sections[0].callouts).toEqual(["Quoted"]);
+  });
+
+  it("leaves conventions in the body when extraction is disabled", () => {
+    // Only the guide template renders specs/callouts/blends; the others would
+    // strip the markup and render nothing in its place.
+    const { sections } = parsePageHtml(
+      '<h2>Terms</h2><ul class="specs"><li>205F</li></ul><blockquote>Note.</blockquote>',
+      { extractConventions: false },
+    );
+    expect(sections[0].specs).toEqual([]);
+    expect(sections[0].callouts).toEqual([]);
+    expect(sections[0].html).toContain("<ul");
+    expect(sections[0].html).toContain("<blockquote>");
+  });
+
+  it("leaves a Last Updated line in the lead when lifting is disabled", () => {
+    const { updatedLabel, lead } = parsePageHtml(
+      "<p><strong>Last Updated:</strong> July 2026</p><p>Body.</p>",
+      { liftUpdatedLabel: false, promoteLede: false },
+    );
+    expect(updatedLabel).toBeNull();
+    expect(lead).toContain("Last Updated:");
   });
 
   it("extracts blockquotes into callouts and removes them from the html", () => {

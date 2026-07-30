@@ -30,14 +30,31 @@ export interface ParsedPage {
   sections: PageSection[];
 }
 
-const H2_SPLIT = /<h2[^>]*>([\s\S]*?)<\/h2>/gi;
-const SPECS_LIST = /<ul class="specs">([\s\S]*?)<\/ul>/gi;
-const BLEND_FIGURE = /<figure class="blend">([\s\S]*?)<\/figure>/gi;
+// Convention matchers deliberately tolerate extra attributes and extra classes:
+// the sanitizer keeps `class` on every tag ("*": ["class"] in
+// sanitize-html-core.ts) and the admin editor readily emits `class="specs mt-4"`
+// or an id alongside it. An exact-match regex would let that markup fall through
+// as raw prose — silently, with no error — so the class is matched as a
+// whitespace-delimited token instead.
+const CLASS_TOKEN = (token: string) => `class="(?:[^"]*\\s)?${token}(?:\\s[^"]*)?"`;
+const SPECS_LIST = new RegExp(`<ul\\b[^>]*${CLASS_TOKEN("specs")}[^>]*>([\\s\\S]*?)<\\/ul>`, "gi");
+const BLEND_FIGURE = new RegExp(
+  `<figure\\b[^>]*${CLASS_TOKEN("blend")}[^>]*>([\\s\\S]*?)<\\/figure>`,
+  "gi",
+);
 const BLOCKQUOTE = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi;
 const LIST_ITEM = /<li[^>]*>([\s\S]*?)<\/li>/gi;
 const FIRST_PARAGRAPH = /<p>([\s\S]*?)<\/p>/i;
 const UPDATED_PARAGRAPH = /^\s*<p><strong>Last Updated:<\/strong>([\s\S]*?)<\/p>/i;
-const PRODUCT_HREF = /href="\/product\/([a-z0-9-]+)"/i;
+// Absolute links to our own origin are accepted too — only the slug is used.
+const PRODUCT_HREF = /href="(?:https?:\/\/[^"/]+)?\/product\/([a-z0-9-]+)"/i;
+
+const TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>/g;
+// Void elements never open a scope, so they must not affect nesting depth.
+const VOID_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img",
+  "input", "link", "meta", "param", "source", "track", "wbr",
+]);
 
 function toText(html: string): string {
   return html
@@ -56,8 +73,65 @@ export function slugifyHeading(text: string): string {
   return slug || "section";
 }
 
-/** Pulls the conventions out of a section body, returning the cleaned html. */
-function extractConventions(html: string): Omit<PageSection, "id" | "heading"> {
+/**
+ * Locate `<h2>` boundaries that sit at the top level of the document.
+ *
+ * Splitting on every `<h2>` regardless of depth would cut a wrapper element in
+ * half and hand unbalanced fragments to `dangerouslySetInnerHTML` — a page whose
+ * sections are wrapped in a `<div>` (which the admin editor can easily produce)
+ * would emit an unclosed `<div>` as the lead and a stray `</div>` in the first
+ * section. A nested heading is therefore left inline as ordinary markup instead.
+ *
+ * Depth tracking is safe here because the input is sanitize-html output, which
+ * is balanced; the clamp below only guards against a malformed direct caller.
+ */
+function topLevelH2Boundaries(html: string): { heading: string; start: number; end: number }[] {
+  const boundaries: { heading: string; start: number; end: number }[] = [];
+  let depth = 0;
+  let open: { start: number; contentStart: number } | null = null;
+
+  for (const match of html.matchAll(TAG)) {
+    const name = match[2].toLowerCase();
+    if (VOID_TAGS.has(name) || match[3] === "/") continue;
+
+    const index = match.index ?? 0;
+    if (match[1] !== "/") {
+      if (name === "h2" && depth === 0 && !open) {
+        open = { start: index, contentStart: index + match[0].length };
+      }
+      depth++;
+    } else {
+      depth = Math.max(0, depth - 1);
+      if (name === "h2" && depth === 0 && open) {
+        boundaries.push({
+          heading: toText(html.slice(open.contentStart, index)),
+          start: open.start,
+          end: index + match[0].length,
+        });
+        open = null;
+      }
+    }
+  }
+
+  return boundaries;
+}
+
+/**
+ * Pulls the conventions out of a section body, returning the cleaned html.
+ *
+ * Only the `guide` template renders specs, callouts and the blend column
+ * (SectionCard); the other templates render `html` alone. Extraction is
+ * therefore opt-in — stripping this markup for a template that will not render
+ * it deletes the author's content outright.
+ */
+function extractConventions(
+  html: string,
+  enabled: boolean,
+): Omit<PageSection, "id" | "heading"> {
+  if (!enabled) {
+    return { html: html.trim(), specs: [], productSlug: null, callouts: [] };
+  }
+
   let body = html;
 
   const specs: string[] = [];
@@ -69,9 +143,13 @@ function extractConventions(html: string): Omit<PageSection, "id" | "heading"> {
   body = body.replace(SPECS_LIST, "");
 
   let productSlug: string | null = null;
-  body = body.replace(BLEND_FIGURE, (_match, inner: string) => {
+  body = body.replace(BLEND_FIGURE, (match, inner: string) => {
     const href = inner.match(PRODUCT_HREF);
-    if (href) productSlug = href[1];
+    // Keep the figure inline unless it actually yields a rendered column: an
+    // unresolvable href (or a second figure in one section, which the single
+    // productSlug field cannot represent) would otherwise be deleted silently.
+    if (!href || productSlug) return match;
+    productSlug = href[1];
     return "";
   });
 
@@ -84,22 +162,31 @@ function extractConventions(html: string): Omit<PageSection, "id" | "heading"> {
   return { html: body.trim(), specs, productSlug, callouts };
 }
 
-export function parsePageHtml(
-  html: string,
-  options: { promoteLede?: boolean } = {},
-): ParsedPage {
-  const { promoteLede = true } = options;
+export interface ParsePageOptions {
+  /** Promote the first paragraph to the hero lede. Off when a stored excerpt wins. */
+  promoteLede?: boolean;
+  /**
+   * Lift `<ul class="specs">`, `<blockquote>` and `<figure class="blend">` out of
+   * the body. Only enable for templates that render them (`guide`) — otherwise
+   * the markup is removed and nothing puts it back.
+   */
+  extractConventions?: boolean;
+  /**
+   * Lift a leading "Last Updated:" paragraph into its own field. Only enable for
+   * templates that render it (`legal`), for the same reason.
+   */
+  liftUpdatedLabel?: boolean;
+}
+
+export function parsePageHtml(html: string, options: ParsePageOptions = {}): ParsedPage {
+  const {
+    promoteLede = true,
+    extractConventions: shouldExtract = true,
+    liftUpdatedLabel = true,
+  } = options;
   const normalized = normalizePageHtml(html);
 
-  // Split on top-level h2 boundaries.
-  const boundaries: { heading: string; start: number; end: number }[] = [];
-  for (const match of normalized.matchAll(H2_SPLIT)) {
-    boundaries.push({
-      heading: toText(match[1]),
-      start: match.index ?? 0,
-      end: (match.index ?? 0) + match[0].length,
-    });
-  }
+  const boundaries = topLevelH2Boundaries(normalized);
 
   let lead = boundaries.length ? normalized.slice(0, boundaries[0].start) : normalized;
 
@@ -115,16 +202,18 @@ export function parsePageHtml(
     return {
       id: seen === 1 ? base : `${base}-${seen}`,
       heading: boundary.heading,
-      ...extractConventions(body),
+      ...extractConventions(body, shouldExtract),
     };
   });
 
   // Lift a leading "Last Updated" line into its own field (legal pages).
   let updatedLabel: string | null = null;
-  const updatedMatch = lead.match(UPDATED_PARAGRAPH);
-  if (updatedMatch) {
-    updatedLabel = `Last Updated:${updatedMatch[1]}`.replace(/\s+/g, " ").trim();
-    lead = lead.slice(updatedMatch[0].length);
+  if (liftUpdatedLabel) {
+    const updatedMatch = lead.match(UPDATED_PARAGRAPH);
+    if (updatedMatch) {
+      updatedLabel = `Last Updated:${updatedMatch[1]}`.replace(/\s+/g, " ").trim();
+      lead = lead.slice(updatedMatch[0].length);
+    }
   }
 
   // Promote the first remaining paragraph to the hero lede.

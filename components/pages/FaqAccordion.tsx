@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { PageSection } from "@/lib/cms/page-sections";
 
@@ -11,13 +11,39 @@ import type { PageSection } from "@/lib/cms/page-sections";
  */
 interface FaqAccordionProps {
   sections: PageSection[];
+  /**
+   * Content before the first question. Only `<h2>` (and bold paragraphs ending
+   * in "?") become questions, so anything else an author writes at the top of
+   * the page lands here — without this it would be parsed and then dropped.
+   */
+  lead?: string;
 }
 
-export default function FaqAccordion({ sections }: FaqAccordionProps) {
+export default function FaqAccordion({ sections, lead }: FaqAccordionProps) {
   const [openId, setOpenId] = useState<string | null>(sections[0]?.id ?? null);
 
+  // A rail link or an inbound deep link only scrolls to the row; without this
+  // it lands on a collapsed question with the answer still hidden. Set after
+  // mount rather than in the initial state so SSR and hydration agree.
+  useEffect(() => {
+    const openFromHash = () => {
+      const id = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+      if (id && sections.some((section) => section.id === id)) setOpenId(id);
+    };
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, [sections]);
+
   return (
-    <div className="bg-white border border-border-default rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(122,80,66,0.05),0_8px_22px_-14px_rgba(122,80,66,0.22)]">
+    <>
+      {lead && (
+        <div
+          className="prose max-w-[66ch] mb-5 prose-p:text-text-secondary prose-a:text-primary-700"
+          dangerouslySetInnerHTML={{ __html: lead }}
+        />
+      )}
+      <div className="bg-white border border-border-default rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(122,80,66,0.05),0_8px_22px_-14px_rgba(122,80,66,0.22)]">
       {sections.map((section) => {
         const isOpen = openId === section.id;
         return (
@@ -47,6 +73,7 @@ export default function FaqAccordion({ sections }: FaqAccordionProps) {
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }

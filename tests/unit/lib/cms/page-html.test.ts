@@ -57,4 +57,20 @@ describe("normalizePageHtml", () => {
     const html = '<div style="text-align: left;">Important info</div>';
     expect(normalizePageHtml(html)).toBe("<div>Important info</div>");
   });
+
+  it("drops an empty spacer that carries a class", () => {
+    // The sanitizer keeps `class` on every tag, so this is the shape real
+    // Shopify spacers survive as — it is in the seeded content today.
+    const html = '<div class="privy-embed-form"></div><p>Copy.</p>';
+    expect(normalizePageHtml(html)).toBe("<p>Copy.</p>");
+  });
+
+  it("collapses a wrapper left empty by removing its only child", () => {
+    expect(normalizePageHtml("<div><p>&nbsp;</p></div><p>Copy.</p>")).toBe("<p>Copy.</p>");
+  });
+
+  it("does not collapse a mismatched tag pair", () => {
+    const html = "<p></div>";
+    expect(normalizePageHtml(html)).toBe("<p></div>");
+  });
 });
