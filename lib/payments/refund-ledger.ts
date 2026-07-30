@@ -39,6 +39,163 @@ import {
 } from '@/lib/utils/refund-validation';
 import { deriveRefundIdempotencyKey } from '@/lib/payments/refund-idempotency';
 
+/**
+ * A refund Stripe knows about that the ledger may not (BMC-213). Only the id and
+ * amount matter for reconciliation; the rest of the Refund object is ignored.
+ */
+export interface StripeRefundSummary {
+  id: string;
+  /** Amount in minor units (cents). */
+  amount?: number | null;
+  /** Stripe refund lifecycle; only 'failed'/'canceled' are excluded. */
+  status?: string | null;
+}
+
+export interface ExternalRefundReconciliationRequest {
+  /** Cumulative `charge.amount_refunded` from the signature-verified event. */
+  chargeAmountRefunded: number;
+  /** Order total in minor units (cents) — decides full vs partial. */
+  totalAmount: number;
+  /**
+   * Current `extensions.stripe_amount_refunded` high-water mark, if any. Used
+   * only to decide whether this event ADVANCES it (Stripe's cumulative total
+   * never shrinks, so a redelivery carrying a lower value must not lower it).
+   */
+  recordedFloor?: number;
+  /**
+   * Refunds Stripe reports for this charge, if they could be fetched. Used ONLY
+   * for audit provenance (which Stripe refund ids this entry covers) — never for
+   * the amount math, which is cumulative. Empty/omitted is fine.
+   */
+  stripeRefunds?: StripeRefundSummary[];
+}
+
+export type ExternalRefundReconciliation =
+  | {
+      /** Ledger already accounts for every cent Stripe reports — nothing to do. */
+      action: 'noop';
+      ledgerRefunded: number;
+      /**
+       * New value for `extensions.stripe_amount_refunded` when this event raises
+       * the high-water mark, else null. Non-null means the caller should still
+       * write — see the `stripeRefundedFloor` doc on RefundLedgerRequest for why
+       * the floor must be recorded even when no ledger entry is needed.
+       */
+      floorAdvance: number | null;
+    }
+  | {
+      /** Stripe has refunded more than the ledger knows — record the shortfall. */
+      action: 'record';
+      /** The unaccounted-for amount, in minor units. Always > 0. */
+      amount: number;
+      /** Refunded total AFTER this entry lands. */
+      reconciledTotal: number;
+      /** True once the reconciled total covers the whole order. */
+      isFullyRefunded: boolean;
+      /** Stripe refund ids not already referenced by a ledger entry (provenance). */
+      unattributedRefundIds: string[];
+      /** New `extensions.stripe_amount_refunded` high-water mark, or null. */
+      floorAdvance: number | null;
+    };
+
+/**
+ * Decide how a `charge.refunded` event reconciles into the ledger (BMC-213).
+ *
+ * === Why cumulative delta, not per-refund id matching ===
+ * The ticket proposed matching `charge.refunds.data[].id` against the ledger.
+ * That field is NOT in the payload: Stripe's 2022-11-15 change ("deprecates
+ * charges auto-expand") stopped auto-expanding `charge.refunds`, and this app
+ * pins `2026-06-24.dahlia`. What IS always present is `amount_refunded` — the
+ * CUMULATIVE total refunded against the charge.
+ *
+ * So the amount math is a pure delta against the ledger:
+ *
+ *     delta = charge.amount_refunded − computeRefundedTotal(ledger)
+ *
+ * This is strictly stronger than id matching:
+ *   - **No double-counting.** An app-initiated refund's own `charge.refunded`
+ *     arrives with its `pending`/`succeeded` entry already in the ledger and
+ *     already counted, so delta is 0 and we no-op. No id lookup needed.
+ *   - **Partials fall out for free.** Reconciling against a cumulative total
+ *     rather than per-event deltas means out-of-order or redelivered events all
+ *     converge on the same answer instead of stacking.
+ *   - **Self-healing under interleaving.** A Dashboard refund racing an app
+ *     refund can leave a transient shortfall; every refund emits its own
+ *     `charge.refunded`, and each delivery closes whatever gap still remains.
+ *   - **Idempotent by construction.** Replaying the same event after it landed
+ *     yields delta 0.
+ *
+ * `stripeRefunds` (fetched separately via `stripe.refunds.list`) is used only to
+ * stamp provenance ids on the entry. Reconciliation stays correct without it, so
+ * a failed list call degrades to an id-less entry rather than skipping the write
+ * — money correctness must never depend on a best-effort side call.
+ *
+ * NOTE: the delta is deliberately NOT clamped to the order total. If Stripe has
+ * refunded more than D1 believes the order was worth, the ledger should record
+ * the truth so the over-refund guard blocks further app refunds — clamping would
+ * understate what was returned and reopen the very hole this closes.
+ *
+ * Pure and synchronous. Does not mutate `refunds`.
+ */
+export function decideExternalRefundReconciliation(
+  refunds: RefundRecord[],
+  req: ExternalRefundReconciliationRequest
+): ExternalRefundReconciliation {
+  const { chargeAmountRefunded, totalAmount, stripeRefunds = [], recordedFloor } = req;
+
+  const ledgerRefunded = computeRefundedTotal({ refunds });
+  // A non-finite/negative `amount_refunded` should never reach us (it comes from
+  // a signature-verified Stripe event), but fail closed rather than recording a
+  // nonsense entry that would corrupt every later refund decision.
+  const stripeRefunded =
+    Number.isInteger(chargeAmountRefunded) && chargeAmountRefunded > 0
+      ? chargeAmountRefunded
+      : 0;
+
+  // Stripe's cumulative total only ever grows, so the high-water mark advances
+  // only when THIS event reports more than we have ever seen. A redelivery
+  // carrying a stale, lower value must never lower it.
+  const priorFloor =
+    typeof recordedFloor === 'number' && Number.isFinite(recordedFloor) ? recordedFloor : 0;
+  const floorAdvance = stripeRefunded > priorFloor ? stripeRefunded : null;
+
+  const delta = stripeRefunded - ledgerRefunded;
+  if (delta <= 0) {
+    // Still report a floor advance: the ledger can legitimately SHRINK later
+    // (a `pending` reservation flipping to `failed`), and if that reservation's
+    // money actually did leave Stripe, the remembered floor is the only thing
+    // that keeps the over-refund guard honest. See `stripeRefundedFloor`.
+    return { action: 'noop', ledgerRefunded, floorAdvance };
+  }
+
+  // Provenance: ids Stripe reports that no ledger entry already references.
+  // 'failed'/'canceled' Stripe refunds moved no money and are excluded, matching
+  // how computeRefundedTotal drops 'failed' ledger entries.
+  const known = new Set(
+    refunds.flatMap((r) => {
+      const ids: string[] = [];
+      if (typeof r?.stripe_refund_id === 'string') ids.push(r.stripe_refund_id);
+      const list = r?.stripe_refund_ids;
+      if (Array.isArray(list)) ids.push(...list.filter((v): v is string => typeof v === 'string'));
+      return ids;
+    })
+  );
+  const unattributedRefundIds = stripeRefunds
+    .filter((r) => r?.id && r.status !== 'failed' && r.status !== 'canceled')
+    .map((r) => r.id)
+    .filter((id) => !known.has(id));
+
+  const reconciledTotal = ledgerRefunded + delta;
+  return {
+    action: 'record',
+    amount: delta,
+    reconciledTotal,
+    isFullyRefunded: totalAmount > 0 && reconciledTotal >= totalAmount,
+    unattributedRefundIds,
+    floorAdvance,
+  };
+}
+
 export interface RefundLedgerRequest {
   orderId: string;
   type: 'full' | 'partial';
@@ -48,6 +205,20 @@ export interface RefundLedgerRequest {
   items?: string[];
   /** Order total in minor units (cents). */
   totalAmount: number;
+  /**
+   * Highest cumulative `charge.amount_refunded` ever observed from a Stripe
+   * `charge.refunded` event (`extensions.stripe_amount_refunded`, BMC-213).
+   *
+   * A FLOOR on the refunded total, applied only to the over-refund validation.
+   * It exists because the ledger can legitimately shrink: a reservation that
+   * flips `pending` → `failed` (the route's Stripe-error path) leaves the total,
+   * on the assumption no money moved. If Stripe actually DID process that refund
+   * — a timeout where the request landed — the ledger under-reports and the
+   * guard would wave through a second refund. Stripe's own cumulative total can
+   * only ever grow, so remembering the high-water mark keeps the guard honest
+   * even when the ledger disagrees.
+   */
+  stripeRefundedFloor?: number;
 }
 
 export type RefundLedgerDecision =
@@ -92,7 +263,7 @@ export async function decideRefundLedgerAction(
   refunds: RefundRecord[],
   req: RefundLedgerRequest
 ): Promise<RefundLedgerDecision> {
-  const { orderId, type, amount, items, totalAmount } = req;
+  const { orderId, type, amount, items, totalAmount, stripeRefundedFloor } = req;
 
   // Settled baseline = every entry EXCEPT in-flight `pending` reservations.
   // `priorRefundCount` and the detect amount hash over this baseline so a retry
@@ -102,7 +273,18 @@ export async function decideRefundLedgerAction(
   const baselineRefunded = computeRefundedTotal({ refunds: settled });
   // Full ledger total (INCLUDES pending) — used to validate a genuinely-new
   // refund so a concurrent in-flight reservation can't be over-refunded.
-  const allRefunded = computeRefundedTotal({ refunds });
+  //
+  // BMC-213: raised to Stripe's observed high-water mark when that is higher.
+  // The floor is applied HERE ONLY — deliberately NOT to `baselineRefunded`,
+  // `priorRefundCount`, or `detectAmount`, which feed the idempotency key. Those
+  // must stay byte-identical across a retry or a reconciling retry would derive a
+  // different key and fail to match its own `pending` entry, issuing a SECOND
+  // Stripe refund. The floor only ever tightens the validation.
+  const ledgerRefunded = computeRefundedTotal({ refunds });
+  const allRefunded =
+    typeof stripeRefundedFloor === 'number' && Number.isFinite(stripeRefundedFloor)
+      ? Math.max(ledgerRefunded, stripeRefundedFloor)
+      : ledgerRefunded;
 
   // The amount this request would have reserved at its ORIGINAL attempt, from
   // the settled baseline — reproduces the key a retry needs to match a pending.

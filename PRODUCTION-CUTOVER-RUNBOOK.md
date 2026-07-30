@@ -234,12 +234,13 @@ In **Stripe Live mode**:
 - ☑ **Endpoint created (2026-07-27, self-reported).** One webhook endpoint → `/api/webhooks/stripe`.
   > ⚠️ **Confirm which host it points at.** It should be **`https://shop.beauteas.com/api/webhooks/stripe`** for now. `www` and the apex are still Shopify, so an endpoint pointed there delivers into the old store and every event is lost — silently, because Stripe just records delivery failures you aren't watching. At cutover, **edit this endpoint's URL** to `www` rather than creating a second one, so the signing secret carries over. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
 
-- ☑ **Events subscribed (2026-07-27, self-reported)** — exactly these 9 — this is the full `switch` in `app/api/webhooks/stripe/route.ts:103-145`; anything else falls to `default:` and only logs:
+- ☑ **Events subscribed (2026-07-27, self-reported)** — these 9, **plus `charge.refunded` added by BMC-213 → 10** — this is the full `switch` in `app/api/webhooks/stripe/route.ts`; anything else falls to `default:` and only logs:
   - `payment_intent.succeeded` ← **the money path** (`finalizePaidOrder`, gift cards, confirmation email)
   - `payment_intent.payment_failed` (handler is a stub — logs only)
   - `checkout.session.completed` (handler is a stub; you use Payment Element, not Checkout Sessions — **safe to omit**)
   - `customer.subscription.created` / `.updated` / `.deleted`
   - `invoice.payment_succeeded` ← creates renewal orders · `invoice.payment_failed` · `invoice.upcoming`
+  - ⚠️ **`charge.refunded` — MUST BE ADDED to the live endpoint (BMC-213).** Reconciles refunds issued outside the app (Stripe Dashboard) into `orders.extensions.refunds[]`. Without the subscription the handler never runs and the over-refund vector stays open — **the code change alone is not enough.**
 
   > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
 
@@ -266,7 +267,15 @@ In **Stripe Live mode**:
   > At cutover you **edit this endpoint's URL** to `www` rather than creating a second one, so this verified secret carries over unchanged.
 
 - ☑ **Gaps filed as tickets (2026-07-27).** Both are code gaps — subscribing the events alone would not help.
-  - **[BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) (High)** — no `charge.refunded` handler. Worse than first assessed: the over-refund guard computes its total *exclusively* from `orders.extensions.refunds[]` (`lib/payments/refund-ledger.ts:101-105`), which a Dashboard refund never writes. So a Dashboard refund followed by an app refund **returns the money twice**. Also skips inventory restock and the `refund.*` policy settings.
+  - ☑ **[BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) (High) — FIXED.** Was: no `charge.refunded` handler, so the over-refund guard (which computes its total *exclusively* from `orders.extensions.refunds[]`) never saw a Dashboard refund and a follow-up app refund **returned the money twice**.
+
+    `app/api/webhooks/stripe/handlers/refund-handlers.ts` now reconciles the event into the ledger. **Note the mechanism differs from the ticket's proposal**: `charge.refunds.data[]` is *not* in the payload — Stripe's 2022-11-15 "deprecates charges auto-expand" change removed it, and this app pins `2026-06-24.dahlia`. Reconciliation instead deltas the ledger against the cumulative `charge.amount_refunded`, which is idempotent, handles partials by construction, and cannot double-count an app refund's own webhook. Individual refund ids are fetched via `stripe.refunds.list` for audit provenance only (best-effort; a failure degrades to an id-less entry rather than skipping the write).
+
+    The reconciler also records Stripe's cumulative total as a high-water mark on `extensions.stripe_amount_refunded`, and the over-refund guard floors its validation at that value. This covers the case where the ledger legitimately *shrinks* — a `pending` reservation released to `failed` for a refund whose money actually did leave Stripe (a create that timed out after landing) — which would otherwise reopen the same over-refund hole from the other direction.
+
+    **Two operational follow-ups:**
+    1. **Subscribe `charge.refunded`** on the live endpoint (see the event list above) — the handler is dead code until you do.
+    2. **Apply migration `0021`**, which seeds `refund.restock_on_external_refund` (default **on**). Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.
   - **[BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) (Medium)** — no `charge.dispute.*` handling. Chargebacks are invisible to the app; the only signal is Stripe's email, so a missed evidence deadline is an automatic loss. Sequence **after** BMC-213 and reuse its reconciliation.
 
 ---
