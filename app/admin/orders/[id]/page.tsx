@@ -926,6 +926,11 @@ export default function OrderDetailPage() {
                     <span className="text-text-primary font-semibold">
                       ${(refund.amount / 100).toFixed(2)}
                     </span>
+                    {/* BMC-213: reconciled from a refund issued outside the app
+                        (Stripe Dashboard) rather than through the admin UI. */}
+                    {refund.source === 'stripe_external' && (
+                      <Badge className="bg-state-info">Stripe Dashboard</Badge>
+                    )}
                   </div>
                   <span className="text-xs text-text-secondary">
                     {new Date(refund.processed_at).toLocaleDateString()}
@@ -937,9 +942,13 @@ export default function OrderDetailPage() {
                   {refund.items && refund.items.length > 0 && (
                     <p><strong>Items:</strong> {refund.items.length} item(s)</p>
                   )}
-                  <p className="text-xs text-text-secondary">
-                    <strong>Stripe Refund ID:</strong> {refund.stripe_refund_id}
-                  </p>
+                  {/* A reconciled external refund may carry no id (the provenance
+                      lookup is best-effort) — don't render a dangling label. */}
+                  {refund.stripe_refund_id && (
+                    <p className="text-xs text-text-secondary">
+                      <strong>Stripe Refund ID:</strong> {refund.stripe_refund_id}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

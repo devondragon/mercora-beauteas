@@ -61,7 +61,9 @@ export async function getRefundPolicy() {
     refundShippingOnFullReturn: refundSettings['refund.shipping_refunded_on_full_return'] || false,
     restockingFeePercent: refundSettings['refund.restocking_fee_percent'] || 0,
     minimumRefundAmount: refundSettings['refund.minimum_refund_amount'] || 0,
-    applyRestockingFeeOnPartialReturn: refundSettings['refund.apply_restocking_fee_on_partial'] !== false
+    applyRestockingFeeOnPartialReturn: refundSettings['refund.apply_restocking_fee_on_partial'] !== false,
+    // BMC-213: defaults to true (parity with an app refund) when unset.
+    restockOnExternalRefund: refundSettings['refund.restock_on_external_refund'] !== false
   };
 }
 
@@ -116,6 +118,7 @@ export interface RefundPolicy {
   restockingFeePercent: number;
   minimumRefundAmount: number;
   applyRestockingFeeOnPartialReturn: boolean;
+  restockOnExternalRefund: boolean;
 }
 
 /**

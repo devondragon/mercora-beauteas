@@ -95,6 +95,7 @@ interface RefundSettings {
   restocking_fee_percent: number;
   return_window_days: number;
   minimum_refund_amount: number;
+  restock_on_external_refund: boolean;
 }
 
 interface PromotionSettings {
@@ -165,7 +166,9 @@ export default function AdminSettingsPage() {
     shipping_refunded_full: false,
     restocking_fee_percent: 0,
     return_window_days: 30,
-    minimum_refund_amount: 500
+    minimum_refund_amount: 500,
+    // BMC-213: default ON — parity with an app refund, which always restocks.
+    restock_on_external_refund: true
   });
 
   const [promotionSettings, setPromotionSettings] = useState<PromotionSettings>({
@@ -241,6 +244,7 @@ export default function AdminSettingsPage() {
             if (setting.key === 'refund.restocking_fee_percent') setRefundSettings(prev => ({ ...prev, restocking_fee_percent: value }));
             if (setting.key === 'refund.return_window_days') setRefundSettings(prev => ({ ...prev, return_window_days: value }));
             if (setting.key === 'refund.minimum_refund_amount') setRefundSettings(prev => ({ ...prev, minimum_refund_amount: value }));
+            if (setting.key === 'refund.restock_on_external_refund') setRefundSettings(prev => ({ ...prev, restock_on_external_refund: value !== false }));
           } else if (setting.category === 'promotions') {
             if (setting.key === 'promotions.site_wide_discount_percent') setPromotionSettings(prev => ({ ...prev, site_wide_discount_percent: value }));
             if (setting.key === 'promotions.banner_enabled') setPromotionSettings(prev => ({ ...prev, banner_enabled: value }));
@@ -387,6 +391,7 @@ export default function AdminSettingsPage() {
         { key: 'refund.restocking_fee_percent', value: refundSettings.restocking_fee_percent, category: 'refund' },
         { key: 'refund.return_window_days', value: refundSettings.return_window_days, category: 'refund' },
         { key: 'refund.minimum_refund_amount', value: refundSettings.minimum_refund_amount, category: 'refund' },
+        { key: 'refund.restock_on_external_refund', value: refundSettings.restock_on_external_refund, category: 'refund' },
         
         // Promotion settings
         { key: 'promotions.site_wide_discount_percent', value: promotionSettings.site_wide_discount_percent, category: 'promotions' },
@@ -873,7 +878,21 @@ export default function AdminSettingsPage() {
                   onCheckedChange={(checked) => setRefundSettings(prev => ({ ...prev, shipping_refunded_partial: checked }))}
                 />
               </div>
-              
+
+              {/* BMC-213: refunds issued outside the app (Stripe Dashboard) are
+                  reconciled into the ledger by the charge.refunded webhook.
+                  Whether they also restore stock is a business decision. */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium text-text-secondary">Restock on Stripe Dashboard Refunds</label>
+                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock — Stripe refunds an amount, not items.</p>
+                </div>
+                <Switch
+                  checked={refundSettings.restock_on_external_refund}
+                  onCheckedChange={(checked) => setRefundSettings(prev => ({ ...prev, restock_on_external_refund: checked }))}
+                />
+              </div>
+
               <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mt-4">
                 <div className="flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />

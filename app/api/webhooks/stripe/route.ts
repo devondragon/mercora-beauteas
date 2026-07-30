@@ -21,6 +21,11 @@
  * - payment_intent.payment_failed
  * - checkout.session.completed
  *
+ * Refund events:
+ * - charge.refunded (BMC-213 — reconciles refunds issued outside the app, e.g.
+ *   from the Stripe Dashboard, into the `extensions.refunds[]` ledger so the
+ *   over-refund guard can see them)
+ *
  * === Security ===
  * - Async webhook signature verification via verifyWebhookSignature (HMAC-SHA256)
  * - Event ID dedup via an atomic PK-insert claim on processed_webhook_events
@@ -48,6 +53,7 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
+import { handleChargeRefunded } from './handlers/refund-handlers';
 import { getOrderById } from '@/lib/models/mach/orders';
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
 import { logCritical } from '@/lib/utils/observe';
@@ -138,6 +144,11 @@ export async function POST(req: NextRequest) {
 
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        break;
+
+      // ─── Refund events ─────────────────────────────────
+      case 'charge.refunded':
+        await handleChargeRefunded(event.data.object as Stripe.Charge, event.id);
         break;
 
       default:

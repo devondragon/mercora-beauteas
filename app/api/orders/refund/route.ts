@@ -36,6 +36,11 @@
  *      D1 has no interactive transactions, so this guarded read-modify-write is
  *      how two concurrent distinct partial refunds both land without silently
  *      dropping one entry (which would corrupt computeRefundedTotal).
+ *      The guard predicates themselves live in
+ *      `lib/payments/refund-ledger-store.ts` — BMC-213 added a second ledger
+ *      writer (the `charge.refunded` reconciler), and both must agree on the
+ *      concurrency contract. The CAS LOOPS stay here because they interleave the
+ *      Stripe call and order-level effects with the ledger write.
  *
  * === Request Format ===
  * ```json
@@ -54,11 +59,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStripeClient } from '@/lib/stripe';
 import { getDbAsync } from '@/lib/db';
 import { orders } from '@/lib/db/schema/order';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
 import { type RefundRecord } from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
 import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
+import {
+  MAX_CAS_ATTEMPTS,
+  confirmRestockedLines,
+  parseJson,
+  readInflightRestockKeys,
+  readRefundsVersion,
+  readUnavailableRestockKeys,
+  refundsVersionGuard,
+  updatedAtGuard,
+} from '@/lib/payments/refund-ledger-store';
 import { sendOrderStatusUpdateEmail, type OrderStatusUpdateData } from '@/lib/utils/email';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { Money } from '@/lib/money';
@@ -71,43 +86,6 @@ interface RefundRequest {
   amount?: number; // For partial refunds (in cents)
   items?: string[]; // For partial refunds - product IDs
   notes?: string;
-}
-
-/** Bounded CAS retries on the ledger column before we give up with a 409. */
-const MAX_CAS_ATTEMPTS = 5;
-
-/** Parse a `mode:"json"` column that may arrive already-parsed or as a string. */
-function parseJson(value: unknown): any {
-  return typeof value === 'string' ? JSON.parse(value) : value;
-}
-
-/**
- * The `updated_at` half of a CAS guard. `updated_at` can be NULL on legacy rows,
- * and `= NULL` never matches in SQL, so route those to `IS NULL`.
- */
-function updatedAtGuard(value: string | null) {
-  return value === null ? isNull(orders.updated_at) : eq(orders.updated_at, value);
-}
-
-/**
- * Monotonic version half of the CAS guard (BMC-193 review, Finding 2). The
- * `updated_at` timestamp is millisecond-resolution ISO text, so two writes in
- * the same millisecond could theoretically share it and both pass an
- * `updated_at`-only CAS. `extensions.refunds_version` is an integer bumped on
- * EVERY ledger write, so it disambiguates same-millisecond writers: a lost
- * racer reads the stale version and its `COALESCE(json_extract(...),0) = <read>`
- * predicate no longer matches once the winner has incremented it. Legacy rows
- * (no `refunds_version`) read as 0 via COALESCE; the first write bumps them to 1.
- * Kept as a single atomic UPDATE statement (no schema migration needed).
- */
-function refundsVersionGuard(version: number) {
-  return sql`COALESCE(json_extract(${orders.extensions}, '$.refunds_version'), 0) = ${version}`;
-}
-
-/** Current refund-ledger version on a parsed extensions object (default 0). */
-function readRefundsVersion(extensions: any): number {
-  const v = extensions?.refunds_version;
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
 export async function POST(request: NextRequest) {
@@ -181,6 +159,12 @@ export async function POST(request: NextRequest) {
         amount,
         items: refundedItemKeys,
         totalAmount: totalAmount.amount ?? 0,
+        // BMC-213: the highest cumulative refund Stripe has ever reported for
+        // this order's charge, recorded by the `charge.refunded` reconciler.
+        // Floors the over-refund guard so a ledger that under-reports (e.g. a
+        // reservation released to `failed` for a refund whose money DID leave)
+        // cannot wave through a second refund.
+        stripeRefundedFloor: extensions.stripe_amount_refunded,
       });
 
       if (decision.action === 'reject') {
@@ -348,21 +332,25 @@ export async function POST(request: NextRequest) {
 
       const rawItems = order.items ? parseJson(order.items) : [];
       const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
-      const priorRestockedKeys: string[] = Array.isArray(extensions.restockedLineKeys)
-        ? extensions.restockedLineKeys
-        : [];
+      // Exclude lines already restored AND lines another refund has claimed but
+      // not yet confirmed, so concurrent refunds can never double-restock a line.
       const { lines: restockLines, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
         fullRefund: type === 'full',
         refundedItemKeys,
-        alreadyRestockedKeys: priorRestockedKeys,
+        alreadyRestockedKeys: readUnavailableRestockKeys(extensions),
       });
 
       const nextExtensions = {
         ...extensions,
         refunds: nextRefunds,
-        // Deduped union of lines restored so far so a later refund won't restock
-        // them again (see selectRestockLines).
-        restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
+        // BMC-213 review: CLAIM these lines rather than marking them restored.
+        // The inventory write happens after this CAS commits, so recording them
+        // as restored here would permanently mark untouched stock as returned if
+        // that write then failed — and no later refund would retry it. Only what
+        // actually lands is promoted, by confirmRestockedLines() below.
+        restockInflightLineKeys: Array.from(
+          new Set([...readInflightRestockKeys(extensions), ...newlyRestockedKeys])
+        ),
         refunds_version: version + 1,
       };
 
@@ -417,9 +405,17 @@ export async function POST(request: NextRequest) {
     // as a 500 or unwind the refund.
     try {
       if (restockItems.length > 0) {
-        const { restocked } = await restockForOrder(restockItems);
+        const { restocked, completedKeys, failedKeys } = await restockForOrder(restockItems);
+        // Promote only the lines that actually landed; anything that failed stays
+        // claimed (in-flight) as a durable record that stock is still owed,
+        // rather than being marked restored and silently lost.
+        await confirmRestockedLines(db, orderId, completedKeys);
         if (restocked.length) {
           console.log(`Restocked ${restocked.length} variant(s) for ${type} refund on order ${orderId}`);
+        }
+        if (failedKeys.length) {
+          console.error(`Restock incomplete on order ${orderId}; still owed: ${failedKeys.join(',')}`);
+          logCritical('refund', 'restock_incomplete', { orderId, failedKeys });
         }
       }
     } catch (restockError) {

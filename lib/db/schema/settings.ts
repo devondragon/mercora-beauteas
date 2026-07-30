@@ -131,6 +131,19 @@ export const defaultSettings = [
     description: 'Minimum refund amount in cents ($5.00)',
     data_type: 'number'
   },
+  {
+    // BMC-213: a refund issued outside the app (Stripe Dashboard) is reconciled
+    // into the ledger by the `charge.refunded` webhook. Whether it also restores
+    // stock is a business decision — default ON for parity with an app refund,
+    // but turn it OFF if Dashboard refunds are typically goodwill gestures where
+    // the goods were never returned. Only FULL external refunds ever restock;
+    // partial ones carry no line attribution.
+    key: 'refund.restock_on_external_refund',
+    value: JSON.stringify(true),
+    category: 'refund',
+    description: 'Restock inventory when a full refund is issued outside the app (e.g. Stripe Dashboard)',
+    data_type: 'boolean'
+  },
   
   // Promotions & Banners
   {

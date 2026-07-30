@@ -329,31 +329,63 @@ export async function decrementStockForOrder(
  * Restore on-hand stock for a refunded/cancelled order's lines (the inverse of
  * `decrementStockForOrder`). Increments only stock-managed variants
  * (tracked or backorderable); untracked/unresolved lines are skipped.
- * Idempotency is the caller's responsibility (the refund route restocks once per
- * recorded refund). Best-effort per line; a DB error propagates to the caller,
- * which wraps this so it can never roll back an already-processed refund.
+ * Idempotency is the caller's responsibility (callers record which lines have
+ * been restored — see `restockedLineKeys`).
+ *
+ * PER-LINE OUTCOMES (BMC-213 review). This used to throw on the first DB error,
+ * abandoning the remaining lines, while callers had ALREADY committed every
+ * selected line as restocked — so a mid-list failure permanently marked
+ * untouched inventory as restored and no later refund would retry it. Now each
+ * line is isolated and reported:
+ *   - `completedKeys` — safe to mark restored. Includes lines that were SKIPPED
+ *     (untracked / unresolvable): there is nothing to restore for those, so
+ *     leaving them un-marked would strand them as permanently "owed" forever.
+ *   - `failedKeys` — genuinely not restored. Callers must NOT mark these.
+ * Never throws; a total failure returns every key under `failedKeys`.
  */
-export async function restockForOrder(items: OrderLineForStock[]): Promise<{ restocked: string[] }> {
+export async function restockForOrder(
+  items: OrderLineForStock[]
+): Promise<{ restocked: string[]; completedKeys: string[]; failedKeys: string[] }> {
   const list = Array.isArray(items) ? items : [];
-  const db = await getDbAsync();
 
   const restocked: string[] = [];
-  for (const item of list) {
-    const line = await resolveLine(item);
-    if (!line) continue;
-    if (planLineAdjustment(line.inv) === 'skip') continue; // untracked → nothing to restore
+  const completedKeys: string[] = [];
+  const failedKeys: string[] = [];
 
-    await db
-      .update(product_variants)
-      .set({
-        inventory: sql`json_set(inventory, '$.quantity', COALESCE(json_extract(inventory, '$.quantity'), 0) + ${line.quantity})`,
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
-      .where(eq(product_variants.id, line.variantId));
-    restocked.push(line.variantId);
+  let db: Awaited<ReturnType<typeof getDbAsync>>;
+  try {
+    db = await getDbAsync();
+  } catch {
+    // No DB at all — nothing was restored, so nothing may be marked complete.
+    return { restocked, completedKeys, failedKeys: list.map(lineRestockKey) };
   }
 
-  return { restocked };
+  for (const item of list) {
+    const key = lineRestockKey(item);
+    try {
+      const line = await resolveLine(item);
+      // Unresolvable or untracked → nothing to restore, and never will be.
+      if (!line || planLineAdjustment(line.inv) === 'skip') {
+        completedKeys.push(key);
+        continue;
+      }
+
+      await db
+        .update(product_variants)
+        .set({
+          inventory: sql`json_set(inventory, '$.quantity', COALESCE(json_extract(inventory, '$.quantity'), 0) + ${line.quantity})`,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(product_variants.id, line.variantId));
+      restocked.push(line.variantId);
+      completedKeys.push(key);
+    } catch (error) {
+      console.error(`Restock failed for line ${key}:`, error);
+      failedKeys.push(key);
+    }
+  }
+
+  return { restocked, completedKeys, failedKeys };
 }
 
 /** The composite key the admin returns UI uses to identify a line. */
