@@ -8,6 +8,7 @@
 import { Metadata } from "next";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import { getPageBySlug } from "@/lib/models/pages";
+import { SITE_NAME } from "@/lib/seo/metadata";
 import { getCustomJsEnabled } from "@/lib/cms/custom-js-guard";
 import PageRenderer from "./PageRenderer";
 import { auth } from "@clerk/nextjs/server";
@@ -35,11 +36,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
     return {
       title: page.meta_title || page.title,
-      description: page.meta_description || page.excerpt || `${page.title} - Mercora`,
+      description: page.meta_description || page.excerpt || `${page.title} - ${SITE_NAME}`,
       keywords: page.meta_keywords?.split(',').map((k: string) => k.trim()),
       openGraph: {
         title: page.meta_title || page.title,
-        description: page.meta_description || page.excerpt || `${page.title} - Mercora`,
+        description: page.meta_description || page.excerpt || `${page.title} - ${SITE_NAME}`,
         type: 'article',
         publishedTime: page.published_at ? new Date(page.published_at).toISOString() : new Date(page.created_at).toISOString(),
         modifiedTime: new Date(page.updated_at).toISOString(),
@@ -49,11 +50,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       },
     };
   } catch (error) {
+    // A lookup failure is not the same as a missing page — claiming "Page Not
+    // Found" here would mislabel a live page during a transient D1 error. The
+    // page component itself decides the status code; this only avoids asserting
+    // something untrue in the metadata.
     console.error("Error generating page metadata:", error);
-    return {
-      title: "Page Not Found",
-      description: "The requested page could not be found.",
-    };
+    return { title: SITE_NAME };
   }
 }
 
@@ -105,8 +107,14 @@ export default async function PublicPage({ params }: PageProps) {
     // swallows them: a protected page's sign-in redirect became a 404 instead of
     // sending the visitor to /sign-in. unstable_rethrow re-throws Next's internal
     // control-flow errors and lets genuine failures fall through.
+    // (unstable_rethrow is an unstable Next API — re-verify on major upgrades.)
     unstable_rethrow(error);
+
+    // Everything reaching here is a real failure — a D1 error, a Clerk outage.
+    // Do NOT notFound() it: a 404 is a claim that the page does not exist, and
+    // Google acts on it. A transient blip would otherwise deindex live legal
+    // pages. Rethrow so app/error.tsx renders a 500 instead.
     console.error("Error loading page:", error);
-    notFound();
+    throw error;
   }
 }

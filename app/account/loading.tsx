@@ -1,3 +1,10 @@
+/**
+ * Scoped to /account deliberately. A loading.tsx creates a Suspense boundary
+ * that commits a 200 before the page can notFound() (see app/layout.tsx) — safe
+ * here because these routes are auth-gated, never indexed, and do not 404 on a
+ * missing entity. Keep loading states in segments like this one rather than at
+ * the root.
+ */
 export default function AccountLoading() {
   return (
     <div className="animate-pulse space-y-6">

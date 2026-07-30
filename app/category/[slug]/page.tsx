@@ -118,11 +118,15 @@ export default async function CategoryPage({
   
   let products: any[] = [];
   let error: string | null = null;
-  
+
   try {
     products = await getProductsByCategory(category.id as string);
   } catch (e: any) {
-    error = e?.message || 'Unknown error';
+    // The category itself resolved, so the page is still worth rendering — but
+    // the operator needs the real error, and the customer must not be shown it
+    // (this used to render raw "D1_ERROR: …" text into the page).
+    console.error(`Error loading products for category "${slug}":`, e);
+    error = 'We could not load these products just now. Please try again shortly.';
   }
   
   /**
@@ -222,7 +226,7 @@ export default async function CategoryPage({
       {/* Error Display */}
       {error && (
         <div className="text-center py-8">
-          <p className="text-state-error">Error loading products: {error}</p>
+          <p className="text-state-error">{error}</p>
         </div>
       )}
 

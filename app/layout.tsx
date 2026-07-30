@@ -40,6 +40,21 @@
  * @returns JSX element with complete application layout
  */
 
+/**
+ * ⚠️ `force-dynamic` + a ROOT `app/loading.tsx` is a site-wide soft-404 trap.
+ *
+ * A root loading.tsx wraps every route in a Suspense boundary. With the layout
+ * forced dynamic, Next flushes the shell — committing HTTP 200 — before the page
+ * component runs, so a later notFound() cannot change the status. Every missing
+ * product, page, category and post returned 200 with "not found" body text and
+ * stayed indexed by Google.
+ *
+ * `app/loading.tsx` was deleted for exactly this reason. Do NOT reintroduce a
+ * ROOT loading.tsx to get the global navigation spinner back — there is no test
+ * that will catch it and no visible symptom. Nested loading files are fine on
+ * routes that never notFound() or are not indexed (app/account/loading.tsx is
+ * kept because those routes are auth-gated).
+ */
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
