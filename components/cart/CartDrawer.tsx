@@ -81,10 +81,14 @@ export default function CartDrawer() {
       <SheetTrigger asChild>
         <Button
           variant="ghost"
+          aria-label={`Cart (${itemCount} ${itemCount === 1 ? "item" : "items"})`}
           className="text-text-primary hover:bg-white hover:text-primary-600 relative"
         >
-          <ShoppingCart className="mr-2 h-4 w-4" />
-          Cart ({itemCount})
+          {/* Label is dropped below sm so the mobile header row fits a 320px
+              viewport — the count badge below already carries the item count.
+              The desktop nav only renders at md+, so it is unaffected. */}
+          <ShoppingCart className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Cart ({itemCount})</span>
           {itemCount > 0 && (
             <span className="absolute -top-2 -right-2 bg-primary-500 text-text-inverse rounded-full w-5 h-5 flex items-center justify-center text-xs">
               {itemCount}

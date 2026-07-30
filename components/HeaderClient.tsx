@@ -357,7 +357,10 @@ export default function HeaderClient({
           width={692}
           height={120}
           priority
-          className="h-9 w-auto sm:h-10"
+          /* The asset is 692x120 (~5.8:1), so height drives a lot of width:
+             h-9 renders 208px, two thirds of a 320px viewport. h-8 on the
+             smallest screens keeps the row from overflowing. */
+          className="h-8 w-auto sm:h-10"
         />
       </Link>
 
