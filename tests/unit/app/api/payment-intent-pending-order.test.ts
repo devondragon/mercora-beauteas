@@ -272,3 +272,69 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     expect(vi.mocked(createOrder)).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The persisted `total_amount` must come from the SERVER-charged amount, not the
+ * client draft.
+ *
+ * `POST /api/orders` rejects a `total_amount` that isn't an integer minor-unit
+ * Money, but this route's draft path had no equivalent check — it ran the client
+ * value through `Money.fromStored()`, which ROUNDS. So a draft carrying major
+ * units (`{amount: 34.99}`) silently persisted an order totalling 35 CENTS.
+ *
+ * The charge is unaffected (the floor is computed server-side from the catalog),
+ * so nothing rejects it — but the refund path treats `total_amount` as the
+ * full-refund ceiling, so the order record and any later full refund are wrong by
+ * ~100x. Same class of hole as the client-supplied `expected_tax_cents` the
+ * route already overwrites: the draft is display data, never authoritative.
+ */
+describe('POST /api/payment-intent — pending-order total is server-derived', () => {
+  it('ignores a major-unit total in the draft and persists the charged cents', async () => {
+    // The client sends dollars where minor units are expected. Old behaviour:
+    // Math.round(34.99) => 35 cents persisted.
+    const draft = orderDraft({ total_amount: { amount: 34.99, currency: 'USD' } });
+
+    const res = await POST(postRequest(baseBody({ order: draft })));
+
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.total_amount.amount).toBe(3499);
+  });
+
+  it('ignores an inflated total in the draft and persists the charged cents', async () => {
+    const draft = orderDraft({ total_amount: { amount: 999999, currency: 'USD' } });
+
+    const res = await POST(postRequest(baseBody({ order: draft })));
+
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.total_amount.amount).toBe(3499);
+  });
+
+  it('persists the charged cents when the draft omits a total entirely', async () => {
+    const draft = orderDraft({ total_amount: undefined });
+
+    const res = await POST(postRequest(baseBody({ order: draft })));
+
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.total_amount.amount).toBe(3499);
+  });
+
+  it('charges Stripe and records the order with the SAME cents value', async () => {
+    // The invariant the fix rests on: one `chargedAmountCents` feeds both the
+    // PaymentIntent and the order row. Asserting both in one test is what
+    // actually catches a future edit that reintroduces a second computation —
+    // checking either side alone would still pass.
+    const draft = orderDraft({ total_amount: { amount: 34.99, currency: 'USD' } });
+
+    const res = await POST(postRequest(baseBody({ order: draft })));
+
+    expect(res.status).toBe(200);
+    const chargedCents = (vi.mocked(createPaymentIntent).mock.calls[0][0] as any).amount;
+    const persistedCents = (vi.mocked(createOrder).mock.calls[0][0] as any).total_amount.amount;
+
+    expect(chargedCents).toBe(3499);
+    expect(persistedCents).toBe(chargedCents);
+  });
+});

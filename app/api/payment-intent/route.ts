@@ -126,6 +126,11 @@ async function persistPendingOrder(
   orderId: string,
   paymentIntentId: string,
   userId: string | null,
+  /**
+   * The amount actually put on the PaymentIntent, in integer minor units. This
+   * — not `draft.total_amount` — is what gets persisted as the order total.
+   */
+  chargedAmountCents: number,
   expectedCharges?: { expectedShippingCents?: number; expectedTaxCents?: number }
 ): Promise<void> {
   // C1 (BMC-167 review): D1 enforces `orders.customer_id → customers.id`, and
@@ -219,10 +224,18 @@ async function persistPendingOrder(
   await createOrder({
     id: orderId,
     customer_id: customerId ?? undefined,
-    // Normalize to a clean integer-minor-unit Money shape regardless of what the
-    // client sent (the authoritative amount is re-derived from the catalog at
-    // promotion time; this is display/fulfillment data only).
-    total_amount: Money.fromStored(draft.total_amount ?? { amount: 0, currency: draft.currency_code || 'USD' }).toJSON(),
+    // SERVER-authoritative, like payment_intent_id and the expected_* charges
+    // above: the total is the amount actually charged (already validated against
+    // the catalog floor), never the client draft's number.
+    //
+    // The draft value used to be passed through `Money.fromStored()`, which
+    // assumes integer minor units and ROUNDS. A draft carrying major units
+    // (`{amount: 34.99}`) therefore persisted an order totalling 35 CENTS —
+    // silently, since the charge itself is floored server-side. `total_amount`
+    // is the ceiling the refund path refunds against, so a wrong value here
+    // under-refunds the customer by ~100x. `POST /api/orders` already rejects a
+    // non-integer-minor-unit total; this path now can't record one at all.
+    total_amount: Money.fromMinor(chargedAmountCents, draft.currency_code || 'USD').toJSON(),
     currency_code: draft.currency_code || 'USD',
     shipping_address: draft.shipping_address ?? undefined,
     billing_address: draft.billing_address ?? undefined,
@@ -464,9 +477,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // The single source of truth for "what this order costs": put on the
+    // PaymentIntent AND persisted as the pending order's total, so the order row
+    // can never disagree with the charge.
+    const chargedAmountCents = formatAmountForStripe(amount);
+
     // Create Payment Intent
     const paymentIntent = await createPaymentIntent({
-      amount: formatAmountForStripe(amount),
+      amount: chargedAmountCents,
       currency: 'usd',
       automatic_payment_methods: {
         enabled: true,
@@ -510,7 +528,7 @@ export async function POST(req: NextRequest) {
         // customer_id is derived from the session, never the client draft, so a
         // caller can't stamp another user's id onto the order.
         const { userId } = await auth();
-        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null, {
+        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null, chargedAmountCents, {
           expectedShippingCents,
           expectedTaxCents,
         });
