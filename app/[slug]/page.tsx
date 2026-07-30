@@ -6,7 +6,7 @@
  */
 
 import { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import { getPageBySlug } from "@/lib/models/pages";
 import { getCustomJsEnabled } from "@/lib/cms/custom-js-guard";
 import PageRenderer from "./PageRenderer";
@@ -101,6 +101,11 @@ export default async function PublicPage({ params }: PageProps) {
     return <PageRenderer page={page} customJsEnabled={customJsEnabled} />;
 
   } catch (error) {
+    // notFound() and redirect() work by throwing. Without this, the catch below
+    // swallows them: a protected page's sign-in redirect became a 404 instead of
+    // sending the visitor to /sign-in. unstable_rethrow re-throws Next's internal
+    // control-flow errors and lets genuine failures fall through.
+    unstable_rethrow(error);
     console.error("Error loading page:", error);
     notFound();
   }

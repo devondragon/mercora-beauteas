@@ -13,6 +13,7 @@
  *   - Clerk auth            → *.clerk.accounts.dev (dev instance) + clerk.beauteas.com /
  *     *.clerk.com (prod FAPI) + img.clerk.com (avatars); Turnstile via challenges.cloudflare.com
  *   - Product/media images  → NEXT_PUBLIC_IMAGE_CDN (falls back to the prod CDN host)
+ *   - Cloudflare Web Analytics → static.cloudflareinsights.com (auto-injected beacon)
  *
  * 'unsafe-inline' is required for script-src (Next.js injects inline bootstrap/hydration
  * scripts; JSON-LD is rendered via dangerouslySetInnerHTML) and style-src (Stripe/Clerk
@@ -34,6 +35,13 @@ const CLERK_HOSTS = [
 // Clerk's SDK posts anonymous telemetry to clerk-telemetry.com by default; allow it
 // in connect-src so blocked-request console noise doesn't mask real CSP violations.
 const CLERK_TELEMETRY = "https://clerk-telemetry.com";
+
+// Cloudflare Web Analytics. The zone auto-injects beacon.min.js from this host, so it
+// needs script-src; without it the browser blocks the beacon and analytics silently
+// collect nothing. No connect-src entry is required: on a proxied zone the beacon
+// reports to https://<our-own-domain>/cdn-cgi/rum, already covered by `'self'`.
+// (cloudflareinsights.com would only be needed for a manually embedded beacon.)
+const CF_INSIGHTS = "https://static.cloudflareinsights.com";
 
 // Fallback image host when NEXT_PUBLIC_IMAGE_CDN is unset at build time. Kept in sync
 // with image-loader.ts (LEGACY_CDN).
@@ -65,6 +73,7 @@ export function buildContentSecurityPolicy(): string {
     "https://js.stripe.com",
     ...CLERK_HOSTS,
     "https://challenges.cloudflare.com",
+    CF_INSIGHTS,
   ]
     .filter(Boolean)
     .join(" ");
