@@ -28,9 +28,11 @@ export default function SectionCard({ section, blend }: SectionCardProps) {
 
           {section.specs.length > 0 && (
             <ul className="flex flex-wrap gap-2 mt-3 mb-3 list-none p-0">
-              {section.specs.map((spec) => (
+              {/* Keyed by index too: two identical chips are legitimate content, and
+                  keying on the text alone collides. */}
+              {section.specs.map((spec, index) => (
                 <li
-                  key={spec}
+                  key={`${index}-${spec}`}
                   className="text-[12.5px] px-3 py-1 rounded-full bg-secondary-100 text-secondary-600 border border-secondary-400/50"
                 >
                   {spec}
@@ -44,9 +46,9 @@ export default function SectionCard({ section, blend }: SectionCardProps) {
             dangerouslySetInnerHTML={{ __html: section.html }}
           />
 
-          {section.callouts.map((callout) => (
+          {section.callouts.map((callout, index) => (
             <p
-              key={callout}
+              key={`${index}-${callout}`}
               className="mt-4 py-3 px-4 bg-surface-dark border-l-[3px] border-primary-400 rounded-r-lg text-[15px] leading-relaxed text-text-secondary"
             >
               {callout}

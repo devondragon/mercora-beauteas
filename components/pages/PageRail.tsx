@@ -43,8 +43,9 @@ export default function PageRail({ sections, label = "On this page" }: PageRailP
         const current = sections.find((section) => visibleRef.current.get(section.id));
         setActiveId(current?.id ?? null);
       },
-      // Only count a section as "in view" while it overlaps a narrow band
-      // near the top of the viewport. This anchors "in view" to the
+      // Only count a section as "in view" while it overlaps the top of the
+      // viewport — from 96px (below the sticky header) down to the 35% line.
+      // This anchors "in view" to the
       // reader's position (rather than "anything on screen"), so several
       // sections can be visible at once without ambiguity, and rapid
       // scrolling settles on one section instead of flickering between

@@ -11,7 +11,7 @@ interface ContactGridProps {
   lead: string;
 }
 
-/** Keyword → icon, with a neutral default. Ordered most-specific first. */
+/** Keyword → icon, first match wins (so order matters), with a neutral default. */
 const ICONS: { match: RegExp; Icon: typeof Mail }[] = [
   { match: /email|write|message/i, Icon: Mail },
   // Order/shipping is checked before hours: "support" is the broader word, so
