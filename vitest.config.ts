@@ -10,7 +10,9 @@ export default defineConfig({
     // binding dependencies — anything calling getCloudflareContext() (lib/db,
     // lib/models, API route handlers) needs the Workers runtime and belongs in
     // E2E or @cloudflare/vitest-pool-workers, not here.
-    include: ['tests/unit/**/*.test.ts'],
+    // .tsx included so component tests are actually collected — a *.test.tsx
+    // under a .ts-only glob is silently skipped while the suite still reports green.
+    include: ['tests/unit/**/*.test.{ts,tsx}'],
     exclude: ['tests/e2e/**', 'node_modules/**', '.next/**'],
     coverage: {
       provider: 'v8',

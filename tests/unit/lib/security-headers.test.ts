@@ -47,8 +47,12 @@ describe("buildContentSecurityPolicy", () => {
     // Cloudflare Web Analytics beacon, auto-injected by the zone. Without this
     // the browser blocks beacon.min.js and analytics collect nothing.
     expect(scriptSrc).toContain("https://static.cloudflareinsights.com");
-    // The beacon reports to <our-domain>/cdn-cgi/rum on a proxied zone, so
-    // 'self' covers it — no cloudflareinsights.com origin should be needed.
+    // Deliberate negative: on a proxied zone the beacon POSTs to
+    // <our-domain>/cdn-cgi/rum, so 'self' covers it. If Web Analytics is ever
+    // switched to a manual (non-proxied) embed the beacon posts to
+    // cloudflareinsights.com instead, and BOTH this assertion and CF_INSIGHTS in
+    // lib/security-headers.ts have to change together — this is here to make
+    // that a deliberate edit, not to guard against a likely regression.
     expect(connectSrc).toContain("'self'");
     expect(connectSrc).not.toContain("https://cloudflareinsights.com");
   });
