@@ -44,6 +44,17 @@ describe("buildContentSecurityPolicy", () => {
     expect(scriptSrc).toContain("https://challenges.cloudflare.com");
     // Clerk telemetry (kept out of console noise during smoke tests)
     expect(connectSrc).toContain("https://clerk-telemetry.com");
+    // Cloudflare Web Analytics beacon, auto-injected by the zone. Without this
+    // the browser blocks beacon.min.js and analytics collect nothing.
+    expect(scriptSrc).toContain("https://static.cloudflareinsights.com");
+    // Deliberate negative: on a proxied zone the beacon POSTs to
+    // <our-domain>/cdn-cgi/rum, so 'self' covers it. If Web Analytics is ever
+    // switched to a manual (non-proxied) embed the beacon posts to
+    // cloudflareinsights.com instead, and BOTH this assertion and CF_INSIGHTS in
+    // lib/security-headers.ts have to change together — this is here to make
+    // that a deliberate edit, not to guard against a likely regression.
+    expect(connectSrc).toContain("'self'");
+    expect(connectSrc).not.toContain("https://cloudflareinsights.com");
   });
 
   it("derives img-src from NEXT_PUBLIC_IMAGE_CDN when set", () => {

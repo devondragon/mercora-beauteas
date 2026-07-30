@@ -59,3 +59,6 @@ linkedin-article.md
 # seeds (data/d1/*.sql) stay tracked and new ones can still be `git add`ed.
 *-dump.sql
 *.dump.sql
+
+# Superpowers brainstorming session artifacts
+.superpowers/

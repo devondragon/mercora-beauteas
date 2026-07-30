@@ -93,6 +93,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Static permanent redirects for URL changes (e.g., archived CMS page slugs).
+  // This is distinct from dynamic Shopify/redirect_map redirects in middleware.ts.
+  // /about → /about-us closes the loop after migration 0019 archives the placeholder.
+  async redirects() {
+    return [
+      {
+        source: "/about",
+        destination: "/about-us",
+        permanent: true,
+      },
+    ];
+  },
   // Shopify URL redirects are handled entirely in middleware.ts so that
   // slug-level redirect_map lookups (from migration) take priority over
   // structural pattern redirects. See middleware.ts for details.

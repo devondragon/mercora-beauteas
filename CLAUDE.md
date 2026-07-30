@@ -74,6 +74,10 @@ npm run cf-typegen        # wrangler types --env-interface CloudflareEnv ./cloud
 npm run token:generate    # mint a scoped api_tokens row
 npm run token:list
 npm run token:revoke
+
+# CMS page images → R2 (uploads from the committed data/r2/pages/ bytes;
+# skips keys that already exist, so it is safe to re-run). Needs CLOUDFLARE_API_TOKEN.
+npm run images:pages -- --env dev|production
 ```
 
 - **Deploys go through OpenNext**, not bare `wrangler deploy`. Worker entry is `.open-next/worker.js`.
@@ -135,8 +139,10 @@ Two named environments. **Resources for both dev and prod are provisioned** (D1,
 | `0016_rewrite_legal_pages.sql` | Rewrites the boilerplate Privacy Policy + Terms of Service seeded by 0003 with real processor/rights/retention/cookie disclosures + business address, and deletes the dead Shopify `ccpa-opt-out`/`ccpa-compliance`/`gdpr-compliance` pages (BMC-183; data-only, guarded/idempotent, snapshots into `page_versions`). Fresh DBs are seeded correctly by the updated 0003 + `data/d1/seed.sql` (CCPA rows removed) |
 | `0017_backfill_legal_pages.sql` | Backfills Privacy/Terms rows on DBs where the 0016 `UPDATE` matched no row (BMC-183; data-only, idempotent) |
 | `0018_add_email_unsubscribes.sql` | `email_unsubscribes` (CAN-SPAM opt-out suppression list: `(email, scope)` PK). The review-reminder sender checks it before sending; the public `/api/email/unsubscribe` route writes it (BMC-184). **Applied to production 2026-07-27** |
+| `0019_restructure_footer_pages.sql` | Restructures the footer-linked CMS pages for the template system: sets `pages.template` (`guide`/`faq`/`contact`/`legal`/`story`), adds ledes, rewrites markup to the authoring conventions, repoints three Shopify-hosted images at `https://img.beauteas.com/pages/…`, and archives the duplicate `about` page (PR #98; data-only, guarded/idempotent, snapshots into `page_versions`). **NOT YET APPLIED to any environment.** ⚠️ Deploy the app **first** (the live code still serves `/about`; the `/about` → `/about-us` redirect ships with the app), and run `npm run images:pages -- --env <env>` **before** applying, or three pages render broken images |
+| `0020_seed_page_templates.sql` | Seeds `page_templates` with the five render kinds so the admin editor's Template dropdown matches `lib/cms/page-template.ts`; deactivates the redundant `about` row (PR #98; data-only, idempotent). Without it `guide`/`faq`/`contact`/`story` are unselectable and re-saving such a page through the admin silently downgrades it to `story`. **NOT YET APPLIED to any environment** |
 
-> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0019_*` (`0011`–`0018` are taken).
+> ⚠️ **Two files share the `0010` prefix** (`0010_add_blog_tables` and `0010_add_gift_cards` landed independently). This is harmless — Wrangler tracks applied state by **filename**, and the two are independent — but **do not renumber either now that they're applied**: renaming to `0011_*` would make Wrangler treat it as a new, unapplied migration and re-run it ("table already exists"). The next new migration should be `0021_*` (`0011`–`0020` are taken).
 >
 > ⚠️ **D1 caps LIKE patterns at 50 characters** ("LIKE or GLOB pattern too complex: SQLITE_ERROR"). Data-only migrations that guard an `UPDATE`/`INSERT ... SELECT` with `content LIKE '%…%'` (the 0009/0016 idempotency pattern) must keep the substring short — a ~50-char guard silently rolls back the whole migration.
 
@@ -175,11 +181,48 @@ npx wrangler d1 execute beauteas-db-dev --env dev        --remote --file=migrati
    `/products/:slug`→`/product/:slug` · `/collections/:slug`→`/category/:slug` · `/pages/:slug`→`/:slug`
 3. `/blogs/` and `/policies/` are **exact-match only** — the fallback chain has no branch for them, so an unmatched path 404s honestly instead of being mangled (Shopify nests blogs as `/blogs/:blog/:slug`, and `/policies/*` slugs don't map positionally).
 
+**Static redirects in `next.config.ts` run BEFORE middleware** (Next's order is headers → redirects → middleware → rewrites). `/about` → `/about-us` lives there because a bare `/about` matches none of the five `redirect_map` prefixes, so a row would never fire. A `/pages/about` request therefore chains: middleware structural fallback → `/about` → static redirect → `/about-us`.
+
 **Only add rows where the slug or shape actually CHANGED.** A row whose target equals what the fallback already produces is dead weight. At cutover every `/products/*` and `/collections/*` handle survived the ETL intact, so the 51 rows cover only: 21 nested `/collections/:c/products/:p` (the fallback would mangle these), 22 blog URLs, 5 `/policies/*`, and 3 legal pages deleted by migration `0016`.
 
 **Blog images** were rehosted from Shopify's CDN into R2 under `blog/` in **both** buckets and are referenced as absolute `https://img.beauteas.com/blog/<file>` URLs — the raw (non-`/cdn-cgi/image/`) path, so they survive Image Transformations being off. Because the URLs are absolute, the dev Worker also serves blog images from the **prod** bucket; the `beauteas-images-dev` copy is insurance, not what dev actually reads.
 
-> ⚠️ **Known issue — the app soft-404s.** A path that matches a dynamic route but whose entity doesn't exist returns **HTTP 200** with a "Page Not Found"/"Product Not Found" body (`/nope`, `/product/nope`, `/category/nope`, `/blog/nope`). Only unrouted paths (`/a/b/c`) return a real 404. This is bad for SEO — Google keeps soft-404s indexed — and it makes "did the redirect work?" checks unreliable: **verify redirect targets by page title, not status code.**
+> ✅ **Soft-404s are fixed (PR #98).** `/nope`, `/product/nope`, `/category/nope` and `/blog/nope` now return a real **404**, so status codes are trustworthy for redirect verification.
+>
+> ⚠️ **Do not reintroduce a root `app/loading.tsx`.** That is what caused the soft-404s: a root `loading.tsx` wraps every route in a Suspense boundary, and with the root layout `force-dynamic` Next flushes the shell (committing a 200) before the page runs `notFound()`. Deleting it is what makes the status correct — you cannot have both a root Suspense boundary and a real 404, so the global navigation spinner is gone. Nested loading files are fine on segments that never `notFound()` or aren't indexed (`app/account/loading.tsx` is kept — auth-gated). The trap is recorded in code at `app/layout.tsx`.
+
+---
+
+## CMS Pages & Authoring Conventions
+
+Footer-linked pages (`/brewing-directions`, `/faq`, `/contact`, the policy pages, `/about-us`, `/subscriptions`) store plain HTML in D1 and stay admin-editable — the design lives in the renderer, so new pages inherit it.
+
+`app/[slug]/PageRenderer.tsx` sanitizes the stored HTML, parses it into a typed section model (`lib/cms/page-sections.ts`), and renders one of five templates chosen by the `pages.template` column (`lib/cms/page-template.ts`).
+
+| Template | Layout | Renders conventions? |
+|---|---|---|
+| `guide` | Sectioned cards, contents rail | ✅ specs, callouts, blend column |
+| `faq` | Accordion (a bold paragraph ending in `?` is promoted to a question) | — |
+| `contact` | Icon grid | — |
+| `legal` | Document with "Last Updated" pill + policy links | — |
+| `story` | Long-form narrative + shop CTA. **Also the fallback** for any unrecognized value | — |
+
+**Markup conventions (guide template only):**
+
+| Markup | Becomes |
+|---|---|
+| `<h2>` | section boundary + rail anchor |
+| `<ul class="specs">` | spec chips |
+| `<blockquote>` | callout |
+| `<figure class="blend"><a href="/product/:slug">` | shoppable column with live price |
+
+- **`<h2>` must be at the top level.** A heading nested inside a wrapper element is left inline as ordinary markup — splitting at depth would emit unbalanced HTML into `dangerouslySetInnerHTML`.
+- Extra classes and attributes are fine (`class="specs mt-4"`, an `id`) — matching is on the class token.
+- Conventions are extracted **only for the template that renders them**. A `<blockquote>` on a legal page stays inline rather than being lifted and dropped.
+- An unresolvable `figure.blend` (bad slug, non-product href, or a second figure in one section) is left inline rather than deleted.
+- Content images go in as absolute `https://img.beauteas.com/pages/<file>` URLs, matching the blog convention — raw `<img>` inside `dangerouslySetInnerHTML` never passes through `image-loader.ts`, so a relative `/media/` path would bypass the image CDN entirely.
+
+> ⚠️ **Two "template" registries.** `lib/cms/page-template.ts` is the render-time source of truth; the admin editor's Template dropdown is built from the `page_templates` **table**. Adding a kind to `TEMPLATE_KINDS` must be paired with a `page_templates` INSERT (see migration `0020`), or admins cannot select it and re-saving the page through the editor resets it to the `story` fallback.
 
 ---
 
@@ -238,9 +281,12 @@ app/                    # Next.js App Router (storefront, /admin, /api)
   api/                  # route handlers (see API Routes above)
   admin/                # admin dashboard (products, orders, categories, pages, reviews, subscriptions, settings)
 components/             # React components (agent/, cart/, checkout/, admin/, ui/)
+  pages/                # CMS page template components (hero, rail, section card, CTA)
 lib/
   ai/config.ts          # AI model + embedding config
   auth/                 # unified-auth.ts, admin-middleware.ts
+  cms/                  # CMS render pipeline: html normalization, section parsing,
+                        #   template config, blend (product) resolution
   db.ts, db/schema/     # Drizzle connection + schema (runtime queries)
   models/ (+ mach/)     # data access layer
   seo/metadata.ts       # SITE_NAME / BASE_URL / metadata helpers
@@ -248,7 +294,7 @@ lib/
   mcp/                  # MCP server implementation
   stores/               # Zustand stores (cart, chat)
 data/r2/                # content synced to R2: products_md/, knowledge_md/
-migrations/             # Wrangler D1 SQL migrations (0001–0008)
+migrations/             # Wrangler D1 SQL migrations (0001–0020)
 scripts/
   manage-tokens.ts      # API token CLI
   shopify-migration/    # Shopify→Mercora ETL (migrate-all.ts)
@@ -271,7 +317,8 @@ docs/                   # architecture & integration docs
 - **Files** kebab-case; **components** PascalCase.
 - **Data:** Drizzle for queries; MACH Alliance models for commerce entities; raw SQL + Wrangler for migrations.
 - **Secrets:** `.dev.vars` / `.env.local` locally; `wrangler secret put … --env <env>` for deployed envs. Never commit secrets or pass them as CLI args.
-- **Run `npm run lint`** before considering work done. There is **no automated test framework** yet (manual verification only).
+- **Run `npm run lint`** before considering work done.
+- **Tests:** Vitest unit (`tests/unit/**`), `@cloudflare/vitest-pool-workers` integration, and Playwright E2E. ⚠️ **CI gates on lint + `tsc --noEmit` + the unit suite + build only** — `test:workers` and E2E do **not** run in CI, so a regression test only actually blocks a merge if it is unit-style under `tests/unit/`. Unit tests must not touch Cloudflare bindings: mock the model layer (`vi.mock("@/lib/models/…")`) rather than reaching for the Workers pool.
 
 ### Money & Pricing
 All monetary values flow through `lib/money` (`Money`). Internal unit is **integer minor units**; use `Money.fromMinor/fromMajor/fromStored`. Emit MACH `{amount, currency, precision}` via `.toMach()` ONLY at API/MCP/JSON-LD boundaries; use `.toMinorUnits()` at the Stripe boundary; persist via `.toJSON()` (minor units); display via `.format()`. Never write raw `*100`/`/100`. See [`docs/money.md`](docs/money.md).
@@ -284,7 +331,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is `PRODUCTION-CUTOVE
 
 **Built & audited (code-complete):** SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
-**Migration status (2026-07-27): `beauteas-db` (prod) is fully caught up — `0001`–`0018` all applied, `wrangler d1 migrations list` reports none pending.** `0013`–`0018` were applied 2026-07-27 with a pre-flight `d1 export` backup and post-apply verification of each migration's *effects* (tables created, legal-page content actually rewritten 604→6951 / 542→4586 chars, `shipping_address` column present, 4 `page_versions` snapshots written).
+**Migration status (2026-07-27): `beauteas-db` (prod) has `0001`–`0018` applied.** `0019` and `0020` (PR #98) are **pending in every environment** — see the ordering constraint in their table rows and in `PRODUCTION-CUTOVER-RUNBOOK.md`. `0013`–`0018` were applied 2026-07-27 with a pre-flight `d1 export` backup and post-apply verification of each migration's *effects* (tables created, legal-page content actually rewritten 604→6951 / 542→4586 chars, `shipping_address` column present, 4 `page_versions` snapshots written).
 
 **Infra provisioned (2026-06-27):** dev + prod D1, R2, and Vectorize created. **Migrations `0001`–`0011` applied** across `beauteas-db`, `beauteas-db-dev`, and the dev preview DB — `0009` + both `0010` (blog, gift cards) applied 2026-06-29; `0011_hash_mcp_api_keys` (BMC-141/BMC-155) applied to all three 2026-07-04 (prod `api_key_hash` column verified live); `0012_remove_seeded_test_agent` (BMC-136/C9) applied to all three 2026-07-06 — `test-agent` row verified gone from prod + remote dev. Local dev auto-restores the agent from `data/d1/seed-dev.sql`; to keep it on the **deployed dev** Worker for manual testing, re-run that dev-only seed against remote dev (`npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-dev.sql`) — never against prod.
 
