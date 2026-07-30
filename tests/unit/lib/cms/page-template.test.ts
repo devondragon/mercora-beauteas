@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { resolveTemplate, shouldShowRail, POLICY_LINKS } from "@/lib/cms/page-template";
+import {
+  resolveTemplate,
+  shouldShowRail,
+  parseTemplateKind,
+  TEMPLATE_KINDS,
+  POLICY_LINKS,
+} from "@/lib/cms/page-template";
 
 describe("resolveTemplate", () => {
   it("maps each known template to its kind and approved eyebrow", () => {
@@ -44,10 +50,37 @@ describe("resolveTemplate", () => {
   });
 
   it("rejects Object.prototype keys like constructor, toString, valueOf", () => {
+    // Covers both lookups: the kind list and the legacy-alias map. An object
+    // literal for either would resolve these off the prototype chain.
     expect(resolveTemplate("constructor").kind).toBe("story");
     expect(resolveTemplate("constructor").eyebrow).toBe("OUR STORY");
     expect(resolveTemplate("toString").kind).toBe("story");
     expect(resolveTemplate("valueOf").kind).toBe("story");
+    expect(resolveTemplate("hasOwnProperty").kind).toBe("story");
+  });
+
+  it("maps the legacy default and about templates onto story", () => {
+    expect(parseTemplateKind("default")).toBe("story");
+    expect(parseTemplateKind("about")).toBe("story");
+  });
+
+  it("returns null for values that are neither a kind nor a legacy alias", () => {
+    expect(parseTemplateKind("guide")).toBe("guide");
+    expect(parseTemplateKind("nonsense")).toBeNull();
+    expect(parseTemplateKind("constructor")).toBeNull();
+    expect(parseTemplateKind(null)).toBeNull();
+    expect(parseTemplateKind(undefined)).toBeNull();
+  });
+
+  it("keeps TEMPLATE_KINDS in step with the configured templates", () => {
+    // The dropdown seeded by migration 0020 is built from this list; drift here
+    // means an admin cannot select a template that the renderer supports.
+    expect([...TEMPLATE_KINDS].sort()).toEqual(
+      ["contact", "faq", "guide", "legal", "story"],
+    );
+    for (const kind of TEMPLATE_KINDS) {
+      expect(resolveTemplate(kind).kind).toBe(kind);
+    }
   });
 
   it("returns a frozen CTA structure that cannot be mutated", () => {

@@ -7,7 +7,19 @@
  * brand microcopy; change them deliberately, not incidentally.
  */
 
-export type PageTemplateKind = "guide" | "faq" | "contact" | "legal" | "story";
+/**
+ * The render kinds, single-sourced so the runtime list and the type cannot drift.
+ *
+ * NOTE: this is the render-time registry, and it is NOT the `page_templates`
+ * TABLE, which drives the admin editor's Template dropdown. Migration 0003
+ * seeded that table with `default`/`legal`/`about`; migration 0020 adds the
+ * remaining kinds so every value here is selectable. Adding a kind here must be
+ * paired with a `page_templates` INSERT, or admins cannot choose it and re-saving
+ * such a page through the editor resets it to the story fallback.
+ */
+export const TEMPLATE_KINDS = ["guide", "faq", "contact", "legal", "story"] as const;
+
+export type PageTemplateKind = (typeof TEMPLATE_KINDS)[number];
 
 export interface PageCtaAction {
   label: string;
@@ -120,11 +132,36 @@ const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = deepFreeze({
   },
 });
 
+/**
+ * Values of `pages.template` that predate this template system. They are
+ * deliberate aliases rather than fallbacks: `default` is the column default (so
+ * every page created outside the admin arrives with it) and `about` was seeded
+ * by migration 0003. Mapping them explicitly keeps a genuine typo distinguishable
+ * from a legacy value.
+ *
+ * A Map, not an object literal: `pages.template` is arbitrary stored text, and
+ * indexing an object with it would resolve inherited keys like "constructor".
+ */
+const LEGACY_ALIASES = new Map<string, PageTemplateKind>([
+  ["default", "story"],
+  ["about", "story"],
+]);
+
+/** Narrow an arbitrary stored string to a render kind, or null if it is neither. */
+export function parseTemplateKind(template: string | null | undefined): PageTemplateKind | null {
+  if (!template) return null;
+  if (TEMPLATE_KINDS.includes(template as PageTemplateKind)) return template as PageTemplateKind;
+  return LEGACY_ALIASES.get(template) ?? null;
+}
+
 export function resolveTemplate(template: string | null | undefined): PageTemplateConfig {
-  if (template && Object.prototype.hasOwnProperty.call(TEMPLATES, template)) {
-    return TEMPLATES[template as PageTemplateKind];
+  const kind = parseTemplateKind(template);
+  if (kind) return TEMPLATES[kind];
+  if (template) {
+    // An unrecognized template silently renders as a story page — complete with a
+    // shop CTA — which is the wrong design for, say, a policy page. Surface it.
+    console.warn(`[page-template] unknown template "${template}"; falling back to story`);
   }
-  // `default` and the legacy `about` template both land here.
   return TEMPLATES.story;
 }
 
