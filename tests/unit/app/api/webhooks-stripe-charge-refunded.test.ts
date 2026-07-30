@@ -27,6 +27,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   getOrderByPaymentIntentId,
   mutateRefundLedger,
+  confirmRestockedLines,
   refundsList,
   getRefundPolicy,
   restockForOrder,
@@ -35,6 +36,7 @@ const {
 } = vi.hoisted(() => ({
   getOrderByPaymentIntentId: vi.fn(),
   mutateRefundLedger: vi.fn(),
+  confirmRestockedLines: vi.fn().mockResolvedValue(undefined),
   refundsList: vi.fn(),
   getRefundPolicy: vi.fn(),
   restockForOrder: vi.fn(),
@@ -54,7 +56,7 @@ vi.mock('@/lib/utils/observe', () => ({ logCritical }));
 // Keep the real `parseJson` (a plain helper) but stub the CAS loop, which needs D1.
 vi.mock('@/lib/payments/refund-ledger-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/payments/refund-ledger-store')>();
-  return { ...actual, mutateRefundLedger };
+  return { ...actual, mutateRefundLedger, confirmRestockedLines };
 });
 
 import { handleChargeRefunded } from '@/app/api/webhooks/stripe/handlers/refund-handlers';
@@ -109,7 +111,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   refundsList.mockResolvedValue({ data: [{ id: 're_dash_1', amount: 5000, status: 'succeeded' }] });
   getRefundPolicy.mockResolvedValue({ restockOnExternalRefund: true });
-  restockForOrder.mockResolvedValue({ restocked: ['var-1'] });
+  restockForOrder.mockResolvedValue({ restocked: ['var-1'], completedKeys: ['prod-1-var-1'], failedKeys: [] });
   selectRestockLines.mockReturnValue({
     lines: [{ product_id: 'prod-1', variant_id: 'var-1', quantity: 2 }],
     keys: ['prod-1-var-1'],
@@ -202,6 +204,8 @@ describe('handleChargeRefunded — ledger entry', () => {
       },
     });
     getOrderByPaymentIntentId.mockResolvedValue(order);
+    // The app refund that produced this entry already restored its lines.
+    selectRestockLines.mockReturnValue({ lines: [], keys: [] });
     const mutation = runLedgerOnce(order);
 
     await handleChargeRefunded(makeCharge(), EVENT_ID);
@@ -257,6 +261,9 @@ describe('handleChargeRefunded — Stripe refunded high-water mark', () => {
       },
     });
     getOrderByPaymentIntentId.mockResolvedValue(order);
+    // No status information available, so the pending entry cannot be settled
+    // from this event — only the floor can be learned.
+    refundsList.mockRejectedValue(new Error('stripe down'));
     const mutation = runLedgerOnce(order);
 
     await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
@@ -266,6 +273,9 @@ describe('handleChargeRefunded — Stripe refunded high-water mark', () => {
     expect(written.extensions.stripe_amount_refunded).toBe(5000);
     expect(written.extensions.refunds).toHaveLength(1); // unchanged — still just the pending entry
     expect(written.extensions.refunds[0].status).toBe('pending');
+    // Unverified evidence must never cancel the order or move stock.
+    expect(written.columns).toEqual({});
+    expect(restockForOrder).not.toHaveBeenCalled();
   });
 
   it('skips entirely when the floor is already at or above this event', async () => {
@@ -277,6 +287,7 @@ describe('handleChargeRefunded — Stripe refunded high-water mark', () => {
       },
     });
     getOrderByPaymentIntentId.mockResolvedValue(order);
+    selectRestockLines.mockReturnValue({ lines: [], keys: [] });
     const mutation = runLedgerOnce(order);
 
     await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
@@ -293,11 +304,181 @@ describe('handleChargeRefunded — Stripe refunded high-water mark', () => {
       },
     });
     getOrderByPaymentIntentId.mockResolvedValue(order);
+    selectRestockLines.mockReturnValue({ lines: [], keys: [] });
     const mutation = runLedgerOnce(order);
 
     await handleChargeRefunded(makeCharge({ amount_refunded: 2000 }), EVENT_ID);
 
     expect(mutation()).toEqual({ action: 'skip' });
+  });
+});
+
+describe('handleChargeRefunded — settling a reservation the route never finished', () => {
+  it('flips a pending entry to succeeded when Stripe confirms that refund', async () => {
+    // Review P1: the app's refund succeeded at Stripe, but its own settle never
+    // landed (request timed out) — and the route is about to release the
+    // reservation to `failed`, leaving a REAL refund recorded as failed with the
+    // order uncancelled and stock unrestored. The webhook is the second witness.
+    const order = makeOrder({
+      extensions: {
+        payment_intent_id: PI,
+        refunds: [{ id: 'refund:abc', status: 'pending', amount: 5000, idempotency_key: 'refund:abc' }],
+      },
+    });
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
+
+    const written = mutation();
+    expect(written.action).toBe('write');
+    expect(written.extensions.refunds).toHaveLength(1); // settled, not duplicated
+    expect(written.extensions.refunds[0]).toMatchObject({
+      status: 'succeeded',
+      stripe_refund_id: 're_dash_1',
+      settled_by_webhook: EVENT_ID,
+      // The reconcile key must survive so the route's own settle still finds it.
+      idempotency_key: 'refund:abc',
+    });
+    // Settling is what finally makes the order fully refunded.
+    expect(written.columns).toEqual({ status: 'cancelled', payment_status: 'refunded' });
+    expect(restockForOrder).toHaveBeenCalled();
+  });
+
+  it('does not settle a pending entry whose amount Stripe does not match', async () => {
+    refundsList.mockResolvedValue({
+      data: [{ id: 're_dash_1', amount: 2000, status: 'succeeded' }],
+    });
+    const order = makeOrder({
+      extensions: {
+        payment_intent_id: PI,
+        refunds: [{ id: 'refund:abc', status: 'pending', amount: 5000 }],
+      },
+    });
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
+
+    const written = mutation();
+    const entries = written.action === 'write' ? written.extensions.refunds : [];
+    expect(entries[0].status).toBe('pending');
+  });
+});
+
+describe('handleChargeRefunded — unsettled Stripe refunds', () => {
+  it('records the money but withholds cancel and restock while a refund is pending', async () => {
+    // Review P1: charge.refunded fires on refund CREATION. A pending refund can
+    // still fail, and Stripe hands that money back to us — the customer is never
+    // refunded. Cancelling and restocking on it would be wrong, and there is no
+    // refund.failed handler to undo either.
+    refundsList.mockResolvedValue({
+      data: [{ id: 're_slow_1', amount: 5000, status: 'pending' }],
+    });
+    const order = makeOrder();
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
+
+    const written = mutation();
+    // The amount IS reserved against the over-refund guard...
+    expect(written.extensions.refunds[0]).toMatchObject({ amount: 5000, status: 'pending' });
+    // ...but nothing irreversible happens.
+    expect(written.columns).toEqual({});
+    expect(restockForOrder).not.toHaveBeenCalled();
+  });
+
+  it('treats a requires_action refund as unsettled too', async () => {
+    refundsList.mockResolvedValue({
+      data: [{ id: 're_ra_1', amount: 5000, status: 'requires_action' }],
+    });
+    const order = makeOrder();
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
+
+    expect(mutation().extensions.refunds[0].status).toBe('pending');
+    expect(mutation().columns).toEqual({});
+  });
+
+  it('refuses irreversible effects when refund statuses could not be fetched', async () => {
+    refundsList.mockRejectedValue(new Error('stripe down'));
+    const order = makeOrder();
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge({ amount_refunded: 5000 }), EVENT_ID);
+
+    // The money is still reconciled — the guard must not be left blind — but
+    // unverified evidence never cancels an order or moves stock.
+    expect(mutation().extensions.refunds[0]).toMatchObject({ amount: 5000, status: 'pending' });
+    expect(mutation().columns).toEqual({});
+    expect(restockForOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleChargeRefunded — durable restock (two-phase)', () => {
+  it('claims lines in the ledger and only confirms the ones that landed', async () => {
+    const order = makeOrder();
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    selectRestockLines.mockReturnValue({
+      lines: [
+        { product_id: 'prod-1', variant_id: 'var-1', quantity: 2 },
+        { product_id: 'prod-2', variant_id: 'var-2', quantity: 1 },
+      ],
+      keys: ['prod-1-var-1', 'prod-2-var-2'],
+    });
+    restockForOrder.mockResolvedValue({
+      restocked: ['var-1'],
+      completedKeys: ['prod-1-var-1'],
+      failedKeys: ['prod-2-var-2'],
+    });
+    const mutation = runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge(), EVENT_ID);
+
+    // Phase one CLAIMS both, marks neither restored.
+    const written = mutation();
+    expect(written.extensions.restockInflightLineKeys).toEqual([
+      'prod-1-var-1',
+      'prod-2-var-2',
+    ]);
+    expect(written.extensions.restockedLineKeys).toBeUndefined();
+
+    // Phase two promotes only what actually landed; the failed line stays
+    // in-flight as a durable record that stock is still owed.
+    expect(confirmRestockedLines).toHaveBeenCalledWith({}, order.id, ['prod-1-var-1']);
+    expect(logCritical).toHaveBeenCalledWith(
+      'webhook',
+      'external_refund_restock_incomplete',
+      expect.objectContaining({ failedKeys: ['prod-2-var-2'] })
+    );
+  });
+
+  it('excludes lines another refund already has in flight', async () => {
+    const order = makeOrder({
+      extensions: {
+        payment_intent_id: PI,
+        refunds: [],
+        restockedLineKeys: ['prod-1-var-1'],
+        restockInflightLineKeys: ['prod-2-var-2'],
+      },
+    });
+    getOrderByPaymentIntentId.mockResolvedValue(order);
+    selectRestockLines.mockReturnValue({ lines: [], keys: [] });
+    runLedgerOnce(order);
+
+    await handleChargeRefunded(makeCharge(), EVENT_ID);
+
+    // Both restored AND in-flight lines are off limits, so a concurrent refund
+    // can never restock the same line twice.
+    expect(selectRestockLines).toHaveBeenCalledWith(order.items, {
+      fullRefund: true,
+      refundedItemKeys: [],
+      alreadyRestockedKeys: ['prod-1-var-1', 'prod-2-var-2'],
+    });
   });
 });
 
@@ -317,7 +498,7 @@ describe('handleChargeRefunded — restock policy', () => {
     expect(restockForOrder).toHaveBeenCalledWith([
       { product_id: 'prod-1', variant_id: 'var-1', quantity: 2 },
     ]);
-    expect(mutation().extensions.restockedLineKeys).toEqual(['prod-1-var-1']);
+    expect(mutation().extensions.restockInflightLineKeys).toEqual(['prod-1-var-1']);
   });
 
   it('does NOT restock when the setting is off', async () => {
@@ -363,22 +544,30 @@ describe('handleChargeRefunded — restock policy', () => {
       alreadyRestockedKeys: ['prod-1-var-1'],
     });
     expect(restockForOrder).not.toHaveBeenCalled();
+    // Nothing selected, so nothing is claimed — and the prior record is untouched.
+    expect(mutation().extensions.restockInflightLineKeys).toBeUndefined();
     expect(mutation().extensions.restockedLineKeys).toEqual(['prod-1-var-1']);
   });
 
-  it('defaults to restocking when the settings read fails', async () => {
+  it('does NOT restock when the settings read fails (fails closed)', async () => {
+    // A transient D1 blip must not override an operator's explicit opt-out.
+    // The directions are not symmetric: skipping a restock understates stock
+    // (visible, fixable by hand), while restocking goods that were never
+    // returned oversells to real customers.
     getRefundPolicy.mockRejectedValue(new Error('d1 down'));
     const order = makeOrder();
     getOrderByPaymentIntentId.mockResolvedValue(order);
-    runLedgerOnce(order);
+    const mutation = runLedgerOnce(order);
 
     await handleChargeRefunded(makeCharge(), EVENT_ID);
 
-    expect(restockForOrder).toHaveBeenCalled();
+    expect(restockForOrder).not.toHaveBeenCalled();
+    // Money reconciliation still proceeds — only stock is held back.
+    expect(mutation().extensions.refunds).toHaveLength(1);
   });
 
   it('never lets a restock failure unwind the committed reconciliation', async () => {
-    restockForOrder.mockRejectedValue(new Error('inventory exploded'));
+    confirmRestockedLines.mockRejectedValue(new Error('inventory exploded'));
     const order = makeOrder();
     getOrderByPaymentIntentId.mockResolvedValue(order);
     runLedgerOnce(order);

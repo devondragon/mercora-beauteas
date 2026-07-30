@@ -66,8 +66,11 @@ import { errorDetails } from '@/lib/utils/error-response';
 import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
 import {
   MAX_CAS_ATTEMPTS,
+  confirmRestockedLines,
   parseJson,
+  readInflightRestockKeys,
   readRefundsVersion,
+  readUnavailableRestockKeys,
   refundsVersionGuard,
   updatedAtGuard,
 } from '@/lib/payments/refund-ledger-store';
@@ -329,21 +332,25 @@ export async function POST(request: NextRequest) {
 
       const rawItems = order.items ? parseJson(order.items) : [];
       const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
-      const priorRestockedKeys: string[] = Array.isArray(extensions.restockedLineKeys)
-        ? extensions.restockedLineKeys
-        : [];
+      // Exclude lines already restored AND lines another refund has claimed but
+      // not yet confirmed, so concurrent refunds can never double-restock a line.
       const { lines: restockLines, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
         fullRefund: type === 'full',
         refundedItemKeys,
-        alreadyRestockedKeys: priorRestockedKeys,
+        alreadyRestockedKeys: readUnavailableRestockKeys(extensions),
       });
 
       const nextExtensions = {
         ...extensions,
         refunds: nextRefunds,
-        // Deduped union of lines restored so far so a later refund won't restock
-        // them again (see selectRestockLines).
-        restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
+        // BMC-213 review: CLAIM these lines rather than marking them restored.
+        // The inventory write happens after this CAS commits, so recording them
+        // as restored here would permanently mark untouched stock as returned if
+        // that write then failed — and no later refund would retry it. Only what
+        // actually lands is promoted, by confirmRestockedLines() below.
+        restockInflightLineKeys: Array.from(
+          new Set([...readInflightRestockKeys(extensions), ...newlyRestockedKeys])
+        ),
         refunds_version: version + 1,
       };
 
@@ -398,9 +405,17 @@ export async function POST(request: NextRequest) {
     // as a 500 or unwind the refund.
     try {
       if (restockItems.length > 0) {
-        const { restocked } = await restockForOrder(restockItems);
+        const { restocked, completedKeys, failedKeys } = await restockForOrder(restockItems);
+        // Promote only the lines that actually landed; anything that failed stays
+        // claimed (in-flight) as a durable record that stock is still owed,
+        // rather than being marked restored and silently lost.
+        await confirmRestockedLines(db, orderId, completedKeys);
         if (restocked.length) {
           console.log(`Restocked ${restocked.length} variant(s) for ${type} refund on order ${orderId}`);
+        }
+        if (failedKeys.length) {
+          console.error(`Restock incomplete on order ${orderId}; still owed: ${failedKeys.join(',')}`);
+          logCritical('refund', 'restock_incomplete', { orderId, failedKeys });
         }
       }
     } catch (restockError) {

@@ -131,7 +131,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       stripeRefunds: [{ id: 're_app_1', amount: 5000, status: 'succeeded' }],
     });
 
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
+    expect(decision).toMatchObject({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
   });
 
   it('no-ops while the app refund is still PENDING (reserved before Stripe)', () => {
@@ -146,7 +146,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       totalAmount: TOTAL,
     });
 
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
+    expect(decision).toMatchObject({ action: 'noop', ledgerRefunded: 5000, floorAdvance: 5000, unattributedRefundIds: [] });
   });
 
   it('is idempotent — replaying the same event after it landed is a no-op', () => {
@@ -163,7 +163,7 @@ describe('decideExternalRefundReconciliation — no double-counting', () => {
       chargeAmountRefunded: 3000,
       totalAmount: TOTAL,
     });
-    expect(replay).toEqual({ action: 'noop', ledgerRefunded: 3000, floorAdvance: 3000, unattributedRefundIds: [] });
+    expect(replay).toMatchObject({ action: 'noop', ledgerRefunded: 3000, floorAdvance: 3000, unattributedRefundIds: [] });
   });
 
   it('counts a RELEASED (failed) reservation as unrefunded', () => {
@@ -225,7 +225,7 @@ describe('decideExternalRefundReconciliation — cumulative partials', () => {
       chargeAmountRefunded: 4999,
       totalAmount: TOTAL,
     });
-    expect(under).toEqual({ action: 'noop', ledgerRefunded: 4999, floorAdvance: 4999, unattributedRefundIds: [] });
+    expect(under).toMatchObject({ action: 'noop', ledgerRefunded: 4999, floorAdvance: 4999, unattributedRefundIds: [] });
 
     const exact = decideExternalRefundReconciliation(ledger, {
       chargeAmountRefunded: 5000,
@@ -442,7 +442,7 @@ describe('shadowing — an in-flight reservation masking a real external refund'
       stripeRefunds: [{ id: 're_dashboard_1', amount: 2000, status: 'succeeded' }],
     });
 
-    expect(decision).toEqual({
+    expect(decision).toMatchObject({
       action: 'noop',
       ledgerRefunded: 5000,
       floorAdvance: 2000,
@@ -597,7 +597,7 @@ describe('decideExternalRefundReconciliation — defensive input handling', () =
       chargeAmountRefunded: value as number,
       totalAmount: TOTAL,
     });
-    expect(decision).toEqual({ action: 'noop', ledgerRefunded: 0, floorAdvance: null, unattributedRefundIds: [] });
+    expect(decision).toMatchObject({ action: 'noop', ledgerRefunded: 0, floorAdvance: null, unattributedRefundIds: [] });
   });
 
   it('never reports fully refunded when the order total is unknown', () => {

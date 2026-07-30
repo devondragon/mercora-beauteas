@@ -290,6 +290,12 @@ In **Stripe Live mode**:
     >
     > **Operationally:** a 409 here means our ledger and Stripe disagree and a human should look at the order before any further refund. It is deliberately not self-healing.
 
+    **Irreversible effects are gated on Stripe confirming the refund succeeded.** `charge.refunded` fires when a refund is *created*, not when it settles, and a `pending`/`requires_action` refund can still **fail** — Stripe returns that money to the merchant and the customer is never refunded. This store has `automatic_payment_methods` with `allow_redirects: 'always'` (`app/api/payment-intent/route.ts:489`), so Klarna / Cash App Pay / Amazon Pay are live and this is **not** a card-only theoretical. The reconciler therefore records the amount (reserving it against over-refund) but records the entry as `pending` and withholds cancellation + restock until every refund on the charge reports `succeeded`.
+
+    > ⚠️ **Known gap — [BMC-224](https://linear.app/blackmagicconsulting/issue/BMC-224).** There is no `refund.updated` / `refund.failed` handler, so once an entry is held as `pending` nothing resumes it when the refund later succeeds: the order stays uncancelled and un-restocked until someone acts. That is the *safe* direction (never the reverse), but it needs the refund-lifecycle handler to close properly.
+
+    **Restock is two-phase.** Lines are *claimed* into `extensions.restockInflightLineKeys` inside the ledger CAS, and only lines the inventory write actually completed are promoted to `restockedLineKeys`. A line that fails stays in-flight — a visible record that stock is still owed — instead of the previous behaviour, which marked every selected line restored *before* restocking and swallowed failures, so a partial failure silently lost the stock forever. Both lists are excluded from selection, so concurrent refunds cannot double-restock. Applies to **both** refund paths.
+
     **Operational follow-ups:**
     1. ☑ **`charge.refunded` subscribed on the live endpoint** — added and verified 2026-07-30 (`stripe webhook_endpoints list --live`). All 56 pre-existing events, including `payment_intent.succeeded`, survived the edit.
     2. ⬜ **Apply migration `0021`**, which seeds `refund.restock_on_external_refund` (default **on**). Deferred until PR #102 merges. Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.

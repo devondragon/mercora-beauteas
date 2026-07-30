@@ -70,8 +70,36 @@ export interface ExternalRefundReconciliationRequest {
   stripeRefunds?: StripeRefundSummary[];
 }
 
+/** A `pending` ledger entry Stripe confirms has actually succeeded. */
+export interface PendingSettlement {
+  /** Index of the `pending` entry in the ledger array. */
+  entryIndex: number;
+  /** The Stripe refund it corresponds to (matched on exact amount). */
+  stripeRefundId: string;
+}
+
+/** Fields both branches carry (see the individual doc comments below). */
+interface ExternalRefundCommon {
+  /**
+   * `pending` entries Stripe reports as SUCCEEDED — flip these to `succeeded`.
+   * Repairs the timeout race where the route never got to settle its own
+   * reservation and then released it to `failed`.
+   */
+  settlements: PendingSettlement[];
+  /**
+   * True only when Stripe reports EVERY live refund on this charge as
+   * `succeeded`. A `pending`/`requires_action` refund can still fail — Stripe
+   * returns that money to the merchant and the customer is never refunded — so
+   * irreversible effects (cancel the order, restock) must be gated on this.
+   * Also false when no status information could be fetched at all.
+   */
+  allSettled: boolean;
+  /** True when the refunded total covers the order. Gate effects on BOTH this and `allSettled`. */
+  isFullyRefunded: boolean;
+}
+
 export type ExternalRefundReconciliation =
-  | {
+  | (ExternalRefundCommon & {
       /** Ledger already accounts for every cent Stripe reports — nothing to do. */
       action: 'noop';
       ledgerRefunded: number;
@@ -93,21 +121,25 @@ export type ExternalRefundReconciliation =
        * `pending`. Callers should only escalate when nothing is pending.
        */
       unattributedRefundIds: string[];
-    }
-  | {
+    })
+  | (ExternalRefundCommon & {
       /** Stripe has refunded more than the ledger knows — record the shortfall. */
       action: 'record';
       /** The unaccounted-for amount, in minor units. Always > 0. */
       amount: number;
       /** Refunded total AFTER this entry lands. */
       reconciledTotal: number;
-      /** True once the reconciled total covers the whole order. */
-      isFullyRefunded: boolean;
       /** Stripe refund ids not already referenced by a ledger entry (provenance). */
       unattributedRefundIds: string[];
       /** New `extensions.stripe_amount_refunded` high-water mark, or null. */
       floorAdvance: number | null;
-    };
+      /**
+       * Status for the appended entry. `pending` when Stripe has not confirmed
+       * every refund succeeded — it still counts toward the over-refund guard,
+       * but stays reversible and must not trigger cancel/restock.
+       */
+      entryStatus: 'succeeded' | 'pending';
+    });
 
 /**
  * Decide how a `charge.refunded` event reconciles into the ledger (BMC-213).
@@ -190,18 +222,70 @@ export function decideExternalRefundReconciliation(
       return ids;
     })
   );
-  const unattributedRefundIds = stripeRefunds
-    .filter((r) => r?.id && r.status !== 'failed' && r.status !== 'canceled')
-    .map((r) => r.id)
-    .filter((id) => !known.has(id));
+  const live = stripeRefunds.filter(
+    (r) => r?.id && r.status !== 'failed' && r.status !== 'canceled'
+  );
+  const unattributedRefundIds = live.map((r) => r.id).filter((id) => !known.has(id));
 
+  // ── Settle pending reservations Stripe has already confirmed (P1 review) ──
+  // A refund can succeed at Stripe while the route's own settle never lands (its
+  // request timed out), after which the route flips the reservation to `failed`
+  // — leaving a REAL refund recorded as failed, the order uncancelled and stock
+  // un-restored. The webhook is the second witness: when Stripe reports a
+  // SUCCEEDED refund that no ledger entry claims, and a `pending` reservation of
+  // exactly that amount is waiting, that reservation is what the refund belongs
+  // to. Settling it here makes the webhook authoritative for state the route may
+  // never get to write.
+  //
+  // Matched on exact amount, each Stripe refund consumed at most once. Amount is
+  // the only link available — a pending entry has no Stripe id yet, which is
+  // precisely why it needs settling. A mis-pairing between two equal-amount
+  // pending entries is cosmetic: both represent money Stripe says has left.
+  const settlements: PendingSettlement[] = [];
+  const claimedIds = new Set<string>();
+  for (const [entryIndex, entry] of refunds.entries()) {
+    if (!isPending(entry)) continue;
+    const match = live.find(
+      (r) =>
+        r.status === 'succeeded' &&
+        !claimedIds.has(r.id) &&
+        !known.has(r.id) &&
+        typeof r.amount === 'number' &&
+        r.amount === entry.amount
+    );
+    if (match) {
+      claimedIds.add(match.id);
+      settlements.push({ entryIndex, stripeRefundId: match.id });
+    }
+  }
+
+  // Money Stripe reports that no ledger entry accounts for. Settlements do not
+  // change the TOTAL (a `pending` entry already counts) — only its finality.
   const delta = stripeRefunded - ledgerRefunded;
+
+  // Is every refund backing this charge actually final? A `pending` /
+  // `requires_action` Stripe refund can still FAIL, and Stripe returns that money
+  // to the merchant — the customer is not refunded. Irreversible effects
+  // (cancelling the order, restocking) must not run on that evidence.
+  // No status information at all (the list call failed) counts as NOT settled:
+  // the guard still works from the amount, but we refuse to take irreversible
+  // action on unverified data.
+  const allSettled = live.length > 0 && live.every((r) => r.status === 'succeeded');
+
   if (delta <= 0) {
     // Still report a floor advance: the ledger can legitimately SHRINK later
     // (a `pending` reservation flipping to `failed`), and if that reservation's
     // money actually did leave Stripe, the remembered floor is the only thing
     // that keeps the over-refund guard honest. See `stripeRefundedFloor`.
-    return { action: 'noop', ledgerRefunded, floorAdvance, unattributedRefundIds };
+    return {
+      action: 'noop',
+      ledgerRefunded,
+      floorAdvance,
+      unattributedRefundIds,
+      settlements,
+      allSettled,
+      isFullyRefunded: totalAmount > 0 && ledgerRefunded >= totalAmount,
+    };
   }
 
   const reconciledTotal = ledgerRefunded + delta;
@@ -212,6 +296,12 @@ export function decideExternalRefundReconciliation(
     isFullyRefunded: totalAmount > 0 && reconciledTotal >= totalAmount,
     unattributedRefundIds,
     floorAdvance,
+    settlements,
+    allSettled,
+    // The appended entry is only terminal when Stripe says every refund on this
+    // charge has actually succeeded; otherwise it reserves the amount against
+    // over-refund while staying reversible.
+    entryStatus: allSettled ? 'succeeded' : 'pending',
   };
 }
 

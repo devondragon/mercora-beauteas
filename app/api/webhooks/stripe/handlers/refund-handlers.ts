@@ -37,7 +37,13 @@ import {
   decideExternalRefundReconciliation,
   type StripeRefundSummary,
 } from '@/lib/payments/refund-ledger';
-import { mutateRefundLedger, parseJson } from '@/lib/payments/refund-ledger-store';
+import {
+  confirmRestockedLines,
+  mutateRefundLedger,
+  parseJson,
+  readInflightRestockKeys,
+  readUnavailableRestockKeys,
+} from '@/lib/payments/refund-ledger-store';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
 import { getRefundPolicy } from '@/lib/utils/settings';
 import { logCritical } from '@/lib/utils/observe';
@@ -49,8 +55,13 @@ import { logCritical } from '@/lib/utils/observe';
  * where the goods were never returned, and restocking those would inflate
  * on-hand above what was actually sold.
  *
- * Fails to the default on any settings-read error — an inventory preference must
- * never be the reason a money-reconciliation webhook fails.
+ * On a settings-READ ERROR we fail CLOSED (no restock) — note this differs from
+ * the setting being ABSENT, which means "never configured" and defaults to true.
+ * A transient D1 blip must not override an operator's explicit opt-out, and the
+ * two directions are not symmetric (review finding): failing to restock
+ * understates inventory, which is visible and recoverable by hand, while
+ * restocking goods that were never returned overstates it and oversells to real
+ * customers. Money reconciliation proceeds either way — only stock is held back.
  */
 async function shouldRestockOnExternalRefund(): Promise<boolean> {
   try {
@@ -60,8 +71,11 @@ async function shouldRestockOnExternalRefund(): Promise<boolean> {
     const policy = await getRefundPolicy();
     return policy.restockOnExternalRefund;
   } catch (error) {
-    console.error('[webhook] Could not read refund settings; defaulting to restock:', error);
-    return true;
+    console.error(
+      '[webhook] Could not read refund settings; skipping restock (fail closed):',
+      error
+    );
+    return false;
   }
 }
 
@@ -78,6 +92,50 @@ async function listChargeRefunds(chargeId: string): Promise<StripeRefundSummary[
     console.error(`[webhook] Could not list refunds for charge ${chargeId}:`, error);
     return [];
   }
+}
+
+/**
+ * Choose the lines this reconciliation should restore, and CLAIM them.
+ *
+ * Restock happens only on a FULL, fully-settled reconciliation. A partial
+ * external refund carries no line attribution (Stripe refunds an amount, not
+ * items), and guessing which lines came back would reintroduce exactly the
+ * phantom-stock bug BMC-178 closed.
+ *
+ * Lines are claimed into `restockInflightLineKeys`, NOT marked restored — the
+ * inventory write happens after this CAS commits, so only what actually lands is
+ * promoted (see `confirmRestockedLines`). Both the restored and in-flight lists
+ * are excluded from selection so no line is ever restocked twice.
+ */
+function planRestock(
+  ctx: { extensions: any; order: { items?: unknown } },
+  opts: { enabled: boolean; finalize: boolean }
+): { lines: any[]; keys: string[]; extensions: Record<string, unknown> } {
+  if (!opts.enabled || !opts.finalize) {
+    return { lines: [], keys: [], extensions: {} };
+  }
+
+  const rawItems = ctx.order.items ? parseJson(ctx.order.items) : [];
+  const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
+  const selected = selectRestockLines(orderItems, {
+    fullRefund: true,
+    refundedItemKeys: [],
+    alreadyRestockedKeys: readUnavailableRestockKeys(ctx.extensions),
+  });
+
+  if (!selected.keys.length) {
+    return { lines: [], keys: [], extensions: {} };
+  }
+
+  return {
+    lines: selected.lines,
+    keys: selected.keys,
+    extensions: {
+      restockInflightLineKeys: Array.from(
+        new Set([...readInflightRestockKeys(ctx.extensions), ...selected.keys])
+      ),
+    },
+  };
 }
 
 /** `charge.payment_intent` is `string | PaymentIntent | null` depending on expansion. */
@@ -128,12 +186,16 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
   const restockEnabled = await shouldRestockOnExternalRefund();
 
   let recorded: { amount: number; isFullyRefunded: boolean; refundIds: string[] } | null = null;
+  let settledCount = 0;
+  let unsettled: string[] | null = null;
   let shadowed: { ids: string[]; hasPending: boolean } | null = null;
   let restockLines: any[] = [];
 
   const result = await mutateRefundLedger(db, orderId, (ctx) => {
     // Reset per attempt — the CAS loop may re-run this callback.
     recorded = null;
+    settledCount = 0;
+    unsettled = null;
     shadowed = null;
     restockLines = [];
 
@@ -148,14 +210,51 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       recordedFloor: ctx.extensions.stripe_amount_refunded,
     });
 
+    // ── Settle `pending` reservations Stripe confirms succeeded ──────────────
+    // Repairs the timeout race: the route's own settle never landed (or is about
+    // to flip the entry to `failed`), but Stripe says the money left. Applied on
+    // BOTH branches — the common case is delta 0, where settling is the only
+    // thing this event does.
+    let nextRefunds = ctx.refunds;
+    if (decision.settlements.length > 0) {
+      const bySlot = new Map(decision.settlements.map((s) => [s.entryIndex, s.stripeRefundId]));
+      nextRefunds = ctx.refunds.map((r: any, i: number) => {
+        const stripeRefundId = bySlot.get(i);
+        if (!stripeRefundId) return r;
+        return {
+          ...r,
+          status: 'succeeded',
+          stripe_refund_id: stripeRefundId,
+          stripe_charge_id: charge.id,
+          settled_by_webhook: eventId,
+          processed_at: r?.processed_at ?? ctx.nowIso,
+        };
+      });
+      settledCount = decision.settlements.length;
+    }
+
+    // Irreversible effects require BOTH a covered total and Stripe confirming
+    // every refund actually succeeded. A `pending`/`requires_action` refund can
+    // still fail — Stripe hands that money back to us and the customer is left
+    // un-refunded, so cancelling and restocking on it would be wrong and is not
+    // reversed by anything (no refund.failed handler yet).
+    const finalize = decision.isFullyRefunded && decision.allSettled;
+    if (decision.isFullyRefunded && !decision.allSettled) {
+      unsettled = decision.unattributedRefundIds;
+    }
+
     if (decision.action === 'noop') {
       // Record whether this event's refund got SHADOWED by an unrelated in-flight
       // reservation (see `unattributedRefundIds`). Captured here, escalated after
-      // the CAS loop so a retry can't emit it twice.
+      // the CAS loop so a retry can't emit it twice. Settled entries are no longer
+      // shadowing anything, so only report what settlement did not explain.
+      const stillUnexplained = decision.unattributedRefundIds.filter(
+        (id) => !decision.settlements.some((s) => s.stripeRefundId === id)
+      );
       shadowed =
-        decision.unattributedRefundIds.length > 0
+        stillUnexplained.length > 0
           ? {
-              ids: decision.unattributedRefundIds,
+              ids: stillUnexplained,
               // A `pending` entry explains the mismatch benignly: an app refund's
               // own webhook can beat its Phase 3 settle, so its Stripe id is not
               // on the ledger YET. With nothing pending there is no such
@@ -164,20 +263,28 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
             }
           : null;
 
-      // Nothing to add to the ledger — but if this event raises Stripe's
-      // observed high-water mark, persist that alone. It is what keeps the
-      // over-refund guard correct if the ledger later shrinks (a `pending`
-      // reservation flipping to `failed` for a refund whose money DID leave).
-      if (decision.floorAdvance === null) {
+      const restock = planRestock(ctx, { enabled: restockEnabled, finalize });
+      restockLines = restock.lines;
+
+      // Nothing new to append — but a settlement, a floor advance, or a restock
+      // claim each still needs persisting. The floor is what keeps the
+      // over-refund guard correct if the ledger later shrinks.
+      if (settledCount === 0 && decision.floorAdvance === null && restock.keys.length === 0) {
         return { action: 'skip' };
       }
       return {
         action: 'write',
         extensions: {
           ...ctx.extensions,
-          stripe_amount_refunded: decision.floorAdvance,
+          ...(settledCount > 0 ? { refunds: nextRefunds } : {}),
+          ...(decision.floorAdvance !== null
+            ? { stripe_amount_refunded: decision.floorAdvance }
+            : {}),
+          ...restock.extensions,
           refunds_version: ctx.nextVersion,
         },
+        // A settlement can be what finally makes the order fully refunded.
+        columns: finalize ? { status: 'cancelled', payment_status: 'refunded' } : {},
       };
     }
 
@@ -185,7 +292,9 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       // Prefix the id so an externally-reconciled entry is visibly distinct from
       // an app refund (whose id is the Stripe refund id or idempotency key).
       id: `ext:${eventId}`,
-      status: 'succeeded' as const,
+      // `pending` when Stripe has not confirmed every refund succeeded: it still
+      // counts toward the over-refund guard, but stays reversible.
+      status: decision.entryStatus,
       amount: decision.amount,
       type: decision.isFullyRefunded ? ('full' as const) : ('partial' as const),
       reason: 'external_refund',
@@ -198,30 +307,11 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       stripe_refund_id: decision.unattributedRefundIds[0] ?? null,
       stripe_refund_ids: decision.unattributedRefundIds,
       reconciled_from_event: eventId,
-      processed_at: ctx.nowIso,
+      ...(decision.entryStatus === 'succeeded' ? { processed_at: ctx.nowIso } : {}),
     };
 
-    // Restock ONLY on a full reconciliation. A partial external refund carries no
-    // line attribution (Stripe refunds an amount, not items), and guessing which
-    // lines came back would reintroduce exactly the phantom-stock bug BMC-178
-    // closed. `selectRestockLines` still excludes anything a prior refund already
-    // restocked, so a Dashboard refund following an app partial refund restores
-    // only the remainder.
-    const priorRestockedKeys: string[] = Array.isArray(ctx.extensions.restockedLineKeys)
-      ? ctx.extensions.restockedLineKeys
-      : [];
-    let newlyRestockedKeys: string[] = [];
-    if (restockEnabled && decision.isFullyRefunded) {
-      const rawItems = ctx.order.items ? parseJson(ctx.order.items) : [];
-      const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
-      const selected = selectRestockLines(orderItems, {
-        fullRefund: true,
-        refundedItemKeys: [],
-        alreadyRestockedKeys: priorRestockedKeys,
-      });
-      restockLines = selected.lines;
-      newlyRestockedKeys = selected.keys;
-    }
+    const restock = planRestock(ctx, { enabled: restockEnabled, finalize });
+    restockLines = restock.lines;
 
     recorded = {
       amount: decision.amount,
@@ -233,8 +323,8 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       action: 'write',
       extensions: {
         ...ctx.extensions,
-        refunds: [...ctx.refunds, entry],
-        restockedLineKeys: Array.from(new Set([...priorRestockedKeys, ...newlyRestockedKeys])),
+        refunds: [...nextRefunds, entry],
+        ...restock.extensions,
         // Remember Stripe's cumulative total as a floor for the over-refund guard.
         ...(decision.floorAdvance !== null
           ? { stripe_amount_refunded: decision.floorAdvance }
@@ -244,9 +334,7 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       // Mirror the app refund path's order-level effects: a FULL refund cancels
       // the order and marks payment refunded; a PARTIAL leaves the order active
       // and still 'paid' (money did come back, but the order stands).
-      columns: decision.isFullyRefunded
-        ? { status: 'cancelled', payment_status: 'refunded' }
-        : {},
+      columns: finalize ? { status: 'cancelled', payment_status: 'refunded' } : {},
     };
   });
 
@@ -294,44 +382,82 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
     }
   }
 
-  if (result.skipped || !recorded) {
+  if (settledCount > 0) {
     console.log(
-      `[webhook] charge.refunded ${charge.id}: ledger already matches Stripe for order ${order.id}; no-op`
+      `[webhook] charge.refunded ${charge.id}: settled ${settledCount} pending reservation(s) ` +
+        `on order ${order.id} that Stripe confirms succeeded`
     );
-    return;
   }
 
-  const { amount, isFullyRefunded, refundIds } = recorded as {
+  // The order is fully covered but Stripe has not confirmed every refund final.
+  // Deliberately NOT cancelled or restocked: a `pending`/`requires_action` refund
+  // can still fail, and there is no refund.failed handler to undo those effects.
+  const pendingIds = unsettled as string[] | null;
+  if (pendingIds) {
+    console.warn(
+      `[webhook] charge.refunded ${charge.id}: order ${order.id} is fully covered but Stripe has ` +
+        `unsettled refund(s) — holding cancellation and restock until they succeed` +
+        (pendingIds.length ? ` (${pendingIds.join(',')})` : '')
+    );
+  }
+
+  const recordedEntry = recorded as {
     amount: number;
     isFullyRefunded: boolean;
     refundIds: string[];
-  };
-  console.log(
-    `[webhook] Reconciled external refund on order ${order.id}: ${amount} minor units` +
-      ` (${isFullyRefunded ? 'full' : 'partial'}${refundIds.length ? `, stripe refunds ${refundIds.join(',')}` : ''})`
-  );
+  } | null;
 
-  // Best-effort, mirroring the refund route: the ledger (including the
-  // restockedLineKeys record) is already committed, so an inventory hiccup must
-  // never unwind the reconciliation or turn into a 500 that makes Stripe retry a
-  // write that already landed.
-  try {
-    if (restockLines.length > 0) {
-      const { restocked } = await restockForOrder(restockLines);
+  if (recordedEntry) {
+    const { amount, isFullyRefunded, refundIds } = recordedEntry;
+    console.log(
+      `[webhook] Reconciled external refund on order ${order.id}: ${amount} minor units` +
+        ` (${isFullyRefunded ? 'full' : 'partial'}${refundIds.length ? `, stripe refunds ${refundIds.join(',')}` : ''})`
+    );
+  } else if (result.skipped) {
+    console.log(
+      `[webhook] charge.refunded ${charge.id}: ledger already matches Stripe for order ${order.id}; no-op`
+    );
+  }
+
+  // ── Phase two of the restock commit ──────────────────────────────────────
+  // The lines were CLAIMED in the ledger CAS above (restockInflightLineKeys) but
+  // are not yet marked restored. Only what actually lands is promoted; a line
+  // that fails stays in-flight as a durable record that stock is still owed,
+  // instead of the old behaviour where it was marked restored and silently lost.
+  //
+  // Best-effort: the money is already refunded and the ledger already committed,
+  // so an inventory hiccup must never unwind the reconciliation or turn into a
+  // 500 that makes Stripe retry a write that already landed.
+  if (restockLines.length > 0) {
+    try {
+      const { restocked, completedKeys, failedKeys } = await restockForOrder(restockLines);
+      await confirmRestockedLines(db, orderId, completedKeys);
       if (restocked.length) {
         console.log(
           `[webhook] Restocked ${restocked.length} variant(s) for external refund on order ${order.id}`
         );
       }
-    } else if (!isFullyRefunded && restockEnabled) {
-      console.log(
-        `[webhook] Partial external refund on order ${order.id}: stock left unchanged (no line attribution available)`
+      if (failedKeys.length) {
+        console.error(
+          `[webhook] Restock incomplete on order ${order.id}; still owed: ${failedKeys.join(',')}`
+        );
+        logCritical('webhook', 'external_refund_restock_incomplete', {
+          orderId: order.id,
+          chargeId: charge.id,
+          failedKeys,
+        });
+      }
+    } catch (restockError) {
+      // restockForOrder does not throw, so this is confirmRestockedLines or a
+      // binding failure — the claim stands, which is the safe direction.
+      console.error(
+        `[webhook] Failed to restock inventory for external refund on order ${order.id}:`,
+        restockError
       );
     }
-  } catch (restockError) {
-    console.error(
-      `[webhook] Failed to restock inventory for external refund on order ${order.id}:`,
-      restockError
+  } else if (recordedEntry && !recordedEntry.isFullyRefunded && restockEnabled) {
+    console.log(
+      `[webhook] Partial external refund on order ${order.id}: stock left unchanged (no line attribution available)`
     );
   }
 }

@@ -63,6 +63,92 @@ export function readRefundsVersion(extensions: any): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
+/** Lines already restored by a prior refund — never restore these again. */
+export function readRestockedKeys(extensions: any): string[] {
+  return Array.isArray(extensions?.restockedLineKeys) ? extensions.restockedLineKeys : [];
+}
+
+/**
+ * Lines a refund has CLAIMED for restock but not yet confirmed (BMC-213 review).
+ *
+ * Restock is two-phase because the inventory write happens OUTSIDE the ledger
+ * CAS. Previously callers committed every selected line as restocked at claim
+ * time and then restocked best-effort, swallowing failures — so a failed (or
+ * partially failed) restock permanently marked untouched inventory as restored,
+ * and `selectRestockLines` excluded it from every future refund. The stock was
+ * silently never returned.
+ *
+ * Now: claim into `restockInflightLineKeys` inside the ledger CAS, then move
+ * only the lines `restockForOrder` actually completed into `restockedLineKeys`.
+ * A line that failed STAYS in-flight — a durable, visible record that stock is
+ * still owed, rather than a false "restored".
+ *
+ * Both lists are excluded from selection, so a concurrent refund can never
+ * double-restock a line another refund is mid-way through.
+ */
+export function readInflightRestockKeys(extensions: any): string[] {
+  return Array.isArray(extensions?.restockInflightLineKeys)
+    ? extensions.restockInflightLineKeys
+    : [];
+}
+
+/** Keys no refund may select: already restored, or claimed by an in-flight one. */
+export function readUnavailableRestockKeys(extensions: any): string[] {
+  return [...readRestockedKeys(extensions), ...readInflightRestockKeys(extensions)];
+}
+
+/**
+ * Phase two of the restock commit: promote the lines that actually landed.
+ *
+ * `completedKeys` move from in-flight to restored; anything still in-flight was
+ * genuinely not restocked and stays there for a human (or a later refund) to
+ * pick up. Runs its own CAS so it composes with concurrent ledger writes.
+ *
+ * Best-effort by contract: the money is already refunded and the ledger already
+ * committed, so a failure here is logged, never thrown. The cost of failing is a
+ * line stuck in-flight — which is the SAFE direction (stock under-reported and
+ * visible) rather than the old failure mode (stock silently never returned but
+ * recorded as restored).
+ */
+export async function confirmRestockedLines(
+  db: Db,
+  orderId: string,
+  completedKeys: string[]
+): Promise<void> {
+  if (!completedKeys.length) return;
+
+  const result = await mutateRefundLedger(db, orderId, (ctx) => {
+    const restored = new Set(readRestockedKeys(ctx.extensions));
+    const inflight = readInflightRestockKeys(ctx.extensions);
+    const completed = new Set(completedKeys);
+
+    const nextRestored = Array.from(new Set([...restored, ...completedKeys]));
+    const nextInflight = inflight.filter((k) => !completed.has(k));
+
+    // Nothing actually moved — skip the write rather than burn a version bump.
+    if (nextRestored.length === restored.size && nextInflight.length === inflight.length) {
+      return { action: 'skip' };
+    }
+
+    return {
+      action: 'write',
+      extensions: {
+        ...ctx.extensions,
+        restockedLineKeys: nextRestored,
+        restockInflightLineKeys: nextInflight,
+        refunds_version: ctx.nextVersion,
+      },
+    };
+  });
+
+  if (!result.ok) {
+    console.error(
+      `[restock] Could not confirm restored lines on order ${orderId} (${result.reason}); ` +
+        `they remain in-flight: ${completedKeys.join(',')}`
+    );
+  }
+}
+
 /** What a `mutateRefundLedger` callback returns for one CAS attempt. */
 export type LedgerMutation =
   /** Nothing to write — stop the loop and report success. */
