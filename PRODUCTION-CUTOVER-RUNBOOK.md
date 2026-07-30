@@ -52,30 +52,19 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | **← next. Nothing is blocking it.** |
 | 7 | **Post-cutover checks** (Phase 11) | ☐ | #6 |
 
-> ⚠️ **Ordering constraint — migration `0019` (footer page design, PR #98).** Deploy the app to prod **first**, then apply the migration. `0019` archives the duplicate `about` page, and the currently-deployed code still serves `/about` from the DB; migrating first would 404 a URL that is listed in the live sitemap. The `/about` → `/about-us` redirect ships with the app, not with the migration.
+> ✅ **Footer page design (PR #98) shipped 2026-07-30.** Dev and production are both deployed and migrated (`0019` + `0020`), in the required order: `images:pages` → `deploy` → `migrations apply`. Verified on `shop.beauteas.com`: all 9 footer pages 200 with the right template, `/about` → 308 → `/about-us`, `/pages/about` → 301 → `/about` (chains correctly), real 404s on `/totally-missing`, `/product/nope`, `/category/nope`, `/blog/nope`, live blend prices rendering, page images served from `img.beauteas.com`, and `static.cloudflareinsights.com` present in the live `script-src`.
+>
+> Pre-flight `d1 export` backup: `beauteas-prod-pre-0019.sql` (360KB, 204 inserts). `0019` also wrote 8 `page_versions` snapshots, so every content rewrite it performed is individually recoverable.
+>
+> **If this sequence is ever repeated on a new environment**, the ordering constraint still holds — `0019` archives the duplicate `about` page while the `/about` → `/about-us` redirect ships with the *app*, so migrating before deploying would 404 a live sitemap URL:
 >
 > ```bash
-> npm run images:pages -- --env production   # page images into R2 (see below)
-> npm run deploy:production
-> # then, and only then:
-> npx wrangler d1 migrations apply beauteas-db --remote --env production
+> npm run images:pages -- --env <env>        # page images into R2 first
+> npm run deploy:<env>                        # then the app
+> npx wrangler d1 migrations apply <db> --remote --env <env>   # then the migration
 > ```
 >
-> `0019` repoints three page images at `https://img.beauteas.com/pages/…`, so those
-> objects must exist in the `beauteas-images` bucket **before** the migration runs or
-> About Us, Subscriptions and Brewing Directions render broken images. `images:pages`
-> uploads them from the committed `data/r2/pages/` bytes (it does **not** depend on
-> Shopify still being up) and skips keys that already exist, so it is safe to re-run.
->
-> `0020` seeds the `page_templates` rows that make the new layouts selectable in the
-> admin editor. It has no ordering constraint of its own — applying it with `0019` is fine.
->
-> Before applying, confirm nobody edited Brewing Directions in the admin — `0019` replaces its content wholesale and would overwrite their copy:
->
-> ```bash
-> npx wrangler d1 execute beauteas-db --remote --env production \
->   --command "SELECT length(content) FROM pages WHERE slug='brewing-directions'"   # expect 2748
-> ```
+> ⚠️ The old pre-flight check here said Brewing Directions should be 2748 chars. That figure was measured against **dev**; production legitimately held 3339 chars (same four headings, same prose, different markup). Compare *content*, not length — and note `0019` snapshots the row before rewriting it either way.
 
 **Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
 
