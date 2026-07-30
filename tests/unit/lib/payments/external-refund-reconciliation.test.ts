@@ -291,7 +291,9 @@ describe('stripeRefundedFloor — the guard survives a shrinking ledger', () => 
       totalAmount: TOTAL,
       stripeRefundedFloor: 5000,
     });
-    expect(guarded).toMatchObject({ action: 'reject', status: 400 });
+    // 409, not 400: the request is well-formed — it conflicts with what Stripe
+    // demonstrably returned, which is a reconciliation problem for a human.
+    expect(guarded).toMatchObject({ action: 'reject', status: 409 });
   });
 
   it('caps a partial refund at the floor-adjusted remaining balance', async () => {
@@ -314,7 +316,7 @@ describe('stripeRefundedFloor — the guard survives a shrinking ledger', () => 
       totalAmount: TOTAL,
       stripeRefundedFloor: 3000,
     });
-    expect(tooMuch).toMatchObject({ action: 'reject', status: 400 });
+    expect(tooMuch).toMatchObject({ action: 'reject', status: 409 });
   });
 
   it('is ignored when the ledger already exceeds it', async () => {
@@ -330,7 +332,71 @@ describe('stripeRefundedFloor — the guard survives a shrinking ledger', () => 
     expect(decision).toMatchObject({ action: 'reserve', refundAmount: 1000 });
   });
 
-  it('does NOT perturb the idempotency key a retry must reproduce', async () => {
+  it('does NOT perturb the idempotency key a retry must reproduce (FULL refund)', async () => {
+    // REGRESSION (caught in review): an earlier revision folded the floor into
+    // `allRefunded`, which `resolveFullRefundAmount` subtracts to size a full
+    // refund — and that size feeds the idempotency key. The reconcile path
+    // re-derives the key from the UNFLOORED `totalAmount - baselineRefunded`, so
+    // the two diverged and a retry of an interrupted full refund issued a SECOND
+    // real Stripe refund. The floor must never change the amount.
+    const withoutFloor = await decideRefundLedgerAction([], {
+      orderId: ORDER,
+      type: 'full',
+      totalAmount: TOTAL,
+    });
+    const withFloor = await decideRefundLedgerAction([], {
+      orderId: ORDER,
+      type: 'full',
+      totalAmount: TOTAL,
+      stripeRefundedFloor: 2000,
+    });
+
+    expect(withoutFloor).toMatchObject({ action: 'reserve', refundAmount: TOTAL });
+    // A floor above the ledger means our records disagree with Stripe — refuse
+    // outright rather than silently refunding a reduced $30.
+    expect(withFloor).toMatchObject({ action: 'reject', status: 409 });
+    if (withFloor.action === 'reserve') {
+      throw new Error('floor must not resize a full refund');
+    }
+  });
+
+  it('reconciles an interrupted FULL refund even after a floor appears', async () => {
+    // The end-to-end shape of the same regression: reserve, then retry while a
+    // floor is present. The retry MUST reconcile the existing pending entry
+    // (reusing its key so Stripe dedupes) rather than reserving a second one.
+    const first = await decideRefundLedgerAction([], {
+      orderId: ORDER,
+      type: 'full',
+      totalAmount: TOTAL,
+    });
+    if (first.action !== 'reserve') throw new Error('expected a reservation');
+
+    const pendingLedger: RefundRecord[] = [
+      {
+        id: first.idempotencyKey,
+        status: 'pending',
+        amount: first.refundAmount,
+        type: 'full',
+        idempotency_key: first.idempotencyKey,
+      },
+    ];
+
+    const retry = await decideRefundLedgerAction(pendingLedger, {
+      orderId: ORDER,
+      type: 'full',
+      totalAmount: TOTAL,
+      stripeRefundedFloor: 5000, // the webhook recorded Stripe's total meanwhile
+    });
+
+    expect(retry).toMatchObject({
+      action: 'reconcile',
+      entryIndex: 0,
+      idempotencyKey: first.idempotencyKey,
+      refundAmount: first.refundAmount,
+    });
+  });
+
+  it('does NOT perturb the idempotency key a retry must reproduce (partial)', async () => {
     // Load-bearing: the floor is applied only to the over-refund validation. If
     // it leaked into the key inputs, a reconciling retry would derive a different
     // key, fail to match its own pending entry, and issue a SECOND Stripe refund.

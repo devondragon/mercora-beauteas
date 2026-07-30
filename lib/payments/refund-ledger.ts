@@ -209,14 +209,22 @@ export interface RefundLedgerRequest {
    * Highest cumulative `charge.amount_refunded` ever observed from a Stripe
    * `charge.refunded` event (`extensions.stripe_amount_refunded`, BMC-213).
    *
-   * A FLOOR on the refunded total, applied only to the over-refund validation.
-   * It exists because the ledger can legitimately shrink: a reservation that
-   * flips `pending` → `failed` (the route's Stripe-error path) leaves the total,
-   * on the assumption no money moved. If Stripe actually DID process that refund
-   * — a timeout where the request landed — the ledger under-reports and the
-   * guard would wave through a second refund. Stripe's own cumulative total can
-   * only ever grow, so remembering the high-water mark keeps the guard honest
-   * even when the ledger disagrees.
+   * A pure REJECT gate, never an input to any amount. It exists because the
+   * ledger can legitimately shrink: a reservation that flips `pending` →
+   * `failed` (the route's Stripe-error path) leaves the total, on the assumption
+   * no money moved. If Stripe actually DID process that refund — a timeout where
+   * the request landed — the ledger under-reports and the guard would wave
+   * through a second refund. Stripe's cumulative total only ever grows, so the
+   * high-water mark keeps the guard honest even when the ledger disagrees.
+   *
+   * ⚠️ It must NEVER size a refund. An earlier revision folded it into
+   * `allRefunded`, which shrank a full refund's `refundAmount` — and that value
+   * feeds `deriveRefundIdempotencyKey`, while the reconcile path re-derives the
+   * key from the UNFLOORED `totalAmount - baselineRefunded`. The two diverged, so
+   * a retry of an interrupted full refund failed to match its own `pending` entry
+   * and issued a SECOND real Stripe refund (a BMC-172 regression). Enforced as a
+   * reject-only check after `refundAmount` is fixed; see the regression test
+   * `does NOT perturb the idempotency key … (FULL refund)`.
    */
   stripeRefundedFloor?: number;
 }
@@ -274,17 +282,23 @@ export async function decideRefundLedgerAction(
   // Full ledger total (INCLUDES pending) — used to validate a genuinely-new
   // refund so a concurrent in-flight reservation can't be over-refunded.
   //
-  // BMC-213: raised to Stripe's observed high-water mark when that is higher.
-  // The floor is applied HERE ONLY — deliberately NOT to `baselineRefunded`,
-  // `priorRefundCount`, or `detectAmount`, which feed the idempotency key. Those
-  // must stay byte-identical across a retry or a reconciling retry would derive a
-  // different key and fail to match its own `pending` entry, issuing a SECOND
-  // Stripe refund. The floor only ever tightens the validation.
-  const ledgerRefunded = computeRefundedTotal({ refunds });
-  const allRefunded =
+  // NOTE (BMC-213): this stays LEDGER-ONLY on purpose. Every amount derived from
+  // it — most importantly a full refund's `refundAmount` — feeds
+  // `deriveRefundIdempotencyKey`, and the reconcile path re-derives that key from
+  // `totalAmount - baselineRefunded`. If Stripe's floor were folded in here, the
+  // two would diverge: a reservation made under a floor would hash a REDUCED
+  // amount, while its own retry re-derives the unreduced one, fail to match its
+  // `pending` entry, and issue a SECOND real Stripe refund — reintroducing
+  // BMC-172. The floor is enforced separately, as a pure reject gate, below.
+  const allRefunded = computeRefundedTotal({ refunds });
+
+  // Stripe's observed high-water mark (`extensions.stripe_amount_refunded`),
+  // when it exceeds what the ledger believes. Used ONLY to reject — never to
+  // size a refund — so it cannot perturb any idempotency-key input.
+  const effectiveRefunded =
     typeof stripeRefundedFloor === 'number' && Number.isFinite(stripeRefundedFloor)
-      ? Math.max(ledgerRefunded, stripeRefundedFloor)
-      : ledgerRefunded;
+      ? Math.max(allRefunded, stripeRefundedFloor)
+      : allRefunded;
 
   // The amount this request would have reserved at its ORIGINAL attempt, from
   // the settled baseline — reproduces the key a retry needs to match a pending.
@@ -330,6 +344,24 @@ export async function decideRefundLedgerAction(
       return { action: 'reject', status: 400, error: check.error };
     }
     refundAmount = amount;
+  }
+
+  // ── Floor gate (BMC-213): reject only, never resize ──────────────────────
+  // Runs AFTER `refundAmount` is settled from the ledger, so the amount — and
+  // therefore the idempotency key below — is identical whether or not a floor is
+  // present. If Stripe has demonstrably returned more than the ledger records,
+  // refuse rather than quietly refunding a reduced amount: the discrepancy means
+  // our ledger is wrong, and guessing a smaller refund would both mask that and
+  // shift the key a retry must reproduce.
+  if (effectiveRefunded > allRefunded && refundAmount + effectiveRefunded > totalAmount) {
+    return {
+      action: 'reject',
+      status: 409,
+      error:
+        'Stripe reports more refunded on this order than our records show ' +
+        `(${effectiveRefunded} vs ${allRefunded} minor units). Refusing to refund ` +
+        'further until the discrepancy is reconciled.',
+    };
   }
 
   const idempotencyKey = await deriveRefundIdempotencyKey({
