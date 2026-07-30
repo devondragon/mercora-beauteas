@@ -14,8 +14,12 @@ interface ContactGridProps {
 /** Keyword → icon, with a neutral default. Ordered most-specific first. */
 const ICONS: { match: RegExp; Icon: typeof Mail }[] = [
   { match: /email|write|message/i, Icon: Mail },
-  { match: /hour|time|support/i, Icon: Clock },
+  // Order/shipping is checked before hours: "support" is the broader word, so
+  // an admin heading like "Order Support" would otherwise get Clock, not Package.
+  // Existing headings are unaffected — "Customer Support Hours" still lands on
+  // Clock, "Order and Shipping Questions" on Package.
   { match: /order|shipping|delivery|return/i, Icon: Package },
+  { match: /hour|time|support/i, Icon: Clock },
   { match: /question|faq|help/i, Icon: HelpCircle },
 ];
 

@@ -55,7 +55,15 @@ export async function resolveSectionBlends(
     withProducts.map(async (section) => {
       try {
         const product = await getProductBySlug(section.productSlug!);
-        if (!product) return null;
+        if (!product) {
+          // These slugs are admin-authored in the page HTML, so a typo is the
+          // likeliest failure. Without this the column just vanishes and the
+          // bad reference stays invisible forever.
+          console.warn(
+            `[page-blends] no product for slug "${section.productSlug}" referenced by section "${section.id}"`,
+          );
+          return null;
+        }
 
         const variants = product.variants ?? [];
         const variant =
@@ -73,9 +81,14 @@ export async function resolveSectionBlends(
             imageKey: imageKeyFor(product.primary_image),
           },
         ] as const;
-      } catch {
+      } catch (error) {
         // A missing or malformed product must not take the page down — the
-        // card simply renders without its column.
+        // card simply renders without its column. Logged so the failure is
+        // discoverable rather than a silently missing column.
+        console.warn(
+          `[page-blends] failed to resolve "${section.productSlug}" for section "${section.id}":`,
+          error,
+        );
         return null;
       }
     }),
