@@ -23,8 +23,8 @@
  * const stripe = await loadStripe();
  * 
  * // Server-side
- * import { stripe } from '@/lib/stripe';
- * const paymentIntent = await stripe.paymentIntents.create({...});
+ * import { getStripeClient } from '@/lib/stripe';
+ * const paymentIntent = await getStripeClient().paymentIntents.create({...});
  * ```
  */
 
@@ -67,28 +67,6 @@ export const loadStripe = (): Promise<Stripe | null> => {
 };
 
 /**
- * Server-side Stripe instance
- * Configured with secret key for server operations
- */
-export const stripe = secretKey 
-  ? new StripeServer(secretKey, {
-      apiVersion: '2026-06-24.dahlia',
-      typescript: true,
-    })
-  : null;
-
-/**
- * Get Stripe instance with proper error handling
- * Throws an error if Stripe is not properly configured
- */
-export const getStripe = (): StripeServer => {
-  if (!stripe) {
-    throw new Error('Stripe is not properly configured - missing secret key');
-  }
-  return stripe;
-};
-
-/**
  * Whether server-side Stripe is usable in THIS runtime (secret key present).
  *
  * The Workers runtime (`wrangler dev` / deployed Worker) reads secrets from
@@ -100,24 +78,30 @@ export const getStripe = (): StripeServer => {
 export const isStripeConfigured = (): boolean => Boolean(secretKey);
 
 /**
- * Get a Stripe SDK instance configured for Cloudflare Workers runtime.
- * Uses fetch-based HTTP client instead of Node.js http module.
+ * Get a Stripe SDK instance configured for the Cloudflare Workers runtime.
  *
- * Use this for ALL new subscription operations instead of CloudflareStripe.
- * The standard Stripe SDK provides typed responses, automatic retries,
- * and proper error handling.
+ * `createFetchHttpClient()` is not optional here: the SDK's DEFAULT http client
+ * is the Node `http` module, which does not work in the Worker. Any code path
+ * that talks to Stripe from the server must go through this factory (or
+ * `getStripeClient()`, which wraps it) — never `new StripeServer(...)` directly.
  *
- * @returns Stripe SDK instance configured for Workers
+ * Memoized: this sits on the payment path, so a fresh client (and its agent /
+ * config setup) per request is pure waste.
  */
+let workersStripe: StripeServer | null = null;
+
 export function getStripeForWorkers(): StripeServer {
   if (!secretKey) {
     throw new Error('Missing STRIPE_SECRET_KEY environment variable');
   }
-  return new StripeServer(secretKey, {
-    apiVersion: '2026-06-24.dahlia',
-    httpClient: StripeServer.createFetchHttpClient(),
-    typescript: true,
-  });
+  if (!workersStripe) {
+    workersStripe = new StripeServer(secretKey, {
+      apiVersion: '2026-06-24.dahlia',
+      httpClient: StripeServer.createFetchHttpClient(),
+      typescript: true,
+    });
+  }
+  return workersStripe;
 }
 
 /**
@@ -149,173 +133,18 @@ export async function verifyWebhookSignature(
 }
 
 /**
- * Cloudflare Workers-compatible Stripe API client
- * Uses fetch instead of Node.js https module
+ * The single server-side Stripe client (BMC-212).
+ *
+ * This used to pick between the real SDK and a hand-rolled `CloudflareStripe`
+ * fetch client based on Workers globals / `NODE_ENV` — which meant the deployed
+ * Worker ran PaymentIntents and Stripe Tax against API version `2020-08-27`
+ * while subscriptions and webhooks ran on `2026-06-24.dahlia`. The hand-rolled
+ * client is gone; the SDK works on Workers via `createFetchHttpClient()`.
  */
-export class CloudflareStripe {
-  private apiKey: string;
-  private apiVersion = '2020-08-27';
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
-
-  private async request(
-    method: 'GET' | 'POST',
-    endpoint: string,
-    data?: Record<string, any>,
-    options?: { idempotencyKey?: string }
-  ) {
-    const url = `https://api.stripe.com/v1${endpoint}`;
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${this.apiKey}`,
-      'Stripe-Version': this.apiVersion,
-    };
-
-    // BMC-172: Stripe idempotency — a safe-retry POST (e.g. /refunds) carrying the
-    // same key reuses the original result instead of creating a duplicate. Stripe
-    // ignores this header on GET, so it is safe to thread through generically.
-    if (options?.idempotencyKey) {
-      headers['Idempotency-Key'] = options.idempotencyKey;
-    }
-
-    let body: string | undefined;
-    if (data && method === 'POST') {
-      // Convert to URL-encoded string for Stripe API
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      
-      const encodeValue = (obj: any, prefix = ''): string[] => {
-        const params: string[] = [];
-        
-        for (const key in obj) {
-          if (obj[key] !== null && obj[key] !== undefined) {
-            const value = obj[key];
-            const fieldName = prefix ? `${prefix}[${key}]` : key;
-            
-            if (typeof value === 'object' && !Array.isArray(value)) {
-              params.push(...encodeValue(value, fieldName));
-            } else if (Array.isArray(value)) {
-              value.forEach((item, index) => {
-                if (typeof item === 'object') {
-                  params.push(...encodeValue(item, `${fieldName}[${index}]`));
-                } else {
-                  params.push(`${encodeURIComponent(`${fieldName}[${index}]`)}=${encodeURIComponent(String(item))}`);
-                }
-              });
-            } else {
-              params.push(`${encodeURIComponent(fieldName)}=${encodeURIComponent(String(value))}`);
-            }
-          }
-        }
-        
-        return params;
-      };
-      
-      body = encodeValue(data).join('&');
-    }
-
-    const response = await fetch(url, {
-      method,
-      headers,
-      body,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json() as any;
-      throw new Error(`Stripe API Error: ${errorData.error?.message || response.statusText}`);
-    }
-
-    return await response.json();
-  }
-
-  async createPaymentIntent(params: {
-    amount: number;
-    currency: string;
-    automatic_payment_methods?: { enabled: boolean; allow_redirects?: 'always' | 'never' };
-    metadata?: Record<string, string>;
-    shipping?: any;
-    description?: string;
-  }) {
-    return await this.request('POST', '/payment_intents', params);
-  }
-
-  async calculateTax(params: {
-    currency: string;
-    line_items: Array<{
-      amount: number;
-      reference: string;
-      tax_behavior?: string;
-      tax_code?: string;
-    }>;
-    customer_details: {
-      address: {
-        line1: string;
-        city: string;
-        state: string;
-        postal_code: string;
-        country: string;
-      };
-      address_source: string;
-    };
-  }) {
-    return await this.request('POST', '/tax/calculations', params);
-  }
-
-  async retrievePaymentIntent(id: string) {
-    return await this.request('GET', `/payment_intents/${encodeURIComponent(id)}`);
-  }
-
-  async cancelPaymentIntent(id: string) {
-    return await this.request('POST', `/payment_intents/${encodeURIComponent(id)}/cancel`);
-  }
-
-  webhooks = {
-    /** @deprecated Use verifyWebhookSignature() instead -- this does NOT verify signatures */
-    constructEvent: (payload: string, signature: string, secret: string) => {
-      // Basic webhook verification - in production, you'd want more robust verification
-      // For now, just parse the payload
-      try {
-        return JSON.parse(payload);
-      } catch (error) {
-        throw new Error('Invalid webhook payload');
-      }
-    }
-  };
-}
+export const getStripeClient = (): StripeServer => getStripeForWorkers();
 
 /**
- * Get Cloudflare Workers-compatible Stripe client
- */
-export const getCloudflareStripe = (): CloudflareStripe => {
-  if (!secretKey) {
-    throw new Error('Stripe secret key not configured for Cloudflare Workers');
-  }
-  return new CloudflareStripe(secretKey);
-};
-
-/**
- * Get the appropriate Stripe client based on the runtime environment
- */
-export const getStripeClient = (): StripeServer | CloudflareStripe => {
-  // Detect if we're running in Cloudflare Workers
-  const isCloudflareWorkers = typeof globalThis !== 'undefined' && 
-    globalThis.navigator?.userAgent?.includes('Cloudflare-Workers');
-  
-  // Also check for specific Cloudflare Workers globals
-  const hasWorkersGlobals = typeof caches !== 'undefined' && 
-    typeof Request !== 'undefined' && 
-    typeof Response !== 'undefined' && 
-    typeof globalThis.fetch === 'function';
-
-  if (isCloudflareWorkers || hasWorkersGlobals || process.env.NODE_ENV === 'production') {
-    return getCloudflareStripe();
-  } else {
-    return getStripe();
-  }
-};
-
-/**
- * Create a payment intent using the appropriate Stripe client
+ * Create a payment intent.
  */
 export const createPaymentIntent = async (params: {
   amount: number;
@@ -326,17 +155,11 @@ export const createPaymentIntent = async (params: {
   description?: string;
 }): Promise<{ id: string; client_secret: string | null; [key: string]: any }> => {
   const client = getStripeClient();
-  
-  if (client instanceof CloudflareStripe) {
-    return await client.createPaymentIntent(params) as { id: string; client_secret: string | null; [key: string]: any };
-  } else {
-    // Use the regular Stripe SDK
-    return await client.paymentIntents.create(params) as { id: string; client_secret: string | null; [key: string]: any };
-  }
+  return await client.paymentIntents.create(params) as { id: string; client_secret: string | null; [key: string]: any };
 };
 
 /**
- * Retrieve a Payment Intent using the appropriate Stripe client.
+ * Retrieve a Payment Intent.
  * Used to verify payment server-side (status / amount / order binding) rather
  * than trusting client-supplied flags.
  */
@@ -344,14 +167,11 @@ export const retrievePaymentIntent = async (
   id: string
 ): Promise<{ id: string; status: string; amount_received?: number; amount?: number; metadata?: Record<string, string>; [key: string]: any }> => {
   const client = getStripeClient();
-  if (client instanceof CloudflareStripe) {
-    return (await client.retrievePaymentIntent(id)) as any;
-  }
   return (await client.paymentIntents.retrieve(id)) as any;
 };
 
 /**
- * Cancel a Payment Intent using the appropriate Stripe client.
+ * Cancel a Payment Intent.
  *
  * Best-effort hygiene (BMC-167): when the server mints a PaymentIntent but then
  * cannot persist its pending order, it withholds the client secret — so the PI
@@ -361,24 +181,15 @@ export const retrievePaymentIntent = async (
  */
 export const cancelPaymentIntent = async (id: string): Promise<any> => {
   const client = getStripeClient();
-  if (client instanceof CloudflareStripe) {
-    return (await client.cancelPaymentIntent(id)) as any;
-  }
   return (await client.paymentIntents.cancel(id)) as any;
 };
 
 /**
- * Calculate tax using the appropriate Stripe client
+ * Calculate tax via Stripe Tax.
  */
 export const calculateTax = async (params: any): Promise<any> => {
   const client = getStripeClient();
-  
-  if (client instanceof CloudflareStripe) {
-    return await client.calculateTax(params);
-  } else {
-    // Use the regular Stripe SDK
-    return await client.tax.calculations.create(params);
-  }
+  return await client.tax.calculations.create(params);
 };
 
 /**

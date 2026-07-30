@@ -267,14 +267,10 @@ export async function POST(request: NextRequest) {
           ...(items && { refundedItems: items.join(',') })
         }
       };
-      // Check if we're using regular Stripe SDK or Cloudflare-compatible version
-      if ('refunds' in stripe) {
-        const regularStripe = stripe as any;
-        stripeRefund = await regularStripe.refunds.create(refundParams, { idempotencyKey });
-      } else {
-        const stripeCloudflare = stripe as any;
-        stripeRefund = await stripeCloudflare.request('POST', '/refunds', refundParams, { idempotencyKey });
-      }
+      // BMC-172: the idempotency key is the SDK's SECOND options argument, not a
+      // request param — a duplicate submit carrying the same key reuses the
+      // original refund instead of paying the customer twice.
+      stripeRefund = await stripe.refunds.create(refundParams, { idempotencyKey });
     } catch (stripeError: any) {
       console.error('Stripe refund failed:', stripeError);
       // The customer's money was NOT returned (Stripe declined / errored / timed
