@@ -32,6 +32,10 @@ export const orders = sqliteTable("orders", {
   
   // Shipping and payment
   shipping_method: text("shipping_method"),
+  // Typed fulfillment carrier owned by the shipment workflow (BMC-216).
+  // Application values: "ups" | "fedex" | "other". Legacy carrier text remains
+  // in extensions.carrier as the lossless record; see migration 0022.
+  shipping_carrier: text("shipping_carrier"),
   payment_method: text("payment_method"),
   payment_status: text("payment_status", {
     enum: ["pending", "paid", "failed", "refunded"]

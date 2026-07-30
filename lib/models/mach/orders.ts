@@ -448,6 +448,7 @@ function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
     shipping_method: orderRecord.shipping_method ?? undefined,
     payment_method: orderRecord.payment_method ?? undefined,
     payment_status: orderRecord.payment_status ?? 'pending',
+    shipping_carrier: orderRecord.shipping_carrier ?? undefined,
     tracking_number: orderRecord.tracking_number ?? undefined,
     shipped_at: orderRecord.shipped_at ?? undefined,
     delivered_at: orderRecord.delivered_at ?? undefined,
