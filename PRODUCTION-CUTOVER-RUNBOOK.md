@@ -234,15 +234,28 @@ In **Stripe Live mode**:
 - ☑ **Endpoint created (2026-07-27, self-reported).** One webhook endpoint → `/api/webhooks/stripe`.
   > ⚠️ **Confirm which host it points at.** It should be **`https://shop.beauteas.com/api/webhooks/stripe`** for now. `www` and the apex are still Shopify, so an endpoint pointed there delivers into the old store and every event is lost — silently, because Stripe just records delivery failures you aren't watching. At cutover, **edit this endpoint's URL** to `www` rather than creating a second one, so the signing secret carries over. **Create a single endpoint and *edit its URL* at cutover** rather than adding a second one: each Stripe endpoint gets its own signing secret, the Worker holds only one `STRIPE_WEBHOOK_SECRET`, and running two means deliveries from the second fail signature verification (400) until Stripe backs off. Editing the URL in place preserves the secret — no redeploy, no gap.
 
-- ☑ **Events subscribed (2026-07-27, self-reported)** — these 9, **plus `charge.refunded` added by BMC-213 → 10** — this is the full `switch` in `app/api/webhooks/stripe/route.ts`; anything else falls to `default:` and only logs:
+- ☑ **Events subscribed — 69 as of 2026-07-30, VERIFIED via `stripe webhook_endpoints list --live`** (not self-reported; endpoint `we_1TxvrPFqgbQQDjYVWibQXu7S` → `https://shop.beauteas.com/api/webhooks/stripe`, `api_version` `2026-06-24.dahlia`, status `enabled`).
+
+  > Earlier drafts of this runbook claimed "exactly these 9". **That was wrong** — the endpoint already carried 56 events on 2026-07-27, and the `customer.subscription.paused`/`.resumed` "correction" below was also wrong (they *are* subscribed; they just have no dedicated handler). Verify with the CLI rather than trusting this list.
+
+  **The 10 with handlers** — this is the full `switch` in `app/api/webhooks/stripe/route.ts`:
   - `payment_intent.succeeded` ← **the money path** (`finalizePaidOrder`, gift cards, confirmation email)
   - `payment_intent.payment_failed` (handler is a stub — logs only)
-  - `checkout.session.completed` (handler is a stub; you use Payment Element, not Checkout Sessions — **safe to omit**)
+  - `checkout.session.completed` (handler is a stub; you use Payment Element, not Checkout Sessions)
   - `customer.subscription.created` / `.updated` / `.deleted`
   - `invoice.payment_succeeded` ← creates renewal orders · `invoice.payment_failed` · `invoice.upcoming`
-  - ⚠️ **`charge.refunded` — MUST BE ADDED to the live endpoint (BMC-213).** Reconciles refunds issued outside the app (Stripe Dashboard) into `orders.extensions.refunds[]`. Without the subscription the handler never runs and the over-refund vector stays open — **the code change alone is not enough.**
+  - ☑ **`charge.refunded`** — reconciles refunds issued outside the app (Stripe Dashboard) into `orders.extensions.refunds[]` so the over-refund guard can see them (BMC-213). **Added and verified present 2026-07-30.**
 
-  > Corrected 2026-07-27: earlier drafts of this runbook listed `customer.subscription.paused` and `.resumed`. **There are no handlers for those** — pause/resume is detected inside `customer.subscription.updated`. Subscribing to them is harmless but does nothing.
+  **The other 59 are deliberately subscribed with no handler yet** (decision 2026-07-30): they fall through to `default:` and log a single `[webhook] Unhandled event type: …` line. The reasoning is that it is cheaper to have the events arriving already than to discover a gap later and have to touch live Stripe config again — so functionality can be layered on purely in code. Notable ones already flowing:
+  - **`charge.dispute.created` / `.updated` / `.closed` / `.funds_withdrawn` / `.funds_reinstated`** — the complete event set [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) needs. **The Stripe side of BMC-214 is already done**; only the handler remains, and it should reuse BMC-213's reconciliation seam (`lib/payments/refund-ledger-store.ts`).
+  - `charge.succeeded` / `.updated` / `.captured` / `.failed` / `.expired` / `.pending`, `charge.refund.updated`
+  - `customer.*` (incl. `customer.subscription.paused` / `.resumed` / `.trial_will_end`), the wider `invoice.*` lifecycle, `payment_intent.created` / `.canceled` / `.processing` / `.requires_action`, `checkout.session.async_*` / `.expired`
+
+  > ⚠️ **Two consequences of the wide subscription, neither a problem at current volume but worth knowing.**
+  > 1. **Every delivered event costs a Worker invocation and a D1 row.** The dedup claim (`claimWebhookEvent`) runs *before* the `switch`, so even an unhandled event inserts into `processed_webhook_events`. `charge.succeeded`, `charge.updated` and `payment_intent.created` all fire on every single order, so one checkout now produces several deliveries rather than one. `cleanupOldWebhookEvents()` prunes rows older than **7 days**, so the table stays bounded.
+  > 2. **Adding an event via the API/CLI REPLACES `enabled_events` wholesale** — it does not append. A partial list silently unsubscribes whatever it omits, and dropping `payment_intent.succeeded` would break order finalization with no error anywhere. Use the Dashboard, or send the complete list.
+
+  > Re-corrected 2026-07-30: the 2026-07-27 note here claimed `customer.subscription.paused`/`.resumed` had been removed from the subscription. They **are** subscribed (verified above). What is true is that they have **no dedicated handler** — pause/resume is detected inside `customer.subscription.updated` — so they log and do nothing, like the other 59 unhandled events.
 
 - ☑ ⚠️ **API version set to `2026-06-24.dahlia` (2026-07-27, self-reported)** — matching `lib/stripe.ts:75`/`:117`.
 
@@ -273,9 +286,11 @@ In **Stripe Live mode**:
 
     The reconciler also records Stripe's cumulative total as a high-water mark on `extensions.stripe_amount_refunded`, and the over-refund guard floors its validation at that value. This covers the case where the ledger legitimately *shrinks* — a `pending` reservation released to `failed` for a refund whose money actually did leave Stripe (a create that timed out after landing) — which would otherwise reopen the same over-refund hole from the other direction.
 
-    **Two operational follow-ups:**
-    1. **Subscribe `charge.refunded`** on the live endpoint (see the event list above) — the handler is dead code until you do.
-    2. **Apply migration `0021`**, which seeds `refund.restock_on_external_refund` (default **on**). Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.
+    **Operational follow-ups:**
+    1. ☑ **`charge.refunded` subscribed on the live endpoint** — added and verified 2026-07-30 (`stripe webhook_endpoints list --live`). All 56 pre-existing events, including `payment_intent.succeeded`, survived the edit.
+    2. ⬜ **Apply migration `0021`**, which seeds `refund.restock_on_external_refund` (default **on**). Deferred until PR #102 merges. Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.
+
+    > Note: the handler reads the setting through `getRefundPolicy()`, which defaults to `true` when the row is absent — so behaviour is correct even before `0021` is applied. The migration exists to make the toggle visible and editable in the admin UI.
   - **[BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) (Medium)** — no `charge.dispute.*` handling. Chargebacks are invisible to the app; the only signal is Stripe's email, so a missed evidence deadline is an automatic loss. Sequence **after** BMC-213 and reuse its reconciliation.
 
 ---
