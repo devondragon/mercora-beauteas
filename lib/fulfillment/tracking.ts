@@ -72,34 +72,33 @@ export function normalizeLegacyCarrier(raw: unknown): Carrier | null {
 }
 
 /**
- * Characters that render as nothing (or reorder their neighbours) but survive a
- * byte-for-byte round trip. A tracking number is echoed back into the admin
- * table, the shipping email and an href, so a value containing these can
- * display differently from what was stored — a right-to-left override reverses
- * the digits on screen while the saved bytes are unchanged. Stripped rather
- * than rejected: no real carrier number contains them, so their presence is
- * noise or spoofing, never data.
+ * Allowlist for tracking number characters. Real carrier numbers (UPS 1Z...,
+ * FedEx 12-digit, USPS 20-22 digit, plus "other" carriers) use only ASCII
+ * letters, digits, and hyphens. Stripping everything else closes every known
+ * spoofing class in one pass — invisible/bidi controls, combining marks,
+ * homoglyphs, variation selectors, tag blocks, Hangul fillers, soft hyphens,
+ * line/paragraph separators, and any future Unicode additions — without
+ * needing an exhaustive denylist.
  *
- * Covers C0/C1 controls and DEL, zero-width and directional marks
- * (U+200B–U+200F), the bidi embedding/override block (U+202A–U+202E), word
- * joiner and invisible operators (U+2060–U+2064), the isolate block
- * (U+2066–U+2069), and the BOM (U+FEFF).
+ * Characters are stripped rather than rejected: their presence is noise or
+ * spoofing, never data, and stripping-then-validating length lets the caller
+ * catch truly garbled input (all non-allowlist characters reduce to empty).
  */
-const INVISIBLE_CHARS =
-  /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+const TRACKING_ALLOWLIST = /[^A-Za-z0-9-]/g;
 
 /**
- * Trim, strip invisible/bidi formatting characters, and enforce
- * MAX_TRACKING_LENGTH. Over-length input returns null — callers treat that as
- * invalid input rather than silently emailing a truncated tracking number.
+ * Strip all characters not in [A-Za-z0-9-], then enforce MAX_TRACKING_LENGTH.
+ * Over-length input returns null — callers treat that as invalid input rather
+ * than silently emailing a truncated tracking number. An input that consists
+ * entirely of non-allowlist characters (e.g. a pure Unicode spoofing payload)
+ * becomes empty after stripping and also returns null.
  */
 export function sanitizeTrackingNumber(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const stripped = raw.replace(INVISIBLE_CHARS, "");
-  const trimmed = stripped.trim();
-  if (trimmed.length === 0) return null;
-  if (trimmed.length > MAX_TRACKING_LENGTH) return null;
-  return trimmed;
+  const stripped = raw.replace(TRACKING_ALLOWLIST, "");
+  if (stripped.length === 0) return null;
+  if (stripped.length > MAX_TRACKING_LENGTH) return null;
+  return stripped;
 }
 
 /**

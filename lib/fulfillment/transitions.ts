@@ -65,7 +65,7 @@ export function parseShipmentInput(
   if (!trackingNumber) {
     return {
       ok: false,
-      error: `Invalid trackingNumber (must be 1-${MAX_TRACKING_LENGTH} characters after trimming and stripping control characters)`,
+      error: `Invalid trackingNumber (must be 1-${MAX_TRACKING_LENGTH} alphanumeric/hyphen characters after stripping non-allowlist characters)`,
     };
   }
 
