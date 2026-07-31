@@ -26,23 +26,36 @@ interface RateLimiter {
 }
 
 /**
- * Best-effort client IP for use as a rate-limit key. Cloudflare sets
- * `CF-Connecting-IP` on every request at the edge; the `x-forwarded-for`
- * fallback covers non-CF/local runs. Returns `"unknown"` when neither is
- * present, which buckets all such callers into one shared limit — a safe,
- * conservative default (it can only over-throttle, never under-throttle).
+ * Best-effort client IP from a bare header bag. Server components have no
+ * `Request` — `headers()` from `next/headers` hands back a Headers-like object
+ * — so this is the flavour the guest order-status page (BMC-216E) uses. Same
+ * precedence and same "unknown" bucket as {@link getClientIp}.
  */
-export function getClientIp(req: Request): string {
-  const cfIp = req.headers.get("CF-Connecting-IP");
+export function getClientIpFromHeaders(headers: { get(name: string): string | null }): string {
+  const cfIp = headers.get("CF-Connecting-IP");
   if (cfIp) return cfIp.trim();
 
-  const forwarded = req.headers.get("x-forwarded-for");
+  const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();
     if (first) return first;
   }
 
   return "unknown";
+}
+
+/**
+ * Best-effort client IP for use as a rate-limit key. Cloudflare sets
+ * `CF-Connecting-IP` on every request at the edge; the `x-forwarded-for`
+ * fallback covers non-CF/local runs. Returns `"unknown"` when neither is
+ * present, which buckets all such callers into one shared limit — a safe,
+ * conservative default (it can only over-throttle, never under-throttle).
+ *
+ * Delegates to {@link getClientIpFromHeaders} so the header precedence has
+ * exactly one implementation shared by route handlers and server components.
+ */
+export function getClientIp(req: Request): string {
+  return getClientIpFromHeaders(req.headers);
 }
 
 /**

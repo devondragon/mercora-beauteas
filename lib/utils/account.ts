@@ -2,6 +2,8 @@ import type { MACHAddress } from "@/lib/types/mach/Address";
 
 export function formatDate(dateString?: string | null, showTime = false): string {
   if (!dateString) return "—";
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "—";
   const options: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
@@ -11,7 +13,7 @@ export function formatDate(dateString?: string | null, showTime = false): string
     options.hour = "numeric";
     options.minute = "2-digit";
   }
-  return new Date(dateString).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+  return date.toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
 }
 
 export function formatAddress(address: MACHAddress | null | undefined): string {

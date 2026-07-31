@@ -1,0 +1,90 @@
+/**
+ * === Guest order-status projection (BMC-216E) ===
+ *
+ * THE ALLOWLIST for what a `/order-status/<id>?token=…` bearer token exposes.
+ * The guest page renders from this object and nothing else, so "could a guest
+ * link leak the shipping address?" is a property of this pure function — see
+ * tests/unit/lib/order-status/guest-projection.test.ts, which asserts the
+ * forbidden fields are structurally absent rather than merely unrendered.
+ *
+ * Deliberately excluded (spec "Customer Order Status → Guest Customers"):
+ * totals/Money, shipping + billing address, payment method / PaymentIntent id,
+ * internal notes, extensions, admin audit history, refund ledger.
+ *
+ * Carrier is read from the `orders.shipping_carrier` COLUMN only. The legacy
+ * `extensions.carrier` / `extensions.trackingUrl` keys are never consulted:
+ * migration 0022 backfilled the column, and a client-persisted tracking URL is
+ * exactly the arbitrary-redirect vector the typed carrier boundary removes.
+ * Pure module — no D1/Next/Clerk/Resend imports.
+ */
+import {
+  buildTrackingUrl,
+  normalizeLegacyCarrier,
+  sanitizeTrackingNumber,
+} from "@/lib/fulfillment/tracking";
+import { CARRIER_LABELS, type Carrier } from "@/lib/fulfillment/types";
+
+export interface GuestOrderProjectionItem {
+  name: string;
+  quantity: number;
+}
+
+export interface GuestOrderProjection {
+  orderNumber: string;
+  placedAt: string | null;
+  status: string;
+  shippedAt: string | null;
+  carrier: Carrier | null;
+  carrierLabel: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  items: GuestOrderProjectionItem[];
+}
+
+/**
+ * Structural input shape — an `Order` satisfies it, but typing the parameter
+ * structurally keeps this module free of the model layer AND makes the test
+ * fixtures honest (they can carry every forbidden field an Order carries).
+ *
+ * Deliberately NO `[key: string]: unknown` index signature: `Order` is an
+ * interface, and TypeScript grants an implicit index signature only to types
+ * originating in object literals — so an index signature here would make the
+ * real call site (`buildGuestOrderProjection(order)` in the guest page) fail to
+ * compile. Extra fields on the row are ignored by construction instead: the
+ * body reads only the named fields below and builds a fresh object, so a
+ * forbidden field cannot reach the output even by accident.
+ */
+export interface GuestProjectionOrder {
+  id?: string | null;
+  created_at?: string | null;
+  status: string;
+  shipped_at?: string | null;
+  shipping_carrier?: string | null;
+  tracking_number?: string | null;
+  items?: Array<{ product_name?: string; quantity?: number }> | null;
+}
+
+export function buildGuestOrderProjection(order: GuestProjectionOrder): GuestOrderProjection {
+  const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
+  // Sanitized before rendering: only the new fulfillment write path enforces
+  // sanitizeTrackingNumber, so a legacy row can still carry bidi/invisible
+  // characters — this is a bearer-token page a stranger with the link can
+  // load, so it must never render an unsanitized value.
+  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  return {
+    orderNumber: order.id ?? "",
+    placedAt: order.created_at ?? null,
+    status: order.status,
+    shippedAt: order.shipped_at ?? null,
+    carrier,
+    carrierLabel: carrier ? CARRIER_LABELS[carrier] : null,
+    trackingNumber,
+    trackingUrl: buildTrackingUrl(carrier, trackingNumber),
+    items: items.map((item) => ({
+      name: typeof item?.product_name === "string" ? item.product_name : "Item",
+      quantity: typeof item?.quantity === "number" ? item.quantity : 1,
+    })),
+  };
+}

@@ -18,6 +18,21 @@
 export const CARRIERS = ["ups", "fedex", "usps", "other"] as const;
 export type Carrier = (typeof CARRIERS)[number];
 
+/**
+ * Customer- and admin-facing display names for the typed carriers (BMC-216).
+ *
+ * Keyed by `Carrier`, so adding a code to CARRIERS fails the build here until a
+ * label exists — the fifth place that must agree with the four listed above.
+ * "other" reads as "Other" because it renders as the VALUE of a "Carrier" row
+ * ("Carrier: Other"); it is the one carrier with no deep link.
+ */
+export const CARRIER_LABELS: Record<Carrier, string> = {
+  ups: "UPS",
+  fedex: "FedEx",
+  usps: "USPS",
+  other: "Other",
+};
+
 /** Fulfillment audit event types written to `order_events`. */
 export const ORDER_EVENT_TYPES = [
   "shipment_created",

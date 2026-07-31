@@ -6,6 +6,8 @@ import { ArrowLeft } from "lucide-react";
 import type { OrderItem } from "@/lib/types/order";
 import { formatDate, formatAddress } from "@/lib/utils/account";
 import { Money } from "@/lib/money";
+import { buildTrackingUrl, normalizeLegacyCarrier, sanitizeTrackingNumber } from "@/lib/fulfillment/tracking";
+import { CARRIER_LABELS } from "@/lib/fulfillment/types";
 
 export const metadata = {
   title: "Order Details - BeauTeas",
@@ -77,6 +79,22 @@ export default async function OrderDetailPage({
 
   const items = Array.isArray(order.items) ? order.items : [];
 
+  // Carrier comes from the shipping_carrier COLUMN only — migration 0022
+  // backfilled it. This page never reads extensions.carrier / extensions.trackingUrl:
+  // a stored, client-supplied URL is an open-redirect vector, so the link is
+  // always DERIVED from (carrier, trackingNumber). Note this is not yet true
+  // repo-wide — the legacy PUT /api/orders path and the legacy status-update
+  // email still read extensions.trackingUrl; closing those is BMC-230/ticket F.
+  // normalizeLegacyCarrier is defensive for any row that escaped the backfill.
+  const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
+  const carrierLabel = carrier ? CARRIER_LABELS[carrier] : null;
+  // Sanitized before both rendering and URL-building: a legacy row's tracking
+  // number can carry bidi/invisible characters (only the new fulfillment
+  // write path enforces sanitizeTrackingNumber), which would otherwise render
+  // reversed or hidden digits directly in this customer-facing page.
+  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
+  const trackingUrl = buildTrackingUrl(carrier, trackingNumber);
+
   return (
     <div>
       <Link
@@ -99,6 +117,42 @@ export default async function OrderDetailPage({
         <h2 className="text-sm font-medium text-text-secondary mb-3">Status</h2>
         <StatusTimeline status={order.status} />
       </div>
+
+      {/* Shipment — rendered only once the order has actually shipped (BMC-216E).
+          Before that, the status timeline above is the whole story. */}
+      {order.shipped_at && (
+        <div className="bg-white border border-border-default rounded-lg p-5 mb-6">
+          <h2 className="text-sm font-medium text-text-secondary mb-3">Shipment</h2>
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-secondary">Shipped</dt>
+              <dd className="text-text-primary">{formatDate(order.shipped_at)}</dd>
+            </div>
+            {carrierLabel && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-secondary">Carrier</dt>
+                <dd className="text-text-primary">{carrierLabel}</dd>
+              </div>
+            )}
+            {trackingNumber && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-secondary">Tracking number</dt>
+                <dd className="text-text-primary font-mono break-all">{trackingNumber}</dd>
+              </div>
+            )}
+          </dl>
+          {trackingUrl && (
+            <a
+              href={trackingUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center mt-4 text-sm font-medium text-primary-700 underline hover:text-primary-900"
+            >
+              Track your package
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Order items */}
       <div className="bg-white border border-border-default rounded-lg p-5 mb-6">
