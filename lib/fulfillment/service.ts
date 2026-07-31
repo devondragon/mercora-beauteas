@@ -113,6 +113,13 @@ export async function shipOrder(
   // db.batch() calls against each other, by the time a losing batch's SELECT
   // runs, the winner's batch (update + insert) has already committed
   // atomically, so NOT EXISTS reliably observes the winner's event row.
+  //
+  // Scoped to THIS request's own marker (created_at = now), not "ever" —
+  // order status can legitimately cycle back to processing and re-ship
+  // later (the still-unguarded legacy PUT /api/orders path, BMC-230), which
+  // must record its own fresh shipment_created event. An unscoped NOT
+  // EXISTS would silently swallow that legitimate re-ship's event while
+  // still reporting a 201 (review pass 2 CRITICAL).
   const shipmentEventAlreadyRecorded = db
     .select({ one: sql`1` })
     .from(orderEvents)
@@ -120,6 +127,7 @@ export async function shipOrder(
       and(
         eq(orderEvents.order_id, orderId),
         eq(orderEvents.event_type, "shipment_created"),
+        eq(orderEvents.created_at, now),
       ),
     );
 

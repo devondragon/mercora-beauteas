@@ -183,7 +183,7 @@ describe("shipOrder — CAS win", () => {
     ]);
   });
 
-  it("keys the event insert on this request's shipped_at operation marker AND a NOT EXISTS guard against a prior shipment_created event", async () => {
+  it("keys the event insert on this request's shipped_at operation marker AND a same-marker-scoped NOT EXISTS guard against a duplicate shipment_created event", async () => {
     h.state.batchResult = [[wonRow()], { success: true }];
     const result = await shipOrder("ORD-1", trackedInput, actor);
     const { sql: text, params } = renderedInsert();
@@ -192,10 +192,13 @@ describe("shipOrder — CAS win", () => {
     expect(text).toMatch(/^select /i);
     expect(text).toMatch(/from "orders"/i);
     expect(text).toMatch(/"orders"\."status" = \? and "orders"\."shipped_at" = \?/i);
-    // C2 fix: a losing CAS racing on the same millisecond must still be
-    // blocked once a shipment_created event already exists for this order.
+    // C2 fix (review pass 1): a losing CAS racing on the same millisecond
+    // must be blocked once a same-marker shipment_created event already
+    // exists for this order. Scoped to created_at = <this request's marker>
+    // (review pass 2 CRITICAL) — an unscoped "ever" guard would silently
+    // swallow a legitimate later re-ship's event.
     expect(text).toMatch(
-      /not exists \(select .* from "order_events" where \("order_events"\."order_id" = \? and "order_events"\."event_type" = \?\)\)/i,
+      /not exists \(select .* from "order_events" where \("order_events"\."order_id" = \? and "order_events"\."event_type" = \? and "order_events"\."created_at" = \?\)\)/i,
     );
     expect(params).toContain("ORD-1");
     expect(params).toContain(FIXED_NOW);
@@ -205,6 +208,11 @@ describe("shipOrder — CAS win", () => {
     if (result.outcome === "shipped") {
       expect(params).toContain(result.eventId);
     }
+    // FIXED_NOW must appear exactly 3 times: the created_at field value, the
+    // orders.shipped_at guard, and the NOT EXISTS subquery's created_at
+    // guard — pins the guard to THIS request's marker, not an unscoped
+    // lifetime check (regression test for the pass-2 CRITICAL).
+    expect(params.filter((p) => p === FIXED_NOW)).toHaveLength(3);
     const details = params.find(
       (p) => typeof p === "string" && p.startsWith("{"),
     ) as string;
