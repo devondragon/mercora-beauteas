@@ -38,7 +38,7 @@
  *                        The token needs D1:Edit and R2:Edit.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -164,11 +164,27 @@ for (const target of targets) {
   if (!skipBackup) {
     const { fileName, objectKey } = backupNames(target, new Date().toISOString());
     const localPath = join(BACKUP_DIR, fileName);
-    mkdirSync(BACKUP_DIR, { recursive: true });
+    try {
+      mkdirSync(BACKUP_DIR, { recursive: true });
+    } catch (err) {
+      fail(`could not create ${BACKUP_DIR} for the pre-flight backup: ${err.message}`);
+    }
 
     log(`${target.label}: pre-flight export → .backups/${fileName}`);
     if (!wrangler(exportArgs(target, localPath))) {
       fail(`pre-flight backup of ${target.label} failed. Not applying migrations without a backup.`);
+    }
+
+    // An exit-0 export that produced nothing is not a backup. Cheap to check,
+    // and the alternative is discovering it when someone needs to restore.
+    let exportedBytes = 0;
+    try {
+      exportedBytes = statSync(localPath).size;
+    } catch (err) {
+      fail(`pre-flight export of ${target.label} left no readable file at ${localPath}: ${err.message}`);
+    }
+    if (exportedBytes === 0) {
+      fail(`pre-flight export of ${target.label} produced an empty file. Refusing to apply against an empty backup.`);
     }
 
     if (backupsDisabled) {
@@ -194,6 +210,26 @@ for (const target of targets) {
     fail(
       `migration apply failed for ${target.label} (${slug}). ` +
       "The failed migration was rolled back; earlier ones remain applied.",
+    );
+  }
+
+  // A zero exit is NOT proof the migrations landed. `wrangler d1 migrations
+  // apply` prompts for confirmation on a real TTY (a deliberate human beat on
+  // a manual prod deploy), and answering "no" makes its handler `return`
+  // normally — the process exits 0 having applied nothing. Trusting the exit
+  // code there would log "✓ applied", let the deploy proceed, and reproduce
+  // the exact unmigrated-DB outage this script exists to prevent. So verify
+  // the post-condition instead: nothing may still be pending.
+  const after = wranglerCapture(migrationsListArgs(target));
+  const verified = interpretMigrationsList(after.output);
+  if (!after.ok || verified.status !== "up-to-date") {
+    const stillPending = verified.migrations.length
+      ? ` Still pending: ${verified.migrations.join(", ")}.`
+      : "";
+    fail(
+      `${target.label} (${slug}) still reports unapplied migrations after the apply step.${stillPending} ` +
+      "If you answered 'no' to wrangler's confirmation prompt, that is why — re-run and confirm, " +
+      "or apply by hand before deploying.",
     );
   }
 

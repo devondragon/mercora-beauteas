@@ -3,6 +3,15 @@ name: Deploy to Production
 on:
   workflow_dispatch:
 
+# Two overlapping dispatches would each see the same migrations pending, each
+# take their own backup, and then both run `d1 migrations apply` against the
+# same production D1 — and afterwards there is no way to tell which of the two
+# R2 backups is the real "before" snapshot. Serialize instead; never cancel a
+# run mid-migration.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   pre-deploy-check:
     name: Pre-deploy checks

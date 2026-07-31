@@ -70,7 +70,13 @@ const UP_TO_DATE = /No migrations to apply!/i;
  * @returns {{ status: 'pending'|'up-to-date'|'unrecognized', migrations: string[] }}
  */
 export function interpretMigrationsList(output) {
-  const text = String(output ?? "");
+  // Strip ANSI SGR codes first. A colorized filename (`\x1b[32m0022_x.sql`)
+  // defeats the leading `\b` — an SGR sequence ends in a letter, and letter→
+  // digit is not a word boundary — so the regex finds nothing and genuinely
+  // pending migrations read as "unrecognized". That fails safe (the caller
+  // aborts) but would be a spurious deploy outage if anything ever sets
+  // FORCE_COLOR on captured, non-TTY output.
+  const text = String(output ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   const migrations = [...new Set(text.match(MIGRATION_FILENAME) ?? [])];
 
   if (migrations.length > 0) return { status: "pending", migrations };

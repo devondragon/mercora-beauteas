@@ -118,6 +118,29 @@ Migrations to be applied:
     ]);
   });
 
+  // A colorized filename defeats the leading \b (an SGR sequence ends in a
+  // letter, and letter→digit is not a word boundary), so pending migrations
+  // would read as "unrecognized" and abort a deploy for no reason.
+  it('parses ANSI-colorized output, e.g. when FORCE_COLOR is set on a runner', () => {
+    const E = String.fromCharCode(27);
+    const colorized = PENDING_OUTPUT.replace(
+      /(\d{4}_[A-Za-z0-9._-]*?\.sql)/g,
+      `${E}[32m$1${E}[0m`,
+    );
+    expect(colorized).toContain(`${E}[32m`);
+    expect(interpretMigrationsList(colorized)).toEqual({
+      status: 'pending',
+      migrations: ['0022_add_shipping_carrier.sql', '0023_add_order_events.sql'],
+    });
+  });
+
+  it('recognises an up-to-date database through ANSI codes', () => {
+    const E = String.fromCharCode(27);
+    expect(interpretMigrationsList(`${E}[32mNo migrations to apply!${E}[0m`).status).toBe(
+      'up-to-date',
+    );
+  });
+
   it('de-duplicates a filename repeated in the output', () => {
     const out = 'Migrations to be applied:\n0024_x.sql\n0024_x.sql';
     expect(interpretMigrationsList(out).migrations).toEqual(['0024_x.sql']);
@@ -194,11 +217,20 @@ describe('wrangler.jsonc parity', () => {
     expect(previewTarget?.exportDatabaseId).toBe(match![1]);
   });
 
-  it('the dev and production database names match wrangler.jsonc', () => {
+  // Compare against the imported module, not hardcoded literals — asserting
+  // that wrangler.jsonc contains two strings the test author already knew
+  // would still pass if DEPLOY_TARGETS itself were typo'd, catching no drift.
+  it('every database name in DEPLOY_TARGETS exists in wrangler.jsonc', () => {
     const raw = readFileSync(path.resolve(__dirname, '../../../wrangler.jsonc'), 'utf8');
-    const names = [...raw.matchAll(/"database_name"\s*:\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(names).toContain('beauteas-db-dev');
-    expect(names).toContain('beauteas-db');
+    const configured = [...raw.matchAll(/"database_name"\s*:\s*"([^"]+)"/g)].map((m) => m[1]);
+
+    const declared = [...DEPLOY_TARGETS.dev, ...DEPLOY_TARGETS.production].map(
+      (t: { database: string }) => t.database,
+    );
+    expect(declared.length).toBeGreaterThan(0);
+    for (const name of declared) {
+      expect(configured, `DEPLOY_TARGETS names ${name}, absent from wrangler.jsonc`).toContain(name);
+    }
   });
 });
 
