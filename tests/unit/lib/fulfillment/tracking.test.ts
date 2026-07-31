@@ -1,9 +1,12 @@
 // tests/unit/lib/fulfillment/tracking.test.ts
 //
 // Carrier normalization + tracking sanitization + carrier deep links (BMC-216A).
-// These rules are mirrored by the SQL backfill in migrations/0022 — keep the two
-// in sync. Tracking values are customer-visible and end up in an href, so
-// encoding and control-character handling are load-bearing, not cosmetic.
+// These rules are APPROXIMATED (not exactly mirrored) by the SQL backfill in
+// migrations/0022 — keep the two in sync, but see that file's header for the
+// concrete inputs (e.g. a leading/embedded ASCII tab) where SQL and JS
+// normalization diverge. Tracking values are customer-visible and end up in
+// an href, so encoding and control-character handling are load-bearing, not
+// cosmetic.
 
 import { describe, it, expect } from 'vitest';
 import {

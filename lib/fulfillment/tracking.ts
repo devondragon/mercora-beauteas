@@ -3,8 +3,13 @@
 // Pure carrier normalization and tracking-link construction (BMC-216).
 // Imports nothing from D1/Next/Clerk/Resend so it runs in the plain Vitest pool.
 //
-// The tracking URL is ALWAYS derived here from (carrier, trackingNumber) — no
-// customer-facing tracking URL is ever persisted or accepted from a browser.
+// Within THIS module, the tracking URL is always derived from
+// (carrier, trackingNumber) via buildTrackingUrl — never persisted or accepted
+// from a browser. That does not (yet) hold repo-wide: buildTrackingUrl has no
+// production call sites as of BMC-216A, and the live legacy path still reads
+// a client-supplied `extensions.trackingUrl` straight through to an email href
+// (lib/utils/email.ts, app/api/orders/route.ts) with no encoding applied.
+// Locking that down is BMC-216F/BMC-230's job, not this module's.
 
 import { CARRIERS, type Carrier } from "./types";
 
@@ -30,8 +35,11 @@ export function normalizeCarrier(raw: unknown): Carrier | null {
 
 /**
  * Lowercase and drop separators so "UPS Ground", "u.p.s.", and "Fed-Ex" all
- * collapse to a comparable token. Mirrored in SQL by the nested `replace(...)`
- * chain in migrations/0022_add_shipping_carrier.sql — change both together.
+ * collapse to a comparable token. Approximated in SQL by the nested
+ * `replace(...)` chain in migrations/0022_add_shipping_carrier.sql — change
+ * both together, but they are NOT an exact mirror: this regex's `\s` strips
+ * tab/CR/LF/NBSP/Unicode whitespace, while SQL `trim()`/`replace()` only
+ * strip ASCII space. See 0022's header for the concrete divergent inputs.
  */
 function compactCarrierToken(raw: string): string {
   return raw.trim().toLowerCase().replace(/[\s._-]/g, "");
