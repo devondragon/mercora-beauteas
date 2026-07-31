@@ -71,6 +71,13 @@ UPDATE orders
 -- Step 3: narrow shipping_method fallback for rows still NULL. Only recognized
 -- UPS/FedEx tokens qualify — "standard", "expedited", etc. stay NULL rather
 -- than becoming 'other'.
+--
+-- The four patterns in the WHERE and the four WHENs below are deliberately the
+-- same set, which makes `ELSE NULL` unreachable today. It is kept as the safe
+-- terminator, not as live logic: if a pattern is ever added to the WHERE
+-- without a matching WHEN, the extra rows fall to NULL (left for a later,
+-- deliberate backfill) rather than being silently mislabelled as a carrier
+-- they are not. Add to both lists together.
 UPDATE orders
    SET shipping_carrier = CASE
      WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'ups%'

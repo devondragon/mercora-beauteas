@@ -75,9 +75,21 @@ describe('sanitizeTrackingNumber', () => {
     expect(sanitizeTrackingNumber('1Z999\nAA1\r0123456784')).toBe('1Z999AA10123456784');
   });
 
+  it('strips bidi overrides and zero-width formatting characters', () => {
+    // A right-to-left override reorders a tracking number visually in the admin
+    // table and the shipping email without changing the stored bytes, so the
+    // rendered value can disagree with what was saved.
+    expect(sanitizeTrackingNumber('1Z999\u202eAA10123456784')).toBe('1Z999AA10123456784');
+    expect(sanitizeTrackingNumber('\u2066\u20681Z999AA10123456784\u2069')).toBe('1Z999AA10123456784');
+    // Zero-width joiners, word joiner and BOM are invisible padding, not data.
+    expect(sanitizeTrackingNumber('1Z999\u200bAA1\u200d0123456784')).toBe('1Z999AA10123456784');
+    expect(sanitizeTrackingNumber('\ufeff1Z999AA1\u20600123456784')).toBe('1Z999AA10123456784');
+  });
+
   it('returns null for empty, whitespace-only, control-only, and non-string input', () => {
     expect(sanitizeTrackingNumber('')).toBeNull();
     expect(sanitizeTrackingNumber('    ')).toBeNull();
+    expect(sanitizeTrackingNumber('\u202e\u200b\ufeff')).toBeNull();
     expect(sanitizeTrackingNumber('\u0000\u0001')).toBeNull();
     expect(sanitizeTrackingNumber(null)).toBeNull();
     expect(sanitizeTrackingNumber(undefined)).toBeNull();
