@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildGuestOrderProjection } from '@/lib/order-status/guest-projection';
+import { MAX_TRACKING_LENGTH } from '@/lib/fulfillment/tracking';
 
 const EXPECTED_KEYS = [
   'carrier',
@@ -190,15 +191,27 @@ describe('buildGuestOrderProjection — shipment fields', () => {
     // sanitizeTrackingNumber (only the new fulfillment write path enforces
     // it) — this is a bearer-token page a stranger can load, so the
     // projection must never hand back an unsanitized value.
+    //
+    // Escape sequence rather than a literal invisible codepoint in the source:
+    // a raw U+202E in a fixture is indistinguishable by eye from an
+    // already-clean one, trips editor/lint Unicode normalization silently, and
+    // is exactly how a fixture regresses to a vacuous, sanitizer-identity input
+    // with no test failure to announce it.
     const view = buildGuestOrderProjection({
       ...fullOrder,
-      tracking_number: '1Z999‮48765432101AA999Z1',
+      tracking_number: '1Z999\u202E48765432101AA999Z1',
     });
     expect(view.trackingNumber).toBe('1Z99948765432101AA999Z1');
+    // The actual dangerous sink is the derived href, not just the displayed
+    // text — assert the override never reaches trackingUrl either.
+    expect(view.trackingUrl).not.toContain('%E2%80%AE');
   });
 
   it('nulls an over-length tracking number rather than truncating it', () => {
-    const view = buildGuestOrderProjection({ ...fullOrder, tracking_number: 'X'.repeat(101) });
+    const view = buildGuestOrderProjection({
+      ...fullOrder,
+      tracking_number: 'X'.repeat(MAX_TRACKING_LENGTH + 1),
+    });
     expect(view.trackingNumber).toBeNull();
     expect(view.trackingUrl).toBeNull();
   });

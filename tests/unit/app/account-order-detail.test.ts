@@ -7,6 +7,7 @@
  * link), and never-shipped (no card at all — only the status line).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MAX_TRACKING_LENGTH } from '@/lib/fulfillment/tracking';
 
 vi.mock('@clerk/nextjs/server', () => ({ auth: vi.fn() }));
 vi.mock('@/lib/models/mach/orders', () => ({ getOrderById: vi.fn() }));
@@ -94,6 +95,11 @@ describe('account order detail — shipment card', () => {
     expect(text).toContain('1Z999AA10123456784');
     expect(text).toContain('https://www.ups.com/track');
     expect(text).toContain('Track your package');
+    // formatDate call-site wiring: the raw ISO timestamp must never reach the
+    // customer — a mutation that skips formatDate() would still pass every
+    // other assertion in this test.
+    expect(text).toContain('Jul 28, 2026');
+    expect(text).not.toContain('2026-07-28T18:00:00.000Z');
   });
 
   it('shows an "other" carrier tracking number with no link', async () => {
@@ -140,26 +146,43 @@ describe('account order detail — shipment card', () => {
   });
 
   it('strips a bidi override embedded in a legacy tracking number before rendering', async () => {
+    // Escape sequence rather than a literal invisible codepoint in the source:
+    // a raw U+202E in a fixture is indistinguishable by eye from an already-clean
+    // one (a reviewer can't tell lines apart in a diff), trips editor/lint
+    // Unicode normalization silently, and is exactly how a fixture regresses to
+    // a vacuous, sanitizer-identity input with no test failure to announce it.
+    const RAW_BIDI = '1Z999\u202E48765432101AA999Z1';
     vi.mocked(getOrderById).mockResolvedValue({
       ...(shippedOrder as object),
-      tracking_number: '1Z999‮48765432101AA999Z1',
+      tracking_number: RAW_BIDI,
     } as never);
 
     const text = collectText(await renderPage()).join(' ');
 
     expect(text).toContain('1Z99948765432101AA999Z1');
-    expect(text).not.toContain('1Z999‮48765432101AA999Z1');
+    expect(text).not.toContain(RAW_BIDI);
+    // The sink that matters: the stripped number also feeds the carrier link,
+    // not just the displayed text.
+    expect(text).not.toContain('%E2%80%AE');
   });
 
   it('drops an over-length tracking number and its link rather than rendering it', async () => {
     vi.mocked(getOrderById).mockResolvedValue({
       ...(shippedOrder as object),
-      tracking_number: 'X'.repeat(101),
+      tracking_number: 'X'.repeat(MAX_TRACKING_LENGTH + 1),
     } as never);
 
     const text = collectText(await renderPage()).join(' ');
 
-    expect(text).not.toContain('X'.repeat(101));
+    // Positive anchor: the shipment card is still shown (just without a
+    // tracking line), so a passing test isn't secretly relying on the card
+    // failing to render at all.
+    expect(text).toContain('Shipment');
+    expect(text).toContain('UPS');
+    // Catches truncation, not just a byte-identical 101-char match — a sanitizer
+    // regressed to `.slice(0, MAX_TRACKING_LENGTH)` would pass a plain
+    // `not.toContain('X'.repeat(101))` check.
+    expect(text).not.toMatch(/X{20,}/);
     expect(text).not.toContain('Track your package');
   });
 });

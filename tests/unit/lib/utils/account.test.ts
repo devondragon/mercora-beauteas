@@ -19,7 +19,12 @@ describe('formatDate', () => {
 
   it('returns "—" instead of the literal "Invalid Date" for an unparseable string', () => {
     expect(formatDate('not-a-date')).toBe('—');
-    expect(formatDate('not-a-date')).not.toContain('Invalid');
+  });
+
+  it('returns "—" for a well-formed but out-of-range date string', () => {
+    // A distinct malformed-date shape from the case above — guards against a
+    // future edit that only special-cases free-text garbage.
+    expect(formatDate('2026-13-45')).toBe('—');
   });
 
   it('formats a valid ISO date string', () => {
@@ -27,8 +32,16 @@ describe('formatDate', () => {
   });
 
   it('includes the time when showTime is true', () => {
-    const formatted = formatDate('2026-07-28T18:00:00.000Z', true);
-    expect(formatted).toContain('2026');
-    expect(formatted).toMatch(/\d{1,2}:\d{2}/);
+    expect(formatDate('2026-07-28T18:00:00.000Z', true)).toBe('Jul 28, 2026, 6:00 PM');
+  });
+
+  it('renders in UTC regardless of how close the timestamp is to a local-time day boundary', () => {
+    // The explicit `timeZone: "UTC"` pin is what keeps a signed guest link
+    // showing the same date to every viewer regardless of the reader's or the
+    // Worker colo's local offset. Straddle midnight from both sides so a
+    // regression that drops the pin fails here instead of only failing for a
+    // contributor sitting at UTC+6 or beyond.
+    expect(formatDate('2026-07-28T23:30:00.000Z')).toBe('Jul 28, 2026');
+    expect(formatDate('2026-07-28T00:30:00.000Z')).toBe('Jul 28, 2026');
   });
 });

@@ -183,6 +183,12 @@ describe('guest order-status page — valid token renders the minimal projection
     expect(text).toContain('1Z999AA10123456784');
     expect(text).toContain('UPS');
     expect(text).toContain('https://www.ups.com/track');
+    // formatDate call-site wiring: the raw ISO timestamps must never reach a
+    // stranger holding this bearer-token link — a mutation that skipped
+    // formatDate() would still pass every other assertion in this test.
+    expect(text).toContain('Jul 28, 2026');
+    expect(text).not.toContain('2026-07-28T18:00:00.000Z');
+    expect(text).not.toContain('2026-07-25T12:00:00.000Z');
   });
 
   it('renders NOTHING outside the allowlist', async () => {
