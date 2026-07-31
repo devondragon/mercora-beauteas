@@ -284,7 +284,9 @@ export function sendShippingConfirmationEmail(
 ```
 
 - Every interpolation escaped with the existing `escapeHtml`.
-- Idempotency keys: initial `shipping-confirmation/<order-id>/initial`;
+- Idempotency keys: initial `shipping-confirmation/<order-id>/initial/<payload-digest>`
+  (BMC-227 review hardening — folds in a digest of the payload so a changed
+  order doesn't dead-end retry on Resend's same-key-different-payload 409);
   resend `shipping-confirmation/<order-id>/resend/<event-id>`.
 - Pass the key as Resend's second arg: `resend.emails.send(payload, { idempotencyKey })`.
 
