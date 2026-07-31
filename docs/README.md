@@ -11,11 +11,25 @@ This directory contains comprehensive documentation for all aspects of the Merco
 - **[Deployment Guide](DEPLOYMENT_SETUP.md)** - Complete production deployment instructions
 - **[Development Roadmap](ROADMAP.md)** - Current status and future plans
 
+### ⚙️ **Operational Knowledge** (current source of truth)
+- **[Database & Migrations](database-migrations.md)** - Migration table, deploy-order blocker, schema-change workflow, D1 gotchas
+- **[Cloudflare Environments](cloudflare-environments.md)** - `wrangler.jsonc` envs, bindings, rate limiters, secrets, deploy commands
+- **[Testing & CI](testing.md)** - The three suites and what CI actually gates
+- **[Troubleshooting](troubleshooting.md)** - Symptom → cause table
+- **[Cutover Status](cutover-status.md)** - Shopify→Mercora progress, remaining go-live work, branding debt
+
 ### 🏗️ **Technical Architecture**
-- **[System Architecture](architecture.md)** - Complete system design with Mermaid diagrams
+- **[API Routes](api-routes.md)** - Current route map incl. fulfillment endpoints
+- **[Authentication Model](auth-model.md)** - The two fail-closed auth layers
+- **[Chai (AI Assistant)](ai-chai.md)** - Model config, indexing, recommendations seam
+- **[CMS Pages](cms-pages.md)** - Page templates + markup authoring conventions
+- **[Redirects](redirects.md)** - Shopify→Mercora 301s and how they resolve
+- **[Development Context](../CLAUDE.md)** - Essential context for developers and AI assistants
+
+### 📜 **Older design docs** (broader background; some predate the current implementation)
+- **[System Architecture](architecture.md)** - System design with Mermaid diagrams
 - **[API Architecture](api-architecture.md)** - RESTful API specifications and flows
 - **[AI Processing Pipeline](ai-pipeline.md)** - Deep dive into AI workflows and anti-hallucination
-- **[Development Context](CLAUDE.md)** - Essential context for developers and AI assistants
 
 ### 💼 **Admin & Business Features**
 - **[Admin Dashboard Specification](admin-dashboard-specification.md)** - Complete admin interface specification
@@ -48,9 +62,9 @@ This directory contains comprehensive documentation for all aspects of the Merco
 ## 🔍 **Find What You Need**
 
 ### For Developers
-- Start with [CLAUDE.md](CLAUDE.md) for development context
+- Start with [CLAUDE.md](../CLAUDE.md) for development context
 - Review [architecture.md](architecture.md) for system understanding
-- Check [api-architecture.md](api-architecture.md) for API specifications
+- Check [api-routes.md](api-routes.md) for the current route map
 
 ### For Business Users
 - Review [admin-dashboard-specification.md](admin-dashboard-specification.md) for admin capabilities
