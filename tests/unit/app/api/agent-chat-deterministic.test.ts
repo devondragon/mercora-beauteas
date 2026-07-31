@@ -38,6 +38,10 @@ vi.mock('@opennextjs/cloudflare', () => ({
 }));
 
 vi.mock('@/lib/db', () => ({ getDbAsync: vi.fn() }));
+const getRefundPolicy = vi.fn();
+vi.mock('@/lib/utils/settings', () => ({
+  getRefundPolicy: (...args: unknown[]) => getRefundPolicy(...args),
+}));
 vi.mock('@/lib/ai/config', () => ({
   runAI: vi.fn(),
   getCurrentEmbeddingModel: vi.fn(() => '@cf/baai/bge-base-en-v1.5'),
@@ -70,6 +74,7 @@ beforeEach(() => {
   // exact-output assertion here is flaky ~30% of the time — pin it above the
   // threshold so the flair never fires and the assertions stay deterministic.
   vi.spyOn(Math, 'random').mockReturnValue(0.99);
+  getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -114,6 +119,25 @@ describe('/api/agent-chat deterministic answers (BMC-215)', () => {
     const assistantTurn = json.history.at(-1)!;
     expect(assistantTurn.role).toBe('assistant');
     expect(assistantTurn.content).toContain(CONTACT_EMAIL);
+  });
+
+  it('answers the refund window from settings without any AI work (BMC-243)', async () => {
+    const answer = await answerOf(await post({ question: 'What is your return policy?' }));
+
+    expect(answer).toContain('30 days');
+    expect(getRefundPolicy).toHaveBeenCalled();
+    expect(runAI).not.toHaveBeenCalled();
+  });
+
+  it('does not read settings for an ordinary product question (BMC-243)', async () => {
+    // Classification is sync and does no I/O — a miss must not touch D1.
+    getCloudflareContext.mockResolvedValue({ env: { AI: {} } });
+    vi.mocked(runAI).mockResolvedValue({});
+    vi.mocked(extractAIResponse).mockReturnValue('Try the Evening blend!');
+
+    await post({ question: 'Which tea helps with breakouts?' });
+
+    expect(getRefundPolicy).not.toHaveBeenCalled();
   });
 
   it('still sends ordinary product questions down the retrieval path', async () => {

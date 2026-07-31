@@ -7,16 +7,34 @@
  * tests lean on breadth of phrasing per category rather than one happy path, and
  * pin the exact question that failed.
  *
- * Pure module — no mocks, no bindings.
+ * BMC-243 adds `refund_window`, the first category whose value comes from D1.
+ * The settings layer is mocked here rather than the Cloudflare binding, per the
+ * repo's unit-test rule.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { classifyQuery, DETERMINISTIC_CATEGORIES } from '@/lib/ai/deterministic-answers';
+const getRefundPolicy = vi.fn();
+vi.mock('@/lib/utils/settings', () => ({
+  getRefundPolicy: (...args: unknown[]) => getRefundPolicy(...args),
+}));
+
+import {
+  classifyQuery,
+  resolveDeterministicAnswer,
+  DETERMINISTIC_CATEGORIES,
+} from '@/lib/ai/deterministic-answers';
 import {
   BUSINESS_ADDRESS_LINE,
   CONTACT_EMAIL,
   ORDER_HISTORY_URL,
+  REFUND_POLICY_URL,
 } from '@/lib/ai/canonical-facts';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+});
 
 describe('classifyQuery — contact email (BMC-215)', () => {
   const phrasings = [
@@ -36,16 +54,15 @@ describe('classifyQuery — contact email (BMC-215)', () => {
     'Where do I email you about a subscription problem?',
   ];
 
-  it.each(phrasings)('answers %j deterministically with the canonical address', (question) => {
-    const result = classifyQuery(question);
-    expect(result).not.toBeNull();
-    expect(result!.category).toBe('contact_email');
-    expect(result!.answer).toContain(CONTACT_EMAIL);
+  it.each(phrasings)('answers %j deterministically with the canonical address', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('contact_email');
+    expect(await resolveDeterministicAnswer(category!)).toContain(CONTACT_EMAIL);
   });
 
-  it('never emits an address other than the canonical one', () => {
+  it('never emits an address other than the canonical one', async () => {
     for (const question of phrasings) {
-      const answer = classifyQuery(question)!.answer;
+      const answer = await resolveDeterministicAnswer(classifyQuery(question)!);
       const addresses = answer.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? [];
       expect(addresses.length).toBeGreaterThan(0);
       for (const address of addresses) expect(address).toBe(CONTACT_EMAIL);
@@ -66,11 +83,10 @@ describe('classifyQuery — order status (BMC-215)', () => {
     'when does my package get here',
   ];
 
-  it.each(phrasings)('routes %j to the account orders page', (question) => {
-    const result = classifyQuery(question);
-    expect(result).not.toBeNull();
-    expect(result!.category).toBe('order_status');
-    expect(result!.answer).toContain(ORDER_HISTORY_URL);
+  it.each(phrasings)('routes %j to the account orders page', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('order_status');
+    expect(await resolveDeterministicAnswer(category!)).toContain(ORDER_HISTORY_URL);
   });
 
   it('prefers contact_email for phrasings that genuinely match BOTH categories', () => {
@@ -90,7 +106,7 @@ describe('classifyQuery — order status (BMC-215)', () => {
       const orderStatusPhrasings = /\border status\b|\btrack\b/i;
       expect(orderStatusPhrasings.test(question)).toBe(true);
 
-      expect(classifyQuery(question)!.category).toBe('contact_email');
+      expect(classifyQuery(question)).toBe('contact_email');
     }
   });
 });
@@ -113,11 +129,62 @@ describe('classifyQuery — business address (BMC-215)', () => {
     'whats your hq',
   ];
 
-  it.each(phrasings)('answers %j from the CAN-SPAM footer address', (question) => {
-    const result = classifyQuery(question);
-    expect(result).not.toBeNull();
-    expect(result!.category).toBe('business_address');
-    expect(result!.answer).toContain(BUSINESS_ADDRESS_LINE);
+  it.each(phrasings)('answers %j from the CAN-SPAM footer address', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('business_address');
+    expect(await resolveDeterministicAnswer(category!)).toContain(BUSINESS_ADDRESS_LINE);
+  });
+});
+
+describe('classifyQuery — refund window (BMC-243)', () => {
+  const phrasings = [
+    'What is your return policy?',
+    "what's your refund policy",
+    'How long do I have to return something?',
+    'how many days do I have to send it back',
+    'Can I still return this?',
+    'can i get a refund',
+    'What is the refund window?',
+    'What is the deadline for a return?',
+    'Do you accept returns?',
+    'whats your return period',
+  ];
+
+  it.each(phrasings)('answers %j from the refund settings', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('refund_window');
+
+    const answer = await resolveDeterministicAnswer(category!);
+    expect(answer).toContain('30 days');
+    expect(answer).toContain(REFUND_POLICY_URL);
+    expect(getRefundPolicy).toHaveBeenCalled();
+  });
+
+  it('reflects a changed setting rather than a baked-in number', async () => {
+    // The whole point of reading D1: an admin changing the window must change
+    // what Chai says, with no code edit.
+    getRefundPolicy.mockResolvedValue({ returnWindowDays: 45 });
+    const answer = await resolveDeterministicAnswer('refund_window');
+    expect(answer).toContain('45 days');
+    expect(answer).not.toContain('30 days');
+  });
+
+  it('states NO number when the settings read fails', async () => {
+    // A wrong return window is the same class of failure as the invented support
+    // address that started this work — and the response guard only rewrites
+    // emails and URLs, so it cannot catch a bad number. Degrade to the policy
+    // page rather than guess.
+    getRefundPolicy.mockRejectedValue(new Error('D1 unavailable'));
+
+    const answer = await resolveDeterministicAnswer('refund_window');
+
+    expect(answer).toContain(REFUND_POLICY_URL);
+    expect(answer).toContain(CONTACT_EMAIL);
+    expect(answer).not.toMatch(/\d+\s*days/i);
+  });
+
+  it('still prefers contact_email when the question asks who to email about a return', () => {
+    expect(classifyQuery('Which email do I use for returns?')).toBe('contact_email');
   });
 });
 
@@ -133,7 +200,6 @@ describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', (
     // Mentions "address" but is about the CUSTOMER's shipping address, not ours.
     'Can I change the shipping address on my subscription?',
     'How much does shipping cost?',
-    'What is your refund window?',
     // "Where are you ..." small talk must NOT be read as an address question.
     // The location qualifier is required precisely so these reach the model.
     'Where are you today?',
@@ -151,6 +217,14 @@ describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', (
     expect(classifyQuery(undefined as unknown as string)).toBeNull();
     expect(classifyQuery(null as unknown as string)).toBeNull();
   });
+
+  it('performs NO I/O on a miss (BMC-243)', () => {
+    // This is the property that makes it safe to run the classifier ahead of
+    // every chat request. If classification ever goes async or reads settings
+    // eagerly, every ordinary product question starts paying for D1.
+    for (const question of passthrough) classifyQuery(question);
+    expect(getRefundPolicy).not.toHaveBeenCalled();
+  });
 });
 
 describe('deterministic category table (BMC-215)', () => {
@@ -160,6 +234,7 @@ describe('deterministic category table (BMC-215)', () => {
       'contact_email',
       'order_status',
       'business_address',
+      'refund_window',
     ]);
   });
 });
