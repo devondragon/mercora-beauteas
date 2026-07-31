@@ -92,7 +92,7 @@ export default async function SubscribeConfirmationPage({
   const imageUrl = resolveImageUrl(product.primary_image);
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
+    <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg">
         {/* Success Icon */}
         <div className="mb-6 text-center">
@@ -167,14 +167,14 @@ export default async function SubscribeConfirmationPage({
           </Link>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 
 /** Generic success fallback when plan/product data unavailable */
 function GenericSuccess() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
+    <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg text-center">
         <CheckCircle2 className="mx-auto h-16 w-16 text-state-success" />
         <h1 className="mt-4 text-2xl font-bold text-text-primary">Subscription Created!</h1>
@@ -196,6 +196,6 @@ function GenericSuccess() {
           </Link>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

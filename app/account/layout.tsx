@@ -16,13 +16,13 @@ export default async function AccountLayout({
   if (!userId) redirect("/sign-in");
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <div className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <div className="max-w-6xl mx-auto">
         <div className="md:flex md:gap-8">
           <AccountSidebar />
           <div className="flex-1 min-w-0">{children}</div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
