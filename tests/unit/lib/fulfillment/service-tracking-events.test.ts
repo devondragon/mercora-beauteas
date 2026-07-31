@@ -1,0 +1,240 @@
+/**
+ * BMC-216B — updateTracking / listOrderEvents / recordEmailEvent orchestration.
+ *
+ * updateTracking mirrors shipOrder's CAS discipline with `updated_at` as the
+ * operation marker: guarded on status='shipped', batched with a conditional
+ * tracking_updated insert that fires only when THIS request's update won, and
+ * carries { previous, next } from the pre-read.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
+
+const h = vi.hoisted(() => ({
+  state: {
+    // db.select()...limit()/orderBy() responses, consumed in call order.
+    selectResults: [] as unknown[][],
+    batchResult: [[], { success: true }] as unknown[],
+  },
+  captured: {
+    setArgs: [] as Record<string, unknown>[],
+    runSql: [] as unknown[],
+    batchStmts: [] as unknown[][],
+    insertValues: [] as Record<string, unknown>[],
+  },
+}));
+
+vi.mock("@/lib/db", () => {
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(async () => h.state.selectResults.shift() ?? []),
+          orderBy: vi.fn(async () => h.state.selectResults.shift() ?? []),
+        })),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((values: Record<string, unknown>) => {
+        h.captured.setArgs.push(values);
+        return {
+          where: vi.fn(() => ({
+            returning: vi.fn(() => ({ __stmt: "guarded-update" })),
+          })),
+        };
+      }),
+    })),
+    run: vi.fn((q: unknown) => {
+      h.captured.runSql.push(q);
+      return { __stmt: "conditional-event-insert" };
+    }),
+    batch: vi.fn(async (stmts: unknown[]) => {
+      h.captured.batchStmts.push(stmts);
+      return h.state.batchResult;
+    }),
+    insert: vi.fn(() => ({
+      values: vi.fn(async (values: Record<string, unknown>) => {
+        h.captured.insertValues.push(values);
+      }),
+    })),
+  };
+  return { getDb: vi.fn(() => db), getDbAsync: vi.fn(async () => db) };
+});
+
+import {
+  listOrderEvents,
+  recordEmailEvent,
+  updateTracking,
+} from "@/lib/fulfillment/service";
+import type { ShipmentInput } from "@/lib/fulfillment/types";
+
+const FIXED_NOW = "2026-07-30T12:00:00.000Z";
+const actor = { type: "admin" as const, id: "user_2abc" };
+const nextInput: ShipmentInput = {
+  carrier: "fedex",
+  trackingNumber: "999999999999",
+};
+
+function orderRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "ORD-1",
+    customer_id: "cus_1",
+    status: "shipped",
+    payment_status: "paid",
+    total_amount: { amount: 2500, currency: "USD" },
+    currency_code: "USD",
+    shipping_address: null,
+    billing_address: null,
+    items: [],
+    shipping_method: "standard",
+    payment_method: "card",
+    notes: null,
+    external_references: null,
+    extensions: null,
+    created_at: "2026-07-29T00:00:00.000Z",
+    updated_at: "2026-07-30T11:00:00.000Z",
+    shipped_at: "2026-07-30T11:00:00.000Z",
+    delivered_at: null,
+    tracking_number: "1Z999AA10123456784",
+    shipping_carrier: "ups",
+    ...overrides,
+  };
+}
+
+const dialect = new SQLiteSyncDialect();
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  h.captured.setArgs.length = 0;
+  h.captured.runSql.length = 0;
+  h.captured.batchStmts.length = 0;
+  h.captured.insertValues.length = 0;
+  h.state.selectResults = [];
+  h.state.batchResult = [[], { success: true }];
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(FIXED_NOW));
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("updateTracking", () => {
+  it("guards on status='shipped', batches update + conditional tracking_updated event", async () => {
+    h.state.selectResults = [[orderRow()]];
+    h.state.batchResult = [
+      [
+        orderRow({
+          shipping_carrier: "fedex",
+          tracking_number: "999999999999",
+          updated_at: FIXED_NOW,
+        }),
+      ],
+      { success: true },
+    ];
+    const result = await updateTracking("ORD-1", nextInput, actor);
+    expect(result.outcome).toBe("updated");
+    if (result.outcome !== "updated") return;
+    expect(result.order.tracking_number).toBe("999999999999");
+    expect(result.eventId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(h.captured.batchStmts).toHaveLength(1);
+    expect(h.captured.batchStmts[0]).toEqual([
+      { __stmt: "guarded-update" },
+      { __stmt: "conditional-event-insert" },
+    ]);
+    // SET touches ONLY carrier/tracking/updated_at — never status/shipped_at.
+    expect(Object.keys(h.captured.setArgs[0]).sort()).toEqual([
+      "shipping_carrier",
+      "tracking_number",
+      "updated_at",
+    ]);
+    expect(h.captured.setArgs[0].updated_at).toBe(FIXED_NOW);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { sql: text, params } = dialect.sqlToQuery(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      h.captured.runSql[0] as any,
+    );
+    expect(text).toMatch(/INSERT INTO order_events/i);
+    expect(text).toMatch(/status = 'shipped' AND updated_at = \?/i);
+    expect(params).toContain("tracking_updated");
+    expect(params).toContain(FIXED_NOW);
+    const details = params.find(
+      (p) => typeof p === "string" && p.startsWith("{"),
+    ) as string;
+    expect(JSON.parse(details)).toEqual({
+      previous: { carrier: "ups", trackingNumber: "1Z999AA10123456784" },
+      next: { carrier: "fedex", trackingNumber: "999999999999" },
+    });
+  });
+
+  it("missing order -> not_found without touching the batch", async () => {
+    h.state.selectResults = [[]];
+    const result = await updateTracking("ORD-missing", nextInput, actor);
+    expect(result).toEqual({ outcome: "not_found" });
+    expect(h.captured.batchStmts).toHaveLength(0);
+  });
+
+  it("non-shipped order -> not_shipped with current status, no batch, no event", async () => {
+    h.state.selectResults = [
+      [orderRow({ status: "processing", shipped_at: null })],
+    ];
+    const result = await updateTracking("ORD-1", nextInput, actor);
+    expect(result).toEqual({ outcome: "not_shipped", status: "processing" });
+    expect(h.captured.batchStmts).toHaveLength(0);
+    expect(h.captured.runSql).toHaveLength(0);
+  });
+
+  it("lost race (zero-row CAS after shipped pre-read) -> re-read decides", async () => {
+    h.state.selectResults = [[orderRow()], [orderRow({ status: "refunded" })]];
+    h.state.batchResult = [[], { success: true }];
+    const result = await updateTracking("ORD-1", nextInput, actor);
+    expect(result).toEqual({ outcome: "not_shipped", status: "refunded" });
+  });
+});
+
+describe("listOrderEvents", () => {
+  it("returns rows oldest-first as provided by the ordered query", async () => {
+    const rows = [
+      {
+        id: "evt-1",
+        order_id: "ORD-1",
+        event_type: "shipment_created",
+        created_at: "2026-07-30T11:00:00.000Z",
+      },
+      {
+        id: "evt-2",
+        order_id: "ORD-1",
+        event_type: "tracking_updated",
+        created_at: "2026-07-30T12:00:00.000Z",
+      },
+    ];
+    h.state.selectResults = [rows];
+    await expect(listOrderEvents("ORD-1")).resolves.toEqual(rows);
+  });
+});
+
+describe("recordEmailEvent", () => {
+  it("appends the event with a RAW details object (json-mode column) and returns its id", async () => {
+    const details = { idempotencyKey: "shipping-confirmation/ORD-1/initial" };
+    const id = await recordEmailEvent(
+      "ORD-1",
+      "shipping_email_failed",
+      actor,
+      details,
+    );
+    expect(h.captured.insertValues).toHaveLength(1);
+    const values = h.captured.insertValues[0];
+    expect(values).toMatchObject({
+      id,
+      order_id: "ORD-1",
+      event_type: "shipping_email_failed",
+      actor_type: "admin",
+      actor_id: "user_2abc",
+      from_status: null,
+      to_status: null,
+      created_at: FIXED_NOW,
+    });
+    // Contract: json-mode Drizzle columns receive raw objects, never strings.
+    expect(values.details).toBe(details);
+  });
+});
