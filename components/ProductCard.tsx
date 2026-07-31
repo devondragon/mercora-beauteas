@@ -206,13 +206,17 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
             {availability === "available" ? "In Stock" : "Coming Soon"}
           </p>
 
-          <Link
-            href={`/product/${slug}`}
-            className="text-primary-700 hover:text-primary-800 hover:underline text-sm font-medium"
-            prefetch={true}
-          >
+          {/*
+            Not a <Link>: the whole card is already an anchor to this same href
+            (see the wrapping <Link> above). Nesting an <a> inside an <a> is
+            invalid, and the HTML parser's adoption-agency algorithm silently
+            closes the outer anchor, so the browser's DOM never matches the
+            server tree — React discarded the SSR HTML and re-rendered the
+            homepage on the client (minified error #418). See BMC-220.
+          */}
+          <span className="text-primary-700 hover:text-primary-800 hover:underline text-sm font-medium">
             Learn more →
-          </Link>
+          </span>
         </div>
       </div>
     </Link>
