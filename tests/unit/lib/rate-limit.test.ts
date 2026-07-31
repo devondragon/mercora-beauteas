@@ -15,7 +15,7 @@ vi.mock('@opennextjs/cloudflare', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { getClientIp, enforceRateLimit } from '@/lib/rate-limit';
+import { getClientIp, getClientIpFromHeaders, enforceRateLimit } from '@/lib/rate-limit';
 
 const reqWith = (headers: Record<string, string>) =>
   new NextRequest('http://localhost/api/x', { method: 'POST', headers });
@@ -38,6 +38,26 @@ describe('getClientIp', () => {
 
   it('returns "unknown" when no client IP header is present', () => {
     expect(getClientIp(reqWith({}))).toBe('unknown');
+  });
+});
+
+describe('getClientIpFromHeaders (server components — no Request object)', () => {
+  it('prefers CF-Connecting-IP over x-forwarded-for', () => {
+    const h = new Headers({ 'CF-Connecting-IP': '1.2.3.4', 'x-forwarded-for': '9.9.9.9' });
+    expect(getClientIpFromHeaders(h)).toBe('1.2.3.4');
+  });
+
+  it('falls back to the first x-forwarded-for entry', () => {
+    expect(getClientIpFromHeaders(new Headers({ 'x-forwarded-for': '5.6.7.8, 9.9.9.9' }))).toBe('5.6.7.8');
+  });
+
+  it('returns "unknown" when no client IP header is present', () => {
+    expect(getClientIpFromHeaders(new Headers())).toBe('unknown');
+  });
+
+  it('agrees with getClientIp for the same headers', () => {
+    const headers = { 'CF-Connecting-IP': '4.3.2.1' };
+    expect(getClientIpFromHeaders(new Headers(headers))).toBe(getClientIp(reqWith(headers)));
   });
 });
 
