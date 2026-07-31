@@ -15,12 +15,16 @@
  *    `shipped_at = <marker>` AND `NOT EXISTS` a prior `shipment_created`
  *    row for the order, so a losing CAS writes NO shipment_created row even
  *    when two requests race on the same millisecond (see shipOrder).
+ *  - A tracking correction commits only if the stored (carrier, tracking)
+ *    pair still equals the pair this request pre-read — so the `previous`
+ *    values in its audit event are the values that were actually there at
+ *    commit time, not a stale snapshot (see updateTracking).
  *  - D1 has no db.transaction(); db.batch() is the atomic primitive. Its
  *    statements must be builder-based (`db.update()`/`db.insert().select()`)
  *    — `db.run(sql\`...\`)` throws inside db.batch() on drizzle-orm 0.45.2's
  *    D1 driver (SQLiteRaw has no `.stmt` for `preparedQuery.stmt.bind(...)`).
  */
-import { and, asc, eq, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, notExists, sql } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { orders } from "@/lib/db/schema/order";
 import { orderEvents, type OrderEventRow } from "@/lib/db/schema/order-events";
@@ -200,7 +204,20 @@ export async function shipOrder(
 export type UpdateTrackingResult =
   | { outcome: "updated"; order: Order; eventId: string }
   | { outcome: "not_found" }
+  | { outcome: "conflict"; order: Order } // -> 409 tracking_conflict (retryable)
   | { outcome: "not_shipped"; status: string }; // -> 409
+
+/**
+ * `=` never matches NULL in SQL, so a column observed as NULL has to be
+ * re-asserted with IS NULL for the value-CAS below to be satisfiable on an
+ * order that shipped untracked.
+ */
+function matchesObserved(
+  column: typeof orders.shipping_carrier | typeof orders.tracking_number,
+  value: string | null,
+) {
+  return value === null ? isNull(column) : eq(column, value);
+}
 
 /**
  * Tracking correction — allowed only after shipment (canEditTracking).
@@ -229,14 +246,28 @@ export async function updateTracking(
 
   const now = new Date().toISOString(); // updated_at doubles as the CAS marker
   const eventId = crypto.randomUUID();
+  const previousCarrier = current.shipping_carrier ?? null;
+  const previousTracking = current.tracking_number ?? null;
   const details = JSON.stringify({
-    previous: {
-      carrier: current.shipping_carrier ?? null,
-      trackingNumber: current.tracking_number ?? null,
-    },
+    previous: { carrier: previousCarrier, trackingNumber: previousTracking },
     next: { carrier: input.carrier, trackingNumber: input.trackingNumber },
   });
 
+  // Guarded CAS. The value-CAS on (shipping_carrier, tracking_number) is what
+  // makes the event payload honest, and is load-bearing rather than defensive:
+  // `status='shipped'` alone stays satisfiable across repeated calls, so two
+  // concurrent corrections would BOTH match it, and the second would commit an
+  // event whose `previous` came from its own pre-read rather than from what the
+  // first corrector had just written — an audit chain reading
+  // ORIG -> A -> ORIG -> B for a history that was really ORIG -> A -> B.
+  // Re-asserting the observed pair means a loser matches zero rows instead.
+  //
+  // Deliberately NOT keyed on `updated_at` as well: that would turn any
+  // unrelated concurrent write to the order (a note edit through the legacy
+  // PUT /api/orders, BMC-230) into a spurious conflict without making
+  // `previous` any truer. An A-B-A on the pair is likewise harmless here —
+  // if the values were flipped back to what we observed, our `previous` is
+  // accurate at commit time, which is the whole property being protected.
   const guardedUpdate = db
     .update(orders)
     .set({
@@ -244,17 +275,41 @@ export async function updateTracking(
       tracking_number: input.trackingNumber,
       updated_at: now,
     })
-    .where(and(eq(orders.id, orderId), eq(orders.status, "shipped")))
+    .where(
+      and(
+        eq(orders.id, orderId),
+        eq(orders.status, "shipped"),
+        matchesObserved(orders.shipping_carrier, previousCarrier),
+        matchesObserved(orders.tracking_number, previousTracking),
+      ),
+    )
     .returning();
+
+  // Same phantom-event hazard the value-CAS above introduces, and the same
+  // fix shipOrder uses: a request that lost the value-CAS affected zero rows,
+  // but if the winner stamped the SAME millisecond the loser's `updated_at =
+  // <marker>` gate still matches, so it could otherwise append a second
+  // tracking_updated row carrying its own stale `previous`. D1 serializes
+  // whole db.batch() calls, so by the time a loser's SELECT runs the winner's
+  // row has committed and NOT EXISTS observes it.
+  //
+  // Scoped to THIS request's marker (created_at = now), not "ever" — an order
+  // can legitimately be corrected many times and each correction must record
+  // its own event (review pass 2 CRITICAL on the shipOrder equivalent).
+  const trackingEventAlreadyRecorded = db
+    .select({ one: sql`1` })
+    .from(orderEvents)
+    .where(
+      and(
+        eq(orderEvents.order_id, orderId),
+        eq(orderEvents.event_type, "tracking_updated"),
+        eq(orderEvents.created_at, now),
+      ),
+    );
 
   // Builder-based insert().select() — see shipOrder's conditional insert for
   // why db.run(sql\`...\`) is unsafe inside db.batch() on drizzle-orm 0.45.2's
-  // D1 driver. No NOT EXISTS guard needed here: unlike shipOrder's
-  // single-winner CAS (status flips away from 'processing' after the first
-  // win, so a loser can match a stale marker), updateTracking's guard
-  // (status='shipped') stays satisfiable across repeated calls — every
-  // request whose UPDATE matches genuinely performed that write, so keying
-  // the insert on this request's own updated_at marker is sound as-is.
+  // D1 driver.
   const conditionalEventInsert = db.insert(orderEvents).select(
     db
       .select({
@@ -274,6 +329,7 @@ export async function updateTracking(
           eq(orders.id, orderId),
           eq(orders.status, "shipped"),
           eq(orders.updated_at, now),
+          notExists(trackingEventAlreadyRecorded),
         ),
       ),
   );
@@ -290,6 +346,16 @@ export async function updateTracking(
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!reread) return { outcome: "not_found" };
+  if (canEditTracking(toSnapshot(reread))) {
+    // Zero-row CAS yet the re-read says the order is still editable: either
+    // another corrector committed a different pair first (lost value-CAS), or
+    // status ping-ponged shipped -> X -> shipped around our batch (the still-
+    // unguarded legacy PUT /api/orders, BMC-230). Both are retryable, and
+    // neither is `not_shipped` — reporting that here would emit a
+    // self-contradictory 409 {code: 'not_shipped', status: 'shipped'}.
+    // shipOrder's `case 'ship':` re-read paradox branch is the same defense.
+    return { outcome: "conflict", order: hydrateOrder(reread) };
+  }
   return { outcome: "not_shipped", status: reread.status };
 }
 

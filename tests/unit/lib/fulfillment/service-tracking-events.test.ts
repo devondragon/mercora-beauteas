@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   },
   captured: {
     setArgs: [] as Record<string, unknown>[],
+    // The guarded UPDATE's WHERE condition, rendered in-test to assert the
+    // value-CAS is present (see renderedUpdateWhere).
+    updateWhere: [] as unknown[],
     // db.insert(orderEvents).select(<this>) — a real, renderable drizzle
     // query builder (see `qb` below), captured for `.toSQL()` inspection.
     insertSelectQueries: [] as unknown[],
@@ -52,9 +55,12 @@ vi.mock("@/lib/db", () => {
       set: vi.fn((values: Record<string, unknown>) => {
         h.captured.setArgs.push(values);
         return {
-          where: vi.fn(() => ({
-            returning: vi.fn(() => ({ __stmt: "guarded-update" })),
-          })),
+          where: vi.fn((condition: unknown) => {
+            h.captured.updateWhere.push(condition);
+            return {
+              returning: vi.fn(() => ({ __stmt: "guarded-update" })),
+            };
+          }),
         };
       }),
     })),
@@ -80,6 +86,7 @@ import {
   recordEmailEvent,
   updateTracking,
 } from "@/lib/fulfillment/service";
+import { orders } from "@/lib/db/schema/order";
 import type { ShipmentInput } from "@/lib/fulfillment/types";
 
 const FIXED_NOW = "2026-07-30T12:00:00.000Z";
@@ -115,6 +122,20 @@ function orderRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The captured UPDATE condition is a bare drizzle SQL fragment; wrapping it in
+ * a throwaway SELECT is the cheapest way to render it without a live dialect.
+ */
+function renderedUpdateWhere() {
+  expect(h.captured.updateWhere).toHaveLength(1);
+  return new QueryBuilder()
+    .select()
+    .from(orders)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .where(h.captured.updateWhere[0] as any)
+    .toSQL();
+}
+
 function renderedInsert() {
   expect(h.captured.insertSelectQueries).toHaveLength(1);
   const query = h.captured.insertSelectQueries[0] as {
@@ -126,6 +147,7 @@ function renderedInsert() {
 beforeEach(() => {
   vi.clearAllMocks();
   h.captured.setArgs.length = 0;
+  h.captured.updateWhere.length = 0;
   h.captured.insertSelectQueries.length = 0;
   h.captured.batchStmts.length = 0;
   h.captured.insertValues.length = 0;
@@ -207,6 +229,72 @@ describe("updateTracking", () => {
     h.state.batchResult = [[], { success: true }];
     const result = await updateTracking("ORD-1", nextInput, actor);
     expect(result).toEqual({ outcome: "not_shipped", status: "refunded" });
+  });
+
+  // The guard re-asserts the observed pair, so a concurrent corrector that
+  // committed first makes this UPDATE match zero rows — without it both
+  // writers pass `status='shipped'` and the loser's event records a
+  // `previous` that was never the committed pre-state.
+  it("value-CAS: the UPDATE re-asserts the pre-read carrier + tracking pair", async () => {
+    h.state.selectResults = [[orderRow()]];
+    h.state.batchResult = [
+      [orderRow({ shipping_carrier: "fedex", tracking_number: "999999999999" })],
+      { success: true },
+    ];
+    await updateTracking("ORD-1", nextInput, actor);
+    const { sql: text, params } = renderedUpdateWhere();
+    expect(text).toMatch(/"orders"\."shipping_carrier" = \?/i);
+    expect(text).toMatch(/"orders"\."tracking_number" = \?/i);
+    // The OBSERVED values, not the incoming ones.
+    expect(params).toContain("ups");
+    expect(params).toContain("1Z999AA10123456784");
+  });
+
+  it("value-CAS on an untracked shipment uses IS NULL, not `= NULL`", async () => {
+    h.state.selectResults = [
+      [orderRow({ shipping_carrier: null, tracking_number: null })],
+    ];
+    h.state.batchResult = [[orderRow()], { success: true }];
+    const result = await updateTracking("ORD-1", nextInput, actor);
+    expect(result.outcome).toBe("updated");
+    const { sql: text } = renderedUpdateWhere();
+    expect(text).toMatch(/"orders"\."shipping_carrier" is null/i);
+    expect(text).toMatch(/"orders"\."tracking_number" is null/i);
+    const { params } = renderedInsert();
+    const details = params.find(
+      (p) => typeof p === "string" && p.startsWith("{"),
+    ) as string;
+    expect(JSON.parse(details).previous).toEqual({
+      carrier: null,
+      trackingNumber: null,
+    });
+  });
+
+  // A same-millisecond loser's `updated_at = <marker>` gate can still match the
+  // winner's row; NOT EXISTS is what stops it appending a phantom second event.
+  it("conditional insert is guarded by NOT EXISTS on this request's marker", async () => {
+    h.state.selectResults = [[orderRow()]];
+    h.state.batchResult = [[orderRow()], { success: true }];
+    await updateTracking("ORD-1", nextInput, actor);
+    const { sql: text, params } = renderedInsert();
+    expect(text).toMatch(/not exists/i);
+    expect(text).toMatch(/from "order_events"/i);
+    expect(params.filter((p) => p === FIXED_NOW).length).toBeGreaterThan(1);
+  });
+
+  // Regression: returning {not_shipped, status: 'shipped'} here produced a
+  // self-contradictory 409 body at the route.
+  it("zero-row CAS but re-read still shipped -> conflict, never a contradictory not_shipped", async () => {
+    h.state.selectResults = [
+      [orderRow()],
+      // Another corrector won first (or status ping-ponged back to shipped).
+      [orderRow({ shipping_carrier: "usps", tracking_number: "OTHER" })],
+    ];
+    h.state.batchResult = [[], { success: true }];
+    const result = await updateTracking("ORD-1", nextInput, actor);
+    expect(result.outcome).toBe("conflict");
+    if (result.outcome !== "conflict") return;
+    expect(result.order.tracking_number).toBe("OTHER");
   });
 });
 

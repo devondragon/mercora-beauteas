@@ -78,6 +78,21 @@ export async function PATCH(
       }
       case "not_found":
         return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      case "conflict":
+        // Someone else corrected this order (or bounced its status) between
+        // our read and our write. Retryable: the client should re-read the
+        // current pair and decide whether its correction still applies.
+        return NextResponse.json(
+          {
+            code: "tracking_conflict",
+            status: result.order.status,
+            tracking: {
+              carrier: normalizeCarrier(result.order.shipping_carrier ?? null),
+              trackingNumber: result.order.tracking_number ?? null,
+            },
+          },
+          { status: 409 },
+        );
       case "not_shipped":
         return NextResponse.json(
           { code: "not_shipped", status: result.status },
