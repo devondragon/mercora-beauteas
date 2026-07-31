@@ -7,7 +7,8 @@
  * as lib/models/mach/subscriptions.ts, and the same guarded-CAS zero-row
  * re-read shape as promoteOrderToPaid (lib/models/mach/orders.ts).
  *
- * Concurrency invariants:
+ * Concurrency invariants (they hold for writes THROUGH this module — the
+ * legacy PUT /api/orders path is still unguarded until BMC-230/ticket F):
  *  - Only a paid `processing` order can flip to `shipped` (WHERE guard).
  *  - `shipped_at` = THIS request's `new Date().toISOString()` and doubles as
  *    the operation marker: the event INSERT…SELECT is guarded on

@@ -7,7 +7,12 @@ import { parseShipmentInput } from "@/lib/fulfillment/transitions";
 import type { Actor } from "@/lib/fulfillment/types";
 import type { Order } from "@/lib/types/order";
 
-/** Derived at the response boundary — tracking URLs are never stored. */
+/**
+ * Derived at the response boundary. This route never stores a tracking URL —
+ * it persists only (carrier, trackingNumber) and rebuilds the link on the way
+ * out. Note the legacy PUT /api/orders path still accepts and stores a
+ * client-supplied `extensions.trackingUrl`; removing that is BMC-230 (ticket F).
+ */
 function trackingProjection(order: Order) {
   const carrier = normalizeCarrier(order.shipping_carrier ?? null);
   const trackingNumber = order.tracking_number ?? null;
@@ -21,8 +26,17 @@ function trackingProjection(order: Order) {
 /**
  * POST /api/admin/orders/[id]/ship (BMC-216B)
  *
- * The ONLY writer of processing+paid -> shipped. Timestamps are server-owned;
- * the body may carry nothing (untracked) or a full carrier+tracking pair.
+ * The fulfillment-owned writer of processing+paid -> shipped: timestamps are
+ * server-owned and the body may carry nothing (untracked) or a full
+ * carrier+tracking pair — it can never supply a status or a timestamp.
+ *
+ * It is NOT yet the only path that can set `shipped` repo-wide: the legacy
+ * `PUT /api/orders` still accepts client-supplied `status`, `shipped_at` and
+ * `tracking_number` (app/api/orders/route.ts), and the current admin UI uses
+ * it. That path is unguarded — it can ship an unpaid order, backdate
+ * `shipped_at`, and writes no order_events row. Closing it is BMC-230
+ * (ticket F); until then, treat this route as the correct path, not the
+ * enforced one.
  * Email is a best-effort side effect AFTER the shipment commit — a failed
  * send is reported in the 201 body, never a rollback.
  */
