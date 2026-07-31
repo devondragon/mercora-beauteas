@@ -8,9 +8,11 @@ Essential context for Claude when working on **BeauTeas**, an AI-enhanced eComme
 
 ## 🚨 `main` is currently undeployable
 
-**Migrations `0022` + `0023` are merged to `main` but applied to LOCAL ONLY.** Applying them to remote dev, dev preview, and prod is **BMC-231**.
+**Migrations `0022` + `0023` are merged to `main` but applied to LOCAL ONLY.** Remote dev, dev preview, and prod are all still missing them (verified 2026-07-31). Applying them deliberately is **BMC-231**.
 
-Deploying `main` to any environment missing them takes down **every order read and write** ("no such column: shipping_carrier") plus the ship/tracking/events endpoints. CI does not catch this — it never deploys or runs migrations.
+Without them, `main`'s code takes down **every order read and write** ("no such column: shipping_carrier") plus the ship/tracking/events endpoints.
+
+**Once BMC-239 merges, a deploy applies them for you** — `npm run deploy:*` backs up and applies pending migrations before the build, so the next deploy of any env self-heals rather than 500ing. That downgrades this from "undeployable" to "the next deploy will apply two migrations; know that before you dispatch it." CI still never applies migrations on `ci.yml` — only the deploy path does.
 
 Full detail and the rollback order: [`docs/database-migrations.md`](docs/database-migrations.md).
 
@@ -62,6 +64,11 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
 **The next new migration is `0024_*`** (`0011`–`0023` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+
+### Deploys auto-apply migrations — so write them expand-first
+`npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
+
+**It does not inspect your SQL.** A `DROP`/`RENAME`/`DELETE` auto-applies to production unattended, with only the pre-flight R2 backup behind it. Therefore: **never expand and contract in the same migration** — add + backfill in one deploy, drop in a later one, and confirm no deployed code names the thing you're dropping. Run `npm run db:migrate:status:production` before dispatching a prod deploy. Full policy: [`docs/database-migrations.md`](docs/database-migrations.md#-destructive-migration-policy).
 
 ### D1 has no `db.transaction()`
 Use `db.batch()` for atomic writes.

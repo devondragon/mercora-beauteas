@@ -5,7 +5,7 @@ on:
 
 jobs:
   pre-deploy-check:
-    name: Pre-deploy placeholder check
+    name: Pre-deploy checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -19,6 +19,26 @@ jobs:
             exit 1
           fi
           echo "No REPLACE_WITH_ placeholders found. Proceeding with production deploy."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Read-only preview of what the deploy job's predeploy:production hook is
+      # about to auto-apply to the production D1. Auto-apply removes the beat
+      # where a human notices a destructive migration; this puts that beat back
+      # in the log, before anything is written. It also fails the run early if
+      # CLOUDFLARE_API_TOKEN lacks D1 access, rather than mid-deploy.
+      - name: Preview pending D1 migrations
+        run: npm run db:migrate:status:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy:
     name: Deploy
@@ -39,6 +59,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `predeploy:production` runs first (npm lifecycle hook) and does two
+      # things before a single byte is built: the wrangler.jsonc placeholder
+      # check, then scripts/d1-migrate.mjs, which backs up and applies any
+      # pending D1 migrations. A non-zero exit there aborts this step, so the
+      # Worker is never deployed against a half-migrated database.
+      #
+      # The pre-flight backup is uploaded to the PRIVATE R2 bucket
+      # beauteas-db-backups — deliberately not a GitHub Actions artifact: a prod
+      # d1 export is full customer PII and artifacts are downloadable by anyone
+      # with repo read access. CLOUDFLARE_API_TOKEN therefore needs D1:Edit and
+      # R2:Edit.
       - name: Deploy to production
         run: npm run deploy:production
         env:

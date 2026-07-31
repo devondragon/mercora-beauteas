@@ -68,7 +68,7 @@ npm run images:pages -- --env dev|production
 
 - **Deploys go through OpenNext**, not bare `wrangler deploy`. Worker entry is `.open-next/worker.js`.
 - `open-next.config.ts` enables the R2-backed ISR incremental cache (`NEXT_INC_CACHE_R2_BUCKET`).
-- `npm run deploy:production` does **not** run migrations. Apply them first — see [`database-migrations.md`](database-migrations.md).
+- `npm run deploy:production` **does** run pending D1 migrations first, from the `predeploy:production` hook (backup → apply → build → deploy); a migration failure aborts the deploy. `deploy:dev` does the same for `beauteas-db-dev` *and* the dev preview DB. Because it auto-applies without inspecting the SQL, migrations must be written expand-first — see [`database-migrations.md`](database-migrations.md#auto-apply-on-deploy-bmc-239).
 
 ## Live logs
 

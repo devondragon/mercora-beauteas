@@ -60,6 +60,11 @@ linkedin-article.md
 *-dump.sql
 *.dump.sql
 
+# Pre-flight D1 backups taken by scripts/d1-migrate.mjs before it auto-applies
+# migrations (BMC-239). Full DB exports — real customer PII. The durable copy
+# lives in the private R2 backup bucket; this is the local working copy.
+/.backups
+
 # Superpowers brainstorming session artifacts
 .superpowers/
 
