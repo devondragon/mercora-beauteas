@@ -1023,7 +1023,11 @@ export async function sendNewOrderMerchantNotification(
       .map((i) => `  ${i.quantity} x ${i.name} — ${i.lineTotal}`)
       .join('\n');
 
-    const adminUrl = `${BASE_URL}/admin/orders`;
+    // Deep-link to the specific order (BMC-216C). The per-order admin page is
+    // app/admin/orders/[id], keyed by the same value carried as orderNumber.
+    // encodeURIComponent so an order id with URL-significant characters cannot
+    // break out of the path segment.
+    const adminUrl = `${BASE_URL}/admin/orders/${encodeURIComponent(orderData.orderNumber)}`;
 
     const text = [
       `New order ${orderData.orderNumber}`,
@@ -1066,7 +1070,7 @@ export async function sendNewOrderMerchantNotification(
         Tax ${escapeHtml(orderData.tax)} &middot;
         <strong>Total ${escapeHtml(orderData.total)}</strong>
       </p>
-      <p><a href="${adminUrl}" style="display:inline-block;padding:10px 18px;background:#c4a87c;color:#fff;border-radius:6px;text-decoration:none">Manage this order</a></p>
+      <p><a href="${escapeHtml(adminUrl)}" style="display:inline-block;padding:10px 18px;background:#c4a87c;color:#fff;border-radius:6px;text-decoration:none">Manage this order</a></p>
     </div>`;
 
     const resendClient = getResendClient();
