@@ -29,7 +29,10 @@ export const orderEvents = sqliteTable(
   },
   (t) => ({
     orderCreatedIdx: index("order_events_order_id_created_at_idx").on(t.order_id, t.created_at),
-    eventTypeIdx: index("order_events_event_type_idx").on(t.event_type),
+    eventTypeCreatedIdx: index("order_events_event_type_created_at_idx").on(
+      t.event_type,
+      t.created_at
+    ),
   })
 );
 
