@@ -35,7 +35,12 @@ import { sendInitialShippingEmail } from '@/lib/fulfillment/shipping-email';
 import type { Order } from '@/lib/types/order';
 import type { Actor } from '@/lib/fulfillment/types';
 
-type TestOrder = Order & { shipping_carrier?: string | null };
+/**
+ * `Order.shipping_carrier` is `string | undefined`, not `string | null`:
+ * hydrateOrder() normalizes the nullable D1 column with `?? undefined`, so an
+ * untracked order is modelled here the way the app actually sees one.
+ */
+type TestOrder = Order;
 
 const ACTOR: Actor = { type: 'admin', id: 'user_admin_1' };
 
@@ -158,7 +163,7 @@ describe('sendInitialShippingEmail', () => {
 
   it('sends an untracked shipment with no tracking block', async () => {
     await sendInitialShippingEmail(
-      baseOrder({ shipping_carrier: null, tracking_number: undefined }),
+      baseOrder({ shipping_carrier: undefined, tracking_number: undefined }),
       ACTOR,
     );
 
