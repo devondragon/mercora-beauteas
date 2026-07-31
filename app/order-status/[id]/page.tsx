@@ -19,7 +19,10 @@
  * Every failure returns notFound(). Identical outcomes for "no such order",
  * "no email on file", "wrong token", and "throttled" mean a stranger cannot use
  * the (enumerable) order id as an existence oracle. Steps 1–2 run before the D1
- * read so an unauthenticated flood cannot turn into database load.
+ * read so a flood is turned away by the rate limiter first — it still costs a
+ * D1 read once past that gate (middleware.ts and the Footer already issue
+ * uncached D1 reads per request, so this page is not a new class of exposure,
+ * but it is not free of database load).
  *
  * The rendered page is built ONLY from buildGuestOrderProjection — see that
  * module for the allowlist. Metadata is noindex + no-referrer so the token in
@@ -44,6 +47,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
   referrer: "no-referrer",
 };
+
+// This response is per-token and must never be cached — declared locally
+// rather than relying solely on the root layout's `force-dynamic` (see the
+// root-loading.tsx trap warning in app/layout.tsx: that inheritance is
+// documented as fragile, and a token-bearing page is exactly the case that
+// must not depend on it).
+export const dynamic = "force-dynamic";
 
 export default async function GuestOrderStatusPage({
   params,
@@ -76,7 +86,7 @@ export default async function GuestOrderStatusPage({
   const view = buildGuestOrderProjection(order);
 
   return (
-    <main className="min-h-screen px-4 py-12">
+    <div className="min-h-screen px-4 py-12">
       <div className="mx-auto w-full max-w-2xl">
         <p className="text-sm text-text-secondary">BeauTeas order status</p>
         <h1 className="text-2xl font-bold text-text-primary mt-1 break-all">
@@ -145,6 +155,6 @@ export default async function GuestOrderStatusPage({
           .
         </p>
       </div>
-    </main>
+    </div>
   );
 }
