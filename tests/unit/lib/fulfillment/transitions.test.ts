@@ -14,7 +14,7 @@ import {
   type OrderFulfillmentSnapshot,
 } from '@/lib/fulfillment/transitions';
 import { MAX_TRACKING_LENGTH } from '@/lib/fulfillment/tracking';
-import type { ShipmentInput } from '@/lib/fulfillment/types';
+import { CARRIERS, type ShipmentInput } from '@/lib/fulfillment/types';
 
 function snapshot(over: Partial<OrderFulfillmentSnapshot> = {}): OrderFulfillmentSnapshot {
   return {
@@ -66,6 +66,14 @@ describe('parseShipmentInput', () => {
     const result = parseShipmentInput({ carrier: 'dhl', trackingNumber: '9400111899223197428490' });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toMatch(/carrier/i);
+  });
+
+  it('names every application carrier in the rejection message', () => {
+    const result = parseShipmentInput({ carrier: 'dhl', trackingNumber: '9400111899223197428490' });
+    const error = result.ok === false ? result.error : '';
+    for (const carrier of CARRIERS) {
+      expect(error).toContain(carrier);
+    }
   });
 
   it('accepts usps as an application carrier code', () => {

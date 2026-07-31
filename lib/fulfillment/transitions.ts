@@ -5,7 +5,7 @@
 // guarded D1 write; this module decides what the write SHOULD be and what a
 // zero-row CAS means after a re-read.
 
-import type { ShipmentInput } from "./types";
+import { CARRIERS, type ShipmentInput } from "./types";
 import {
   MAX_TRACKING_LENGTH,
   normalizeCarrier,
@@ -57,7 +57,8 @@ export function parseShipmentInput(
 
   const carrier = normalizeCarrier(raw.carrier);
   if (!carrier) {
-    return { ok: false, error: "Unknown carrier; expected one of: ups, fedex, other" };
+    // Derived from CARRIERS so adding a carrier cannot leave this message stale.
+    return { ok: false, error: `Unknown carrier; expected one of: ${CARRIERS.join(", ")}` };
   }
 
   const trackingNumber = sanitizeTrackingNumber(raw.trackingNumber);
