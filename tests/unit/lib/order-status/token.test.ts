@@ -6,7 +6,7 @@
 // standing between a URL and a stranger's order, so every rejection path is
 // asserted explicitly.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   MAX_ORDER_STATUS_TOKEN_LENGTH,
   isOrderStatusTokenConfigured,
@@ -15,7 +15,7 @@ import {
 } from '@/lib/order-status/token';
 import { getOrderCustomerEmail } from '@/lib/orders/customer-email';
 
-const SECRET = 'test-order-status-secret';
+const SECRET = 'test-order-status-secret-that-is-at-least-32-chars-long';
 const ORDER_ID = 'order_abc123';
 const EMAIL = 'person@example.com';
 
@@ -66,21 +66,51 @@ describe('order-status token', () => {
     expect(await verifyOrderStatusToken(flipped, ORDER_ID, EMAIL)).toBe(false);
   });
 
+  it('rejects a signature tampered only in its LAST byte', async () => {
+    // Guards bytesEqual's loop bound specifically — a mutant that compares
+    // a.length - 1 bytes instead of a.length would pass every other test
+    // here (all of which flip an early byte) while still accepting this.
+    const token = (await createOrderStatusToken(ORDER_ID, EMAIL))!;
+    const lastChar = token[token.length - 1];
+    const replacement = lastChar === 'A' ? 'B' : 'A';
+    const flipped = token.slice(0, -1) + replacement;
+    expect(flipped).not.toBe(token);
+    expect(await verifyOrderStatusToken(flipped, ORDER_ID, EMAIL)).toBe(false);
+  });
+
   it('rejects malformed and wrong-length tokens', async () => {
     expect(await verifyOrderStatusToken('', ORDER_ID, EMAIL)).toBe(false);
     expect(await verifyOrderStatusToken('!!!not-base64!!!', ORDER_ID, EMAIL)).toBe(false);
     expect(await verifyOrderStatusToken('QUJD', ORDER_ID, EMAIL)).toBe(false); // valid base64, 3 bytes
   });
 
+  it('pins the length cap to 256 (the value CLAUDE.md/the module docblock document)', () => {
+    // A raised cap silently weakens the DoS guard below without failing any
+    // other assertion in this file — pin it explicitly.
+    expect(MAX_ORDER_STATUS_TOKEN_LENGTH).toBe(256);
+  });
+
   it('rejects an over-long token without doing HMAC work (DoS guard)', async () => {
+    const signSpy = vi.spyOn(crypto.subtle, 'sign');
     const huge = 'a'.repeat(MAX_ORDER_STATUS_TOKEN_LENGTH + 1);
     expect(await verifyOrderStatusToken(huge, ORDER_ID, EMAIL)).toBe(false);
+    // The length check must reject BEFORE any base64-decode + HMAC work runs —
+    // that ordering, not just the boolean result, is what makes this a DoS
+    // guard rather than an ordinary rejection.
+    expect(signSpy).not.toHaveBeenCalled();
+    signSpy.mockRestore();
   });
 
   it('rejects a token signed with a different secret', async () => {
     const token = (await createOrderStatusToken(ORDER_ID, EMAIL))!;
-    process.env.ORDER_STATUS_SECRET = 'a-different-secret';
+    process.env.ORDER_STATUS_SECRET = 'a-different-secret-that-is-also-at-least-32-chars';
     expect(await verifyOrderStatusToken(token, ORDER_ID, EMAIL)).toBe(false);
+  });
+
+  it('rejects a secret shorter than the minimum length (weak-secret guard)', async () => {
+    process.env.ORDER_STATUS_SECRET = 'short-secret';
+    expect(isOrderStatusTokenConfigured()).toBe(false);
+    expect(await createOrderStatusToken(ORDER_ID, EMAIL)).toBeNull();
   });
 
   it('reports configuration state via isOrderStatusTokenConfigured', () => {

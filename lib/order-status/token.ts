@@ -64,9 +64,19 @@ async function hmacSha256(secret: string, message: string): Promise<Uint8Array> 
   return new Uint8Array(sig);
 }
 
+/**
+ * Minimum accepted secret length. A guest status link exposes
+ * (orderId, email, HMAC signature) to the customer holding it — everything an
+ * attacker needs to brute-force a weak global secret offline and forge tokens
+ * for any guessable order id + known email. 32 chars (256 bits at 8 bits/char,
+ * far more if generated from a wider alphabet) forecloses that. Generate with
+ * `openssl rand -hex 32`.
+ */
+const MIN_SECRET_LENGTH = 32;
+
 function getSecret(): string | null {
   const s = process.env.ORDER_STATUS_SECRET;
-  return s && s.length > 0 ? s : null;
+  return s && s.length >= MIN_SECRET_LENGTH ? s : null;
 }
 
 function scopeFor(orderId: string, normalizedEmail: string): string {

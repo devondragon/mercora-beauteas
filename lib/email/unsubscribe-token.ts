@@ -56,9 +56,15 @@ async function hmacSha256(secret: string, message: string): Promise<Uint8Array> 
   return new Uint8Array(sig);
 }
 
+/**
+ * Minimum accepted secret length (see lib/order-status/token.ts's identical
+ * guard, BMC-216A review). Generate with `openssl rand -hex 32`.
+ */
+const MIN_SECRET_LENGTH = 32;
+
 function getSecret(): string | null {
   const s = process.env.EMAIL_UNSUBSCRIBE_SECRET;
-  return s && s.length > 0 ? s : null;
+  return s && s.length >= MIN_SECRET_LENGTH ? s : null;
 }
 
 /**
