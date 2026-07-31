@@ -72,6 +72,9 @@ describe('sendShippingConfirmationEmail', () => {
     expect(html).toContain('Track with UPS');
     expect(html).toContain('Morning Blend');
     expect(html).toContain('Evening Blend');
+    // Positive control for the untracked test below: the tracking PANEL (not
+    // just the button) is only present when there is something to track.
+    expect(html).toContain("font-family: 'Courier New', monospace");
   });
 
   it('renders a tracked FedEx shipment with a FedEx button', async () => {
@@ -131,6 +134,14 @@ describe('sendShippingConfirmationEmail', () => {
     const { html } = payload();
     expect(html).toContain('Your order has shipped');
     expect(html).not.toContain('Track with');
+    // Discriminating assertions: the template never emits the literal string
+    // "tracking number" in ANY code path (checked below is meaningless on its
+    // own — see the tracked test's positive control), so what actually proves
+    // the tracking PANEL is absent — not merely the button — is the panel's
+    // own markup: its monospace tracking-number style and its carrier/
+    // "Shipment" label. A `trackingBlock` made unconditional would fail these.
+    expect(html).not.toContain("font-family: 'Courier New', monospace");
+    expect(html).not.toContain('>Shipment<');
     expect(html.toLowerCase()).not.toContain('tracking number');
     // No empty anchor left behind by an omitted tracking URL.
     expect(html).not.toContain('href=""');

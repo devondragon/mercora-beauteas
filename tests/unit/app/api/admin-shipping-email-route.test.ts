@@ -113,6 +113,13 @@ function sentKey(): string | undefined {
   return sendMock.mock.calls.at(-1)?.[1]?.idempotencyKey;
 }
 
+/**
+ * The `initial` key folds in a payload digest (BMC-227 review fix), so it's
+ * no longer a fixed literal — assert the stable prefix/shape instead of an
+ * exact hash value.
+ */
+const INITIAL_KEY_RE = /^shipping-confirmation\/ORD-1\/initial\/[0-9a-f]{12}$/;
+
 beforeEach(() => {
   vi.clearAllMocks();
   sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
@@ -164,12 +171,12 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ email: { success: true }, eventId: 'evt-new' });
-    expect(sentKey()).toBe('shipping-confirmation/ORD-1/initial');
+    expect(sentKey()).toMatch(INITIAL_KEY_RE);
     expect(recordEmailEventMock).toHaveBeenCalledWith(
       'ORD-1',
       'shipping_email_sent',
       { type: 'admin', id: 'user_admin_1' },
-      { idempotencyKey: 'shipping-confirmation/ORD-1/initial' },
+      { idempotencyKey: sentKey() },
     );
   });
 
@@ -205,7 +212,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
     const res = await post('retry');
 
     expect(res.status).toBe(200);
-    expect(sentKey()).toBe('shipping-confirmation/ORD-1/initial');
+    expect(sentKey()).toMatch(INITIAL_KEY_RE);
   });
 
   it('resend without a prior send is a 409 wrong_mode', async () => {
@@ -252,7 +259,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
       'ORD-1',
       'shipping_email_failed',
       { type: 'admin', id: 'user_admin_1' },
-      { idempotencyKey: 'shipping-confirmation/ORD-1/initial', error: 'domain not verified' },
+      { idempotencyKey: expect.stringMatching(INITIAL_KEY_RE), error: 'domain not verified' },
     );
   });
 
@@ -280,6 +287,14 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
       eventId: 'evt-fail-2',
     });
     expect(sendMock).not.toHaveBeenCalled();
+    // No payload to digest with nobody to send to — a fixed marker key, not
+    // the digest-bearing initial key format.
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      { type: 'admin', id: 'user_admin_1' },
+      { idempotencyKey: 'shipping-confirmation/ORD-1/initial/no-recipient', error: 'no_customer_email' },
+    );
   });
 
   it('attributes the audit event to the service token identity', async () => {
@@ -295,7 +310,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
       'ORD-1',
       'shipping_email_sent',
       { type: 'service', id: 'api-token' },
-      { idempotencyKey: 'shipping-confirmation/ORD-1/initial' },
+      { idempotencyKey: expect.stringMatching(INITIAL_KEY_RE) },
     );
   });
 });

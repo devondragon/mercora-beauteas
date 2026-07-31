@@ -92,6 +92,13 @@ function sentKey(): string | undefined {
   return sendMock.mock.calls.at(-1)?.[1]?.idempotencyKey;
 }
 
+/**
+ * The `initial` key folds in a payload digest (BMC-227 review fix), so it's
+ * no longer a fixed literal — assert the stable prefix/shape instead of an
+ * exact hash value.
+ */
+const INITIAL_KEY_RE = /^shipping-confirmation\/ORD-1\/initial\/[0-9a-f]{12}$/;
+
 beforeEach(() => {
   vi.clearAllMocks();
   sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
@@ -108,24 +115,38 @@ describe('sendInitialShippingEmail', () => {
     const res = await sendInitialShippingEmail(baseOrder(), ACTOR);
 
     expect(res).toEqual({ attempted: true, success: true, eventId: 'evt-1' });
-    expect(sentKey()).toBe('shipping-confirmation/ORD-1/initial');
+    expect(sentKey()).toMatch(INITIAL_KEY_RE);
     expect(sentPayload().to).toEqual(['ada@example.com']);
     expect(recordEmailEventMock).toHaveBeenCalledWith(
       'ORD-1',
       'shipping_email_sent',
       ACTOR,
-      { idempotencyKey: 'shipping-confirmation/ORD-1/initial' },
+      { idempotencyKey: sentKey() },
     );
   });
 
-  it('uses the same key on a second call (stable initial key)', async () => {
+  it('uses the same key on a second call with an unchanged payload (stable initial key)', async () => {
     await sendInitialShippingEmail(baseOrder(), ACTOR);
     const first = sentKey();
     await sendInitialShippingEmail(baseOrder(), ACTOR);
     const second = sentKey();
 
-    expect(first).toBe('shipping-confirmation/ORD-1/initial');
+    expect(first).toMatch(INITIAL_KEY_RE);
     expect(second).toBe(first);
+  });
+
+  it('uses a DIFFERENT key when the payload changes between calls (BMC-227 fix)', async () => {
+    await sendInitialShippingEmail(baseOrder(), ACTOR);
+    const first = sentKey();
+
+    // Simulates an operator correcting tracking between a failed automatic
+    // send and a retry: same order id, different payload.
+    await sendInitialShippingEmail(baseOrder({ tracking_number: '1Z999AA10999999999' }), ACTOR);
+    const second = sentKey();
+
+    expect(first).toMatch(INITIAL_KEY_RE);
+    expect(second).toMatch(INITIAL_KEY_RE);
+    expect(second).not.toBe(first);
   });
 
   it('links a registered customer to their account order page', async () => {
@@ -170,6 +191,10 @@ describe('sendInitialShippingEmail', () => {
     const html = sentPayload().html;
     expect(html).toContain('Your order has shipped');
     expect(html).not.toContain('Track with');
+    // Discriminating: the tracked test above proves this string IS present
+    // when there's a tracking number, so its absence here proves the panel
+    // itself — not just the button — is gone.
+    expect(html).not.toContain("font-family: 'Courier New', monospace");
   });
 
   it('does not attempt a send when no customer email resolves', async () => {
@@ -223,7 +248,7 @@ describe('sendInitialShippingEmail', () => {
       'ORD-1',
       'shipping_email_failed',
       ACTOR,
-      { idempotencyKey: 'shipping-confirmation/ORD-1/initial', error: 'domain not verified' },
+      { idempotencyKey: expect.stringMatching(INITIAL_KEY_RE), error: 'domain not verified' },
     );
   });
 
