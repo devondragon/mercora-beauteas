@@ -184,4 +184,22 @@ describe('buildGuestOrderProjection — shipment fields', () => {
     expect(view.placedAt).toBeNull();
     expect(view.items).toEqual([]);
   });
+
+  it('strips a bidi override embedded in the tracking number before rendering', () => {
+    // A legacy row's tracking_number is not guaranteed to have passed through
+    // sanitizeTrackingNumber (only the new fulfillment write path enforces
+    // it) — this is a bearer-token page a stranger can load, so the
+    // projection must never hand back an unsanitized value.
+    const view = buildGuestOrderProjection({
+      ...fullOrder,
+      tracking_number: '1Z999‮48765432101AA999Z1',
+    });
+    expect(view.trackingNumber).toBe('1Z99948765432101AA999Z1');
+  });
+
+  it('nulls an over-length tracking number rather than truncating it', () => {
+    const view = buildGuestOrderProjection({ ...fullOrder, tracking_number: 'X'.repeat(101) });
+    expect(view.trackingNumber).toBeNull();
+    expect(view.trackingUrl).toBeNull();
+  });
 });

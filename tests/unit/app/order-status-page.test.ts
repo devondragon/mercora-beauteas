@@ -241,4 +241,11 @@ describe('guest order-status page — metadata hardening', () => {
     expect(metadata.robots).toMatchObject({ index: false, follow: false });
     expect(metadata.referrer).toBe('no-referrer');
   });
+
+  it('declares force-dynamic locally so this per-token response is never cached', async () => {
+    // Must not rely solely on inheriting the root layout's force-dynamic —
+    // that inheritance is documented (app/layout.tsx) as fragile.
+    const { dynamic } = await import('@/app/order-status/[id]/page');
+    expect(dynamic).toBe('force-dynamic');
+  });
 });

@@ -138,4 +138,28 @@ describe('account order detail — shipment card', () => {
 
     expect(text).not.toContain('evil.example.com');
   });
+
+  it('strips a bidi override embedded in a legacy tracking number before rendering', async () => {
+    vi.mocked(getOrderById).mockResolvedValue({
+      ...(shippedOrder as object),
+      tracking_number: '1Z999‮48765432101AA999Z1',
+    } as never);
+
+    const text = collectText(await renderPage()).join(' ');
+
+    expect(text).toContain('1Z99948765432101AA999Z1');
+    expect(text).not.toContain('1Z999‮48765432101AA999Z1');
+  });
+
+  it('drops an over-length tracking number and its link rather than rendering it', async () => {
+    vi.mocked(getOrderById).mockResolvedValue({
+      ...(shippedOrder as object),
+      tracking_number: 'X'.repeat(101),
+    } as never);
+
+    const text = collectText(await renderPage()).join(' ');
+
+    expect(text).not.toContain('X'.repeat(101));
+    expect(text).not.toContain('Track your package');
+  });
 });
