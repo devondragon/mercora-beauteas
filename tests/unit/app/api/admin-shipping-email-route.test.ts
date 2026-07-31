@@ -297,6 +297,68 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
     );
   });
 
+  it('a failed RESEND is 200 with success:false, a resend-shaped key, and a shipping_email_failed event', async () => {
+    listOrderEventsMock.mockResolvedValueOnce([sentEvent()]);
+    sendMock.mockResolvedValueOnce({ data: null, error: { message: 'domain not verified' } });
+    recordEmailEventMock.mockResolvedValueOnce('evt-fail-resend-1');
+
+    const res = await post('resend');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      email: { success: false, error: 'domain not verified' },
+      eventId: 'evt-fail-resend-1',
+    });
+    // Must record shipping_email_failed — not shipping_email_resent — and
+    // carry the resend key format, or a failed resend would render
+    // indistinguishable from a delivered one in the audit history.
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      { type: 'admin', id: 'user_admin_1' },
+      {
+        idempotencyKey: expect.stringMatching(/^shipping-confirmation\/ORD-1\/resend\/.+/),
+        error: 'domain not verified',
+      },
+    );
+  });
+
+  it('records a failed event with a resend key when a resend target has no customer email', async () => {
+    listOrderEventsMock.mockResolvedValueOnce([sentEvent()]);
+    getOrderByIdMock.mockResolvedValueOnce(
+      shippedOrder({
+        extensions: {},
+        shipping_address: {
+          line1: '1 Tea Lane',
+          city: 'Denver',
+          region: 'CO',
+          postal_code: '80202',
+          country: 'US',
+          recipient: 'Ada Lovelace',
+        },
+      }),
+    );
+    recordEmailEventMock.mockResolvedValueOnce('evt-fail-resend-2');
+
+    const res = await post('resend');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      email: { success: false, error: 'no_customer_email' },
+      eventId: 'evt-fail-resend-2',
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      { type: 'admin', id: 'user_admin_1' },
+      {
+        idempotencyKey: expect.stringMatching(/^shipping-confirmation\/ORD-1\/resend\/.+/),
+        error: 'no_customer_email',
+      },
+    );
+  });
+
   it('attributes the audit event to the service token identity', async () => {
     checkAdminPermissionsMock.mockResolvedValueOnce({
       success: true,

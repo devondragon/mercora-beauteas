@@ -191,9 +191,9 @@ describe('sendInitialShippingEmail', () => {
     const html = sentPayload().html;
     expect(html).toContain('Your order has shipped');
     expect(html).not.toContain('Track with');
-    // Discriminating: the tracked test above proves this string IS present
-    // when there's a tracking number, so its absence here proves the panel
-    // itself — not just the button — is gone.
+    // Discriminating: shipping-confirmation-email.test.ts's positive control
+    // proves this string IS present when there's a tracking number, so its
+    // absence here proves the panel itself — not just the button — is gone.
     expect(html).not.toContain("font-family: 'Courier New', monospace");
   });
 
@@ -213,9 +213,25 @@ describe('sendInitialShippingEmail', () => {
       ACTOR,
     );
 
-    expect(res).toEqual({ attempted: false, success: false });
+    expect(res).toEqual({
+      attempted: false,
+      success: false,
+      error: 'no_customer_email',
+      eventId: 'evt-1',
+    });
     expect(sendMock).not.toHaveBeenCalled();
-    expect(recordEmailEventMock).not.toHaveBeenCalled();
+    // Auditable even without a send attempt (BMC-227 review fix): without
+    // this, the timeline can't distinguish "sender never ran" from "there
+    // was no address" once the ship response is gone.
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      ACTOR,
+      {
+        idempotencyKey: 'shipping-confirmation/ORD-1/initial/no-recipient',
+        error: 'no_customer_email',
+      },
+    );
   });
 
   it('sends no email for a processing order (no processing emails)', async () => {

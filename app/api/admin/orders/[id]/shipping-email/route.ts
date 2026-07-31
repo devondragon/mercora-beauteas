@@ -5,9 +5,12 @@
  * Two distinct operator intents, deliberately NOT collapsed into one button:
  *
  *   retry  — the automatic send failed and nothing ever reached the customer.
- *            Reuses the stable `initial` idempotency key, so if the earlier
+ *            Reuses the `initial` idempotency key (a digest of the exact
+ *            payload — see initialShippingEmailKey), so if the earlier
  *            attempt actually did land at Resend (failure reported after the
- *            handoff) the provider dedupes instead of double-sending.
+ *            handoff) the provider dedupes instead of double-sending, as long
+ *            as the payload is unchanged. A payload that changed since the
+ *            last attempt (e.g. a tracking correction) gets a fresh key.
  *   resend — a send succeeded and the operator deliberately wants another
  *            copy. Mints a fresh key (a reused key would be silently swallowed
  *            by Resend's 24h dedupe window) and records a distinct
@@ -32,6 +35,7 @@ import {
 } from "@/lib/fulfillment/shipping-email";
 import { sendShippingConfirmationEmail } from "@/lib/utils/email";
 import type { Actor, OrderEventType } from "@/lib/fulfillment/types";
+import { logCritical } from "@/lib/utils/observe";
 
 type Mode = "retry" | "resend";
 
@@ -117,10 +121,12 @@ export async function POST(
     // same-key-different-payload 409. With no resolvable recipient there is
     // nothing to hash — and nothing to send — so the key is a fixed marker
     // used only for the audit trail below.
-    const resendEventId = mode === "resend" ? crypto.randomUUID() : null;
+    // Nonce only, not a foreign key: the real order_events row id is
+    // generated independently inside recordEmailEvent below.
+    const resendNonce = mode === "resend" ? crypto.randomUUID() : null;
     const idempotencyKey =
       mode === "resend"
-        ? `shipping-confirmation/${id}/resend/${resendEventId}`
+        ? `shipping-confirmation/${id}/resend/${resendNonce}`
         : data
           ? await initialShippingEmailKey(id, data)
           : `shipping-confirmation/${id}/initial/no-recipient`;
@@ -128,6 +134,7 @@ export async function POST(
     if (!data) {
       // Nothing to send to. Still auditable: the operator pressed the button
       // and no email went out, which is exactly what the timeline must show.
+      logCritical("email", "shipping_email_no_recipient", { orderId: id, mode });
       const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, {
         idempotencyKey,
         error: "no_customer_email",
@@ -141,6 +148,7 @@ export async function POST(
     const result = await sendShippingConfirmationEmail(data, { idempotencyKey });
 
     if (!result.success) {
+      logCritical("email", "shipping_email_send_failed", { orderId: id, mode }, result.error);
       const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, {
         idempotencyKey,
         error: result.error,
@@ -151,17 +159,28 @@ export async function POST(
       );
     }
 
-    const eventId =
-      mode === "resend"
-        ? await recordEmailEvent(id, "shipping_email_resent", actor, {
-            idempotencyKey,
-            resendOfEventId: originalSent?.id,
-          })
-        : await recordEmailEvent(id, "shipping_email_sent", actor, { idempotencyKey });
+    // The send already succeeded — an audit-write failure here must not turn
+    // a delivered email into an HTTP 500 the admin reads as "it didn't go
+    // out" (mirrors ship/route.ts's belt-and-braces handling of its own
+    // seam). Report success with no eventId rather than losing the response.
+    let eventId: string | null = null;
+    try {
+      eventId =
+        mode === "resend"
+          ? await recordEmailEvent(id, "shipping_email_resent", actor, {
+              idempotencyKey,
+              resendOfEventId: originalSent?.id,
+            })
+          : await recordEmailEvent(id, "shipping_email_sent", actor, { idempotencyKey });
+    } catch (error) {
+      console.error(`[shipping-email-route] post-send audit write failed for order ${id}:`, error);
+      logCritical("fulfillment", "shipping_email_audit_write_failed", { orderId: id, mode }, error);
+    }
 
     return NextResponse.json({ email: { success: true }, eventId }, { status: 200 });
   } catch (error) {
     console.error(`[shipping-email-route] failed for order ${id}:`, error);
+    logCritical("fulfillment", "shipping_email_route_failed", { orderId: id }, error);
     return NextResponse.json({ error: "Failed to send shipping email" }, { status: 500 });
   }
 }

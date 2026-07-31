@@ -14,12 +14,13 @@
 
 import type { Order } from "@/lib/types/order";
 import type { Actor } from "./types";
-import { normalizeCarrier, buildTrackingUrl } from "./tracking";
+import { normalizeCarrier, buildTrackingUrl, sanitizeTrackingNumber } from "./tracking";
 import { recordEmailEvent } from "./service";
 import { getOrderCustomerEmail } from "@/lib/orders/customer-email";
 import { createOrderStatusToken, isOrderStatusTokenConfigured } from "@/lib/order-status/token";
 import { sendShippingConfirmationEmail, type ShippingConfirmationData } from "@/lib/utils/email";
 import { BASE_URL } from "@/lib/seo/metadata";
+import { logCritical } from "@/lib/utils/observe";
 
 export interface InitialShippingEmailResult {
   attempted: boolean;
@@ -54,7 +55,11 @@ export async function buildShippingConfirmationData(
   // unrecognized is treated as no carrier rather than silently downgraded.
   const carrier = normalizeCarrier(order.shipping_carrier ?? null);
 
-  const trackingNumber = order.tracking_number?.trim() || null;
+  // sanitizeTrackingNumber, not a bare trim: order.tracking_number can still
+  // reach here via the legacy PUT /api/orders writer (BMC-230 hasn't closed
+  // it), so this is the sink its own docstring names for bidi/zero-width
+  // characters and unbounded length before the value reaches a customer email.
+  const trackingNumber = sanitizeTrackingNumber(order.tracking_number);
   // Derived at the boundary — never read a stored customer-facing URL.
   const trackingUrl = buildTrackingUrl(carrier, trackingNumber);
 
@@ -156,11 +161,19 @@ export async function sendInitialShippingEmail(
     const data = await buildShippingConfirmationData(order);
     if (!data) {
       console.warn(`[shipping-email] order ${orderId} has no customer email; no email sent`);
-      return { attempted: false, success: false };
+      logCritical("email", "shipping_email_no_recipient", { orderId });
+      // Still auditable: without this, the history can't distinguish "the
+      // sender never ran" from "there was no address" once the ship response
+      // is gone. Mirrors the admin route's identical no-recipient branch.
+      const eventId = await recordEmailEvent(orderId, "shipping_email_failed", actor, {
+        idempotencyKey: `shipping-confirmation/${orderId}/initial/no-recipient`,
+        error: "no_customer_email",
+      });
+      return { attempted: false, success: false, error: "no_customer_email", eventId };
     }
 
-    attempted = true;
     const idempotencyKey = await initialShippingEmailKey(orderId, data);
+    attempted = true;
     const result = await sendShippingConfirmationEmail(data, { idempotencyKey });
 
     if (result.success) {
@@ -170,6 +183,7 @@ export async function sendInitialShippingEmail(
       return { attempted: true, success: true, eventId };
     }
 
+    logCritical("email", "shipping_email_send_failed", { orderId }, result.error);
     const eventId = await recordEmailEvent(orderId, "shipping_email_failed", actor, {
       idempotencyKey,
       error: result.error,
@@ -178,6 +192,7 @@ export async function sendInitialShippingEmail(
   } catch (error) {
     // Swallow by contract: the shipment is already committed and must stay so.
     console.error(`[shipping-email] initial send failed for ${orderId}:`, error);
+    logCritical("fulfillment", "shipping_email_seam_threw", { orderId }, error);
     return {
       attempted,
       success: false,

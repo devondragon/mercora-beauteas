@@ -647,7 +647,7 @@ const MAX_SHIPPING_PREVIEW_ITEMS = 5;
  * header (resend 4.8.0 `emails.send(payload, options)`), so a retry of the
  * SAME attempt cannot double-send within the provider's 24h retention window.
  * Keys are built by the caller:
- *   shipping-confirmation/<order-id>/initial
+ *   shipping-confirmation/<order-id>/initial/<payload-digest>
  *   shipping-confirmation/<order-id>/resend/<event-id>
  */
 export async function sendShippingConfirmationEmail(
@@ -660,7 +660,7 @@ export async function sendShippingConfirmationEmail(
 
     const { data: resendData, error } = await resendClient.emails.send(
       {
-        from: 'BeauTeas <info@beauteas.com>',
+        from: `${brand.name} <${brand.contact.email}>`,
         to: [data.customerEmail],
         subject: `Your order has shipped! #${data.orderNumber} - BeauTeas`,
         html: emailHtml,
