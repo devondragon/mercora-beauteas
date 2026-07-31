@@ -66,3 +66,6 @@ linkedin-article.md
 # ccmagic review telemetry — swept in by `git add -A` on prior PRs (BMC-227
 # review); not part of the app, never intentionally committed.
 /context/
+
+# Playwright MCP browser-QA artifacts (debug sessions live under /context/, above)
+.playwright-mcp/

@@ -14,40 +14,27 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@next/font"],
   },
-  // Configure webpack for better performance without problematic optimizations
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Basic chunk optimization with reduced preloading
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          ...config.optimization.splitChunks,
-          cacheGroups: {
-            ...config.optimization.splitChunks.cacheGroups,
-            vendor: {
-              test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              chunks: 'all',
-              priority: 10,
-              reuseExistingChunk: true,
-              maxSize: 150000, // Smaller chunks to reduce preloading
-            },
-            common: {
-              name: 'common',
-              minChunks: 2,
-              priority: 5,
-              chunks: 'all',
-              maxSize: 100000, // Keep common chunks small
-            },
-          },
-        },
-      };
-      
-      // Reduce module concatenation which can cause larger chunks
-      config.optimization.concatenateModules = false;
-    }
-    return config;
-  },
+  /**
+   * ⚠️ Do NOT re-add a custom `webpack.optimization.splitChunks.cacheGroups`
+   * override here (removed in BMC-220).
+   *
+   * A `{ test: /node_modules/, chunks: "all" }` vendor group sweeps up CSS
+   * modules from dependencies as well as JS, so mini-css-extract emits a
+   * stylesheet that belongs to the `main-app` entrypoint. Next puts every
+   * entrypoint file — `.js` AND `.css` — into `rootMainFiles`
+   * (build-manifest-plugin `getEntrypointFiles`), and app-render then feeds
+   * that list unfiltered to `ReactDOM.preinit(src, { as: "script" })`
+   * (server/app-render/required-scripts.ts). The stylesheet was therefore
+   * emitted as `<script src="/_next/static/css/*.css" async>` on every route,
+   * and the browser raised `Uncaught SyntaxError: Invalid or unexpected token`
+   * parsing CSS as JS. Next never filters the extension, so ANY config that
+   * attaches a CSS chunk to `main-app` reintroduces the error site-wide.
+   *
+   * The override also set `maxSize` (which fragmented vendors into ~70 request-
+   * per-page chunks) and `concatenateModules: false` (which disables scope
+   * hoisting). It was added in cb4a810 to quiet unused-preload *warnings*; it
+   * traded those for a hard error and a slower page. Next's defaults are fine.
+   */
   // Basic headers for performance and resource loading control
   async headers() {
     return [
