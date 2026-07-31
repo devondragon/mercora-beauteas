@@ -4,6 +4,7 @@ import { BASE_URL } from '@/lib/seo/metadata';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
 import { Money } from '@/lib/money';
+import { CARRIER_LABELS, type Carrier } from '@/lib/fulfillment/types';
 
 let resend: Resend | null = null;
 
@@ -590,6 +591,185 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
         <!-- Footer -->
         <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1; margin-top: 24px;">
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions? Reply to this email or contact our support team.</p>
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
+          ${postalAddressHtml('light')}
+        </div>
+
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// ─── Shipping Confirmation Email (BMC-216C) ─────────────────────
+
+/**
+ * Payload for the dedicated shipment-confirmation email.
+ *
+ * Deliberately narrow: order number, recipient, a SHORT item preview, and the
+ * two links a customer can act on. No internal notes, payment references,
+ * audit events, delivery estimates, or live carrier state — a shipping email
+ * is a customer-facing receipt of "it left the building", not an order dump.
+ *
+ * `trackingUrl` is DERIVED at the boundary via buildTrackingUrl(); it is never
+ * read from storage, so a stale admin form cannot persist an arbitrary
+ * customer-facing URL. `orderStatusUrl` is the account link for a registered
+ * customer or a signed guest link otherwise; `null` omits the button entirely.
+ */
+export interface ShippingConfirmationData {
+  orderNumber: string;
+  customerName: string | null;
+  customerEmail: string;
+  /** Short preview only — the template renders at most MAX_SHIPPING_PREVIEW_ITEMS. */
+  items: Array<{ name: string; quantity: number }>;
+  carrier: Carrier | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  orderStatusUrl: string | null;
+}
+
+/**
+ * Typed send result. Callers MUST inspect `success` — a resolved promise is
+ * not proof of delivery (Resend reports failures in the response body).
+ */
+export interface ShippingEmailResult {
+  success: boolean;
+  error?: string;
+}
+
+/** The email is a preview, not a packing slip. */
+const MAX_SHIPPING_PREVIEW_ITEMS = 5;
+
+/**
+ * Send the shipment-confirmation email.
+ *
+ * `opts.idempotencyKey` is forwarded to Resend as the `Idempotency-Key`
+ * header (resend 4.8.0 `emails.send(payload, options)`), so a retry of the
+ * SAME attempt cannot double-send within the provider's 24h retention window.
+ * Keys are built by the caller:
+ *   shipping-confirmation/<order-id>/initial
+ *   shipping-confirmation/<order-id>/resend/<event-id>
+ */
+export async function sendShippingConfirmationEmail(
+  data: ShippingConfirmationData,
+  opts: { idempotencyKey: string }
+): Promise<ShippingEmailResult> {
+  try {
+    const emailHtml = generateShippingConfirmationHTML(data);
+    const resendClient = getResendClient();
+
+    const { data: resendData, error } = await resendClient.emails.send(
+      {
+        from: 'BeauTeas <info@beauteas.com>',
+        to: [data.customerEmail],
+        subject: `Your order has shipped! #${data.orderNumber} - BeauTeas`,
+        html: emailHtml,
+      },
+      { idempotencyKey: opts.idempotencyKey }
+    );
+
+    if (error) {
+      console.error('[shipping-email] send failed:', error);
+      return { success: false, error: error.message || 'Email sending failed' };
+    }
+
+    console.log('[shipping-email] sent:', resendData?.id);
+    return { success: true };
+  } catch (error) {
+    console.error('[shipping-email] threw:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+function generateShippingConfirmationHTML(data: ShippingConfirmationData): string {
+  // EVERY interpolation below is escaped, including values from fixed unions:
+  // one unescaped hole is all it takes, and "this one is safe today" is how
+  // they get reintroduced.
+  const greeting = escapeHtml(data.customerName?.trim() || 'there');
+  const orderNumber = escapeHtml(data.orderNumber);
+  // CARRIER_LABELS is the A-owned registry in lib/fulfillment/types.ts (keyed by
+  // Carrier, so adding a code fails the build there until a label exists). A
+  // local copy here would be a sixth place that has to agree — and would have
+  // silently dropped "usps".
+  const carrierLabel = data.carrier ? escapeHtml(CARRIER_LABELS[data.carrier]) : '';
+  const trackingNumber = data.trackingNumber ? escapeHtml(data.trackingNumber) : '';
+
+  const itemRows = data.items
+    .slice(0, MAX_SHIPPING_PREVIEW_ITEMS)
+    .map(
+      (item) => `<tr>
+              <td style="padding: 6px 0; border-bottom: 1px solid #e6ebf1; color: #1e293b; font-size: 15px;"><strong>${escapeHtml(String(item.quantity))} &times;</strong> ${escapeHtml(item.name)}</td>
+            </tr>`
+    )
+    .join('');
+
+  const itemsBlock = itemRows
+    ? `<div style="padding: 0 32px 8px;">
+          <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 8px;">In this shipment</h3>
+          <table style="border-collapse: collapse; width: 100%; margin: 0 0 8px;">
+            ${itemRows}
+          </table>
+        </div>`
+    : '';
+
+  // Rendered only when there is a tracking number — an untracked shipment must
+  // not ship an empty "Tracking:" panel.
+  const trackingBlock = trackingNumber
+    ? `<div style="margin: 0 32px 24px; background: linear-gradient(135deg, #fdf8f6 0%, #f3e6dd 100%); border-radius: 12px; padding: 24px; text-align: center;">
+          <p style="color: #64748b; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 8px;">${carrierLabel || 'Shipment'}</p>
+          <p style="color: #1e293b; font-size: 20px; font-weight: bold; letter-spacing: 1px; margin: 0; font-family: 'Courier New', monospace;">${trackingNumber}</p>
+        </div>`
+    : '';
+
+  // Carrier button only when a carrier-owned URL exists (UPS/FedEx/USPS).
+  // Never a search-engine fallback, and never for `other`.
+  const trackingButton = data.trackingUrl
+    ? `<div style="text-align: center; margin: 0 0 16px;">
+          <a href="${escapeHtml(data.trackingUrl)}" style="display: inline-block; background-color: #c4a87c; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Track with ${carrierLabel}</a>
+        </div>`
+    : '';
+
+  const statusButton = data.orderStatusUrl
+    ? `<div style="text-align: center; margin: 0 0 24px;">
+          <a href="${escapeHtml(data.orderStatusUrl)}" style="display: inline-block; border: 1px solid #c4a87c; color: #c4a87c; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">View your order</a>
+        </div>`
+    : '';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your order has shipped - BeauTeas</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;">
+      <div style="background-color: #ffffff; margin: 0 auto; padding: 20px 0 48px; margin-bottom: 64px; max-width: 600px;">
+
+        <!-- Header -->
+        <div style="text-align: center; padding: 32px 0; border-bottom: 1px solid #e6ebf1;">
+          <h1 style="color: #c4a87c; font-size: 32px; font-weight: bold; margin: 0; padding: 0;">BeauTeas</h1>
+          <p style="color: #64748b; font-size: 14px; margin: 8px 0 0;">Organic Skincare Teas</p>
+        </div>
+
+        <!-- Intro -->
+        <div style="padding: 24px 32px;">
+          <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Your order has shipped</h2>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${greeting},</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 8px;">Good news — order <strong>#${orderNumber}</strong> is on its way to you. Your daily glow ritual is nearly home.</p>
+        </div>
+
+        ${trackingBlock}
+
+        ${trackingButton}
+
+        ${statusButton}
+
+        ${itemsBlock}
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 32px 32px 0; border-top: 1px solid #e6ebf1; margin-top: 24px;">
+          <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Questions about your delivery? Reply to this email and we will help.</p>
           <p style="color: #64748b; font-size: 12px; line-height: 16px; margin: 0 0 8px;">Thank you for choosing BeauTeas!</p>
           ${postalAddressHtml('light')}
         </div>
