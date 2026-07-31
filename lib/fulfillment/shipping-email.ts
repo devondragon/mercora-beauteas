@@ -89,9 +89,44 @@ export async function buildShippingConfirmationData(
   };
 }
 
-/** Deterministic key for the one automatic send per order. */
-export function initialShippingEmailKey(orderId: string): string {
-  return `shipping-confirmation/${orderId}/initial`;
+/**
+ * Short, non-cryptographic fingerprint of the exact payload about to be sent.
+ * Not for security — only to distinguish "same email, retried" from "the
+ * order changed since the last attempt" (see initialShippingEmailKey).
+ */
+async function digestPayload(data: ShippingConfirmationData): Promise<string> {
+  const bytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(data)),
+  );
+  return Array.from(new Uint8Array(bytes).slice(0, 6))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Idempotency key for the automatic initial send, and for `retry` (which
+ * reuses it deliberately — see the route's doc comment). Folds in a digest of
+ * the exact payload, not just the order id.
+ *
+ * Resend binds an idempotency key to the payload it was first used with for
+ * 24h and returns a 409 if the same key is reused with a different body. An
+ * order-id-only key would collide across attempts even when the underlying
+ * order changed between them (e.g. an operator corrects the tracking number
+ * after a failed automatic send, then presses Retry) — the retry would carry
+ * a different payload under the OLD key and dead-end on that 409 for the rest
+ * of the 24h window, with no operator recourse. Folding the payload into the
+ * key keeps two calls with an unchanged payload colliding onto the same key
+ * (so Resend's own dedupe still catches a genuine duplicate attempt), while
+ * an order that changed between attempts naturally gets a fresh key instead
+ * of a false conflict. (BMC-227 review finding.)
+ */
+export async function initialShippingEmailKey(
+  orderId: string,
+  data: ShippingConfirmationData,
+): Promise<string> {
+  const digest = await digestPayload(data);
+  return `shipping-confirmation/${orderId}/initial/${digest}`;
 }
 
 /**
@@ -109,7 +144,6 @@ export async function sendInitialShippingEmail(
 ): Promise<InitialShippingEmailResult> {
   let attempted = false;
   const orderId = order.id || "";
-  const idempotencyKey = initialShippingEmailKey(orderId);
 
   try {
     if (order.status !== "shipped") {
@@ -126,6 +160,7 @@ export async function sendInitialShippingEmail(
     }
 
     attempted = true;
+    const idempotencyKey = await initialShippingEmailKey(orderId, data);
     const result = await sendShippingConfirmationEmail(data, { idempotencyKey });
 
     if (result.success) {

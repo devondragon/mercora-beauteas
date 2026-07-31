@@ -107,15 +107,24 @@ export async function POST(
     // resends all point back at one root rather than at each other.
     const originalSent = events.find((event) => event.event_type === "shipping_email_sent");
 
+    const actor = actorFrom(auth);
+    const data = await buildShippingConfirmationData(order);
+
+    // For `resend` the key is always a fresh UUID, independent of payload. For
+    // `retry`/initial, the key folds in a digest of `data` (see
+    // initialShippingEmailKey) so a payload that changed since the last
+    // attempt gets a fresh key instead of colliding with Resend's 24h
+    // same-key-different-payload 409. With no resolvable recipient there is
+    // nothing to hash — and nothing to send — so the key is a fixed marker
+    // used only for the audit trail below.
     const resendEventId = mode === "resend" ? crypto.randomUUID() : null;
     const idempotencyKey =
       mode === "resend"
         ? `shipping-confirmation/${id}/resend/${resendEventId}`
-        : initialShippingEmailKey(id);
+        : data
+          ? await initialShippingEmailKey(id, data)
+          : `shipping-confirmation/${id}/initial/no-recipient`;
 
-    const actor = actorFrom(auth);
-
-    const data = await buildShippingConfirmationData(order);
     if (!data) {
       // Nothing to send to. Still auditable: the operator pressed the button
       // and no email went out, which is exactly what the timeline must show.
