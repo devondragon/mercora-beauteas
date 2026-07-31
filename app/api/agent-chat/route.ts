@@ -61,6 +61,21 @@
  *   HTML-writer prompt is only reachable by an authenticated admin (used by the
  *   CMS tool); anonymous callers sending the trigger strings get a 403.
  * - **Strict anti-hallucination prompts.**
+ *
+ * === Factual accuracy (BMC-215) ===
+ * A model asked for a factual detail it can't retrieve will invent a plausible
+ * one. In production it told a customer to email `support@beauteteas.com` — a
+ * nonexistent mailbox at a misspelled domain — with no signal that anything had
+ * gone wrong. Three layers now sit between the model and the customer:
+ * 1. **Deterministic answers** (`lib/ai/deterministic-answers.ts`) — support
+ *    email, order status and business address are answered from config before
+ *    any embedding or generation happens.
+ * 2. **Authoritative facts in the prompt** — the same canonical values are
+ *    injected as a VERIFIED FACTS block the model may not contradict, so the
+ *    unanticipated phrasings have the right answer in context.
+ * 3. **Response guard** (`lib/ai/response-guard.ts`) — every reply leaves through
+ *    one choke point (`buildChatResponse`) that rewrites any email or URL
+ *    BeauTeas doesn't own. This catches the class, not just the categories.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -73,6 +88,9 @@ import type { Product } from "@/lib/types";
 import { runAI, getCurrentEmbeddingModel, extractAIResponse } from "@/lib/ai/config";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 import { requireAuth, PERMISSIONS } from "@/lib/auth/unified-auth";
+import { classifyQuery } from "@/lib/ai/deterministic-answers";
+import { guardAssistantReply } from "@/lib/ai/response-guard";
+import { CONTACT_EMAIL, ORDER_HISTORY_URL, SUPPORT_HOURS } from "@/lib/ai/canonical-facts";
 
 // === Input bounds (BMC-180 / BMC-139) ===
 // The paid AI pipeline runs on attacker-controlled input, so every free-text
@@ -192,6 +210,58 @@ export async function POST(req: NextRequest) {
       longitude: req.headers.get('CF-IPLongitude') || undefined,
     };
 
+    /**
+     * Single exit point for every chat reply (BMC-215).
+     *
+     * Every `answer` this handler returns goes through here, so the response
+     * guard cannot be bypassed by adding a new branch — the easter egg, the
+     * deterministic answers, the no-AI-binding fallback and the model path all
+     * funnel through one scrub.
+     *
+     * `scrub` is off ONLY for the admin-gated content-generation mode, whose job
+     * is authoring CMS HTML that may legitimately link off-site.
+     */
+    const buildChatResponse = ({
+      answer,
+      productIds: responseProductIds = [],
+      products = [],
+      scrub = true,
+    }: {
+      answer: string;
+      productIds?: string[];
+      products?: Product[];
+      scrub?: boolean;
+    }) => {
+      const safeAnswer = scrub ? guardAssistantReply(answer) : answer;
+      return NextResponse.json({
+        answer: safeAnswer,
+        productIds: responseProductIds,
+        products,
+        history: [
+          ...history,
+          { role: "user", content: question, created_at: new Date().toISOString() },
+          { role: "assistant", content: safeAnswer, created_at: new Date().toISOString() },
+        ],
+        userId,
+      });
+    };
+
+    // === DETERMINISTIC ANSWER PHASE (BMC-215) ===
+    // Questions with exactly one correct answer (support email, order status,
+    // business address) are answered from config BEFORE any embedding or
+    // generation work. A model asked for a support address will occasionally
+    // invent a plausible one — `support@beauteteas.com` reached a real customer
+    // on 2026-07-27 — and no amount of prompt tuning makes that never happen.
+    //
+    // Skipped for content generation: that admin-gated mode is a document
+    // writer, not a customer conversation.
+    if (!isContentGeneration) {
+      const deterministic = classifyQuery(question);
+      if (deterministic) {
+        return buildChatResponse({ answer: deterministic.answer });
+      }
+    }
+
     // === VECTORIZED SEARCH PHASE ===
     // Use Cloudflare Vectorize to find relevant products and knowledge base content
     // This provides context for the AI to make accurate recommendations
@@ -254,24 +324,7 @@ export async function POST(req: NextRequest) {
         3. Skip the milk and let those pretty flowers shine.
         Bonus: take one slow, cozy breath over the cup before your first sip. That's the self-care magic.`;
 
-      return NextResponse.json({
-        answer: easterEgg,
-        productIds: [],
-        history: [
-          ...history,
-          {
-            role: "user",
-            content: question,
-            created_at: new Date().toISOString(),
-          },
-          {
-            role: "assistant",
-            content: easterEgg,
-            created_at: new Date().toISOString(),
-          },
-        ],
-        userId,
-      });
+      return buildChatResponse({ answer: easterEgg });
     }
 
     // Build the conversation history for context - increased due to higher token limit
@@ -328,6 +381,15 @@ Location: ${requestLocation.country ?
 - **Location/Season**: Consider their location and current season appropriateness
 - **Budget Alignment**: Match recommendations to their purchase history and customer tier
 - **Avoid Owned Products**: Skip products they've already purchased
+
+=== VERIFIED FACTS (authoritative — never contradict or embellish) ===
+These come from BeauTeas' configuration, not from retrieval. They are correct even
+when the product context below is empty or unhelpful:
+- Support/contact email: ${CONTACT_EMAIL}
+- Support hours: ${SUPPORT_HOURS}
+- Order tracking: ${ORDER_HISTORY_URL}
+NEVER invent an email address, domain, or link. If you need one and it is not
+listed above, say you're not sure and point them at ${CONTACT_EMAIL}.
 
 === AVAILABLE PRODUCTS ===
 ${contextSnippets || "No specific product information available for this query."}
@@ -496,7 +558,9 @@ Generate complete content based on the user's specifications.`;
       "Bestie tip: drink your water AND your tea. Double the glow.",
       "Be patient with your skin, lovely - good things (and great glow) take a little time 💕",
     ];
-    if (Math.random() < 0.3 && isAIResponse && !isGreeting && !unicornMode) {
+    // `!isContentGeneration` matters: without it, ~30% of admin-authored CMS
+    // pages got a beauty quip glued onto their HTML (found while testing BMC-215).
+    if (Math.random() < 0.3 && isAIResponse && !isGreeting && !unicornMode && !isContentGeneration) {
       assistantReply +=
         "\n\n" + flairOptions[Math.floor(Math.random() * flairOptions.length)];
     }
@@ -671,25 +735,14 @@ Generate complete content based on the user's specifications.`;
       }
     }
 
-    // Return the response with updated history
-    return NextResponse.json({
+    // Return the response with updated history. The guard runs inside
+    // `buildChatResponse` (BMC-215) — except for admin content generation, whose
+    // authored HTML may legitimately reference off-site URLs.
+    return buildChatResponse({
       answer: assistantReply,
       productIds: finalProductIds,
       products: relatedProducts,
-      history: [
-        ...history,
-        {
-          role: "user",
-          content: question,
-          created_at: new Date().toISOString(),
-        },
-        {
-          role: "assistant",
-          content: assistantReply,
-          created_at: new Date().toISOString(),
-        },
-      ],
-      userId,
+      scrub: !isContentGeneration,
     });
   } catch (err) {
     console.error("Agent chat error:", err);
