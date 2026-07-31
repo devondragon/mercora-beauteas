@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { orderStatusConfig } from "@/lib/ui/status-styles";
 import { Money } from "@/lib/money";
+import FulfillmentTimeline from "@/components/admin/orders/FulfillmentTimeline";
+import type { FulfillmentEventLike } from "@/lib/fulfillment/queue-view";
 
 interface Order {
   id: string;
@@ -124,6 +126,27 @@ export default function OrderDetailPage() {
     minimumRefundAmount: 0, // Minimum refund amount in cents
     applyRestockingFeeOnPartialReturn: true
   });
+
+  // BMC-216D: fulfillment audit history for this order.
+  const [events, setEvents] = useState<FulfillmentEventLike[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+
+  const fetchEvents = useCallback(async () => {
+    setEventsLoading(true);
+    setEventsError(null);
+    try {
+      const response = await fetch(`/api/admin/orders/${orderId}/events`);
+      if (!response.ok) throw new Error(`Could not load fulfillment history (${response.status})`);
+      const data = (await response.json()) as { events?: FulfillmentEventLike[] };
+      setEvents(data.events ?? []);
+    } catch (error) {
+      setEvents([]);
+      setEventsError(error instanceof Error ? error.message : "Could not load fulfillment history");
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [orderId]);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -385,8 +408,9 @@ export default function OrderDetailPage() {
     if (orderId) {
       fetchOrder();
       fetchRefundPolicy();
+      fetchEvents();
     }
-  }, [orderId, fetchOrder, fetchRefundPolicy]);
+  }, [orderId, fetchOrder, fetchRefundPolicy, fetchEvents]);
 
 
   if (loading) {
@@ -910,6 +934,9 @@ export default function OrderDetailPage() {
           )}
         </Card>
       )}
+
+      {/* Fulfillment History (BMC-216D) */}
+      <FulfillmentTimeline events={events} loading={eventsLoading} error={eventsError} />
 
       {/* Refund History */}
       {order.extensions?.refunds && order.extensions.refunds.length > 0 && (
