@@ -1,6 +1,0 @@
-{
-  "testing": { "dispatched": 3, "findings": 18 },
-  "performance": { "dispatched": 1, "findings": 3 },
-  "migration": { "dispatched": 0, "findings": 0 },
-  "codex": { "dispatched": 3, "findings": 7 }
-}
