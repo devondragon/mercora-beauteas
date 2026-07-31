@@ -30,52 +30,102 @@ import { ALLOWED_HOSTS, CONTACT_EMAIL, SITE_URL } from "@/lib/ai/canonical-facts
 
 /**
  * TLDs recognised for SCHEME-LESS domains (e.g. "beauteteas.com"). Anything with
- * an explicit `http(s)://` or a `www.` prefix is matched regardless of TLD — the
+ * an explicit `http(s)://` or a `www.` prefix is matched regardless of TLD — this
  * list only exists to stop ordinary prose from looking like a hostname.
+ *
+ * It deliberately covers far more than the handful a hallucination is *likely*
+ * to reach for. An earlier 10-entry list (com/net/org/io/co/shop/store/ai/app/us)
+ * meant a bare `evil-phishing.xyz` passed through completely unscrubbed, which
+ * broke the guard's whole guarantee for most of the real TLD space.
+ *
+ * Kept as a list rather than "any 2+ letters" because an unbounded TLD turns
+ * ordinary copy into false positives — see `isLikelyBareDomain`.
  */
 const BARE_DOMAIN_TLDS = [
-  "com",
-  "net",
-  "org",
-  "io",
-  "co",
-  "shop",
-  "store",
-  "ai",
-  "app",
-  "us",
+  // Legacy gTLDs + the common ccTLDs a model actually produces.
+  "com", "net", "org", "edu", "gov", "int", "mil", "info", "biz", "name",
+  "io", "co", "ai", "app", "dev", "us", "uk", "ca", "au", "de", "fr", "es",
+  "it", "nl", "se", "no", "jp", "cn", "in", "br", "mx", "eu", "me", "tv",
+  "cc", "ly", "sh", "gg", "to", "fm", "am", "at", "be", "ch", "cz", "dk",
+  "fi", "gr", "hk", "ie", "il", "kr", "nz", "pl", "pt", "ro", "ru", "sg",
+  "za",
+  // New gTLDs plausible for a retail/beauty hallucination.
+  "shop", "store", "online", "site", "website", "web", "xyz", "top", "club",
+  "life", "live", "world", "today", "email", "help", "support", "care",
+  "health", "beauty", "spa", "tea", "organic", "green", "eco", "natural",
+  "shopping", "market", "buy", "sale", "deals", "gift", "gifts", "brand",
+  "company", "global", "group", "team", "agency", "services", "solutions",
+  "digital", "media", "news", "blog", "page", "link", "click", "one", "now",
 ].join("|");
 
 /**
- * Single combined matcher. Alternation order is load-bearing:
+ * Single combined matcher with named groups. Alternation order is load-bearing:
  *   1. email (optionally `mailto:`-prefixed)
  *   2. explicit URL (`https://…` or `www.…`)
  *   3. bare domain with a known TLD
+ *
+ * The groups matter as much as the order: classifying a match by WHICH branch
+ * matched (rather than by `token.includes("@")`) is what keeps
+ * `evil.net/track?ref=real@address.com` from being mistaken for an email address
+ * and silently accepted on the strength of the address in its query string.
  */
 const CONTACT_PATTERN = new RegExp(
   [
     // 1. email
-    "(?:mailto:)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
+    "(?<email>(?:mailto:)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})",
     // 2. explicit URL
-    "(?:https?://|www\\.)[^\\s<>()\\[\\]\"'`]+",
+    "(?<url>(?:https?://|www\\.)[^\\s<>()\\[\\]\"'`]+)",
     // 3. bare domain + optional path
-    `(?:[A-Z0-9-]+\\.)+(?:${BARE_DOMAIN_TLDS})\\b(?:/[^\\s<>()\\[\\]"'\`]*)?`,
+    `(?<bare>(?:[A-Z0-9-]+\\.)+(?:${BARE_DOMAIN_TLDS})\\b(?:/[^\\s<>()\\[\\]"'\`]*)?)`,
   ].join("|"),
   "gi"
 );
+
+/**
+ * Anything in a URL's path/query/fragment that means a SECOND destination is
+ * riding along inside a token whose leading host we already allowlisted —
+ * `https://beauteas.com/redirect?to=https://evil.com/login` and the
+ * `user@host`-in-query shape. Matching the leading host is not enough.
+ */
+const EMBEDDED_DESTINATION = /https?:\/\/|@|%3a%2f%2f|%40/i;
+
+/**
+ * Distinguish a scheme-less hostname from two run-together prose sentences.
+ *
+ * Prose joins sentences far more often than it contains a bare hostname, and
+ * `min.Now` is indistinguishable from a hostname by shape alone — several TLDs
+ * ("now", "store", "care", "life", "today") are ordinary English words, so the
+ * TLD list alone can't separate them.
+ *
+ * The tell is SENTENCE CASE: a capitalised-then-lowercase final label is how
+ * prose starts a new sentence ("…5 min.Now sip"), and is not how anyone writes
+ * a TLD. Testing for "not lowercase" instead was too blunt — it also skipped
+ * `BEAUTEAS.COM.EVIL.COM`, letting an all-caps lookalike through.
+ *
+ * Residual, accepted: a sentence-cased TLD (`Beauteteas.Com`) is still read as
+ * prose. Chat answers render as escaped plain text rather than auto-linkified
+ * markup, so a string that slips through is inert rather than clickable.
+ */
+function isLikelyBareDomain(token: string): boolean {
+  const host = token.split(/[/?#]/)[0];
+  const tld = host.slice(host.lastIndexOf(".") + 1);
+  return !/^[A-Z][a-z]+$/.test(tld);
+}
 
 /** Trailing sentence punctuation that a greedy URL match would swallow. */
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Extract a lowercase hostname from a matched URL/domain token. */
 function hostFromToken(token: string): string {
-  let host = token.replace(/^https?:\/\//i, "");
-  // Drop userinfo, then path/query/fragment, then port.
-  const at = host.lastIndexOf("@");
-  if (at !== -1) host = host.slice(at + 1);
-  host = host.split(/[/?#]/)[0];
-  host = host.split(":")[0];
-  return host.toLowerCase();
+  const withoutScheme = token.replace(/^https?:\/\//i, "");
+  // ORDER MATTERS: isolate the authority BEFORE handling userinfo. Stripping at
+  // the last "@" first treats an "@" anywhere in the query string as userinfo,
+  // so `evil.net/track?ref=real@allowed.com` resolves to the ALLOWED host and
+  // the whole token is waved through on the strength of someone else's domain.
+  let authority = withoutScheme.split(/[/?#]/)[0];
+  const at = authority.lastIndexOf("@");
+  if (at !== -1) authority = authority.slice(at + 1);
+  return authority.split(":")[0].toLowerCase();
 }
 
 /** True when `host` is BeauTeas-owned (exact match against the allowlist). */
@@ -107,22 +157,35 @@ export function scrubContacts(text: string): ScrubResult {
 
   const replaced: string[] = [];
 
-  const scrubbed = text.replace(CONTACT_PATTERN, (rawMatch) => {
+  const scrubbed = text.replace(CONTACT_PATTERN, (rawMatch, ...args) => {
+    // Named groups arrive as the last argument; they tell us WHICH branch
+    // matched, which is what makes the classification trustworthy.
+    const groups = args[args.length - 1] as
+      | { email?: string; url?: string; bare?: string }
+      | undefined;
+
     // Give back trailing punctuation the greedy match absorbed ("…evil.com.").
     const trailing = rawMatch.match(TRAILING_PUNCTUATION)?.[0] ?? "";
     const token = trailing ? rawMatch.slice(0, -trailing.length) : rawMatch;
     if (!token) return rawMatch;
 
-    const mailto = /^mailto:/i.test(token);
-    const bare = mailto ? token.slice("mailto:".length) : token;
-
-    if (bare.includes("@")) {
-      if (isAllowedEmail(bare)) return rawMatch;
+    if (groups?.email !== undefined) {
+      const mailto = /^mailto:/i.test(token);
+      const address = mailto ? token.slice("mailto:".length) : token;
+      if (isAllowedEmail(address)) return rawMatch;
       replaced.push(token);
       return `${mailto ? "mailto:" : ""}${CONTACT_EMAIL}${trailing}`;
     }
 
-    if (isAllowedHost(hostFromToken(token))) return rawMatch;
+    // A scheme-less token that doesn't look like a hostname is ordinary prose.
+    if (groups?.bare !== undefined && !isLikelyBareDomain(token)) return rawMatch;
+
+    const host = hostFromToken(token);
+    const remainder = token.slice(token.indexOf(host) + host.length);
+    // Allowlisted host is necessary but NOT sufficient: a second destination
+    // hidden in the path/query rides through on the first host's reputation.
+    if (isAllowedHost(host) && !EMBEDDED_DESTINATION.test(remainder)) return rawMatch;
+
     replaced.push(token);
     return `${SITE_URL}${trailing}`;
   });

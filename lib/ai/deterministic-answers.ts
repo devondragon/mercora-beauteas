@@ -61,7 +61,11 @@ const RULES: CategoryRule[] = [
       // Any question that names an email address at all.
       /\b(e-?mail)\b.{0,40}\b(address|support|you|us|team|contact|customer service)\b/i,
       /\b(address|support|contact|reach|get in touch|write|message)\b.{0,40}\b(e-?mail)\b/i,
-      /\b(what|whats|what's|which|where)\b.{0,30}\b(e-?mail)\b/i,
+      /\b(what|whats|what's|which|where|who)\b.{0,30}\b(e-?mail)\b/i,
+      // "Who do I email when..." — without this the trailing clause ("...my
+      // order status is wrong") falls through to the order_status rule and
+      // answers a different question than the one asked.
+      /\b(who|where)\b.{0,20}\b(do|should|can|would) i\b.{0,10}\b(e-?mail|contact|reach|write)\b/i,
       // Reaching a human, without the word "email".
       /\bhow (do|can|would) i (contact|reach|get in touch with|get a hold of|talk to)\b/i,
       /\b(contact|customer|support|help)\s+(details|info|information)\b/i,
@@ -89,7 +93,10 @@ const RULES: CategoryRule[] = [
       // Deliberately narrow: must be about OUR postal address, not the
       // customer's shipping address on an order.
       /\b(mailing|postal|physical|business|company|return|street) address\b/i,
-      /\bwhere (are|is) (you|beauteas|your (company|business|office|warehouse))\b.{0,20}\b(located|based|from|ship(ped)? from)?\b/i,
+      // The location qualifier is REQUIRED. Left optional, the trailing `\b`
+      // matched an empty string and swallowed ordinary small talk — "Where are
+      // you today?" and "Where are you from?" both got the canned address.
+      /\bwhere (are|is) (you|beauteas|your (company|business|office|warehouse))\b.{0,20}\b(located|based|headquartered|ship(ped)? from)\b/i,
       /\b(your|beauteas'?s?) (headquarters|hq|office|address)\b/i,
       /\bwhat('?s| is) your address\b/i,
     ],

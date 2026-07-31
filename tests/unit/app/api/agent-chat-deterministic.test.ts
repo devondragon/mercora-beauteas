@@ -66,6 +66,10 @@ beforeEach(() => {
   enforceRateLimit.mockResolvedValue(null);
   requireAuth.mockResolvedValue(null);
   getCloudflareContext.mockResolvedValue({ env: {} });
+  // The route appends a personality quip on a 30% coin flip. Left unpinned, any
+  // exact-output assertion here is flaky ~30% of the time — pin it above the
+  // threshold so the flair never fires and the assertions stay deterministic.
+  vi.spyOn(Math, 'random').mockReturnValue(0.99);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});

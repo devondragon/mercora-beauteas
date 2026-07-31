@@ -73,13 +73,25 @@ describe('classifyQuery — order status (BMC-215)', () => {
     expect(result!.answer).toContain(ORDER_HISTORY_URL);
   });
 
-  it('prefers the contact-email category when a question asks for an email but mentions an order', () => {
-    // Category ORDER matters: an order-status rule evaluated first would swallow
-    // the phrasing that originally failed and answer the wrong question.
-    const result = classifyQuery(
-      'What email address should I use to contact support about my order?'
-    );
-    expect(result!.category).toBe('contact_email');
+  it('prefers contact_email for phrasings that genuinely match BOTH categories', () => {
+    // These must match an order_status pattern too, or this test proves nothing
+    // about rule ordering — it would pass with the table in any order. The
+    // production phrasing ("...to contact support about my order?") does NOT
+    // match any order_status pattern, so it is a poor ordering probe; these are
+    // the real ones.
+    const ambiguous = [
+      'Where can I email you about my order status?',
+      'What email do I use to track my order?',
+      'Who do I email when my order status is wrong?',
+    ];
+
+    for (const question of ambiguous) {
+      // Guard the premise: if these stop overlapping, the test silently rots.
+      const orderStatusPhrasings = /\border status\b|\btrack\b/i;
+      expect(orderStatusPhrasings.test(question)).toBe(true);
+
+      expect(classifyQuery(question)!.category).toBe('contact_email');
+    }
   });
 });
 
@@ -87,10 +99,18 @@ describe('classifyQuery — business address (BMC-215)', () => {
   const phrasings = [
     'What is your mailing address?',
     'what is your business address',
+    'What is your postal address?',
+    'Can I have your physical address?',
+    'What is your company address?',
     'Can I have your return address?',
+    'Whats your street address?',
     'Where are you located?',
     "What's your address?",
     'where is beauteas based',
+    'Where is your office located?',
+    'Where is your warehouse located?',
+    'What is your headquarters address?',
+    'whats your hq',
   ];
 
   it.each(phrasings)('answers %j from the CAN-SPAM footer address', (question) => {
@@ -114,6 +134,11 @@ describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', (
     'Can I change the shipping address on my subscription?',
     'How much does shipping cost?',
     'What is your refund window?',
+    // "Where are you ..." small talk must NOT be read as an address question.
+    // The location qualifier is required precisely so these reach the model.
+    'Where are you today?',
+    'Where are you going?',
+    'Where are you from?',
   ];
 
   it.each(passthrough)('returns null for %j', (question) => {

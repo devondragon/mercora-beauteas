@@ -97,6 +97,48 @@ describe('scrubContacts — invented URLs (BMC-215)', () => {
     expect(scrubContacts(original)).toEqual({ text: original, replaced: [] });
   });
 
+  // An earlier 10-entry TLD list let a bare `evil.xyz` through untouched, which
+  // broke the guard's guarantee for most of the real TLD space (BMC-215 review).
+  const tlds = [
+    'com', 'net', 'org', 'info', 'biz', 'io', 'co', 'ai', 'app', 'dev', 'us',
+    'uk', 'ca', 'de', 'me', 'tv', 'ly', 'xyz', 'top', 'club', 'shop', 'store',
+    'online', 'site', 'life', 'live', 'world', 'today', 'email', 'help',
+    'support', 'care', 'health', 'beauty', 'organic', 'green', 'market',
+    'gift', 'brand', 'company', 'global', 'team', 'agency', 'services',
+    'digital', 'media', 'news', 'blog', 'link', 'click', 'one', 'now',
+  ];
+
+  it.each(tlds)('rewrites a bare lookalike domain on .%s', (tld) => {
+    const { text, replaced } = scrubContacts(`Reach us at fake-beauteas.${tld} instead.`);
+    expect(text).toBe(`Reach us at ${SITE_URL} instead.`);
+    expect(replaced).toEqual([`fake-beauteas.${tld}`]);
+  });
+
+  it('rewrites an off-site URL hidden in an allowlisted host\'s query string', () => {
+    // Matching only the LEADING host is not enough — the second destination
+    // rides through on the first host's reputation.
+    const { text, replaced } = scrubContacts(
+      'we are at https://beauteas.com/redirect?to=https://evil-phish.com/login'
+    );
+    expect(text).toBe(`we are at ${SITE_URL}`);
+    expect(replaced).toHaveLength(1);
+    expect(text).not.toContain('evil-phish.com');
+  });
+
+  it('rewrites an off-site host carrying a real address in its query string', () => {
+    // Classification is by WHICH regex branch matched, not by "contains @" —
+    // otherwise this reads as an email and is accepted on the strength of the
+    // canonical address sitting in its query string.
+    const { text } = scrubContacts('Visit evil-tracker.net/track?ref=info@beauteas.com now.');
+    expect(text).toBe(`Visit ${SITE_URL} now.`);
+    expect(text).not.toContain('evil-tracker.net');
+  });
+
+  it('rewrites a percent-encoded embedded destination', () => {
+    const { text } = scrubContacts('go to https://beauteas.com/go?u=https%3A%2F%2Fevil.com');
+    expect(text).toBe(`go to ${SITE_URL}`);
+  });
+
   it('does not re-inspect the domain of an address it just rewrote', () => {
     // Single-pass alternation: the rewritten address must not then be seen as a
     // bare domain and replaced again with the site URL.
@@ -109,7 +151,11 @@ describe('scrubContacts — invented URLs (BMC-215)', () => {
 
 describe('scrubContacts — no false positives on ordinary copy (BMC-215)', () => {
   const untouched = [
+    // Run-together sentences are the false-positive case the TLD list and the
+    // lowercase-TLD check exist to protect. `min.Then` is shaped exactly like a
+    // hostname; the capital T is what distinguishes it from one.
     'Steep for 5 min.Then sip slowly and enjoy the glow.',
+    'Let it cool.Then add honey if you like.',
     'Our blends are USDA organic, e.g. calendula and chamomile.',
     'That one is $18.99 for a 30-serving tin.',
     'Try the Evening blend...it is so cozy.',
