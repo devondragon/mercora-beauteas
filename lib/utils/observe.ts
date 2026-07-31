@@ -43,7 +43,11 @@ export type CriticalArea =
   // mail failure can't break order finalization — which means without alerting, a
   // broken Resend config (bad key, unverified domain, suspended account) silently
   // eats every order confirmation with nobody paged.
-  | "email";
+  | "email"
+  // Guarded-CAS shipment/tracking writes (BMC-226). These are concurrency-
+  // critical and D1-batch-backed; an unhandled failure here means the admin
+  // fulfillment UI silently 500s with nothing paged.
+  | "fulfillment";
 
 /**
  * Record a critical money-path failure: log an alertable line and (best effort)

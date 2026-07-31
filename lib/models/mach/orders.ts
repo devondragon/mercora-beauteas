@@ -432,7 +432,12 @@ function parseJsonField<T>(value: unknown): T | undefined {
   return (typeof value === 'string' ? JSON.parse(value) : value) as T;
 }
 
-function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
+/**
+ * Map a raw `orders` row to the API-facing `Order` shape. Exported for the
+ * fulfillment service (BMC-216B), which owns its own guarded writes but must
+ * return the same projection every other order API returns.
+ */
+export function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
   return {
     id: orderRecord.id ?? undefined,
     customer_id: orderRecord.customer_id ?? undefined,
