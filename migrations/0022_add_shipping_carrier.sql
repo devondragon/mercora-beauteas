@@ -18,13 +18,14 @@
 -- extensions.carrier is preserved losslessly so any mismatch is correctable
 -- by re-deriving from it later.
 --   1. extensions.carrier  — the admin form's old write target; authoritative.
---   2. shipping_method     — ONLY when it matches a UPS/FedEx token.
+--   2. shipping_method     — ONLY when it matches a UPS/FedEx/USPS token.
 --      shipping_method mostly holds real shipping methods ("standard"), so an
 --      unconditional fallback would pollute the column with "other".
 --
--- Normalization: UPS/FedEx variants -> 'ups'/'fedex'; any other non-empty
--- value -> 'other' (renders as a bare tracking number, no link); empty/null
--- stays NULL.
+-- Normalization: UPS/FedEx/USPS variants -> 'ups'/'fedex'/'usps'; any other
+-- non-empty value -> 'other' (renders as a bare tracking number, no link);
+-- empty/null stays NULL. DHL is intentionally not a code — it lands in 'other'
+-- (BMC-225 decision: BeauTeas ships UPS/FedEx/USPS).
 --
 -- extensions.carrier is deliberately NOT deleted. It is the lossless record of
 -- what an 'other' value originally was. Later tickets will migrate the app to
@@ -81,6 +82,12 @@ UPDATE orders
    SET shipping_carrier = CASE
      WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') = ''
        THEN NULL
+     WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'usps%'
+       THEN 'usps'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedstatespostalservice%'
+       THEN 'usps'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'uspostalservice%'
+       THEN 'usps'
      WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'ups%'
        THEN 'ups'
      WHEN replace(replace(replace(replace(lower(trim(shipping_carrier)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedparcel%'
@@ -92,20 +99,26 @@ UPDATE orders
      ELSE 'other'
    END
  WHERE shipping_carrier IS NOT NULL
-   AND shipping_carrier NOT IN ('ups', 'fedex', 'other');
+   AND shipping_carrier NOT IN ('ups', 'fedex', 'usps', 'other');
 
 -- Step 3: narrow shipping_method fallback for rows still NULL. Only recognized
--- UPS/FedEx tokens qualify — "standard", "expedited", etc. stay NULL rather
+-- UPS/FedEx/USPS tokens qualify — "standard", "expedited", etc. stay NULL rather
 -- than becoming 'other'.
 --
--- The four patterns in the WHERE and the four WHENs below are deliberately the
--- same set, which makes `ELSE NULL` unreachable today. It is kept as the safe
+-- The seven patterns in the WHERE and the seven WHENs below are deliberately
+-- the same set, which makes `ELSE NULL` unreachable today. It is kept as the safe
 -- terminator, not as live logic: if a pattern is ever added to the WHERE
 -- without a matching WHEN, the extra rows fall to NULL (left for a later,
 -- deliberate backfill) rather than being silently mislabelled as a carrier
 -- they are not. Add to both lists together.
 UPDATE orders
    SET shipping_carrier = CASE
+     WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'usps%'
+       THEN 'usps'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedstatespostalservice%'
+       THEN 'usps'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'uspostalservice%'
+       THEN 'usps'
      WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'ups%'
        THEN 'ups'
      WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedparcel%'
@@ -119,7 +132,10 @@ UPDATE orders
  WHERE shipping_carrier IS NULL
    AND shipping_method IS NOT NULL
    AND (
-        replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'ups%'
+        replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'usps%'
+     OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedstatespostalservice%'
+     OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'uspostalservice%'
+     OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'ups%'
      OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedparcel%'
      OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'fedex%'
      OR replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'federalexpress%'

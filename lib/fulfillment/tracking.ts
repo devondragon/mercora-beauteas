@@ -47,14 +47,25 @@ function compactCarrierToken(raw: string): string {
 
 /**
  * Lenient normalization for legacy values (the 0022 backfill and any legacy
- * display path): UPS/FedEx variants map to their code, any other non-empty
+ * display path): UPS/FedEx/USPS variants map to their code, any other non-empty
  * string becomes "other" (lossless original stays in extensions.carrier), and
  * empty/whitespace/non-string becomes null.
+ *
+ * "usps" is tested before "ups" for readability only — the two prefixes cannot
+ * collide ("usps" does not start with "ups", nor the reverse), so reordering
+ * these branches would not change any result.
  */
 export function normalizeLegacyCarrier(raw: unknown): Carrier | null {
   if (typeof raw !== "string") return null;
   const token = compactCarrierToken(raw);
   if (token === "") return null;
+  if (
+    token.startsWith("usps") ||
+    token.startsWith("unitedstatespostalservice") ||
+    token.startsWith("uspostalservice")
+  ) {
+    return "usps";
+  }
   if (token.startsWith("ups") || token.startsWith("unitedparcel")) return "ups";
   if (token.startsWith("fedex") || token.startsWith("federalexpress")) return "fedex";
   return "other";
@@ -108,6 +119,8 @@ export function buildTrackingUrl(
       return `https://www.ups.com/track?loc=en_US&tracknum=${encoded}`;
     case "fedex":
       return `https://www.fedex.com/fedextrack/?trknbr=${encoded}`;
+    case "usps":
+      return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encoded}`;
     default:
       return null;
   }

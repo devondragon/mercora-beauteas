@@ -16,8 +16,8 @@ import {
 } from '@/lib/fulfillment/types';
 
 describe('fulfillment types', () => {
-  it('exposes exactly the three application carriers', () => {
-    expect(CARRIERS).toEqual(['ups', 'fedex', 'other']);
+  it('exposes exactly the four application carriers', () => {
+    expect(CARRIERS).toEqual(['ups', 'fedex', 'usps', 'other']);
   });
 
   it('exposes exactly the five initial order event types', () => {

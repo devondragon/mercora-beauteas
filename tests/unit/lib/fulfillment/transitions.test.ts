@@ -61,9 +61,17 @@ describe('parseShipmentInput', () => {
   });
 
   it('rejects an unknown carrier', () => {
-    const result = parseShipmentInput({ carrier: 'usps', trackingNumber: '9400111899223197428490' });
+    // DHL is a real carrier the admin dropdown still offers, but it is not an
+    // application carrier code — it has to arrive as "other" (BMC-225).
+    const result = parseShipmentInput({ carrier: 'dhl', trackingNumber: '9400111899223197428490' });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toMatch(/carrier/i);
+  });
+
+  it('accepts usps as an application carrier code', () => {
+    const result = parseShipmentInput({ carrier: 'usps', trackingNumber: '9400111899223197428490' });
+    expect(result.ok).toBe(true);
+    expect(result.ok === true && result.input.carrier).toBe('usps');
   });
 
   it('rejects tracking input that sanitizes to nothing or is over-length', () => {

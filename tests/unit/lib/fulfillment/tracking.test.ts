@@ -26,7 +26,7 @@ describe('normalizeCarrier (strict API input)', () => {
   });
 
   it('rejects anything that is not an exact carrier code', () => {
-    expect(normalizeCarrier('usps')).toBeNull();
+    expect(normalizeCarrier('dhl')).toBeNull();
     expect(normalizeCarrier('UPS Ground')).toBeNull();
     expect(normalizeCarrier('')).toBeNull();
     expect(normalizeCarrier(null)).toBeNull();
@@ -52,8 +52,22 @@ describe('normalizeLegacyCarrier (lenient legacy/backfill)', () => {
     expect(normalizeLegacyCarrier('Federal Express')).toBe('fedex');
   });
 
+  it('maps USPS variants to usps', () => {
+    expect(normalizeLegacyCarrier('USPS')).toBe('usps');
+    expect(normalizeLegacyCarrier('U.S.P.S.')).toBe('usps');
+    expect(normalizeLegacyCarrier('USPS Priority Mail')).toBe('usps');
+    expect(normalizeLegacyCarrier('United States Postal Service')).toBe('usps');
+    expect(normalizeLegacyCarrier('US Postal Service')).toBe('usps');
+  });
+
+  it('does not confuse the ups and usps prefixes', () => {
+    expect(normalizeLegacyCarrier('UPS')).toBe('ups');
+    expect(normalizeLegacyCarrier('USPS')).toBe('usps');
+    expect(normalizeLegacyCarrier('UPS Ground')).toBe('ups');
+    expect(normalizeLegacyCarrier('USPS Ground Advantage')).toBe('usps');
+  });
+
   it('maps any other non-empty value to other', () => {
-    expect(normalizeLegacyCarrier('USPS')).toBe('other');
     expect(normalizeLegacyCarrier('DHL Express')).toBe('other');
     expect(normalizeLegacyCarrier('some free text')).toBe('other');
     expect(normalizeLegacyCarrier('other')).toBe('other');
@@ -125,6 +139,12 @@ describe('buildTrackingUrl', () => {
     );
     expect(buildTrackingUrl('fedex', '"><script>')).toBe(
       'https://www.fedex.com/fedextrack/?trknbr=%22%3E%3Cscript%3E',
+    );
+  });
+
+  it('builds a USPS link', () => {
+    expect(buildTrackingUrl('usps', '9400111899223197428490')).toBe(
+      'https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223197428490',
     );
   });
 
