@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import type { OrderItem } from "@/lib/types/order";
 import { formatDate, formatAddress } from "@/lib/utils/account";
 import { Money } from "@/lib/money";
-import { buildTrackingUrl, normalizeLegacyCarrier } from "@/lib/fulfillment/tracking";
+import { buildTrackingUrl, normalizeLegacyCarrier, sanitizeTrackingNumber } from "@/lib/fulfillment/tracking";
 import { CARRIER_LABELS } from "@/lib/fulfillment/types";
 
 export const metadata = {
@@ -88,7 +88,12 @@ export default async function OrderDetailPage({
   // normalizeLegacyCarrier is defensive for any row that escaped the backfill.
   const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
   const carrierLabel = carrier ? CARRIER_LABELS[carrier] : null;
-  const trackingUrl = buildTrackingUrl(carrier, order.tracking_number ?? null);
+  // Sanitized before both rendering and URL-building: a legacy row's tracking
+  // number can carry bidi/invisible characters (only the new fulfillment
+  // write path enforces sanitizeTrackingNumber), which would otherwise render
+  // reversed or hidden digits directly in this customer-facing page.
+  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
+  const trackingUrl = buildTrackingUrl(carrier, trackingNumber);
 
   return (
     <div>
@@ -129,10 +134,10 @@ export default async function OrderDetailPage({
                 <dd className="text-text-primary">{carrierLabel}</dd>
               </div>
             )}
-            {order.tracking_number && (
+            {trackingNumber && (
               <div className="flex justify-between gap-4">
                 <dt className="text-text-secondary">Tracking number</dt>
-                <dd className="text-text-primary font-mono break-all">{order.tracking_number}</dd>
+                <dd className="text-text-primary font-mono break-all">{trackingNumber}</dd>
               </div>
             )}
           </dl>

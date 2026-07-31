@@ -17,7 +17,11 @@
  * exactly the arbitrary-redirect vector the typed carrier boundary removes.
  * Pure module — no D1/Next/Clerk/Resend imports.
  */
-import { buildTrackingUrl, normalizeLegacyCarrier } from "@/lib/fulfillment/tracking";
+import {
+  buildTrackingUrl,
+  normalizeLegacyCarrier,
+  sanitizeTrackingNumber,
+} from "@/lib/fulfillment/tracking";
 import { CARRIER_LABELS, type Carrier } from "@/lib/fulfillment/types";
 
 export interface GuestOrderProjectionItem {
@@ -62,7 +66,11 @@ export interface GuestProjectionOrder {
 
 export function buildGuestOrderProjection(order: GuestProjectionOrder): GuestOrderProjection {
   const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
-  const trackingNumber = order.tracking_number ?? null;
+  // Sanitized before rendering: only the new fulfillment write path enforces
+  // sanitizeTrackingNumber, so a legacy row can still carry bidi/invisible
+  // characters — this is a bearer-token page a stranger with the link can
+  // load, so it must never render an unsanitized value.
+  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
   const items = Array.isArray(order.items) ? order.items : [];
 
   return {
