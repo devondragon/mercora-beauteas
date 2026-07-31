@@ -11,11 +11,16 @@
  * legacy PUT /api/orders path is still unguarded until BMC-230/ticket F):
  *  - Only a paid `processing` order can flip to `shipped` (WHERE guard).
  *  - `shipped_at` = THIS request's `new Date().toISOString()` and doubles as
- *    the operation marker: the event INSERT…SELECT is guarded on
- *    `shipped_at = <marker>`, so a losing CAS writes NO shipment_created row.
- *  - D1 has no db.transaction(); db.batch() is the atomic primitive.
+ *    the operation marker: the event INSERT…SELECT is guarded on both
+ *    `shipped_at = <marker>` AND `NOT EXISTS` a prior `shipment_created`
+ *    row for the order, so a losing CAS writes NO shipment_created row even
+ *    when two requests race on the same millisecond (see shipOrder).
+ *  - D1 has no db.transaction(); db.batch() is the atomic primitive. Its
+ *    statements must be builder-based (`db.update()`/`db.insert().select()`)
+ *    — `db.run(sql\`...\`)` throws inside db.batch() on drizzle-orm 0.45.2's
+ *    D1 driver (SQLiteRaw has no `.stmt` for `preparedQuery.stmt.bind(...)`).
  */
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, notExists, sql } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { orders } from "@/lib/db/schema/order";
 import { orderEvents, type OrderEventRow } from "@/lib/db/schema/order-events";
@@ -90,16 +95,57 @@ export async function shipOrder(
     .returning();
 
   // Conditional audit insert, same batch: fires ONLY when this request's
-  // update won (shipped_at equals this request's exact marker). Raw SQL by
-  // design — it mirrors the spec's statement exactly and binds the json
-  // `details` payload explicitly. Keep the WHERE clause on one line: the unit
-  // tests assert the rendered text.
-  const conditionalEventInsert = db.run(sql`
-    INSERT INTO order_events (id, order_id, event_type, actor_type, actor_id, from_status, to_status, details, created_at)
-    SELECT ${eventId}, ${orderId}, ${"shipment_created"}, ${actor.type}, ${actor.id}, ${"processing"}, ${"shipped"}, ${details}, ${now}
-    FROM orders
-    WHERE id = ${orderId} AND status = 'shipped' AND shipped_at = ${now}
-  `);
+  // update won (shipped_at equals this request's exact marker) AND no
+  // shipment_created event exists yet for this order. Builder-based
+  // insert().select() by necessity, NOT db.run(sql\`...\`) — drizzle-orm
+  // 0.45.2's D1 batch() calls `preparedQuery.stmt.bind(...)`, and the
+  // SQLiteRaw object db.run() produces has no `.stmt` (its `_prepare()`
+  // returns itself), so a raw statement with bound params throws inside
+  // db.batch(). Builder statements go through the normal prepareQuery path
+  // and are batch-safe.
+  //
+  // The NOT EXISTS guard is load-bearing, not defensive: without it, two
+  // requests racing on the exact same millisecond can both match
+  // `shipped_at = <marker>` — the loser's UPDATE affects zero rows, but its
+  // SELECT ... WHERE only checks the CURRENT row, not which statement wrote
+  // it, so the loser could otherwise insert a phantom shipment_created event
+  // carrying its own (losing) carrier/tracking. Because D1 serializes whole
+  // db.batch() calls against each other, by the time a losing batch's SELECT
+  // runs, the winner's batch (update + insert) has already committed
+  // atomically, so NOT EXISTS reliably observes the winner's event row.
+  const shipmentEventAlreadyRecorded = db
+    .select({ one: sql`1` })
+    .from(orderEvents)
+    .where(
+      and(
+        eq(orderEvents.order_id, orderId),
+        eq(orderEvents.event_type, "shipment_created"),
+      ),
+    );
+
+  const conditionalEventInsert = db.insert(orderEvents).select(
+    db
+      .select({
+        id: sql<string>`${eventId}`.as("id"),
+        order_id: sql<string>`${orderId}`.as("order_id"),
+        event_type: sql<string>`${"shipment_created"}`.as("event_type"),
+        actor_type: sql<string>`${actor.type}`.as("actor_type"),
+        actor_id: sql<string | null>`${actor.id}`.as("actor_id"),
+        from_status: sql<string | null>`${"processing"}`.as("from_status"),
+        to_status: sql<string | null>`${"shipped"}`.as("to_status"),
+        details: sql<string | null>`${details}`.as("details"),
+        created_at: sql<string>`${now}`.as("created_at"),
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.id, orderId),
+          eq(orders.status, "shipped"),
+          eq(orders.shipped_at, now),
+          notExists(shipmentEventAlreadyRecorded),
+        ),
+      ),
+  );
 
   const [updatedRows] = await db.batch([guardedUpdate, conditionalEventInsert]);
 
@@ -190,12 +236,36 @@ export async function updateTracking(
     .where(and(eq(orders.id, orderId), eq(orders.status, "shipped")))
     .returning();
 
-  const conditionalEventInsert = db.run(sql`
-    INSERT INTO order_events (id, order_id, event_type, actor_type, actor_id, from_status, to_status, details, created_at)
-    SELECT ${eventId}, ${orderId}, ${"tracking_updated"}, ${actor.type}, ${actor.id}, NULL, NULL, ${details}, ${now}
-    FROM orders
-    WHERE id = ${orderId} AND status = 'shipped' AND updated_at = ${now}
-  `);
+  // Builder-based insert().select() — see shipOrder's conditional insert for
+  // why db.run(sql\`...\`) is unsafe inside db.batch() on drizzle-orm 0.45.2's
+  // D1 driver. No NOT EXISTS guard needed here: unlike shipOrder's
+  // single-winner CAS (status flips away from 'processing' after the first
+  // win, so a loser can match a stale marker), updateTracking's guard
+  // (status='shipped') stays satisfiable across repeated calls — every
+  // request whose UPDATE matches genuinely performed that write, so keying
+  // the insert on this request's own updated_at marker is sound as-is.
+  const conditionalEventInsert = db.insert(orderEvents).select(
+    db
+      .select({
+        id: sql<string>`${eventId}`.as("id"),
+        order_id: sql<string>`${orderId}`.as("order_id"),
+        event_type: sql<string>`${"tracking_updated"}`.as("event_type"),
+        actor_type: sql<string>`${actor.type}`.as("actor_type"),
+        actor_id: sql<string | null>`${actor.id}`.as("actor_id"),
+        from_status: sql<string | null>`${null}`.as("from_status"),
+        to_status: sql<string | null>`${null}`.as("to_status"),
+        details: sql<string | null>`${details}`.as("details"),
+        created_at: sql<string>`${now}`.as("created_at"),
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.id, orderId),
+          eq(orders.status, "shipped"),
+          eq(orders.updated_at, now),
+        ),
+      ),
+  );
 
   const [updatedRows] = await db.batch([guardedUpdate, conditionalEventInsert]);
   if (updatedRows.length > 0) {

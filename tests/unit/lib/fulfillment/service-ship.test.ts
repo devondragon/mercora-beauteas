@@ -5,14 +5,18 @@
  * test surface. These tests mock @/lib/db and assert ORCHESTRATION:
  *  - the guarded update and the conditional event insert go through ONE
  *    db.batch() call, in that order;
- *  - the event insert is keyed on THIS request's shipped_at marker (rendered
- *    SQL + params inspected via SQLiteSyncDialect.sqlToQuery), so a losing
- *    CAS can never write a shipment_created event;
+ *  - the event insert is builder-based (db.insert().select(), never
+ *    db.run(sql\`...\`) — the latter throws inside db.batch() on
+ *    drizzle-orm 0.45.2's D1 driver) and keyed on THIS request's shipped_at
+ *    marker AND a NOT EXISTS guard against a prior shipment_created event
+ *    (rendered via the real, bindingless drizzle QueryBuilder + .toSQL()),
+ *    so a losing CAS — even one racing on the same millisecond — can never
+ *    write a shipment_created event;
  *  - server timestamps only, and no payment/refund/inventory fields in SET;
  *  - the zero-row CAS re-read selects the correct outcome branch.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
+import { QueryBuilder } from "drizzle-orm/sqlite-core";
 
 const h = vi.hoisted(() => ({
   state: {
@@ -23,12 +27,19 @@ const h = vi.hoisted(() => ({
   },
   captured: {
     setArgs: [] as Record<string, unknown>[],
-    runSql: [] as unknown[],
+    // db.insert(orderEvents).select(<this>) — a real, renderable drizzle
+    // query builder (see `qb` below), captured for `.toSQL()` inspection.
+    insertSelectQueries: [] as unknown[],
     batchStmts: [] as unknown[][],
   },
 }));
 
 vi.mock("@/lib/db", () => {
+  // Bindingless query builder: lets the mock render the SAME real SQL the
+  // service module builds (columns, WHERE, NOT EXISTS) without a live D1
+  // connection — exactly the mechanism `.insert(table).select(qb => ...)`
+  // itself uses internally.
+  const qb = new QueryBuilder();
   const db = {
     update: vi.fn(() => ({
       set: vi.fn((values: Record<string, unknown>) => {
@@ -40,22 +51,35 @@ vi.mock("@/lib/db", () => {
         };
       }),
     })),
-    run: vi.fn((q: unknown) => {
-      h.captured.runSql.push(q);
-      return { __stmt: "conditional-event-insert" };
+    select: vi.fn((fields?: Record<string, unknown>) => {
+      if (fields !== undefined) {
+        // The conditional event insert's value-row select, and its NOT
+        // EXISTS subselect, both pass an explicit fields object. Cast: the
+        // mock only needs to forward whatever service.ts passed, not
+        // re-derive drizzle's SelectedFields typing.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return qb.select(fields as any);
+      }
+      // The plain zero-row-CAS re-read: db.select().from(orders).where().limit(1).
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(async () => h.state.rereadRows),
+          })),
+        })),
+      };
     }),
+    insert: vi.fn(() => ({
+      select: vi.fn((selectQuery: unknown) => {
+        h.captured.insertSelectQueries.push(selectQuery);
+        return { __stmt: "conditional-event-insert" };
+      }),
+      values: vi.fn(async () => undefined),
+    })),
     batch: vi.fn(async (stmts: unknown[]) => {
       h.captured.batchStmts.push(stmts);
       return h.state.batchResult;
     }),
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () => h.state.rereadRows),
-        })),
-      })),
-    })),
-    insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
   };
   return { getDb: vi.fn(() => db), getDbAsync: vi.fn(async () => db) };
 });
@@ -96,17 +120,18 @@ function orderRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const dialect = new SQLiteSyncDialect();
 function renderedInsert() {
-  expect(h.captured.runSql).toHaveLength(1);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return dialect.sqlToQuery(h.captured.runSql[0] as any);
+  expect(h.captured.insertSelectQueries).toHaveLength(1);
+  const query = h.captured.insertSelectQueries[0] as {
+    toSQL: () => { sql: string; params: unknown[] };
+  };
+  return query.toSQL();
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.captured.setArgs.length = 0;
-  h.captured.runSql.length = 0;
+  h.captured.insertSelectQueries.length = 0;
   h.captured.batchStmts.length = 0;
   h.state.batchResult = [[], { success: true }];
   h.state.rereadRows = [];
@@ -158,14 +183,20 @@ describe("shipOrder — CAS win", () => {
     ]);
   });
 
-  it("keys the event insert on this request's shipped_at operation marker", async () => {
+  it("keys the event insert on this request's shipped_at operation marker AND a NOT EXISTS guard against a prior shipment_created event", async () => {
     h.state.batchResult = [[wonRow()], { success: true }];
     const result = await shipOrder("ORD-1", trackedInput, actor);
     const { sql: text, params } = renderedInsert();
-    expect(text).toMatch(/INSERT INTO order_events/i);
-    expect(text).toMatch(/SELECT/i);
-    expect(text).toMatch(/FROM orders/i);
-    expect(text).toMatch(/status = 'shipped' AND shipped_at = \?/i);
+    // The value-row select, targeting orders — this becomes the SELECT half
+    // of db.insert(orderEvents).select(...), never a raw db.run(sql\`...\`).
+    expect(text).toMatch(/^select /i);
+    expect(text).toMatch(/from "orders"/i);
+    expect(text).toMatch(/"orders"\."status" = \? and "orders"\."shipped_at" = \?/i);
+    // C2 fix: a losing CAS racing on the same millisecond must still be
+    // blocked once a shipment_created event already exists for this order.
+    expect(text).toMatch(
+      /not exists \(select .* from "order_events" where \("order_events"\."order_id" = \? and "order_events"\."event_type" = \?\)\)/i,
+    );
     expect(params).toContain("ORD-1");
     expect(params).toContain(FIXED_NOW);
     expect(params).toContain("admin");

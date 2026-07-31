@@ -4,10 +4,12 @@
  * updateTracking mirrors shipOrder's CAS discipline with `updated_at` as the
  * operation marker: guarded on status='shipped', batched with a conditional
  * tracking_updated insert that fires only when THIS request's update won, and
- * carries { previous, next } from the pre-read.
+ * carries { previous, next } from the pre-read. The conditional insert is
+ * builder-based (db.insert().select()), never db.run(sql\`...\`) — the
+ * latter throws inside db.batch() on drizzle-orm 0.45.2's D1 driver.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
+import { QueryBuilder } from "drizzle-orm/sqlite-core";
 
 const h = vi.hoisted(() => ({
   state: {
@@ -17,22 +19,35 @@ const h = vi.hoisted(() => ({
   },
   captured: {
     setArgs: [] as Record<string, unknown>[],
-    runSql: [] as unknown[],
+    // db.insert(orderEvents).select(<this>) — a real, renderable drizzle
+    // query builder (see `qb` below), captured for `.toSQL()` inspection.
+    insertSelectQueries: [] as unknown[],
     batchStmts: [] as unknown[][],
     insertValues: [] as Record<string, unknown>[],
   },
 }));
 
 vi.mock("@/lib/db", () => {
+  // Bindingless query builder — same rationale as service-ship.test.ts.
+  const qb = new QueryBuilder();
   const db = {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () => h.state.selectResults.shift() ?? []),
-          orderBy: vi.fn(async () => h.state.selectResults.shift() ?? []),
+    select: vi.fn((fields?: Record<string, unknown>) => {
+      if (fields !== undefined) {
+        // The conditional event insert's value-row select. Cast: the mock
+        // only needs to forward whatever service.ts passed, not re-derive
+        // drizzle's SelectedFields typing.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return qb.select(fields as any);
+      }
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(async () => h.state.selectResults.shift() ?? []),
+            orderBy: vi.fn(async () => h.state.selectResults.shift() ?? []),
+          })),
         })),
-      })),
-    })),
+      };
+    }),
     update: vi.fn(() => ({
       set: vi.fn((values: Record<string, unknown>) => {
         h.captured.setArgs.push(values);
@@ -43,15 +58,15 @@ vi.mock("@/lib/db", () => {
         };
       }),
     })),
-    run: vi.fn((q: unknown) => {
-      h.captured.runSql.push(q);
-      return { __stmt: "conditional-event-insert" };
-    }),
     batch: vi.fn(async (stmts: unknown[]) => {
       h.captured.batchStmts.push(stmts);
       return h.state.batchResult;
     }),
     insert: vi.fn(() => ({
+      select: vi.fn((selectQuery: unknown) => {
+        h.captured.insertSelectQueries.push(selectQuery);
+        return { __stmt: "conditional-event-insert" };
+      }),
       values: vi.fn(async (values: Record<string, unknown>) => {
         h.captured.insertValues.push(values);
       }),
@@ -100,12 +115,18 @@ function orderRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const dialect = new SQLiteSyncDialect();
+function renderedInsert() {
+  expect(h.captured.insertSelectQueries).toHaveLength(1);
+  const query = h.captured.insertSelectQueries[0] as {
+    toSQL: () => { sql: string; params: unknown[] };
+  };
+  return query.toSQL();
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.captured.setArgs.length = 0;
-  h.captured.runSql.length = 0;
+  h.captured.insertSelectQueries.length = 0;
   h.captured.batchStmts.length = 0;
   h.captured.insertValues.length = 0;
   h.state.selectResults = [];
@@ -149,13 +170,10 @@ describe("updateTracking", () => {
       "updated_at",
     ]);
     expect(h.captured.setArgs[0].updated_at).toBe(FIXED_NOW);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { sql: text, params } = dialect.sqlToQuery(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      h.captured.runSql[0] as any,
-    );
-    expect(text).toMatch(/INSERT INTO order_events/i);
-    expect(text).toMatch(/status = 'shipped' AND updated_at = \?/i);
+    const { sql: text, params } = renderedInsert();
+    expect(text).toMatch(/^select /i);
+    expect(text).toMatch(/from "orders"/i);
+    expect(text).toMatch(/"orders"\."status" = \? and "orders"\."updated_at" = \?/i);
     expect(params).toContain("tracking_updated");
     expect(params).toContain(FIXED_NOW);
     const details = params.find(
@@ -181,7 +199,7 @@ describe("updateTracking", () => {
     const result = await updateTracking("ORD-1", nextInput, actor);
     expect(result).toEqual({ outcome: "not_shipped", status: "processing" });
     expect(h.captured.batchStmts).toHaveLength(0);
-    expect(h.captured.runSql).toHaveLength(0);
+    expect(h.captured.insertSelectQueries).toHaveLength(0);
   });
 
   it("lost race (zero-row CAS after shipped pre-read) -> re-read decides", async () => {
