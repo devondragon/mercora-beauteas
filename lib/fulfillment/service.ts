@@ -182,10 +182,13 @@ export async function shipOrder(
         paymentStatus: decision.paymentStatus,
       };
     case "ship":
-      // Defensively unreachable: the CAS matched zero rows yet the re-read
-      // shows processing+paid. No supported transition returns an order to
-      // processing, so surface a retryable 409 rather than a false success —
-      // no event row was written for this request.
+      // Zero-row CAS yet the re-read shows processing+paid: the order cycled
+      // back to processing and got paid again between our batch and this
+      // re-read (the still-unguarded legacy PUT /api/orders path, BMC-230 —
+      // see the module doc above). This request's own conditional insert
+      // never fired (its shipped_at marker didn't match), so surface a
+      // retryable 409 rather than a false success — no event row was written
+      // for this request; a fresh retry will win its own CAS normally.
       return {
         outcome: "not_fulfillable",
         status: current.status,
