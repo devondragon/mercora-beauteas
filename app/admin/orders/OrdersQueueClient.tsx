@@ -179,6 +179,19 @@ export default function OrdersQueueClient() {
         });
       } catch {
         setEmailLoadFailed((prev) => ({ ...prev, [orderId]: true }));
+        // Also drop any stale emailStates entry: the row render gate is
+        // `!emailState && emailLoadFailed`, so leaving a stale (possibly
+        // successful-looking, live-button) state in place after a FAILED
+        // refresh would keep the old action clickable — e.g. right after a
+        // send succeeded but this status refetch 500s, the operator could
+        // re-click and send a second shipping email. Clearing it forces the
+        // "could not load" + Retry banner instead.
+        setEmailStates((prev) => {
+          if (!(orderId in prev)) return prev;
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
       }
     },
     [fetchEmailState],

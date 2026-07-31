@@ -40,8 +40,11 @@ describe('admin order view predicates', () => {
   });
 
   it('shipped covers shipped + delivered, cancelled covers cancelled + refunded', () => {
-    expect(compile(viewPredicate('shipped')).sql).toContain("status IN ('shipped', 'delivered')");
-    expect(compile(viewPredicate('cancelled')).sql).toContain("status IN ('cancelled', 'refunded')");
+    // Exact-match, not toContain — a `OR 1=1` (or any other) tail appended to
+    // the predicate would still contain the substring below and make the tab
+    // list every order in the store, but this test would now catch it.
+    expect(compile(viewPredicate('shipped')).sql).toBe("status IN ('shipped', 'delivered')");
+    expect(compile(viewPredicate('cancelled')).sql).toBe("status IN ('cancelled', 'refunded')");
   });
 
   it('all excludes unpaid pending drafts and is NULL-safe on payment_status', () => {
@@ -73,16 +76,18 @@ describe('search term normalization', () => {
 describe('search predicate', () => {
   it('matches order id, both email keys and the recipient-name keys', () => {
     const { sql, params } = compile(searchPredicate('acme'));
-    // The five clauses must be OR'd (any field can match). Counting the
-    // joins — and asserting no ' AND ' sneaks in — catches an OR->AND
-    // mutant that the five toContain checks alone would still pass.
-    expect(sql.match(/ OR /g)).toHaveLength(4);
-    expect(sql).not.toContain(' AND ');
-    expect(sql).toContain('lower(id) LIKE');
-    expect(sql).toContain("json_extract(shipping_address, '$.email')");
-    expect(sql).toContain("json_extract(extensions, '$.email')");
-    expect(sql).toContain("json_extract(shipping_address, '$.recipient')");
-    expect(sql).toContain("json_extract(shipping_address, '$.company')");
+    // Exact-match on the full compiled clause (not five independent
+    // toContain checks) — closes the residual gap where a per-clause content
+    // mutant (e.g. swapping which JSON key one OR'd branch reads, or
+    // LIKE -> = on a single clause) could survive substring-presence checks
+    // that don't verify each clause's exact shape or pairing.
+    expect(sql).toBe(
+      "( lower(id) LIKE ? " +
+        "OR lower(COALESCE(json_extract(shipping_address, '$.email'), '')) LIKE ? " +
+        "OR lower(COALESCE(json_extract(extensions, '$.email'), '')) LIKE ? " +
+        "OR lower(COALESCE(json_extract(shipping_address, '$.recipient'), '')) LIKE ? " +
+        "OR lower(COALESCE(json_extract(shipping_address, '$.company'), '')) LIKE ? )",
+    );
     expect(params).toEqual(Array(5).fill('%acme%'));
   });
 });
