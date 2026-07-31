@@ -6,7 +6,15 @@
 -- backfills it from the two places legacy carrier data actually lives.
 --
 -- Precedence (see lib/fulfillment/tracking.ts::normalizeLegacyCarrier — the
--- rules below are the SQL mirror of that function; change both together):
+-- rules below approximate that function for the common case; change both
+-- together, but note they are NOT an exact mirror: SQLite trim()/replace()
+-- only strip ASCII space/./-/_ , while the JS version also strips tab, CR,
+-- LF, NBSP and other Unicode whitespace via \s. A value with non-ASCII
+-- whitespace (e.g. a pasted NBSP-separated "Fed Ex") normalizes differently
+-- in each — SQL falls through to 'other', JS resolves to 'fedex'. This is a
+-- one-time backfill over a handful of rows (verified prod=1, dev=5 at
+-- authoring time); extensions.carrier is preserved losslessly so any
+-- mismatch is correctable by re-deriving from it later.
 --   1. extensions.carrier  — the admin form's old write target; authoritative.
 --   2. shipping_method     — ONLY when it matches a UPS/FedEx token.
 --      shipping_method mostly holds real shipping methods ("standard"), so an
@@ -17,9 +25,11 @@
 -- stays NULL.
 --
 -- extensions.carrier is deliberately NOT deleted. It is the lossless record of
--- what an 'other' value originally was; this migration only stops anything
--- reading it (the app now reads shipping_carrier, and BMC-216F strips
--- client-supplied `carrier`/`trackingUrl` keys in mergeExtensions).
+-- what an 'other' value originally was. Later tickets will migrate the app to
+-- read shipping_carrier exclusively and strip client-supplied
+-- `carrier`/`trackingUrl` keys in mergeExtensions (BMC-216F); as of this
+-- migration neither control exists yet, so both extensions.carrier and
+-- shipping_carrier remain live reads until that lands.
 --
 -- No tracking_url column is added: customer-facing tracking links are derived
 -- at the response/email boundary from (shipping_carrier, tracking_number).
@@ -67,7 +77,11 @@ UPDATE orders
        THEN 'ups'
      WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'unitedparcel%'
        THEN 'ups'
-     ELSE 'fedex'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'fedex%'
+       THEN 'fedex'
+     WHEN replace(replace(replace(replace(lower(trim(shipping_method)), ' ', ''), '.', ''), '-', ''), '_', '') LIKE 'federalexpress%'
+       THEN 'fedex'
+     ELSE NULL
    END
  WHERE shipping_carrier IS NULL
    AND shipping_method IS NOT NULL
