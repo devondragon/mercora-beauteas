@@ -1,4 +1,5 @@
 import type { ReviewStatus } from '@/lib/types';
+import { brand } from '@/lib/brand.config';
 import { getResendClient } from '@/lib/utils/email';
 import { postalAddressHtml, unsubscribeHtml } from '@/lib/utils/email-footer';
 import { createUnsubscribeToken } from '@/lib/email/unsubscribe-token';
@@ -94,7 +95,7 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <info@beauteas.com>',
+    from: `${brand.name} Reviews <${brand.contact.email}>`,
     to: [input.email],
     subject,
     html,
@@ -138,7 +139,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
   `;
 
   await resend.emails.send({
-    from: 'BeauTeas Reviews <info@beauteas.com>',
+    from: `${brand.name} Reviews <${brand.contact.email}>`,
     to: [input.email],
     subject: `How's your ${input.productName}?`,
     html,
@@ -148,7 +149,7 @@ export async function sendReviewReminderEmail(input: ReviewReminderEmailInput): 
       // always a POST, so it can't be triggered by link pre-fetch.
       // Kept in sync with the From address above: RFC 8058 expects the mailto
       // unsubscribe target to be an address the sender actually monitors.
-      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:info@beauteas.com?subject=unsubscribe>`,
+      'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:${brand.contact.email}?subject=unsubscribe>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   });

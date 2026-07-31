@@ -53,6 +53,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { brand } from "@/lib/brand.config";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -722,7 +723,7 @@ export default function AdminSettingsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-text-secondary">Contact:</span>
-                  <span className="text-text-primary font-medium">hello@beauteas.com</span>
+                  <span className="text-text-primary font-medium">{brand.contact.email}</span>
                 </div>
               </div>
             </div>
