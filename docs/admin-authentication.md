@@ -282,4 +282,4 @@ The system ensures that only authorized users can access admin functionality whi
 
 ---
 
-**Need help with admin authentication? Check the [development context](CLAUDE.md) for additional technical details.**
+**Need help with admin authentication? See [auth-model.md](auth-model.md) for the current model, or the [development context](../CLAUDE.md) for additional technical details.**
