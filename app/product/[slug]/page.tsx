@@ -146,7 +146,7 @@ export default async function ProductPage({
   ]);
 
   return (
-    <main className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
+    <div className="min-h-screen px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       <JsonLdScript data={productJsonLd} />
       <JsonLdScript data={breadcrumbJsonLd} />
       <div className="max-w-5xl mx-auto">
@@ -158,6 +158,6 @@ export default async function ProductPage({
           recommendations={recommendations}
         />
       </div>
-    </main>
+    </div>
   );
 }

@@ -253,8 +253,8 @@ export default function CheckoutSuccessPage() {
 
 function CenteredCard({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen px-4 py-16 flex items-start justify-center">
+    <div className="min-h-screen px-4 py-16 flex items-start justify-center">
       <div className="bg-white p-8 rounded-xl shadow-sm max-w-md w-full text-center">{children}</div>
-    </main>
+    </div>
   );
 }

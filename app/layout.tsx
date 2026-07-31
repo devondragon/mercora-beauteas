@@ -181,7 +181,16 @@ export default function RootLayout({
               <Header />
             </Suspense>
 
-            {/* Main content area - grows to fill available space */}
+            {/*
+              Main content area - grows to fill available space.
+
+              This is the ONE <main> landmark for the whole site. Pages and
+              nested layouts must use <div>/<section>, never their own <main>:
+              `main` may not be a descendant of `main`, and a second one gives
+              assistive tech two "main content" landmarks to choose between.
+              Eleven routes had nested mains (admin was triple-nested) until
+              BMC-220; tests/unit/app/single-main-landmark.test.ts pins it.
+            */}
             <main className="flex-1" suppressHydrationWarning>
               {children}
             </main>

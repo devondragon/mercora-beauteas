@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function GiftCardsPage() {
   return (
-    <main className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
+    <div className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 text-center">
           <h1 className="mb-3 text-3xl font-bold sm:text-4xl text-text-primary">BeauTeas Gift Cards</h1>
@@ -31,6 +31,6 @@ export default function GiftCardsPage() {
           <GiftCardPurchaseForm />
         </div>
       </div>
-    </main>
+    </div>
   );
 }

@@ -58,7 +58,7 @@ export default async function SubscribeCheckoutPage({
   );
 
   return (
-    <main className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
+    <div className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
       <div className="mx-auto max-w-3xl">
         <SubscribeCheckoutClient
           product={product}
@@ -66,6 +66,6 @@ export default async function SubscribeCheckoutPage({
           subscriptionPriceInCents={subscriptionPriceInCents}
         />
       </div>
-    </main>
+    </div>
   );
 }
