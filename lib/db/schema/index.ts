@@ -130,3 +130,6 @@ export * from "./product-recommendations";
 
 // Email unsubscribe suppression list (CAN-SPAM, BMC-184)
 export * from "./email-preferences";
+
+// Fulfillment audit log (application-specific, BMC-216)
+export * from "./order-events";
