@@ -6,6 +6,7 @@ import { buildTrackingUrl, normalizeCarrier } from "@/lib/fulfillment/tracking";
 import { parseShipmentInput } from "@/lib/fulfillment/transitions";
 import type { Actor } from "@/lib/fulfillment/types";
 import type { Order } from "@/lib/types/order";
+import { logCritical } from "@/lib/utils/observe";
 
 /**
  * Derived at the response boundary. This route never stores a tracking URL —
@@ -53,11 +54,20 @@ export async function POST(
   }
   const { id } = await params;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    body = {}; // absent/empty body = valid untracked shipment
+  // Only a truly empty body means "untracked shipment" — a present-but-broken
+  // JSON payload is a client bug, not an intentional omission, and must not
+  // be allowed to silently ship the order untracked.
+  const rawBody = await request.text();
+  let body: unknown = {};
+  if (rawBody.length > 0) {
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 },
+      );
+    }
   }
   const parsed = parseShipmentInput(body);
   if (!parsed.ok) {
@@ -68,51 +78,72 @@ export async function POST(
     ? { type: "service", id: "api-token" }
     : { type: "admin", id: auth.userId ?? null };
 
-  const result = await shipOrder(id, parsed.input, actor);
+  try {
+    const result = await shipOrder(id, parsed.input, actor);
 
-  switch (result.outcome) {
-    case "shipped": {
-      const email = await sendInitialShippingEmail(result.order, actor);
-      return NextResponse.json(
-        {
-          order: result.order,
-          tracking: trackingProjection(result.order),
-          email,
-          eventId: result.eventId,
-        },
-        { status: 201 },
-      );
+    switch (result.outcome) {
+      case "shipped": {
+        // Contract says this never throws, but the shipment has already
+        // committed by this point — a broken seam must not turn a successful
+        // ship into a 500 the admin thinks failed.
+        let email;
+        try {
+          email = await sendInitialShippingEmail(result.order, actor);
+        } catch (error) {
+          console.error("sendInitialShippingEmail threw:", error);
+          logCritical(
+            "fulfillment",
+            "shipping_email_threw",
+            { orderId: id },
+            error,
+          );
+          email = { attempted: true, success: false, error: "Send failed" };
+        }
+        return NextResponse.json(
+          {
+            order: result.order,
+            tracking: trackingProjection(result.order),
+            email,
+            eventId: result.eventId,
+          },
+          { status: 201 },
+        );
+      }
+      case "already_shipped":
+        // Idempotent identical retry: no new event, no second email attempt.
+        return NextResponse.json(
+          {
+            order: result.order,
+            tracking: trackingProjection(result.order),
+            email: { attempted: false, success: false },
+            eventId: null,
+          },
+          { status: 200 },
+        );
+      case "not_found":
+        return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      case "conflict":
+        return NextResponse.json(
+          {
+            code: "shipment_conflict",
+            status: result.order.status,
+            paymentStatus: result.order.payment_status ?? null,
+          },
+          { status: 409 },
+        );
+      case "not_fulfillable":
+        return NextResponse.json(
+          {
+            code: "not_fulfillable",
+            status: result.status,
+            paymentStatus: result.paymentStatus,
+          },
+          { status: 409 },
+        );
     }
-    case "already_shipped":
-      // Idempotent identical retry: no new event, no second email attempt.
-      return NextResponse.json(
-        {
-          order: result.order,
-          tracking: trackingProjection(result.order),
-          email: { attempted: false, success: false },
-          eventId: null,
-        },
-        { status: 200 },
-      );
-    case "not_found":
-      return NextResponse.json({ error: "Order not found" }, { status: 404 });
-    case "conflict":
-      return NextResponse.json(
-        {
-          code: "shipment_conflict",
-          status: result.order.status,
-          paymentStatus: result.order.payment_status ?? null,
-        },
-        { status: 409 },
-      );
-    case "not_fulfillable":
-      return NextResponse.json(
-        {
-          code: "not_fulfillable",
-          status: result.status,
-          paymentStatus: result.paymentStatus,
-        },
-        { status: 409 },
-      );
+  } catch (error) {
+    console.error("POST /api/admin/orders/[id]/ship error:", error);
+    logCritical("fulfillment", "ship_failed", { orderId: id }, error);
+    return NextResponse.json({ error: "Failed to ship order" }, { status: 500 });
   }
 }

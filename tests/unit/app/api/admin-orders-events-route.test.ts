@@ -5,7 +5,7 @@
  * order_events holds ONLY fulfillment events, so no refund-ledger/extension
  * data can leak through this projection.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/auth/admin-middleware", () => ({
   checkAdminPermissions: vi.fn(),
@@ -13,14 +13,20 @@ vi.mock("@/lib/auth/admin-middleware", () => ({
 vi.mock("@/lib/fulfillment/service", () => ({
   listOrderEvents: vi.fn(),
 }));
+vi.mock("@/lib/models/mach/orders", () => ({
+  getOrderById: vi.fn(),
+}));
 
 import { NextRequest } from "next/server";
 import { GET } from "@/app/api/admin/orders/[id]/events/route";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { listOrderEvents } from "@/lib/fulfillment/service";
+import { getOrderById } from "@/lib/models/mach/orders";
 
 const url = "http://localhost/api/admin/orders/ORD-1/events";
 const params = { params: Promise.resolve({ id: "ORD-1" }) };
+
+const existingOrder = { id: "ORD-1", status: "shipped" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -28,6 +34,7 @@ beforeEach(() => {
     success: true,
     userId: "user_2abc",
   });
+  vi.mocked(getOrderById).mockResolvedValue(existingOrder as never);
 });
 
 it("401 when admin check denies; events are never read", async () => {
@@ -37,6 +44,13 @@ it("401 when admin check denies; events are never read", async () => {
   });
   const res = await GET(new NextRequest(url), params);
   expect(res.status).toBe(401);
+  expect(vi.mocked(listOrderEvents)).not.toHaveBeenCalled();
+});
+
+it("404 when the order does not exist; events are never read", async () => {
+  vi.mocked(getOrderById).mockResolvedValue(null);
+  const res = await GET(new NextRequest(url), params);
+  expect(res.status).toBe(404);
   expect(vi.mocked(listOrderEvents)).not.toHaveBeenCalled();
 });
 
@@ -99,4 +113,12 @@ it("200 with an empty list for an order with no events", async () => {
   const res = await GET(new NextRequest(url), params);
   expect(res.status).toBe(200);
   await expect(res.json()).resolves.toEqual({ events: [] });
+});
+
+it("an unhandled service throw returns a clean JSON 500, not an opaque error", async () => {
+  vi.mocked(listOrderEvents).mockRejectedValue(new Error("D1 unavailable"));
+  const res = await GET(new NextRequest(url), params);
+  expect(res.status).toBe(500);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toBeTruthy();
 });

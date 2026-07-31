@@ -35,6 +35,15 @@ function post(body?: unknown) {
   });
 }
 
+/** Sends a body that is present but not valid JSON — distinct from no body. */
+function postMalformed(raw: string) {
+  return new NextRequest(url, {
+    method: "POST",
+    body: raw,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 const shippedOrder = {
   id: "ORD-1",
   status: "shipped",
@@ -95,6 +104,14 @@ describe("auth and input validation", () => {
       params,
     );
     expect(res.status).toBe(400);
+  });
+
+  it("400 for a present-but-malformed JSON body; service never called (does NOT become an untracked shipment)", async () => {
+    const res = await POST(postMalformed("{not valid json"), params);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Invalid request body");
+    expect(vi.mocked(shipOrder)).not.toHaveBeenCalled();
   });
 
   it("accepts usps — it is a real carrier code in lib/fulfillment/types.ts", async () => {
@@ -177,6 +194,29 @@ describe("outcome mapping", () => {
     );
   });
 
+  it("email seam throwing does NOT turn an already-committed shipment into a 500", async () => {
+    vi.mocked(shipOrder).mockResolvedValue({
+      outcome: "shipped",
+      order: shippedOrder as never,
+      eventId: "evt-3",
+    });
+    vi.mocked(sendInitialShippingEmail).mockRejectedValue(
+      new Error("resend threw"),
+    );
+    const res = await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.email).toEqual({
+      attempted: true,
+      success: false,
+      error: "Send failed",
+    });
+    expect(body.eventId).toBe("evt-3");
+  });
+
   it("empty body is a valid untracked shipment request", async () => {
     vi.mocked(shipOrder).mockResolvedValue({
       outcome: "shipped",
@@ -248,5 +288,16 @@ describe("outcome mapping", () => {
       status: "processing",
       paymentStatus: "pending",
     });
+  });
+
+  it("an unhandled service throw returns a clean JSON 500, not an opaque error", async () => {
+    vi.mocked(shipOrder).mockRejectedValue(new Error("D1 unavailable"));
+    const res = await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBeTruthy();
   });
 });

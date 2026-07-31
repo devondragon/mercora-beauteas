@@ -31,6 +31,15 @@ function patch(body?: unknown) {
   });
 }
 
+/** Sends a body that is present but not valid JSON — distinct from no body. */
+function patchMalformed(raw: string) {
+  return new NextRequest(url, {
+    method: "PATCH",
+    body: raw,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 const updatedOrder = {
   id: "ORD-1",
   status: "shipped",
@@ -81,6 +90,14 @@ describe("auth and validation", () => {
       params,
     );
     expect(res.status).toBe(400);
+  });
+
+  it("400 with a distinct error for a present-but-malformed JSON body", async () => {
+    const res = await PATCH(patchMalformed("{not valid json"), params);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Invalid request body");
+    expect(vi.mocked(updateTracking)).not.toHaveBeenCalled();
   });
 });
 
@@ -146,5 +163,16 @@ describe("outcome mapping", () => {
       code: "not_shipped",
       status: "processing",
     });
+  });
+
+  it("an unhandled service throw returns a clean JSON 500, not an opaque error", async () => {
+    vi.mocked(updateTracking).mockRejectedValue(new Error("D1 unavailable"));
+    const res = await PATCH(
+      patch({ carrier: "ups", trackingNumber: "1Z" }),
+      params,
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBeTruthy();
   });
 });

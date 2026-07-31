@@ -4,6 +4,7 @@ import { updateTracking } from "@/lib/fulfillment/service";
 import { buildTrackingUrl, normalizeCarrier } from "@/lib/fulfillment/tracking";
 import { parseShipmentInput } from "@/lib/fulfillment/transitions";
 import type { Actor } from "@/lib/fulfillment/types";
+import { logCritical } from "@/lib/utils/observe";
 
 /**
  * PATCH /api/admin/orders/[id]/tracking (BMC-216B)
@@ -25,11 +26,20 @@ export async function PATCH(
   }
   const { id } = await params;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
+  // Only a truly empty body falls through to the "both fields required" 400
+  // below — a present-but-broken JSON payload is a client bug and gets its
+  // own, more precise 400 rather than being coerced into the wrong error.
+  const rawBody = await request.text();
+  let body: unknown = {};
+  if (rawBody.length > 0) {
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 },
+      );
+    }
   }
   const parsed = parseShipmentInput(body);
   if (!parsed.ok) {
@@ -46,31 +56,40 @@ export async function PATCH(
     ? { type: "service", id: "api-token" }
     : { type: "admin", id: auth.userId ?? null };
 
-  const result = await updateTracking(id, parsed.input, actor);
+  try {
+    const result = await updateTracking(id, parsed.input, actor);
 
-  switch (result.outcome) {
-    case "updated": {
-      const carrier = normalizeCarrier(result.order.shipping_carrier ?? null);
-      const trackingNumber = result.order.tracking_number ?? null;
-      return NextResponse.json(
-        {
-          order: result.order,
-          tracking: {
-            carrier,
-            trackingNumber,
-            trackingUrl: buildTrackingUrl(carrier, trackingNumber),
+    switch (result.outcome) {
+      case "updated": {
+        const carrier = normalizeCarrier(result.order.shipping_carrier ?? null);
+        const trackingNumber = result.order.tracking_number ?? null;
+        return NextResponse.json(
+          {
+            order: result.order,
+            tracking: {
+              carrier,
+              trackingNumber,
+              trackingUrl: buildTrackingUrl(carrier, trackingNumber),
+            },
+            eventId: result.eventId,
           },
-          eventId: result.eventId,
-        },
-        { status: 200 },
-      );
+          { status: 200 },
+        );
+      }
+      case "not_found":
+        return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      case "not_shipped":
+        return NextResponse.json(
+          { code: "not_shipped", status: result.status },
+          { status: 409 },
+        );
     }
-    case "not_found":
-      return NextResponse.json({ error: "Order not found" }, { status: 404 });
-    case "not_shipped":
-      return NextResponse.json(
-        { code: "not_shipped", status: result.status },
-        { status: 409 },
-      );
+  } catch (error) {
+    console.error("PATCH /api/admin/orders/[id]/tracking error:", error);
+    logCritical("fulfillment", "tracking_update_failed", { orderId: id }, error);
+    return NextResponse.json(
+      { error: "Failed to update tracking" },
+      { status: 500 },
+    );
   }
 }
