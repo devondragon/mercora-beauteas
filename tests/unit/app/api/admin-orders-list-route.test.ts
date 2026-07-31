@@ -76,10 +76,21 @@ describe('GET /api/admin/orders', () => {
   it('passes the raw search term through and returns orders + total + counts', async () => {
     const res = await GET(req('view=shipped&q=ada'));
     expect(vi.mocked(queryAdminOrders).mock.calls[0][0]).toMatchObject({ view: 'shipped', q: 'ada' });
-    const body = (await res.json()) as Record<string, unknown>;
+    const body = (await res.json()) as { orders: Array<{ total_amount: unknown }>; total: unknown; counts: unknown };
     expect(body.total).toBe(1);
     expect(body.counts).toEqual({ awaiting: 1, shipped: 2, cancelled: 3, all: 6 });
-    expect(Array.isArray(body.orders)).toBe(true);
+    // Asserts the actual wire shape, not just Array.isArray — the route must
+    // run every order through toWireOrder(). ORDER.total_amount is the
+    // internal minor-unit shape { amount: 2500, currency: 'USD' }; if
+    // `.map(toWireOrder)` were dropped, this would still be minor units
+    // instead of the MACH-wire major-unit { amount: 25, currency, precision }
+    // and the queue would render $25.00 as $2,500.00.
+    expect(body.orders).toEqual([
+      expect.objectContaining({
+        id: 'WEB-1',
+        total_amount: { amount: 25, currency: 'USD', precision: 2 },
+      }),
+    ]);
   });
 
   it('500s (not throws) when the query layer fails', async () => {

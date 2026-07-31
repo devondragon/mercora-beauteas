@@ -9,7 +9,7 @@ import type { SQL } from 'drizzle-orm';
 
 vi.mock('@/lib/db', () => ({ getDbAsync: vi.fn() }));
 
-import { queryAdminOrders } from '@/lib/fulfillment/queries';
+import { queryAdminOrders, viewPredicate, searchPredicate } from '@/lib/fulfillment/queries';
 import { getDbAsync } from '@/lib/db';
 
 const dialect = new SQLiteAsyncDialect();
@@ -95,8 +95,9 @@ describe('queryAdminOrders', () => {
   it('applies the view filter in SQL on the same query that paginates', async () => {
     await queryAdminOrders({ view: 'awaiting', limit: 20, offset: 40 });
     const q = rowsQuery();
-    expect(text(q.where!)).toContain("status = 'processing'");
-    expect(text(q.where!)).toContain("payment_status = 'paid'");
+    // Exact-match against the independently-tested predicate builder so an
+    // OR-mutant (which would still contain both substrings) fails here too.
+    expect(text(q.where!)).toBe(text(viewPredicate('awaiting')));
     expect(q.limit).toBe(20);
     expect(q.offset).toBe(40);
   });
@@ -119,7 +120,9 @@ describe('queryAdminOrders', () => {
   it('pushes the search term into the SQL predicate, not into JS', async () => {
     await queryAdminOrders({ view: 'all', q: 'Ada', limit: 20, offset: 0 });
     const where = rowsQuery().where!;
-    expect(text(where)).toContain("json_extract(shipping_address, '$.recipient')");
+    // Exact composition (view predicate AND'd with search predicate) rather
+    // than a single substring check.
+    expect(text(where)).toBe(`(${text(viewPredicate('all'))}) AND (${text(searchPredicate('ada'))})`);
     expect(bound(where)).toEqual(Array(5).fill('%ada%'));
   });
 
@@ -138,8 +141,13 @@ describe('queryAdminOrders', () => {
   it('scopes the counts query by the search term but not by the active view', async () => {
     await queryAdminOrders({ view: 'awaiting', q: 'ada', limit: 20, offset: 0 });
     const countsQuery = recorded.find((q) => q.kind === 'counts')!;
-    expect(text(countsQuery.where!)).toContain("json_extract(extensions, '$.email')");
-    expect(text(countsQuery.where!)).not.toContain("status = 'processing' AND payment_status = 'paid' AND");
+    // Exact-match against the bare search predicate: the counts query's WHERE
+    // must be ONLY the search term, never AND'd with the active view's
+    // predicate (that would make the per-tab badges reflect the current tab
+    // instead of the true counts across all tabs). The previous assertion
+    // checked for a differently-formatted string that `whereForView` never
+    // produces (it closes a paren before "AND"), so it could never fail.
+    expect(text(countsQuery.where!)).toBe(text(searchPredicate('ada')));
   });
 
   it('hydrates JSON columns and the persisted total', async () => {

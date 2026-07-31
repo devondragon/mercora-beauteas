@@ -82,21 +82,24 @@ export default function OrdersQueueClient() {
 
   const [emailStates, setEmailStates] = useState<Record<string, EmailUiState>>({});
   const [emailBusyId, setEmailBusyId] = useState<string | null>(null);
+  // Orders whose /events fetch failed: distinct from "no state yet" so the
+  // row can show an actionable error instead of silently rendering as if no
+  // shipping email had ever been attempted.
+  const [emailLoadFailed, setEmailLoadFailed] = useState<Record<string, boolean>>({});
 
   const [shipTarget, setShipTarget] = useState<AdminQueueOrder | null>(null);
   const [trackingTarget, setTrackingTarget] = useState<AdminQueueOrder | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const fetchEmailState = useCallback(async (orderId: string): Promise<EmailUiState | null> => {
-    try {
-      const response = await fetch(`/api/admin/orders/${orderId}/events`);
-      if (!response.ok) return null;
-      const body = (await response.json()) as EventsResponse;
-      return deriveEmailState(body.events ?? []);
-    } catch {
-      return null;
-    }
+  // Throws on failure (network error or non-2xx) rather than swallowing it to
+  // `null` — callers decide how to surface that distinctly from "fetched
+  // successfully, no email history yet".
+  const fetchEmailState = useCallback(async (orderId: string): Promise<EmailUiState> => {
+    const response = await fetch(`/api/admin/orders/${orderId}/events`);
+    if (!response.ok) throw new Error(`Failed to load email status (${response.status})`);
+    const body = (await response.json()) as EventsResponse;
+    return deriveEmailState(body.events ?? []);
   }, []);
 
   const loadEmailStates = useCallback(
@@ -104,17 +107,24 @@ export default function OrdersQueueClient() {
       const shipped = rows.filter((row) => row.status === "shipped" || row.status === "delivered");
       if (!shipped.length) {
         setEmailStates({});
+        setEmailLoadFailed({});
         return;
       }
-      const entries = await Promise.all(
+      const results = await Promise.all(
         shipped.map(async (row) => {
-          const state = await fetchEmailState(row.id);
-          return state ? ([row.id, state] as const) : null;
+          try {
+            return { id: row.id, state: await fetchEmailState(row.id), failed: false } as const;
+          } catch {
+            return { id: row.id, state: null, failed: true } as const;
+          }
         }),
       );
       setEmailStates(
-        Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, EmailUiState]>),
+        Object.fromEntries(
+          results.filter((r) => r.state).map((r) => [r.id, r.state as EmailUiState]),
+        ),
       );
+      setEmailLoadFailed(Object.fromEntries(results.filter((r) => r.failed).map((r) => [r.id, true])));
     },
     [fetchEmailState],
   );
@@ -158,8 +168,18 @@ export default function OrdersQueueClient() {
 
   const refreshEmailState = useCallback(
     async (orderId: string) => {
-      const state = await fetchEmailState(orderId);
-      if (state) setEmailStates((prev) => ({ ...prev, [orderId]: state }));
+      try {
+        const state = await fetchEmailState(orderId);
+        setEmailStates((prev) => ({ ...prev, [orderId]: state }));
+        setEmailLoadFailed((prev) => {
+          if (!(orderId in prev)) return prev;
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
+      } catch {
+        setEmailLoadFailed((prev) => ({ ...prev, [orderId]: true }));
+      }
     },
     [fetchEmailState],
   );
@@ -272,7 +292,14 @@ export default function OrdersQueueClient() {
         if (!response.ok) {
           setNotice({
             tone: "error",
-            message: body.error ?? body.code ?? `Email action failed (${response.status})`,
+            // Same friendly-code fallback as handleShipConfirm: a raw
+            // "not_shipped" is possible if the order moved to `delivered`
+            // between the last refresh and this click (409 race), and the
+            // status annotation is more actionable than the bare code.
+            message:
+              body.error ??
+              (body.code ? `${body.code}${body.status ? ` (order is ${body.status})` : ""}` : null) ??
+              `Email action failed (${response.status})`,
           });
         } else if (body.email?.success) {
           setNotice({ tone: "success", message: `Shipping email sent for order ${order.id}.` });
@@ -419,6 +446,7 @@ export default function OrdersQueueClient() {
                 key={order.id}
                 order={order}
                 emailState={emailStates[order.id] ?? null}
+                emailLoadFailed={!!emailLoadFailed[order.id]}
                 emailBusy={emailBusyId === order.id}
                 onMarkShipped={(target) => {
                   setModalError(null);
@@ -429,6 +457,7 @@ export default function OrdersQueueClient() {
                   setTrackingTarget(target);
                 }}
                 onEmailAction={handleEmailAction}
+                onRetryEmailStatus={refreshEmailState}
               />
             ))}
           </div>

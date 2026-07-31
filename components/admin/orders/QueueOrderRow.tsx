@@ -31,19 +31,24 @@ import {
 interface QueueOrderRowProps {
   order: AdminQueueOrder;
   emailState: EmailUiState | null;
+  /** True when the last GET .../events fetch for this row failed. */
+  emailLoadFailed?: boolean;
   emailBusy: boolean;
   onMarkShipped: (order: AdminQueueOrder) => void;
   onEditTracking: (order: AdminQueueOrder) => void;
   onEmailAction: (order: AdminQueueOrder, mode: EmailMode) => void;
+  onRetryEmailStatus?: (orderId: string) => void;
 }
 
 export default function QueueOrderRow({
   order,
   emailState,
+  emailLoadFailed = false,
   emailBusy,
   onMarkShipped,
   onEditTracking,
   onEmailAction,
+  onRetryEmailStatus,
 }: QueueOrderRowProps) {
   const row = deriveQueueRowState(order);
   const statusStyle = orderStatusConfig[order.status as OrderStatus] ?? defaultOrderStatusStyle;
@@ -166,19 +171,50 @@ export default function QueueOrderRow({
               {emailState.lastError && (
                 <span className="text-xs text-state-error">{emailState.lastError}</span>
               )}
-              <Button
-                size="sm"
-                variant={emailState.kind === "failed" ? "default" : "outline"}
-                disabled={emailBusy}
-                onClick={() => onEmailAction(order, emailState.mode)}
-              >
-                {emailBusy ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Mail className="mr-2 h-4 w-4" />
-                )}
-                {emailState.actionLabel}
-              </Button>
+              {/*
+                POST .../shipping-email always 409s ("not_shipped") once the
+                order has moved past `shipped` to `delivered` — the server
+                only allows retry/resend while status === "shipped". Once
+                delivered, the email history is frozen, so only the status
+                text above is shown; offering a button here would just be a
+                guaranteed 409 rendering a raw error code.
+              */}
+              {order.status === "shipped" && (
+                <Button
+                  size="sm"
+                  variant={emailState.kind === "failed" ? "default" : "outline"}
+                  disabled={emailBusy}
+                  onClick={() => onEmailAction(order, emailState.mode)}
+                >
+                  {emailBusy ? (
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="mr-2 h-4 w-4" />
+                  )}
+                  {emailState.actionLabel}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/*
+            The events fetch failed (network error or non-2xx) — show this
+            distinctly from "no email history yet" instead of silently
+            rendering as if nothing had ever been attempted, with a way to
+            retry the fetch itself (not a shipping-email send).
+          */}
+          {!emailState && emailLoadFailed && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border-default pt-3">
+              <span className="flex items-center text-sm text-state-error">
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                Could not load shipping-email status
+              </span>
+              {onRetryEmailStatus && (
+                <Button size="sm" variant="outline" onClick={() => onRetryEmailStatus(order.id)}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Retry
+                </Button>
+              )}
             </div>
           )}
         </div>

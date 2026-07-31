@@ -51,12 +51,28 @@ describe('deriveEmailState', () => {
     expect(state.lastError).toBeNull();
   });
 
-  it('stays in resend mode when a later resend fails', () => {
+  it('stays in resend mode when a later resend fails, but shows failed — not a stale sent', () => {
     const state = deriveEmailState([
       event({ id: 'e1', type: 'shipping_email_sent' }),
       event({ id: 'e2', type: 'shipping_email_failed', details: { error: 'later boom' } }),
     ]);
+    // The mode must still be resend (server's hasSuccessfulSend rule), but the
+    // banner must reflect the LATEST attempt, which failed — a UI that only
+    // checked "was any send ever successful" would wrongly show green "sent".
     expect(state.mode).toBe('resend');
+    expect(state.kind).toBe('failed');
+    expect(state.lastError).toBe('later boom');
+  });
+
+  it('shows sent again after a resend succeeds following an earlier failure', () => {
+    const state = deriveEmailState([
+      event({ id: 'e1', type: 'shipping_email_sent' }),
+      event({ id: 'e2', type: 'shipping_email_failed', details: { error: 'boom' } }),
+      event({ id: 'e3', type: 'shipping_email_resent' }),
+    ]);
+    expect(state.kind).toBe('sent');
+    expect(state.mode).toBe('resend');
+    expect(state.lastError).toBeNull();
   });
 });
 

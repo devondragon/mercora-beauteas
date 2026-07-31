@@ -34,8 +34,9 @@ describe('admin order view predicates', () => {
 
   it('awaiting excludes unpaid drafts — paid AND processing only', () => {
     const { sql } = compile(viewPredicate('awaiting'));
-    expect(sql).toContain("status = 'processing'");
-    expect(sql).toContain("payment_status = 'paid'");
+    // Exact-match (not two independent toContain calls) so an OR-mutant that
+    // would flood the queue with unpaid drafts fails this test.
+    expect(sql).toBe("status = 'processing' AND payment_status = 'paid'");
   });
 
   it('shipped covers shipped + delivered, cancelled covers cancelled + refunded', () => {
@@ -45,9 +46,9 @@ describe('admin order view predicates', () => {
 
   it('all excludes unpaid pending drafts and is NULL-safe on payment_status', () => {
     const { sql } = compile(viewPredicate('all'));
-    expect(sql).toContain("status = 'pending'");
-    expect(sql).toContain('COALESCE(payment_status');
-    expect(sql.startsWith('NOT (')).toBe(true);
+    // Exact-match so a `<>` -> `=` mutant (which inverts the predicate and
+    // hides paid orders while surfacing every unpaid draft) fails this test.
+    expect(sql).toBe("NOT (status = 'pending' AND COALESCE(payment_status, 'pending') <> 'paid')");
   });
 });
 
@@ -72,6 +73,11 @@ describe('search term normalization', () => {
 describe('search predicate', () => {
   it('matches order id, both email keys and the recipient-name keys', () => {
     const { sql, params } = compile(searchPredicate('acme'));
+    // The five clauses must be OR'd (any field can match). Counting the
+    // joins — and asserting no ' AND ' sneaks in — catches an OR->AND
+    // mutant that the five toContain checks alone would still pass.
+    expect(sql.match(/ OR /g)).toHaveLength(4);
+    expect(sql).not.toContain(' AND ');
     expect(sql).toContain('lower(id) LIKE');
     expect(sql).toContain("json_extract(shipping_address, '$.email')");
     expect(sql).toContain("json_extract(extensions, '$.email')");
@@ -84,14 +90,18 @@ describe('search predicate', () => {
 describe('whereForView', () => {
   it('ANDs the search predicate onto the view predicate', () => {
     const { sql, params } = compile(whereForView('shipped', 'acme'));
-    expect(sql).toContain("status IN ('shipped', 'delivered')");
-    expect(sql).toContain(') AND (');
+    // Exact composition of the two independently-tested building blocks —
+    // catches an AND->OR mutant on the wrapper that ') AND (' alone,
+    // checked in isolation from the view predicate's actual text, would not.
+    expect(sql).toBe(
+      `(${compile(viewPredicate('shipped')).sql}) AND (${compile(searchPredicate('acme')).sql})`,
+    );
     expect(params).toEqual(Array(5).fill('%acme%'));
   });
 
   it('emits the bare view predicate when there is no search term', () => {
     const { sql, params } = compile(whereForView('awaiting', null));
-    expect(sql).toContain("status = 'processing'");
+    expect(sql).toBe(compile(viewPredicate('awaiting')).sql);
     expect(params).toEqual([]);
   });
 });

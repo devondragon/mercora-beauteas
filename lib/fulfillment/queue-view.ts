@@ -174,32 +174,43 @@ const EMAIL_EVENT_TYPES = new Set([
   "shipping_email_resent",
 ]);
 
+/** Matches the server's SUCCESSFUL_SEND_EVENTS (shipping-email/route.ts). */
+const SUCCESSFUL_SEND_TYPES = new Set(["shipping_email_sent", "shipping_email_resent"]);
+
 /**
- * `resend` is valid only once a `shipping_email_sent` event exists — that is
- * exactly the server's `wrong_mode` rule, so the button never sends a request
- * the route would 409.
+ * `resend` is valid only once a successful send (initial OR resend) has ever
+ * happened — that is exactly the server's `hasSuccessfulSend`/`wrong_mode`
+ * rule, so the button never sends a request the route would 409. This mode
+ * decision is independent of whether the MOST RECENT attempt succeeded: a
+ * failed resend after an earlier successful send still requires `resend`,
+ * not `retry`, going forward.
+ *
+ * `kind`/`message`/`lastError`, by contrast, reflect only the last event —
+ * a failed resend must show red, never a stale green "sent" from an earlier
+ * success.
  */
 export function deriveEmailState(events: FulfillmentEventLike[]): EmailUiState {
   const emailEvents = events.filter((event) => EMAIL_EVENT_TYPES.has(event.type));
   const last = emailEvents.length ? emailEvents[emailEvents.length - 1] : null;
-  const hasSent = emailEvents.some((event) => event.type === "shipping_email_sent");
+  const hasSucceededOnce = emailEvents.some((event) => SUCCESSFUL_SEND_TYPES.has(event.type));
+  const mode: EmailMode = hasSucceededOnce ? "resend" : "retry";
 
-  if (hasSent) {
+  if (!last) {
     return {
-      kind: "sent",
-      mode: "resend",
-      actionLabel: "Resend email",
-      message: "Shipping email sent",
+      kind: "never_attempted",
+      mode: "retry",
+      actionLabel: "Send email",
+      message: "No shipping email sent yet",
       lastError: null,
-      lastAttemptAt: last?.createdAt ?? null,
+      lastAttemptAt: null,
     };
   }
 
-  if (last?.type === "shipping_email_failed") {
+  if (last.type === "shipping_email_failed") {
     const error = typeof last.details?.error === "string" ? last.details.error : null;
     return {
       kind: "failed",
-      mode: "retry",
+      mode,
       actionLabel: "Retry email",
       message: "Shipping email failed to send",
       lastError: error,
@@ -208,12 +219,12 @@ export function deriveEmailState(events: FulfillmentEventLike[]): EmailUiState {
   }
 
   return {
-    kind: "never_attempted",
-    mode: "retry",
-    actionLabel: "Send email",
-    message: "No shipping email sent yet",
+    kind: "sent",
+    mode: "resend",
+    actionLabel: "Resend email",
+    message: "Shipping email sent",
     lastError: null,
-    lastAttemptAt: null,
+    lastAttemptAt: last.createdAt,
   };
 }
 
