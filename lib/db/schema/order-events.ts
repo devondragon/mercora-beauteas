@@ -1,6 +1,7 @@
 // lib/db/schema/order-events.ts - Fulfillment audit log (BMC-216)
 
 import { sqliteTable, text, index } from "drizzle-orm/sqlite-core";
+import { orders } from "./order";
 
 /**
  * Append-oriented fulfillment audit trail. One row per fulfillment action;
@@ -15,7 +16,9 @@ export const orderEvents = sqliteTable(
   "order_events",
   {
     id: text("id").primaryKey(), // crypto.randomUUID()
-    order_id: text("order_id").notNull(),
+    order_id: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
     event_type: text("event_type").notNull(), // OrderEventType
     actor_type: text("actor_type").notNull(), // ActorType
     actor_id: text("actor_id"), // Clerk user ID / "api-token" / null

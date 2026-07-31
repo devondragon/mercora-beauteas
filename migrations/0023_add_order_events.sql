@@ -19,7 +19,7 @@
 -- lib/fulfillment/types.ts and will grow (carrier webhooks, Rolo) without a
 -- table rebuild, which SQLite makes expensive.
 CREATE TABLE IF NOT EXISTS order_events (
-  id          TEXT PRIMARY KEY,
+  id          TEXT PRIMARY KEY NOT NULL,
   order_id    TEXT NOT NULL,
   event_type  TEXT NOT NULL,
   actor_type  TEXT NOT NULL,

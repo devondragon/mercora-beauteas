@@ -49,4 +49,13 @@ describe('order_events schema', () => {
   it('is re-exported from the schema barrel so drizzle(env.DB, { schema }) sees it', () => {
     expect(reExported).toBe(orderEvents);
   });
+
+  it('declares order_id ON DELETE CASCADE, matching migration 0023', () => {
+    const [fk] = getTableConfig(orderEvents).foreignKeys;
+    expect(fk).toBeDefined();
+    const reference = fk.reference();
+    expect(reference.columns.map((c) => c.name)).toEqual(['order_id']);
+    expect(reference.foreignColumns.map((c) => c.name)).toEqual(['id']);
+    expect(fk.onDelete).toBe('cascade');
+  });
 });
