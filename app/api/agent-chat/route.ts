@@ -88,7 +88,7 @@ import type { Product } from "@/lib/types";
 import { runAI, getCurrentEmbeddingModel, extractAIResponse } from "@/lib/ai/config";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 import { requireAuth, PERMISSIONS } from "@/lib/auth/unified-auth";
-import { classifyQuery } from "@/lib/ai/deterministic-answers";
+import { classifyQuery, resolveDeterministicAnswer } from "@/lib/ai/deterministic-answers";
 import { guardAssistantReply } from "@/lib/ai/response-guard";
 import { CONTACT_EMAIL, ORDER_HISTORY_URL, SUPPORT_HOURS } from "@/lib/ai/canonical-facts";
 
@@ -255,10 +255,13 @@ export async function POST(req: NextRequest) {
     //
     // Skipped for content generation: that admin-gated mode is a document
     // writer, not a customer conversation.
+    // Classification is sync and does no I/O, so an ordinary product question
+    // pays nothing here. Only a HIT awaits resolution, and only the categories
+    // whose value lives in D1 touch the database at all (BMC-243).
     if (!isContentGeneration) {
-      const deterministic = classifyQuery(question);
-      if (deterministic) {
-        return buildChatResponse({ answer: deterministic.answer });
+      const category = classifyQuery(question);
+      if (category) {
+        return buildChatResponse({ answer: await resolveDeterministicAnswer(category) });
       }
     }
 

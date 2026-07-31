@@ -27,23 +27,28 @@ import {
   BUSINESS_ADDRESS_LINE,
   CONTACT_EMAIL,
   ORDER_HISTORY_URL,
+  REFUND_POLICY_URL,
   SUPPORT_HOURS,
 } from "@/lib/ai/canonical-facts";
+import { getRefundPolicy } from "@/lib/utils/settings";
 
 /** Identifier for the matched category, surfaced for logging/tests. */
-export type DeterministicCategory = "contact_email" | "order_status" | "business_address";
-
-export interface DeterministicAnswer {
-  category: DeterministicCategory;
-  answer: string;
-}
+export type DeterministicCategory =
+  | "contact_email"
+  | "order_status"
+  | "business_address"
+  | "refund_window";
 
 interface CategoryRule {
   category: DeterministicCategory;
   /** Question matches the category if ANY pattern matches. */
   patterns: RegExp[];
-  /** Built lazily so the answer always reflects the current canonical value. */
-  answer: () => string;
+  /**
+   * Sync answer, built lazily so it always reflects the current canonical value.
+   * Omitted for categories whose value comes from D1 — those are resolved in
+   * `resolveDeterministicAnswer`.
+   */
+  answer?: () => string;
 }
 
 /**
@@ -103,25 +108,79 @@ const RULES: CategoryRule[] = [
     answer: () =>
       `Our mailing address is ${BUSINESS_ADDRESS_LINE}. For anything that needs a person, ${CONTACT_EMAIL} is the fastest way to reach us 💕`,
   },
+  {
+    category: "refund_window",
+    // Answered from D1 (`refund.return_window_days`), so this rule has no sync
+    // `answer` — see `resolveDeterministicAnswer`.
+    patterns: [
+      /\b(return|refund)s? (policy|window|period|timeframe)\b/i,
+      /\bhow (long|many days)\b.{0,30}\b(return|refund|send (it )?back)\b/i,
+      /\bcan i (still )?(return|send back|get a refund)\b/i,
+      /\b(window|deadline) (to|for) (a )?(return|refund)\b/i,
+      /\bwhat('?s| is) your (return|refund) policy\b/i,
+      /\bdo you (accept|take|do) returns\b/i,
+    ],
+  },
 ];
 
 /**
  * Classify a question against the deterministic category table.
  *
- * Pure and synchronous: no model call, no network, no database. Returns `null`
- * when nothing matches, which means "carry on with retrieval + generation".
+ * Pure and synchronous: no model call, no network, no database — a MISS costs
+ * only a handful of regex tests and performs no I/O, which is what makes it safe
+ * to run ahead of every chat request. Returns `null` when nothing matches,
+ * meaning "carry on with retrieval + generation".
+ *
+ * Resolution is deliberately a separate step (`resolveDeterministicAnswer`):
+ * some categories read D1, and folding that in here would make every request
+ * await something even when nothing matched.
  */
-export function classifyQuery(question: string): DeterministicAnswer | null {
+export function classifyQuery(question: string): DeterministicCategory | null {
   if (typeof question !== "string") return null;
   const q = question.trim();
   if (!q) return null;
 
   for (const rule of RULES) {
-    if (rule.patterns.some((pattern) => pattern.test(q))) {
-      return { category: rule.category, answer: rule.answer() };
-    }
+    if (rule.patterns.some((pattern) => pattern.test(q))) return rule.category;
   }
   return null;
+}
+
+/**
+ * Produce the answer for a matched category.
+ *
+ * Async because some categories read their value from D1. Only ever called on a
+ * hit, so the database is never touched for an ordinary product question.
+ */
+export async function resolveDeterministicAnswer(
+  category: DeterministicCategory
+): Promise<string> {
+  const rule = RULES.find((r) => r.category === category);
+  if (rule?.answer) return rule.answer();
+
+  if (category === "refund_window") return refundWindowAnswer();
+
+  // Unreachable while every category has either a sync answer or a branch
+  // above; falling back to the contact address beats returning nothing.
+  return `Email us at ${CONTACT_EMAIL} and we'll help you out 💕`;
+}
+
+/**
+ * Return-window answer, read from `refund.return_window_days` (BMC-243).
+ *
+ * On a settings-read failure this answers WITHOUT a number rather than guessing
+ * one. Stating a wrong return window is the same class of failure as the invented
+ * support address that started this work — and unlike a bad address, the response
+ * guard cannot catch a bad number.
+ */
+async function refundWindowAnswer(): Promise<string> {
+  try {
+    const { returnWindowDays } = await getRefundPolicy();
+    return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}) — and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
+  } catch (error) {
+    console.error("[chai] refund window lookup failed:", error);
+    return `Our full return policy is here: ${REFUND_POLICY_URL} — it has the current return window and how to start one. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+  }
 }
 
 /** Category ids in match order — exported for tests and diagnostics. */

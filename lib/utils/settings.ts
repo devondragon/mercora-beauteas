@@ -63,7 +63,13 @@ export async function getRefundPolicy() {
     minimumRefundAmount: refundSettings['refund.minimum_refund_amount'] || 0,
     applyRestockingFeeOnPartialReturn: refundSettings['refund.apply_restocking_fee_on_partial'] !== false,
     // BMC-213: defaults to true (parity with an app refund) when unset.
-    restockOnExternalRefund: refundSettings['refund.restock_on_external_refund'] !== false
+    restockOnExternalRefund: refundSettings['refund.restock_on_external_refund'] !== false,
+    // BMC-243: the seeded default is 30 (lib/db/schema/settings.ts). This key
+    // has existed since the initial settings seed but was never surfaced here,
+    // so nothing could read the return window without querying settings raw.
+    // The Chai assistant states this number to customers — see
+    // lib/ai/deterministic-answers.ts.
+    returnWindowDays: Number(refundSettings['refund.return_window_days'] ?? 30)
   };
 }
 

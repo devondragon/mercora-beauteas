@@ -43,6 +43,9 @@ export const SITE_URL: string = BASE_URL;
 /** Where a signed-in customer tracks an order. */
 export const ORDER_HISTORY_URL = `${BASE_URL}/account/orders`;
 
+/** Published refund/return policy page (CMS, seeded by migration 0014). */
+export const REFUND_POLICY_URL = `${BASE_URL}/refund-policy`;
+
 export { MAILING_ADDRESS };
 
 /**
