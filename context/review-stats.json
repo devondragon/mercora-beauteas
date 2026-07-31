@@ -1,9 +1,0 @@
-{
-  "testing": { "dispatched": 4, "findings": 29 },
-  "performance": { "dispatched": 1, "findings": 4 },
-  "migration": { "dispatched": 1, "findings": 11 },
-  "security": { "dispatched": 4, "findings": 22 },
-  "correctness": { "dispatched": 4, "findings": 22 },
-  "architecture": { "dispatched": 4, "findings": 22 },
-  "codex": { "dispatched": 4, "findings": 23 }
-}
