@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { brand } from '@/lib/brand.config';
 import { BASE_URL } from '@/lib/seo/metadata';
 import type { SubscriptionEmailData, SubscriptionFrequency } from '@/lib/types/subscription';
 import { postalAddressHtml } from '@/lib/utils/email-footer';
@@ -100,7 +101,7 @@ export async function sendOrderConfirmationEmail(orderData: OrderData): Promise<
     const resendClient = getResendClient();
     
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas <info@beauteas.com>',
+      from: `${brand.name} <${brand.contact.email}>`,
       to: [orderData.customerEmail],
       subject: `Order Confirmation #${orderData.orderNumber} - BeauTeas`,
       html: emailHtml,
@@ -452,7 +453,7 @@ export async function sendOrderStatusUpdateEmail(orderData: OrderStatusUpdateDat
     }
 
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas <info@beauteas.com>',
+      from: `${brand.name} <${brand.contact.email}>`,
       to: [orderData.customerEmail],
       subject: `${subject} - BeauTeas`,
       html: emailHtml,
@@ -492,7 +493,7 @@ export async function sendGiftCardDeliveryEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas <info@beauteas.com>',
+      from: `${brand.name} <${brand.contact.email}>`,
       to: [data.recipientEmail],
       subject: `You've received a BeauTeas gift card`,
       html: emailHtml,
@@ -633,7 +634,7 @@ export async function sendSubscriptionEmail(
     const resendClient = getResendClient();
 
     const { data: resendData, error } = await resendClient.emails.send({
-      from: 'BeauTeas <info@beauteas.com>',
+      from: `${brand.name} <${brand.contact.email}>`,
       to: [data.customerEmail],
       subject,
       html: emailHtml,
@@ -804,7 +805,7 @@ function getTypeSpecificContent(
  * so a staging host can notify a test inbox instead of the real one.
  */
 const MERCHANT_NOTIFICATION_EMAIL =
-  process.env.MERCHANT_NOTIFICATION_EMAIL || 'info@beauteas.com';
+  process.env.MERCHANT_NOTIFICATION_EMAIL || brand.contact.email;
 
 /**
  * Notify the shop owner that an order needs fulfilling.
@@ -890,7 +891,7 @@ export async function sendNewOrderMerchantNotification(
 
     const resendClient = getResendClient();
     const { data, error } = await resendClient.emails.send({
-      from: 'BeauTeas Orders <info@beauteas.com>',
+      from: `${brand.name} Orders <${brand.contact.email}>`,
       to: [MERCHANT_NOTIFICATION_EMAIL],
       replyTo: orderData.customerEmail,
       subject: `New order ${orderData.orderNumber} — ${orderData.total}`,

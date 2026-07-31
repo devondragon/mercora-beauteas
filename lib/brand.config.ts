@@ -26,6 +26,22 @@ export const brand = {
   description: "Organic skincare teas designed to improve your beauty from within. USDA certified organic tea blends with calendula, chamomile, and more.",
   copyright: `©${new Date().getFullYear()} BeauTeas. All rights reserved.`,
 
+  // === Contact ===
+  // THE canonical contact address. Every place that shows customers an address —
+  // email From/Reply-To headers, the Chai assistant's deterministic answers, the
+  // response guard's allowlist — reads it from here. It used to be typed out at
+  // each call site, which is how the old `hello@` drifted from the live `info@`
+  // and how the assistant learned to invent lookalikes (BMC-215).
+  //
+  // The knowledge-base copy in `data/r2/knowledge_md/support.md` is the one
+  // remaining hand-written copy (it is prose that gets embedded, not code) —
+  // update it alongside this value.
+  contact: {
+    email: "info@beauteas.com",
+    /** Support availability, mirrored from knowledge_md/support.md. */
+    supportHours: "Monday–Friday, 9am–5pm Pacific",
+  },
+
   // === Colors ===
   // BeauTeas uses a warm, light theme with blush/peach accents
   colors: {
