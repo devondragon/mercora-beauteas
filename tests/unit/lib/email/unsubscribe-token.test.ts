@@ -12,7 +12,7 @@ import {
   isUnsubscribeConfigured,
 } from '@/lib/email/unsubscribe-token';
 
-const SECRET = 'test-unsubscribe-secret';
+const SECRET = 'test-unsubscribe-secret-that-is-at-least-32-chars-long';
 
 describe('unsubscribe-token', () => {
   beforeEach(() => {
@@ -69,8 +69,14 @@ describe('unsubscribe-token', () => {
 
   it('rejects a token signed with a different secret', async () => {
     const token = (await createUnsubscribeToken('person@example.com'))!;
-    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'a-different-secret';
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'a-different-secret-that-is-also-at-least-32-chars';
     expect(await verifyUnsubscribeToken(token)).toBeNull();
+  });
+
+  it('rejects a secret shorter than the minimum length (weak-secret guard)', async () => {
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'short-secret';
+    expect(isUnsubscribeConfigured()).toBe(false);
+    expect(await createUnsubscribeToken('person@example.com')).toBeNull();
   });
 
   it('reports configuration state via isUnsubscribeConfigured', () => {

@@ -18,7 +18,7 @@ import { GET, POST } from '@/app/api/email/unsubscribe/route';
 import { recordUnsubscribe } from '@/lib/models/email-preferences';
 import { createUnsubscribeToken } from '@/lib/email/unsubscribe-token';
 
-const SECRET = 'route-test-secret';
+const SECRET = 'route-test-secret-that-is-at-least-32-chars-long';
 const EMAIL = 'shopper@example.com';
 const URL_BASE = 'https://beauteas.com/api/email/unsubscribe';
 

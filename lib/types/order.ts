@@ -62,6 +62,7 @@ export interface Order {
   payment_status: PaymentStatus;
   
   // Tracking and fulfillment
+  shipping_carrier?: string; // "ups" | "fedex" | "usps" | "other" (see lib/fulfillment/types.ts)
   tracking_number?: string;
   shipped_at?: string; // ISO 8601 timestamp
   delivered_at?: string; // ISO 8601 timestamp
