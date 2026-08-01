@@ -2,7 +2,7 @@
 
 Migration is tracked under `.planning/` (GSD); the runbook is [`PRODUCTION-CUTOVER-RUNBOOK.md`](../PRODUCTION-CUTOVER-RUNBOOK.md) (original scope: [`MIGRATION-PLAN.md`](../MIGRATION-PLAN.md)).
 
-**Status as of 2026-07-31:** all launch-blocking code is built and audited. The remaining work is operational.
+**Status as of 2026-08-01:** all launch-blocking code is built and audited; prod is deployed, fully migrated, and taking live orders on `shop.beauteas.com`. The remaining work is Phase 10 of the runbook (DNS switch to `www`) plus post-cutover verification.
 
 ---
 
@@ -18,11 +18,9 @@ SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhoo
 
 ## Migration status
 
-**`beauteas-db` (prod) is caught up through `0021`** — `0001`–`0021` all applied; `wrangler d1 migrations list` reported none pending as of the `0021` apply (2026-07-30).
+**All three remote databases are fully migrated through `0024`** — prod (`beauteas-db`), remote dev, and dev preview all report up to date (verified 2026-08-01 via `npm run db:migrate:status:{dev,production}`). `0022`–`0024` were applied 2026-08-01 by the BMC-239 deploy auto-apply, with pre-flight backups (`backup-prod-pre-0022-20260801.sql`, `backup-dev-pre-0024-20260801.sql`). The former deploy-ordering blocker (BMC-231) is resolved — see [`database-migrations.md`](database-migrations.md).
 
 `0019`+`0020` were applied 2026-07-30 after deploying the app, with a pre-flight `d1 export` backup and post-apply verification of effects (templates set on all 9 footer pages, `about` archived, images repointed to `img.beauteas.com`, `page_templates` seeded with the five render kinds, 8 `page_versions` snapshots).
-
-🚨 **`0022`+`0023` (BMC-216A) are merged to `main` but applied to LOCAL ONLY** — see the deploy-ordering blocker in [`database-migrations.md`](database-migrations.md).
 
 > ⚠️ **Remote dev needed a manual image fix.** `0019` was applied to remote dev *during* PR development, before its image URLs were changed to the CDN host — so its `content LIKE '%85A6329%'` guards no longer matched and the pages kept relative `/media/pages/` URLs. Corrected in place with `UPDATE pages SET content = replace(content, '/media/pages/', 'https://img.beauteas.com/pages/')`. Production was unaffected (it received the final file).
 >
@@ -46,12 +44,15 @@ npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-d
 
 ## Operational work still remaining before go-live
 
-- 🚨 **BMC-231 gates every deploy, not just go-live** — apply `0022`+`0023` to remote dev, dev preview, and prod. `main` carries code that requires both; until they're applied, deploying `main` anywhere breaks all order traffic. BMC-231 also provisions `ORDER_STATUS_SECRET`.
-- ✅ Prod **live keys** (`pk_live_…` Clerk + Stripe) are in `wrangler.jsonc`, and all six prod **secrets** are set (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET`) — verified via `wrangler secret list --env production` 2026-07-27. A 7th secret, `ORDER_STATUS_SECRET` (BMC-216A), still needs provisioning on dev + prod — tracked under BMC-231.
-- Seed `admin_users` with production Clerk IDs.
-- Configure Stripe live: subscription prices/coupons + webhook endpoint. `charge.refunded` is subscribed (2026-07-30) — without it the external-refund reconciler never runs. **`refund.updated` + `refund.failed` still need subscribing** (BMC-224): without them a delayed refund (Klarna / Cash App Pay / Amazon Pay) that starts `pending` never cancels or restocks the order, and one that fails blocks a legitimate re-refund. `charge.refund.updated` is already subscribed but fires only on selected payment methods, so it is not a substitute.
-- **Run the Shopify ETL** (`scripts/shopify-migration/migrate-all.ts`, supports `--entity=<name>`) — rehearse against dev, then run against prod. See [`SHOPIFY-ETL.md`](../SHOPIFY-ETL.md) for full steps/gotchas (notably: set `D1_REMOTE=true` or it writes to the local D1). ✅ Validated against dev 2026-06-29 (catalog + pages + images). **Prod run still pending.**
-- Deploy prod build, smoke test, **DNS switch** + Clerk/Stripe domain config, then post-cutover verification (orders, subscriptions, redirects, auth).
+- ✅ **BMC-231 resolved 2026-08-01** — `0022`–`0024` applied to remote dev, dev preview, and prod via the deploy auto-apply. `ORDER_STATUS_SECRET` verified present on both dev and prod Workers.
+- ✅ Prod **live keys** (`pk_live_…` Clerk + Stripe) are in `wrangler.jsonc`, and all prod **secrets** are set (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET`, `ORDER_STATUS_SECRET`) — re-verified via `wrangler secret list --env production` 2026-08-01.
+- ✅ `admin_users` seeded with the production Clerk ID (verified with a real `last_login`).
+- ✅ Stripe live configured: webhook endpoint on `shop.beauteas.com` with 69 events incl. `charge.refunded` (CLI-verified 2026-07-30). Subscription prices/coupons deliberately deferred — subscriptions are not sold at launch.
+- ☐ **`refund.updated` + `refund.failed` still need subscribing on the live endpoint** (BMC-224): without them a delayed refund (Klarna / Cash App Pay / Amazon Pay) that starts `pending` never cancels or restocks the order, and one that fails blocks a legitimate re-refund. `charge.refund.updated` is already subscribed but fires only on selected payment methods, so it is not a substitute. ⚠️ Add via the Dashboard (or send the complete event list) — the API **replaces** `enabled_events` wholesale.
+- ✅ **Prod catalog populated by promoting the curated dev catalog** (`scripts/promote-dev-to-prod.mjs`, 2026-07-27) — NOT by re-running the Shopify ETL against prod; dev is the golden source. 10 products / 6 categories / 13 pages / 47 images / 18 Vectorize vectors.
+- ✅ Prod build deployed (latest 2026-08-01), smoke tested, live order placed end-to-end on `shop.beauteas.com` with real Stripe tax, webhook, inventory decrement, and confirmation email.
+- ☐ **Apple Pay domain-association file** (`public/.well-known/apple-developer-merchantid-domain-association`) — still missing; 404s on the live host (checked 2026-08-01). Card checkout unaffected.
+- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11.
 
 ---
 

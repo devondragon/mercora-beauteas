@@ -2,17 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** Mid–Shopify→Mercora cutover. All launch-blocking code is built and audited; the remaining work is operational (apply migrations to remote envs, run the Shopify ETL, DNS switch). See [`docs/cutover-status.md`](docs/cutover-status.md).
+> **Status:** Final stretch of the Shopify→Mercora cutover. All launch-blocking code is built and audited; prod is deployed and taking live orders on `shop.beauteas.com`. What's left is Phase 10 of the runbook — the DNS switch to `www` — plus post-cutover verification. See [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## 🚨 `main` is currently undeployable
+## ☑ Migrations: all environments up to date (verified 2026-08-01)
 
-**Migrations `0022` + `0023` are merged to `main` but applied to LOCAL ONLY.** Remote dev, dev preview, and prod are all still missing them (verified 2026-07-31). Applying them deliberately is **BMC-231**.
+Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
 
-Without them, `main`'s code takes down **every order read and write** ("no such column: shipping_carrier") plus the ship/tracking/events endpoints.
-
-**Once BMC-239 merges, a deploy applies them for you** — `npm run deploy:*` backs up and applies pending migrations before the build, so the next deploy of any env self-heals rather than 500ing. That downgrades this from "undeployable" to "the next deploy will apply two migrations; know that before you dispatch it." CI still never applies migrations on `ci.yml` — only the deploy path does.
+`npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
 Full detail and the rollback order: [`docs/database-migrations.md`](docs/database-migrations.md).
 
@@ -63,7 +61,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0024_*`** (`0011`–`0023` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0025_*`** (`0011`–`0024` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.

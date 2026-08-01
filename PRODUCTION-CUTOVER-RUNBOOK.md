@@ -16,7 +16,7 @@
 
 **Data strategy (decided 2026-07-20):** prod is populated by **copying the curated catalog/content from dev**, NOT by re-running the Shopify ETL against prod. The ETL already ran into dev and the catalog was hand-fixed there; dev is the golden source. **Customers and orders start fresh** — none are migrated (customers re-register on the new site). See Phase 8.
 
-**Progress as of 2026-07-28 — Phases 0, 1, 2, 3, 5, 7, and 8 are COMPLETE; Phase 9 is nearly done.** Cloudflare paid plan · Clerk production instance (certs issued, `clerk.beauteas.com` FAPI live) · Stripe live + tax registrations · live publishable keys · all 7 production secrets · prod D1 fully migrated (`0001`–`0018`) · Tail Worker alerting verified · **app deployed and serving on `shop.beauteas.com`** · **catalog, images, knowledge, and Vectorize promoted to prod** · **one real live order placed end-to-end** with correct Stripe tax, webhook, inventory decrement, and confirmation email.
+**Progress as of 2026-08-01 — Phases 0, 1, 2, 3, 4, 5, 7, and 8 are COMPLETE; Phase 9 is nearly done.** Cloudflare paid plan · Clerk production instance (certs issued, `clerk.beauteas.com` FAPI live) · Stripe live + tax registrations · live publishable keys · all 8 production secrets (incl. `ORDER_STATUS_SECRET`) · **prod D1 fully migrated (`0001`–`0024`; re-verified 2026-08-01, remote dev + preview too)** · Tail Worker alerting verified · **app deployed and serving on `shop.beauteas.com`** (latest deploy 2026-08-01) · **catalog, images, knowledge, and Vectorize promoted to prod** · **`redirect_map` populated — 51 rows in prod** · **one real live order placed end-to-end** with correct Stripe tax, webhook, inventory decrement, and confirmation email · unauthenticated `/api/orders` and `/api/orders/refund` both return **401** on the live host (checked 2026-08-01).
 
 > ☑ **RESOLVED — `NEXT_PUBLIC_*` build-time blocker.** Fixed via `scripts/build-with-env.mjs`; verified with a real production build. Would have shipped test Stripe/Clerk keys to the browser against live server keys. See Phase 1.
 >
@@ -26,7 +26,7 @@
 
 **⚠️ Still untested: the gift-card, subscription, and review email paths.** Explicitly **not** launch blockers (see the critical path below) — but they have still never rendered, and they are server-rendered templates that fail on undefined fields.
 
-**Next up: Phase 10 — the cutover itself. Nothing is blocking it.** Leaving `shop.` public and ungated is an accepted risk given the <48h window (Phase 9). The one task worth doing *before* DNS is populating `redirect_map`, which is empty (Phase 8) — everything else on the open list is post-launch.
+**Next up: Phase 10 — the cutover itself. Nothing is blocking it.** Leaving `shop.` public and ungated is an accepted risk given the <48h window (Phase 9). `redirect_map` is now populated (51 rows in prod, verified 2026-08-01) — the remaining pre-DNS nice-to-have is the Apple Pay domain-association file (Phase 9); everything else on the open list is post-launch.
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -302,7 +302,7 @@ In **Stripe Live mode**:
 
     **Operational follow-ups:**
     1. ☑ **`charge.refunded` subscribed on the live endpoint** — added and verified 2026-07-30 (`stripe webhook_endpoints list --live`). All 56 pre-existing events, including `payment_intent.succeeded`, survived the edit.
-    2. ⬜ **Apply migration `0021`**, which seeds `refund.restock_on_external_refund` (default **on**). Deferred until PR #102 merges. Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.
+    2. ☑ **Migration `0021` applied** — local, remote dev, dev preview, and production 2026-07-30 (row verified present in dev + prod). Seeds `refund.restock_on_external_refund` (default **on**). Only *full* external refunds restock; partial ones carry no line attribution, so stock is left alone. Toggle it in Admin → Settings → Refunds.
 
     > Note: the handler reads the setting through `getRefundPolicy()`, which defaults to `true` when the row is absent — so behaviour is correct even before `0021` is applied. The migration exists to make the toggle visible and editable in the admin UI.
   - **[BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) (Medium)** — no `charge.dispute.*` handling. Chargebacks are invisible to the app; the only signal is Stripe's email, so a missed evidence deadline is an automatic loss. Sequence **after** BMC-213 and reuse its reconciliation.
@@ -430,7 +430,7 @@ npx tsx scripts/shopify-migration/migrate-all.ts                       # then th
 
 **Verified live in prod 2026-07-28:** 10 products · 6 categories · 13 pages · 47 R2 images · 8 knowledge articles · **Vectorize index rebuilt to 18 vectors** (10 products + 8 knowledge, `processedUpTo` 2026-07-27T22:58Z).
 
-> ⚠️ **`redirect_map` is EMPTY — 0 rows in prod *and* in dev.** The promotion copied it faithfully; there was simply never anything to copy. Impact is limited but real: only the **structural** fallback redirect applies (`/products/:slug` → 301 `/product/:slug`, `middleware.ts:214-223` — verified working on `shop.`). Any Shopify URL whose **slug** changed during the ETL will 301 to a product that doesn't exist → 404, losing that page's link equity. With ~10 SKUs this is a 10-minute check, not a project: compare the live Shopify product/collection slugs against prod `products.slug`, and insert a `redirect_map` row for each mismatch before Phase 10. See the Phase 11 redirect check.
+> ☑ **`redirect_map` populated — 51 rows in prod and dev** (loaded 2026-07-27 with the blog migration; re-verified 51 rows in prod 2026-08-01). See [`docs/redirects.md`](docs/redirects.md). The structural fallback (`/products/:slug` → 301 `/product/:slug`, `middleware.ts:214-223`) was verified working on `shop.` — the Phase 11 check is still to `curl -IL` every old Shopify URL and confirm each 301 lands on a **200**, not a 404.
 
 Cutover-day, start of window. Prod starts fresh (no customers/orders); we copy the **curated catalog/content** from dev. **Prereq: Phase 3 (migrations 0013–0018) applied**, so dev and prod schemas match exactly.
 
@@ -521,7 +521,7 @@ Check on each: images actually load (they resolve against `img.beauteas.com`, no
 
 > ⚠️ All `from:` addresses are now **`info@beauteas.com`** (updated 2026-07-27; was `hello@`, in 6 places). **Staging sends real, live-branded email.** Use your own addresses for every test, and never point a staging test at a real customer record.
 
-- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` — **confirmed still missing 2026-07-28** (`public/.well-known/` does not exist). Register **both** `shop.beauteas.com` and `www.beauteas.com` in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice. *Card checkout works without this; only the Apple Pay wallet button is affected.*
+- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` — **confirmed still missing 2026-08-01**: `public/.well-known/` does not exist in the repo and `https://shop.beauteas.com/.well-known/apple-developer-merchantid-domain-association` returns **404** on the live host. Even if the domain was added in the Stripe dashboard, verification cannot succeed while the file 404s. Register **both** `shop.beauteas.com` and `www.beauteas.com` in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice. *Card checkout works without this; only the Apple Pay wallet button is affected.*
 
 ---
 
