@@ -100,7 +100,7 @@ graph TB
 ├── /api/orders              # UNIFIED order management
 │   ├── GET    - List orders (with filtering)
 │   ├── POST   - Create new orders  
-│   └── PUT    - Update order status
+│   └── PUT    - Update order metadata only (notes/external_references/extensions — BMC-230)
 ├── /api/orders/[id]         # Specific order operations
 │   ├── GET    - Get order details
 │   └── PUT    - Update specific order
@@ -218,7 +218,7 @@ const orderResponse = await fetch('/api/orders', {
 
 ### **Admin Endpoints** (API Key Auth)
 - `/api/orders?admin=true`
-- `/api/orders` (PUT with admin permissions)
+- `/api/orders` (PUT — ORDERS_UPDATE scope, a webhook/automation permission, not admin; metadata allowlist only as of BMC-230, see `docs/api-routes.md`)
 - `/api/products` (POST/PUT)
 
 ### **Webhook Endpoints** (Signature Auth)

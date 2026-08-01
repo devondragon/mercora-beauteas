@@ -59,6 +59,7 @@ import { NextRequest } from 'next/server';
 import { PUT } from '@/app/api/orders/route';
 import { getDbAsync } from '@/lib/db';
 import { sendOrderStatusUpdateEmail } from '@/lib/utils/email';
+import { MAX_CAS_ATTEMPTS } from '@/lib/payments/refund-ledger-store';
 
 function makeSelectChain(resolvedRows: any[]) {
   return {
@@ -232,5 +233,130 @@ describe('PUT /api/orders allowlisted metadata updates (BMC-216F)', () => {
     const res = await PUT(putRequest({ orderId: 'NOPE', notes: 'x' }));
     expect(res.status).toBe(404);
     expect(updateChain.set).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * BMC-213 bypass-surface enumeration (BMC-230 AC): the "no alternate API can
+ * set fulfillment fields" regression suite must explicitly consider the
+ * `charge.refunded` reconciler, not just the client-facing routes above.
+ *
+ * The reconciler (app/api/webhooks/stripe/handlers/refund-handlers.ts,
+ * dispatched from app/api/webhooks/stripe/route.ts) is NOT reachable by an
+ * ORDERS_UPDATE-scoped client at all — the webhook route rejects any request
+ * missing a valid `stripe-signature` header (HMAC-verified via
+ * verifyWebhookSignature) before any handler runs, so it takes a completely
+ * different, unforgeable credential than this route's Bearer token. It locates
+ * the order to reconcile via getOrderByPaymentIntentId, which OR-matches
+ * `extensions.payment_intent_id` and `external_references.payment_intent_id`
+ * with `LIMIT 1` and no `ORDER BY` (lib/models/mach/orders.ts) — so the surface
+ * THIS route controls is not "can a client reach the reconciler" (it can't) but
+ * "can a client plant a payment_intent_id that redirects a legitimate,
+ * signature-verified reconciliation event onto the wrong order." These two
+ * assertions pin that: PUT can neither introduce nor rebind the PI id in
+ * either JSON column, which is what closes that redirection vector (the pure
+ * re-pinning behavior itself is unit-tested exhaustively in
+ * tests/unit/lib/utils/order-update-guards.test.ts's
+ * "mergeExternalReferences — payment_intent_id pinning (BMC-230)" block).
+ */
+describe('PUT /api/orders — BMC-213 charge.refunded reconciler bypass surface (BMC-230)', () => {
+  it('cannot plant a payment_intent_id into extensions to misdirect reconciliation onto an order that never had one', async () => {
+    const { updateChain } = wireDb(
+      [{ ...existingOrderRow, extensions: { carrier: 'ups' } }],
+      [{ ...existingOrderRow, extensions: { carrier: 'ups' } }]
+    );
+    const res = await PUT(
+      putRequest({
+        orderId: 'WEB-TEST-1000',
+        extensions: { payment_intent_id: 'pi_victim_charge' },
+      })
+    );
+    expect(res.status).toBe(200);
+    const setArg = updateChain.set.mock.calls[0][0];
+    expect(setArg.extensions).not.toHaveProperty('payment_intent_id');
+  });
+
+  it('cannot rebind a stored payment_intent_id via external_references to redirect reconciliation to a different PaymentIntent', async () => {
+    const { updateChain } = wireDb(
+      [{ ...existingOrderRow, external_references: { payment_intent_id: 'pi_real_123', erp: 'X-1' } }],
+      [existingOrderRow]
+    );
+    const res = await PUT(
+      putRequest({
+        orderId: 'WEB-TEST-1000',
+        external_references: { payment_intent_id: 'pi_victim_charge', erp: 'X-2' },
+      })
+    );
+    expect(res.status).toBe(200);
+    const setArg = updateChain.set.mock.calls[0][0];
+    // The stored binding survives; the client's rebind attempt never applies.
+    expect(setArg.external_references.payment_intent_id).toBe('pi_real_123');
+    // Ordinary cross-system metadata alongside it still updates.
+    expect(setArg.external_references.erp).toBe('X-2');
+  });
+});
+
+/**
+ * BMC-230 review — mergeExtensions/mergeExternalReferences derive their write
+ * from a single stale read. Every OTHER writer of these JSON columns (the
+ * refund route, the BMC-213 charge.refunded reconciler) is CAS-guarded on
+ * `updated_at` for exactly this reason: an unguarded blind write here could
+ * race a concurrent refund settling between this handler's SELECT and its
+ * UPDATE and revert the refunds ledger / restock bookkeeping it just
+ * committed. These pin the retry-then-409 contract the route now implements.
+ */
+describe('PUT /api/orders — updated_at CAS guard on the extensions/external_references write', () => {
+  it('retries after losing the CAS race, then commits against the fresh read', async () => {
+    const firstRead = { ...existingOrderRow, updated_at: '2026-07-01T00:00:00.000Z' };
+    const secondRead = { ...existingOrderRow, updated_at: '2026-07-01T00:05:00.000Z' };
+    const finalRow = { ...secondRead, notes: 'leave at side door' };
+
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValueOnce([firstRead]).mockResolvedValueOnce([secondRead]),
+    };
+    const updateChain = {
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      // Attempt 1 loses the race (a concurrent writer committed first); attempt 2 wins.
+      returning: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([finalRow]),
+    };
+    vi.mocked(getDbAsync).mockResolvedValue({
+      select: vi.fn().mockReturnValue(selectChain),
+      update: vi.fn().mockReturnValue(updateChain),
+    } as any);
+
+    const res = await PUT(putRequest({ orderId: 'WEB-TEST-1000', notes: 'leave at side door' }));
+
+    expect(res.status).toBe(200);
+    expect(selectChain.limit).toHaveBeenCalledTimes(2);
+    expect(updateChain.returning).toHaveBeenCalledTimes(2);
+    const body = (await res.json()) as { data: { notes: string } };
+    expect(body.data.notes).toBe('leave at side door');
+  });
+
+  it('returns 409 after exhausting all CAS attempts under sustained contention', async () => {
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([existingOrderRow]),
+    };
+    const updateChain = {
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      returning: vi.fn().mockResolvedValue([]), // always loses the race
+    };
+    vi.mocked(getDbAsync).mockResolvedValue({
+      select: vi.fn().mockReturnValue(selectChain),
+      update: vi.fn().mockReturnValue(updateChain),
+    } as any);
+
+    const res = await PUT(putRequest({ orderId: 'WEB-TEST-1000', notes: 'x' }));
+
+    expect(res.status).toBe(409);
+    expect(updateChain.returning).toHaveBeenCalledTimes(MAX_CAS_ATTEMPTS);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/concurrent/i);
   });
 });

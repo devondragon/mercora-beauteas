@@ -413,6 +413,24 @@ describe('mergeExtensions — every server-read key is protected (BMC-230 review
   });
 });
 
+describe('mergeExtensions / mergeExternalReferences — array-shaped client input', () => {
+  // parseExtensionsInput explicitly treats a bare array as invalid input; a
+  // corrupt CLIENT value is handled leniently (empty overlay), never a
+  // stored-value drop — pin that an array literal (not just a stringified
+  // array) follows the same "ignored, not honored" contract.
+  it('mergeExtensions treats an array-literal client overlay as empty (stored keys survive untouched)', () => {
+    const out = merged(['a', 'b'], { payment_intent_id: 'pi_real_123', refunds: [{ amount: 500 }] });
+    expect(out.payment_intent_id).toBe('pi_real_123');
+    expect(out.refunds).toEqual([{ amount: 500 }]);
+  });
+
+  it('mergeExternalReferences treats an array-literal client overlay as empty (stored PI id survives)', () => {
+    const out = mergedRefs(['a', 'b'], { payment_intent_id: 'pi_real_123', erp: 'X-1' });
+    expect(out.payment_intent_id).toBe('pi_real_123');
+    expect(out.erp).toBe('X-1');
+  });
+});
+
 describe('mergeExtensions — fail-safe on corrupt stored extensions', () => {
   it('rejects (422) a corrupt stored JSON string rather than dropping keys', () => {
     const result = mergeExtensions({ carrier: 'X' }, '{ not valid json');
