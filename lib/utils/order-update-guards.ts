@@ -31,8 +31,11 @@
  *         (e.g. `PUT { extensions: { carrier: 'X' } }`) would drop it, resetting
  *         the cumulative refunded total to 0 and enabling a second refund beyond
  *         the original amount.
- *       - `refunds_version`, `restockedLineKeys`, `email`, `carrier`,
- *         `trackingUrl` — see `SERVER_OWNED_EXTENSION_KEYS`.
+ *       - `refunds_version`, `restockedLineKeys`, `restockInflightLineKeys`,
+ *         `email`, `carrier`, `trackingUrl`, `stripe_amount_refunded`,
+ *         `agent_id`, `expected_shipping_cents`, `expected_tax_cents` — every
+ *         `extensions` key a server-side money, authorization or idempotency
+ *         decision reads. See `SERVER_OWNED_EXTENSION_KEYS`.
  *     So this handler MERGES the client's object over the stored one (rather
  *     than wholesale-replacing), drops the server-owned keys from the client's
  *     overlay, and re-pins `payment_intent_id` to the stored value. See
@@ -187,19 +190,49 @@ function parseExtensionsInput(
  *  - `refunds`, `refunds_version` — the refund ledger and the monotonic counter
  *    the refund route's CAS is guarded on. Writable here, a PUT could reset the
  *    over-refund guard or stall/replay the CAS.
- *  - `restockedLineKeys` — the restock idempotency record; rewriting it causes
- *    double-restock or silently skipped restock on refund.
+ *  - `restockedLineKeys`, `restockInflightLineKeys` — the restock idempotency
+ *    pair. `readUnavailableRestockKeys` unions them, so BOTH must be protected:
+ *    clearing either causes double-restock, planting keys in either silently
+ *    suppresses a legitimate one.
+ *  - `stripe_amount_refunded` (BMC-230 review) — the high-water mark of
+ *    cumulative `charge.amount_refunded` observed from Stripe. The over-refund
+ *    check is `Math.max(ledgerRefunded, stripeRefundedFloor)`, and per its own
+ *    contract the floor "is the only thing that keeps the guard honest" when a
+ *    `pending` → `failed` reservation makes the ledger under-report. Writable
+ *    here, a PUT could zero the floor and wave through a second real refund.
+ *  - `agent_id` (BMC-230 review) — the MCP ownership predicate. `getOwnedOrder`
+ *    returns not-found unless `extensions.agent_id === agentId`. Writable here,
+ *    a PUT could hand an order to an arbitrary agent or strip the legitimate
+ *    agent's access.
+ *  - `expected_shipping_cents`, `expected_tax_cents` (BMC-230 review) — computed
+ *    server-side at PaymentIntent creation and re-enforced by
+ *    `order-finalization` as the BMC-201 undercharge guard. Zeroed on a still-
+ *    pending order, `verifyOrderChargeSufficient` falls back to the goods-only
+ *    floor and accepts a capture that omitted tax + shipping.
+ *  - `tracking_url` — the snake_case spelling. Nothing reads it today, but the
+ *    top-level rejected map treats both spellings as equivalent, so the nested
+ *    strip does too rather than leaving a spelling-dependent hole.
  *
  * `payment_intent_id` is NOT in this list because it is not merely dropped —
  * it is re-pinned to the stored value. See `mergeGuardedJsonColumn`.
+ *
+ * When adding a server-owned key anywhere, add it here too — the
+ * "every server-read key is protected" block in
+ * tests/unit/lib/utils/order-update-guards.test.ts pins this set.
  */
 export const SERVER_OWNED_EXTENSION_KEYS = [
   'carrier',
   'trackingUrl',
+  'tracking_url',
   'email',
   'refunds',
   'refunds_version',
   'restockedLineKeys',
+  'restockInflightLineKeys',
+  'stripe_amount_refunded',
+  'agent_id',
+  'expected_shipping_cents',
+  'expected_tax_cents',
 ] as const;
 
 /**
