@@ -33,11 +33,31 @@
 -- would re-form on the next order.
 --
 -- SAFETY
---   * Idempotent — the GLOB guard skips rows already in canonical form, so
---     re-running is a no-op.
+--   * Idempotent — a row is rewritten only when strftime() would actually
+--     CHANGE it, so re-running is a no-op.
 --   * Lossless — strftime() returns NULL for a value it cannot parse, and the
 --     `IS NOT NULL` guard means such a row is left untouched rather than nulled.
 --   * Narrow — only rows NOT already canonical are rewritten.
+--
+-- WHY NO LIKE/GLOB PATTERN HERE
+-- The obvious guard is a GLOB matching the canonical shape
+-- ('[0-9][0-9][0-9][0-9]-[0-9][0-9]-...'), and it does NOT work: D1/workerd
+-- builds SQLite with SQLITE_LIMIT_LIKE_PATTERN_LENGTH at 50 bytes, and that
+-- pattern is ~92. It fails with "LIKE or GLOB pattern too complex:
+-- SQLITE_ERROR" — meaning the migration could never apply, to any environment.
+-- Since `npm run deploy:*` now auto-applies pending migrations before the build
+-- (BMC-239) and aborts the deploy on failure, that would have broken deploys,
+-- not just this migration.
+--
+-- Comparing the column against strftime()'s OWN output avoids pattern matching
+-- altogether: a row is rewritten exactly when normalizing would change it.
+--
+-- Known limit, deliberately accepted: SQLite cannot parse a lowercase
+-- '2026-07-29t11:00:00.000z' — strftime() returns NULL for it — so such a row
+-- is left alone rather than repaired. That is the correct trade (the
+-- IS NOT NULL guard is what stops unparseable values being nulled out), and it
+-- is not reachable in practice: every writer emits uppercase via
+-- Date#toISOString().
 --
 -- The canonical form is exactly what Date#toISOString() emits:
 --   YYYY-MM-DDTHH:MM:SS.sssZ
@@ -49,11 +69,11 @@
 UPDATE orders
 SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at)
 WHERE created_at IS NOT NULL
-  AND created_at NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]Z'
-  AND strftime('%Y-%m-%dT%H:%M:%fZ', created_at) IS NOT NULL;
+  AND strftime('%Y-%m-%dT%H:%M:%fZ', created_at) IS NOT NULL
+  AND created_at <> strftime('%Y-%m-%dT%H:%M:%fZ', created_at);
 
 UPDATE orders
 SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
 WHERE updated_at IS NOT NULL
-  AND updated_at NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]Z'
-  AND strftime('%Y-%m-%dT%H:%M:%fZ', updated_at) IS NOT NULL;
+  AND strftime('%Y-%m-%dT%H:%M:%fZ', updated_at) IS NOT NULL
+  AND updated_at <> strftime('%Y-%m-%dT%H:%M:%fZ', updated_at);
