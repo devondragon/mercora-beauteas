@@ -48,10 +48,10 @@ npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-d
 - ✅ Prod **live keys** (`pk_live_…` Clerk + Stripe) are in `wrangler.jsonc`, and all prod **secrets** are set (`CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `ADMIN_VECTORIZE_TOKEN`, `EMAIL_UNSUBSCRIBE_SECRET`, `ORDER_STATUS_SECRET`) — re-verified via `wrangler secret list --env production` 2026-08-01.
 - ✅ `admin_users` seeded with the production Clerk ID (verified with a real `last_login`).
 - ✅ Stripe live configured: webhook endpoint on `shop.beauteas.com` with 69 events incl. `charge.refunded` (CLI-verified 2026-07-30). Subscription prices/coupons deliberately deferred — subscriptions are not sold at launch.
-- ☐ **`refund.updated` + `refund.failed` still need subscribing on the live endpoint** (BMC-224): without them a delayed refund (Klarna / Cash App Pay / Amazon Pay) that starts `pending` never cancels or restocks the order, and one that fails blocks a legitimate re-refund. `charge.refund.updated` is already subscribed but fires only on selected payment methods, so it is not a substitute. ⚠️ Add via the Dashboard (or send the complete event list) — the API **replaces** `enabled_events` wholesale.
+- ✅ **`refund.updated` + `refund.failed` subscribed on the live endpoint** (2026-08-01, BMC-224) — the refund-lifecycle handlers deployed the same day, so a delayed refund (Klarna / Cash App Pay / Amazon Pay) now resumes cancellation/restock when it settles.
 - ✅ **Prod catalog populated by promoting the curated dev catalog** (`scripts/promote-dev-to-prod.mjs`, 2026-07-27) — NOT by re-running the Shopify ETL against prod; dev is the golden source. 10 products / 6 categories / 13 pages / 47 images / 18 Vectorize vectors.
 - ✅ Prod build deployed (latest 2026-08-01), smoke tested, live order placed end-to-end on `shop.beauteas.com` with real Stripe tax, webhook, inventory decrement, and confirmation email.
-- ☐ **Apple Pay domain-association file** (`public/.well-known/apple-developer-merchantid-domain-association`) — still missing; 404s on the live host (checked 2026-08-01). Card checkout unaffected.
+- ✅ **Apple Pay live** (BMC-81, 2026-08-01) — domain-association file deployed and serving, both domains registered in Stripe, and a real production Apple Pay order placed successfully.
 - ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11.
 
 ---

@@ -521,7 +521,7 @@ Check on each: images actually load (they resolve against `img.beauteas.com`, no
 
 > ⚠️ All `from:` addresses are now **`info@beauteas.com`** (updated 2026-07-27; was `hello@`, in 6 places). **Staging sends real, live-branded email.** Use your own addresses for every test, and never point a staging test at a real customer record.
 
-- ☐ **Apple Pay** (BMC-81): add `public/.well-known/apple-developer-merchantid-domain-association` — **confirmed still missing 2026-08-01**: `public/.well-known/` does not exist in the repo and `https://shop.beauteas.com/.well-known/apple-developer-merchantid-domain-association` returns **404** on the live host. Even if the domain was added in the Stripe dashboard, verification cannot succeed while the file 404s. Register **both** `shop.beauteas.com` and `www.beauteas.com` in the Stripe dashboard — Stripe allows multiple domains, so there is no reason to do this twice. *Card checkout works without this; only the Apple Pay wallet button is affected.*
+- ☑ **Apple Pay** (BMC-81) — **verified with a real production order 2026-08-01.** `public/.well-known/apple-developer-merchantid-domain-association` (Stripe's universal file, SHA-256-matched) deployed and serving 200 on `shop.beauteas.com`; both `shop.` and `www.beauteas.com` registered in the Stripe dashboard; a live Apple Pay checkout succeeded end-to-end (order `WEB-USER…-1785626377011`, paid/processing, webhook processed). `www` verifies automatically at cutover — the file is already in the bundle.
 
 ---
 
