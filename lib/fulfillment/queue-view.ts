@@ -108,6 +108,54 @@ export function buildQueueQueryString(params: {
 }
 
 /**
+ * Latest-request-wins guard for the queue's list fetch (review finding C-1).
+ *
+ * The queue refetches on every view / search / page change, and each load also
+ * fans out N `/events` requests for email status before it finishes. Without a
+ * guard the LAST RESPONSE wins rather than the LAST REQUEST: switch from a slow
+ * tab to a fast one and the slow tab's rows land on top of the fast tab's,
+ * leaving the header and the rows describing different views — e.g. "Mark
+ * shipped" buttons rendered under Cancelled.
+ *
+ * `start()` before firing, `isCurrent(token)` before committing any state from
+ * the response. A superseded response is dropped.
+ */
+export function createRequestSequence(): {
+  start: () => number;
+  isCurrent: (token: number) => boolean;
+} {
+  let latest = 0;
+  return {
+    start: () => ++latest,
+    isCurrent: (token: number) => token === latest,
+  };
+}
+
+/**
+ * Clamp a pagination offset onto a page that still exists (review finding C-2).
+ *
+ * Removing the last row of the last page (shipping it out of the awaiting view)
+ * leaves `offset` pointing past the end of the list. The queue then renders its
+ * empty state — and because `total` has also dropped to exactly one page, the
+ * `total > PAGE_SIZE` pager guard hides the pager, so there is no control left
+ * to navigate back. The operator sees "Nothing in awaiting shipment" over a
+ * queue that is not empty.
+ *
+ * Returns the start of the last page that still holds a row, never moving the
+ * operator FORWARD past rows they have not seen.
+ */
+export function clampOffsetAfterRemoval(params: {
+  offset: number;
+  pageSize: number;
+  totalAfter: number;
+}): number {
+  const { offset, pageSize, totalAfter } = params;
+  if (totalAfter <= 0) return 0;
+  const lastPageStart = Math.floor((totalAfter - 1) / pageSize) * pageSize;
+  return Math.min(offset, lastPageStart);
+}
+
+/**
  * After a successful shipment the order is no longer awaiting shipment, so the
  * awaiting view drops it immediately; every other view shows the updated row.
  */

@@ -8,7 +8,7 @@
  * GET /api/admin/orders in SQL. The only mutations available here are the
  * guarded fulfillment endpoints — there is no generic status write.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ import {
   QUEUE_VIEW_LABELS,
   applyShipmentResult,
   buildQueueQueryString,
+  clampOffsetAfterRemoval,
+  createRequestSequence,
   deriveEmailState,
   deriveQueueRowState,
   formatTabCount,
@@ -87,6 +89,10 @@ export default function OrdersQueueClient() {
   // shipping email had ever been attempted.
   const [emailLoadFailed, setEmailLoadFailed] = useState<Record<string, boolean>>({});
 
+  // Identifies the newest list request so a superseded one can be discarded
+  // instead of overwriting the current view (C-1).
+  const requestSeq = useRef(createRequestSequence());
+
   const [shipTarget, setShipTarget] = useState<AdminQueueOrder | null>(null);
   const [trackingTarget, setTrackingTarget] = useState<AdminQueueOrder | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
@@ -103,9 +109,10 @@ export default function OrdersQueueClient() {
   }, []);
 
   const loadEmailStates = useCallback(
-    async (rows: AdminQueueOrder[]) => {
+    async (rows: AdminQueueOrder[], isCurrent: () => boolean = () => true) => {
       const shipped = rows.filter((row) => row.status === "shipped" || row.status === "delivered");
       if (!shipped.length) {
+        if (!isCurrent()) return;
         setEmailStates({});
         setEmailLoadFailed({});
         return;
@@ -119,6 +126,9 @@ export default function OrdersQueueClient() {
           }
         }),
       );
+      // This fan-out is the widest part of a load; by the time it settles the
+      // operator may already be on another tab (C-1).
+      if (!isCurrent()) return;
       setEmailStates(
         Object.fromEntries(
           results.filter((r) => r.state).map((r) => [r.id, r.state as EmailUiState]),
@@ -130,6 +140,12 @@ export default function OrdersQueueClient() {
   );
 
   const load = useCallback(async () => {
+    // C-1: a load is superseded the moment a newer one starts. Without this the
+    // LAST RESPONSE wins rather than the last request, so a slow tab's rows can
+    // land under a fast tab's header.
+    const token = requestSeq.current.start();
+    const isCurrent = () => requestSeq.current.isCurrent(token);
+
     setLoading(true);
     setLoadError(null);
     try {
@@ -138,16 +154,19 @@ export default function OrdersQueueClient() {
       if (!response.ok) throw new Error(`Failed to load orders (${response.status})`);
       const body = (await response.json()) as AdminOrdersResponse;
       const rows = body.orders ?? [];
+      if (!isCurrent()) return;
       setOrders(rows);
       setTotal(body.total ?? 0);
       setCounts(body.counts ?? EMPTY_COUNTS);
-      await loadEmailStates(rows);
+      await loadEmailStates(rows, isCurrent);
     } catch (error) {
+      // A superseded load must not clear the live view or post its error.
+      if (!isCurrent()) return;
       setOrders([]);
       setTotal(0);
       setLoadError(error instanceof Error ? error.message : "Failed to load orders");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [view, query, offset, loadEmailStates]);
 
@@ -249,13 +268,33 @@ export default function OrdersQueueClient() {
           setNotice({ tone: "success", message: `Order ${updated.id} marked shipped.` });
         }
         await refreshEmailState(updated.id);
+
+        // C-2: in the awaiting view the row just left the list. The optimistic
+        // splice above can empty the current page — and since `total` drops with
+        // it, the `total > PAGE_SIZE` pager guard hides the pager too, stranding
+        // the operator on a dead page with an empty state over a queue that
+        // isn't empty. Step back to a page that still has rows, then resync from
+        // the server so counts and total are authoritative rather than derived
+        // from local arithmetic.
+        if (view === "awaiting") {
+          const nextOffset = clampOffsetAfterRemoval({
+            offset,
+            pageSize: PAGE_SIZE,
+            totalAfter: Math.max(0, total - 1),
+          });
+          // Changing offset re-runs `load` through its dependency on it; if the
+          // page is unchanged we still refetch, so neither path leaves the
+          // locally-mutated counts on screen.
+          if (nextOffset !== offset) setOffset(nextOffset);
+          else await load();
+        }
       } catch (error) {
         setModalError(error instanceof Error ? error.message : "Could not mark the order shipped");
       } finally {
         setModalBusy(false);
       }
     },
-    [shipTarget, view, refreshEmailState],
+    [shipTarget, view, offset, total, load, refreshEmailState],
   );
 
   const handleTrackingConfirm = useCallback(
