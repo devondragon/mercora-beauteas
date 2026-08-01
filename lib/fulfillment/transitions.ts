@@ -19,6 +19,22 @@ export interface OrderFulfillmentSnapshot {
   payment_status: string | null;
   shipping_carrier: string | null;
   tracking_number: string | null;
+  /**
+   * Does the refund ledger hold an in-flight (`pending`) entry? (BMC-224)
+   *
+   * A refund on a delayed payment method — Klarna / Cash App Pay / Amazon Pay,
+   * live here via `automatic_payment_methods` with `allow_redirects: 'always'` —
+   * is ACCEPTED by Stripe long before it settles, so `POST /api/orders/refund`
+   * records the entry `pending` and withholds the order-level effects until
+   * `refund.updated` confirms the money left. That leaves a fully-refunded order
+   * sitting in exactly the `processing` + `paid` state this module ships.
+   *
+   * Without this flag the window is a real loss: ship the goods, then the refund
+   * succeeds, and the customer has both. Refusing to ship while a refund is in
+   * flight is the safe direction — the worst case is a delayed shipment on an
+   * order somebody is trying to refund anyway.
+   */
+  refund_pending: boolean;
 }
 
 /** A key counts as "supplied" only when it is present and not null/empty. */
@@ -84,16 +100,28 @@ export type ShipDecision =
   | { kind: "ship" }
   | { kind: "idempotent" }
   | { kind: "conflict" }
-  | { kind: "not_fulfillable"; status: string; paymentStatus: string | null };
+  | {
+      kind: "not_fulfillable";
+      status: string;
+      paymentStatus: string | null;
+      /** Set when the blocker is an in-flight refund rather than the status. */
+      refundPending?: true;
+    };
 
 /**
- * processing + paid  -> ship
- * shipped            -> idempotent (identical data) or conflict
- * everything else    -> not_fulfillable (status/paymentStatus returned so the
- *                       admin UI can say WHY rather than "409")
+ * shipped                    -> idempotent (identical data) or conflict
+ * refund in flight           -> not_fulfillable (BMC-224)
+ * processing + paid          -> ship
+ * everything else            -> not_fulfillable (status/paymentStatus returned
+ *                               so the admin UI can say WHY rather than "409")
  *
  * The stored carrier is run through normalizeLegacyCarrier so a pre-migration
  * value like "UPS Ground" compares equal to a fresh "ups" retry.
+ *
+ * The refund check sits AFTER the shipped branch on purpose: an order that has
+ * already shipped stays idempotent/conflict, because re-sending identical
+ * shipment data for a shipment that physically happened must not start failing
+ * just because someone later opened a refund.
  */
 export function decideShipment(
   order: OrderFulfillmentSnapshot,
@@ -105,6 +133,18 @@ export function decideShipment(
       trackingNumber: sanitizeTrackingNumber(order.tracking_number),
     };
     return shipmentDataEqual(stored, input) ? { kind: "idempotent" } : { kind: "conflict" };
+  }
+
+  // A refund Stripe has accepted but not yet settled leaves the order in the
+  // `processing` + `paid` state below. Shipping it risks the customer keeping
+  // both the goods and the money — see `refund_pending` on the snapshot.
+  if (order.refund_pending) {
+    return {
+      kind: "not_fulfillable",
+      status: order.status,
+      paymentStatus: order.payment_status,
+      refundPending: true,
+    };
   }
 
   if (order.status === "processing" && order.payment_status === "paid") {

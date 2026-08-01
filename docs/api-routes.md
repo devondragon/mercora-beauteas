@@ -14,6 +14,8 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 - `GET`/`POST /api/orders`
 - `GET /api/orders/[id]`
 - `POST /api/orders/refund` — authenticated (`ORDERS_UPDATE`). The ledger entry mirrors Stripe's refund status: a delayed payment method (Klarna / Cash App Pay / Amazon Pay) returns `pending`, and the order is **not** cancelled or restocked until `refund.updated` confirms it settled (BMC-224). The response carries `refund.status` so an operator can tell the two apart. A refund Stripe rejects synchronously releases its reservation and returns 502.
+
+  ⚠️ **Because the order stays `processing` + `paid` while a refund is unsettled, `POST /api/admin/orders/[id]/ship` refuses to ship it** — otherwise the goods go out and the refund then succeeds, leaving the customer with both. The guard is a SQL predicate inside the ship CAS (not just a pre-read), so a refund reserving its entry mid-request can't be raced past. The 409 carries `refundPending: true` and an operator-readable `error`.
 - `POST /api/payment-intent`
 
 ## Subscriptions
