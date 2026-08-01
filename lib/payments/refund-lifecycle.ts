@@ -107,6 +107,17 @@ export type RefundLifecycleDecision =
       amount: number | null;
       /** True when the entry is a full refund (drives "will not be shipped"). */
       isFullRefund: boolean;
+      /**
+       * The product keys this refund covers, from the entry's own `items`.
+       *
+       * Only an app-initiated refund has line attribution — the operator picked
+       * the items. An external entry carries `items: []` by construction, because
+       * Stripe refunds an amount and not items, and guessing would reintroduce
+       * BMC-178's phantom stock. Callers use this to restore exactly the lines a
+       * PARTIAL app refund covered, which is what the route would have restocked
+       * synchronously had the refund not been delayed.
+       */
+      items: string[];
     }
   | {
       /** Stripe returned the money to us — release the entry. */
@@ -255,6 +266,9 @@ export function decideRefundLifecycle(
       wasAppInitiated: isAppInitiated(entry),
       amount: typeof entry?.amount === 'number' ? entry.amount : null,
       isFullRefund: entry?.type === 'full',
+      items: Array.isArray(entry?.items)
+        ? entry.items.filter((v): v is string => typeof v === 'string')
+        : [],
     };
   }
 

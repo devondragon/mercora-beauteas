@@ -338,6 +338,70 @@ describe('handleRefundLifecycle — a pending refund SUCCEEDS (AC 1, AC 4)', () 
     expect(restockForOrder).not.toHaveBeenCalled();
   });
 
+  it('restocks a PARTIAL app refund\'s own lines even though the order is not fully covered', async () => {
+    // PR #121 review. A partial app refund on a delayed payment method would
+    // NEVER restock: the route withholds it (unsettled), and this handler used to
+    // restock only on `finalize` — which requires the order to be fully covered,
+    // and a partial refund by definition never is. Stock silently vanished.
+    const order = makeOrder({
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'pending',
+            amount: 2000,
+            type: 'partial',
+            items: ['prod-1'],
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+      },
+    });
+    const mutation = runLedgerOnce(order);
+
+    await handleRefundLifecycle(makeRefund({ amount: 2000 }), EVENT_ID, 'refund.updated');
+
+    // Restocks exactly what the refund covered — the same call the route would
+    // have made synchronously had the refund settled immediately.
+    expect(selectRestockLines).toHaveBeenCalledWith(
+      order.items,
+      expect.objectContaining({ fullRefund: false, refundedItemKeys: ['prod-1'] })
+    );
+    expect(mutation().extensions.restockInflightLineKeys).toEqual(['prod-1-var-1']);
+    expect(restockForOrder).toHaveBeenCalledTimes(1);
+    // …and the order still is NOT cancelled: a partial refund leaves it live.
+    expect(mutation().columns).toEqual({});
+  });
+
+  it('restocks an app refund even when the EXTERNAL restock setting is off', async () => {
+    // PR #121 review. `restock_on_external_refund` is documented as being about
+    // refunds issued OUTSIDE the app; an app refund always restocks. Gating the
+    // settle path on it let that toggle silently suppress an app refund's stock.
+    getRefundPolicy.mockResolvedValue({ restockOnExternalRefund: false });
+    const order = makeOrder({
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'pending',
+            amount: TOTAL,
+            type: 'full',
+            items: [],
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+      },
+    });
+    const mutation = runLedgerOnce(order);
+
+    await handleRefundLifecycle(makeRefund(), EVENT_ID, 'refund.updated');
+
+    expect(mutation().extensions.restockInflightLineKeys).toEqual(['prod-1-var-1']);
+    expect(restockForOrder).toHaveBeenCalledTimes(1);
+  });
+
   it('emails the customer when an APP-INITIATED refund finally settles', async () => {
     // `POST /api/orders/refund` DEFERS this message on a refund Stripe has only
     // ACCEPTED, because a delayed refund can still fail and the claim would be

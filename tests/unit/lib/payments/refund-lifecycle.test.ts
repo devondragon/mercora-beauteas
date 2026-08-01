@@ -207,6 +207,46 @@ describe('decideRefundLifecycle — a pending refund that SUCCEEDS (AC 1)', () =
     });
   });
 
+  it('carries the entry\'s line attribution so a partial app refund can restock', () => {
+    // PR #121 review: without `items` + `isFullRefund`, the handler could only
+    // restock "everything, on full-finalize", so a PARTIAL app refund that
+    // settled late never restored its lines at all.
+    const appPartial = {
+      id: 'refund:abc123',
+      status: 'pending' as const,
+      amount: 2000,
+      type: 'partial',
+      items: ['prod-1', 'prod-2'],
+      idempotency_key: 'refund:abc123',
+      stripe_refund_id: 're_1',
+    };
+    const decision = decideRefundLifecycle([appPartial], 'succeeded', {
+      refundId: 're_1',
+      refundAmount: 2000,
+      totalAmount: TOTAL,
+    });
+
+    expect(decision).toMatchObject({
+      action: 'settle',
+      wasAppInitiated: true,
+      isFullRefund: false,
+      items: ['prod-1', 'prod-2'],
+      finalize: false, // partial — the order is not fully covered …
+    });
+  });
+
+  it('reports no line attribution for an externally-reconciled entry', () => {
+    // An external refund carries `items: []` by construction — Stripe refunds an
+    // amount, not items, and guessing would reintroduce BMC-178's phantom stock.
+    const decision = decideRefundLifecycle([pendingExternal()], 'succeeded', {
+      refundId: 're_1',
+      refundAmount: TOTAL,
+      totalAmount: TOTAL,
+    });
+
+    expect(decision).toMatchObject({ action: 'settle', wasAppInitiated: false, items: [] });
+  });
+
   it('never finalizes an order with no known total', () => {
     const decision = decideRefundLifecycle([pendingExternal()], 'succeeded', {
       refundId: 're_1',

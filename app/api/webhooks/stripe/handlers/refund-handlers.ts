@@ -102,12 +102,22 @@ async function listChargeRefunds(chargeId: string): Promise<StripeRefundSummary[
 }
 
 /**
- * Choose the lines this reconciliation should restore, and CLAIM them.
+ * Choose the lines a refund should restore, and CLAIM them.
  *
- * Restock happens only on a FULL, fully-settled reconciliation. A partial
- * external refund carries no line attribution (Stripe refunds an amount, not
- * items), and guessing which lines came back would reintroduce exactly the
- * phantom-stock bug BMC-178 closed.
+ * `enabled` is the caller's whole decision about WHETHER to restock; this only
+ * decides WHICH lines. The two callers differ, and the difference is load-bearing
+ * (PR #121 review):
+ *
+ *  - **Externally-initiated** (`charge.refunded`, or an `ext:` entry settling):
+ *    restock only on a FULL, fully-settled reconciliation, with no line
+ *    attribution — Stripe refunds an amount, not items, and guessing which lines
+ *    came back would reintroduce exactly the phantom-stock bug BMC-178 closed.
+ *    Also gated on the `restock_on_external_refund` setting.
+ *  - **App-initiated** (an entry from `POST /api/orders/refund` settling late):
+ *    restock the lines THAT refund covers, exactly as the route would have done
+ *    synchronously — a partial refund restores its own `items`, a full one
+ *    restores everything outstanding. Never gated on the external setting, which
+ *    is explicitly about refunds issued outside the app.
  *
  * Lines are claimed into `restockInflightLineKeys`, NOT marked restored — the
  * inventory write happens after this CAS commits, so only what actually lands is
@@ -116,17 +126,17 @@ async function listChargeRefunds(chargeId: string): Promise<StripeRefundSummary[
  */
 function planRestock(
   ctx: { extensions: any; order: { items?: unknown } },
-  opts: { enabled: boolean; finalize: boolean }
+  opts: { enabled: boolean; fullRefund: boolean; refundedItemKeys?: string[] }
 ): { lines: any[]; keys: string[]; extensions: Record<string, unknown> } {
-  if (!opts.enabled || !opts.finalize) {
+  if (!opts.enabled) {
     return { lines: [], keys: [], extensions: {} };
   }
 
   const rawItems = ctx.order.items ? parseJson(ctx.order.items) : [];
   const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
   const selected = selectRestockLines(orderItems, {
-    fullRefund: true,
-    refundedItemKeys: [],
+    fullRefund: opts.fullRefund,
+    refundedItemKeys: opts.refundedItemKeys ?? [],
     alreadyRestockedKeys: readUnavailableRestockKeys(ctx.extensions),
   });
 
@@ -271,7 +281,10 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
             }
           : null;
 
-      const restock = planRestock(ctx, { enabled: restockEnabled, finalize });
+      const restock = planRestock(ctx, {
+        enabled: restockEnabled && finalize,
+        fullRefund: true,
+      });
       restockLines = restock.lines;
 
       // Nothing new to append — but a settlement, a floor advance, or a restock
@@ -318,7 +331,10 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
       ...(decision.entryStatus === 'succeeded' ? { processed_at: ctx.nowIso } : {}),
     };
 
-    const restock = planRestock(ctx, { enabled: restockEnabled, finalize });
+    const restock = planRestock(ctx, {
+      enabled: restockEnabled && finalize,
+      fullRefund: true,
+    });
     restockLines = restock.lines;
 
     recorded = {
@@ -656,10 +672,28 @@ export async function handleRefundLifecycle(
           )
         : ctx.refunds;
 
-      const restock = planRestock(ctx, {
-        enabled: restockEnabled,
-        finalize: decision.finalize,
-      });
+      // Two different restock rules, because the two kinds of refund are
+      // genuinely different (PR #121 review):
+      //
+      //  - APP-INITIATED: reproduce exactly what `POST /api/orders/refund` would
+      //    have done synchronously had this refund not been delayed — restore the
+      //    lines THIS refund covers, on the settle itself. Gating it on
+      //    `finalize` would silently never restock a PARTIAL app refund on a
+      //    delayed payment method (the order is never fully covered, so finalize
+      //    stays false), and gating it on the external setting would let a toggle
+      //    documented as "external refunds only" suppress an app refund's stock.
+      //  - EXTERNAL: unchanged BMC-213 behaviour — full-and-settled only, no line
+      //    attribution, and honouring the external-refund setting.
+      const restock = planRestock(
+        ctx,
+        decision.wasAppInitiated
+          ? {
+              enabled: decision.needsFlip,
+              fullRefund: decision.isFullRefund,
+              refundedItemKeys: decision.items,
+            }
+          : { enabled: restockEnabled && decision.finalize, fullRefund: true }
+      );
       restockLines = restock.lines;
 
       // A redelivery that changes nothing must not burn a version bump.
