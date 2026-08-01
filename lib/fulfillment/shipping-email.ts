@@ -18,7 +18,11 @@ import { normalizeCarrier, buildTrackingUrl, sanitizeTrackingNumber } from "./tr
 import { recordEmailEvent } from "./service";
 import { getOrderCustomerEmail } from "@/lib/orders/customer-email";
 import { createOrderStatusToken, isOrderStatusTokenConfigured } from "@/lib/order-status/token";
-import { sendShippingConfirmationEmail, type ShippingConfirmationData } from "@/lib/utils/email";
+import {
+  sendShippingConfirmationEmail,
+  SHIPPING_EMAIL_TEMPLATE_VERSION,
+  type ShippingConfirmationData,
+} from "@/lib/utils/email";
 import { BASE_URL } from "@/lib/seo/metadata";
 import { logCritical } from "@/lib/utils/observe";
 
@@ -98,12 +102,17 @@ export async function buildShippingConfirmationData(
 /**
  * Short, non-cryptographic fingerprint of the exact payload about to be sent.
  * Not for security — only to distinguish "same email, retried" from "the
- * order changed since the last attempt" (see initialShippingEmailKey).
+ * order OR the rendered template changed since the last attempt" (see
+ * initialShippingEmailKey). SHIPPING_EMAIL_TEMPLATE_VERSION is folded in
+ * because Resend binds a key to the exact request body: a template-changing
+ * deploy between a failed send and a retry alters the body without altering
+ * `data`, which would otherwise reproduce the same-key/different-body 409
+ * dead-end for the rest of the 24h window (BMC-246).
  */
 async function digestPayload(data: ShippingConfirmationData): Promise<string> {
   const bytes = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(JSON.stringify(data)),
+    new TextEncoder().encode(JSON.stringify([SHIPPING_EMAIL_TEMPLATE_VERSION, data])),
   );
   return Array.from(new Uint8Array(bytes).slice(0, 6))
     .map((b) => b.toString(16).padStart(2, "0"))

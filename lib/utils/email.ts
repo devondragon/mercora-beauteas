@@ -652,6 +652,20 @@ export interface ShippingEmailResult {
 const MAX_SHIPPING_PREVIEW_ITEMS = 5;
 
 /**
+ * Version of the rendered shipping-confirmation email, folded into the
+ * `initial` idempotency-key digest (initialShippingEmailKey in
+ * lib/fulfillment/shipping-email.ts). Resend binds a key to the exact request
+ * body for 24h, so a deploy that changes the rendered output between a failed
+ * send and a retry would otherwise reuse the old key with a new body and
+ * dead-end on the provider's 409 for the rest of that window (BMC-246).
+ *
+ * BUMP THIS on any change to what sendShippingConfirmationEmail hands Resend:
+ * generateShippingConfirmationHTML markup, the subject line, or the from
+ * address.
+ */
+export const SHIPPING_EMAIL_TEMPLATE_VERSION = 1;
+
+/**
  * Send the shipment-confirmation email.
  *
  * `opts.idempotencyKey` is forwarded to Resend as the `Idempotency-Key`

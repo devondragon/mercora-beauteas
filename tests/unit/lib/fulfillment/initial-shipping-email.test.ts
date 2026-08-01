@@ -31,7 +31,8 @@ vi.mock('@/lib/fulfillment/service', () => ({
   listOrderEvents: vi.fn().mockResolvedValue([]),
 }));
 
-import { sendInitialShippingEmail } from '@/lib/fulfillment/shipping-email';
+import { sendInitialShippingEmail, initialShippingEmailKey } from '@/lib/fulfillment/shipping-email';
+import { SHIPPING_EMAIL_TEMPLATE_VERSION, type ShippingConfirmationData } from '@/lib/utils/email';
 import type { Order } from '@/lib/types/order';
 import type { Actor } from '@/lib/fulfillment/types';
 
@@ -108,6 +109,49 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.ORDER_STATUS_SECRET;
+});
+
+describe('initialShippingEmailKey', () => {
+  const data: ShippingConfirmationData = {
+    orderNumber: 'ORD-1',
+    customerName: 'Ada Lovelace',
+    customerEmail: 'ada@example.com',
+    items: [{ name: 'Morning Blend', quantity: 2 }],
+    carrier: 'ups',
+    trackingNumber: '1Z999AA10123456784',
+    trackingUrl: 'https://www.ups.com/track?loc=en_US&tracknum=1Z999AA10123456784',
+    orderStatusUrl: null,
+  };
+
+  /**
+   * Deliberately replicates the digest formula: the assertion this exists for
+   * is that SHIPPING_EMAIL_TEMPLATE_VERSION is folded into the digest, so a
+   * template-changing deploy between a failed send and a retry mints a FRESH
+   * key instead of reusing the old key with a new rendered body — which Resend
+   * would 409 for the rest of its 24h idempotency window (BMC-246).
+   */
+  async function keyFor(version: number, payload: ShippingConfirmationData): Promise<string> {
+    const bytes = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(JSON.stringify([version, payload])),
+    );
+    const digest = Array.from(new Uint8Array(bytes).slice(0, 6))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    return `shipping-confirmation/ORD-1/initial/${digest}`;
+  }
+
+  it('folds the template version into the digest', async () => {
+    const key = await initialShippingEmailKey('ORD-1', data);
+    expect(key).toBe(await keyFor(SHIPPING_EMAIL_TEMPLATE_VERSION, data));
+  });
+
+  it('a template-version bump changes the key for an unchanged payload', async () => {
+    const key = await initialShippingEmailKey('ORD-1', data);
+    const bumped = await keyFor(SHIPPING_EMAIL_TEMPLATE_VERSION + 1, data);
+    expect(bumped).toMatch(INITIAL_KEY_RE);
+    expect(key).not.toBe(bumped);
+  });
 });
 
 describe('sendInitialShippingEmail', () => {
