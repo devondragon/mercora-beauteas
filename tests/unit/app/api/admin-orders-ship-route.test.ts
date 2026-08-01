@@ -359,6 +359,26 @@ describe("wire-shaped money on the response boundary (BMC-233)", () => {
     expect(body.order).toEqual(expect.objectContaining(wireExpectations));
   });
 
+  it("an order with no line items converts to items: [], not undefined", async () => {
+    vi.mocked(shipOrder).mockResolvedValue({
+      outcome: "shipped",
+      order: { ...shippedOrder, items: [] } as never,
+      eventId: "evt-1",
+    });
+    const res = await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { order: Record<string, unknown> };
+    expect(body.order.items).toEqual([]);
+    expect(body.order.total_amount).toEqual({
+      amount: 25,
+      currency: "USD",
+      precision: 2,
+    });
+  });
+
   it("the email seam still receives the INTERNAL cents order, not the wire one", async () => {
     vi.mocked(shipOrder).mockResolvedValue({
       outcome: "shipped",

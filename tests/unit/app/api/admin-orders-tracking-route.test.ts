@@ -219,4 +219,24 @@ describe("wire-shaped money on the response boundary (BMC-233)", () => {
     // at NextResponse.json.
     expect(updatedOrder.total_amount).toEqual({ amount: 2500, currency: "USD" });
   });
+
+  it("an order with no line items converts to items: [], not undefined", async () => {
+    vi.mocked(updateTracking).mockResolvedValue({
+      outcome: "updated",
+      order: { ...updatedOrder, items: [] } as never,
+      eventId: "evt-9",
+    });
+    const res = await PATCH(
+      patch({ carrier: "fedex", trackingNumber: "999999999999" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { order: Record<string, unknown> };
+    expect(body.order.items).toEqual([]);
+    expect(body.order.total_amount).toEqual({
+      amount: 25,
+      currency: "USD",
+      precision: 2,
+    });
+  });
 });
