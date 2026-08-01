@@ -164,8 +164,15 @@ const RULES: CategoryRule[] = [
       /\bship(ping)?\b.{0,20}\b(it |them )?back\b/i,
       // The customer's own address on an order — not a question about rates.
       /\bshipping address\b/i,
-      // Destination coverage ("do you ship to Canada?") is not in the rate card.
-      /\bship(s|ping)? (to|internationally|outside|overseas|abroad)\b/i,
+      // Destination COVERAGE ("do you ship to Canada?") is not in the rate card.
+      // Deliberately narrow: an earlier `\bship(s|ping)? to\b` also swallowed
+      // "how much is shipping to Colorado?" and "how much is shipping to my
+      // address?", which the flat US rate card answers perfectly well.
+      // The subject is required: without it, "how much does it cost to ship to
+      // Denver?" reads as a coverage question because of "does ... ship to".
+      /\b(do|does|can|could|will|would)\s+(you|they|beauteas)\b.{0,15}\bship (to|outside|overseas|abroad)\b/i,
+      // Anything explicitly non-domestic — the rate card is US-only.
+      /\b(international(ly)?|overseas|abroad|customs|duties|tariffs?|outside the (us|usa|united states))\b/i,
     ],
   },
 ];
@@ -258,7 +265,7 @@ async function shippingRatesAnswer(): Promise<string> {
     const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
     const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
 
-    return `Here's how we ship 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard rates — checkout shows the exact cost for your order before you pay. Full details: ${SHIPPING_POLICY_URL}`;
+    return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates — checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
   } catch (error) {
     console.error("[chai] shipping rate lookup failed:", error);
     return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL} — and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
@@ -274,7 +281,7 @@ async function shippingRatesAnswer(): Promise<string> {
  * whole answer to the no-numbers fallback instead.
  */
 function describeShippingOption(option: ShippingOption): string {
-  const cost = Number(option.cost);
+  const cost = rateMajor(option.cost);
   if (!Number.isFinite(cost) || cost < 0) {
     throw new Error(`shipping method ${option.id} has an unusable cost: ${option.cost}`);
   }
@@ -286,6 +293,21 @@ function describeShippingOption(option: ShippingOption): string {
       ? ` (about ${option.estimatedDays} business ${option.estimatedDays === 1 ? "day" : "days"})`
       : "";
   return `${option.label} — ${price}${days}`;
+}
+
+/**
+ * Coerce an admin-configured cost to a rate in MAJOR units, or NaN if it isn't
+ * one. Deliberately NOT `Number(raw)`: `Number(null)`, `Number('')`,
+ * `Number('  ')`, `Number([])` and `Number(false)` are all `0`, so a method
+ * whose cost field was cleared in the admin UI would render as "free" —
+ * advertising a rate we don't charge. Only a real number or a non-blank numeric
+ * string counts; everything else fails the caller's check and degrades the whole
+ * answer to the no-numbers fallback. (A genuine `0` still means free.)
+ */
+function rateMajor(raw: unknown): number {
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string" && raw.trim() !== "") return Number(raw);
+  return NaN;
 }
 
 /**

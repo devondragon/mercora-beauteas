@@ -221,6 +221,11 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     'Do you offer overnight shipping?',
     'do you have express',
     'How much for express shipping?',
+    // Domestic destination questions: the rate card is flat, so these are
+    // answerable. An earlier exclude of any "shipping to ..." swallowed them.
+    'How much is shipping to Colorado?',
+    'How long does shipping to California take?',
+    'How much is shipping to my address?',
   ];
 
   it.each(phrasings)('answers %j from the storefront rate card', async (question) => {
@@ -243,6 +248,9 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     // The policy, as a condition on the order — not a claim about this person.
     expect(answer).toContain('$75.00 or more');
     expect(answer).toMatch(/i can'?t see your cart/i);
+    // The rate card is US-only, so a destination question can't read as an
+    // international quote.
+    expect(answer).toMatch(/within the US|US rates/);
     // No second-person qualification claim.
     expect(answer).not.toMatch(/you (qualify|get free|have free|are eligible)/i);
     expect(answer).not.toMatch(/your order ships free/i);
@@ -297,15 +305,24 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     expect(answer).not.toMatch(/free/i);
   });
 
-  it('states NO rate rather than "free" when a method has an unusable cost', async () => {
-    // `shipping.methods` is admin-edited JSON. A method with a missing or
-    // non-numeric cost must NOT render as "free" — that advertises a rate we
-    // don't charge, which is the same failure class as an invented price.
+  // `shipping.methods` is admin-edited JSON, so a cost field can arrive cleared
+  // or the wrong type. EVERY one of these coerces to 0 under `Number(raw)` and
+  // would render as "free" — advertising a rate we don't charge, the same
+  // failure class as an invented price.
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['empty string', ''],
+    ['blank string', '   '],
+    ['empty array', []],
+    ['boolean', false],
+    ['non-numeric string', 'abc'],
+  ])('states NO rate rather than "free" when cost is %s', async (_label, cost) => {
     getSettings.mockImplementation(async (category: string) =>
       category === 'shipping'
         ? {
             'shipping.methods': [
-              { id: 'broken', label: 'Broken', estimatedDays: 3, enabled: true },
+              { id: 'broken', label: 'Broken', cost, estimatedDays: 3, enabled: true },
             ],
           }
         : {}
@@ -314,7 +331,23 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
     expect(answer).not.toMatch(/free/i);
+    expect(answer).not.toMatch(/\$\s*\d/);
     expect(answer).toContain(SHIPPING_POLICY_URL);
+  });
+
+  it('still reports a genuinely zero-cost method as free', async () => {
+    // The guard above must not swallow the real case: cost 0 means free.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'std', label: 'Standard', cost: 0, estimatedDays: 4, enabled: true },
+            ],
+          }
+        : {}
+    );
+
+    expect(await resolveDeterministicAnswer('shipping_rates')).toContain('Standard — free');
   });
 
   it('states NO rate rather than "free" when the threshold is unreadable', async () => {
@@ -372,9 +405,13 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
       // Return postage is a different policy from the outbound rate card.
       'How much does return shipping cost?',
       'Do I have to pay shipping to send it back?',
-      // Destination coverage is not in the rate card.
+      // Destination COVERAGE is not in the rate card (US-only rates).
       'Do you ship to Canada?',
       'do you ship internationally',
+      'Can you ship overseas?',
+      'Do you ship outside the US?',
+      'What are your international shipping rates?',
+      'Who pays customs duties?',
       // The customer's own address on an order.
       'Can I change the shipping address on my subscription?',
       // Packaging/sustainability, not rates. A bare /\bfree shipping\b/ matches
