@@ -8,6 +8,7 @@
  * Customers that failed Clerk creation are skipped.
  */
 
+import { toIsoUtc } from '../lib/dates.js';
 import type { IdMap } from '../lib/id-map.js';
 import type {
   ShopifyCustomer,
@@ -124,8 +125,8 @@ export function transformCustomers(
       type: 'person', // BeauTeas is B2C
       status: 'active',
       external_references: JSON.stringify(externalReferences),
-      created_at: customer.created_at || new Date().toISOString(),
-      updated_at: customer.updated_at || new Date().toISOString(),
+      created_at: toIsoUtc(customer.created_at),
+      updated_at: toIsoUtc(customer.updated_at),
       person: JSON.stringify(person),
       addresses: addresses.length > 0 ? JSON.stringify(addresses) : null,
       communication_preferences: JSON.stringify(communicationPreferences),

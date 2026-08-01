@@ -14,6 +14,7 @@
  */
 
 import { nanoid } from 'nanoid';
+import { toIsoUtc } from '../lib/dates.js';
 import type { IdMap } from '../lib/id-map.js';
 import type {
   ShopifyOrder,
@@ -210,8 +211,8 @@ export function transformOrders(
       notes: order.note || null,
       external_references: JSON.stringify(externalReferences),
       extensions: JSON.stringify(extensions),
-      created_at: order.created_at || new Date().toISOString(),
-      updated_at: order.updated_at || new Date().toISOString(),
+      created_at: toIsoUtc(order.created_at),
+      updated_at: toIsoUtc(order.updated_at),
     });
 
     // Register in idMap
