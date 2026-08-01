@@ -84,6 +84,81 @@ export function validatePutOrderStatus(
 }
 
 /**
+ * BMC-216F: PUT /api/orders allowlist.
+ *
+ * After BMC-216 every lifecycle transition has a dedicated owner — the Stripe
+ * webhook (pending → processing), POST /api/admin/orders/{id}/ship
+ * (processing → shipped), and POST /api/orders/refund (→ cancelled/refunded).
+ * Nothing legitimate is left for a generic status/fulfillment write, so this
+ * route accepts ONLY order metadata: `notes`, `external_references`, and the
+ * (further restricted, merged) `extensions`. Every fulfillment field is
+ * rejected with a 400 whose message names the correct endpoint.
+ *
+ * `payment_status` is deliberately NOT in the rejected map: the route keeps
+ * the BMC-140 behavior of logging + silently dropping it (changing that to a
+ * 400 would break existing webhook/automation callers that harmlessly echo it).
+ */
+export const PUT_UPDATABLE_FIELDS = ['notes', 'external_references', 'extensions'] as const;
+
+const SHIP_ENDPOINT = 'POST /api/admin/orders/{id}/ship';
+const TRACKING_ENDPOINT = 'PATCH /api/admin/orders/{id}/tracking';
+const REFUND_ENDPOINT = 'POST /api/orders/refund';
+
+const PUT_REJECTED_FIELD_MESSAGES: Record<string, string> = {
+  status:
+    `"status" cannot be set via PUT /api/orders. Shipments are created via ` +
+    `${SHIP_ENDPOINT}; cancellations and refunds go through ${REFUND_ENDPOINT}, ` +
+    `which issues the Stripe refund and updates payment_status atomically.`,
+  tracking_number:
+    `"tracking_number" cannot be set via PUT /api/orders. Use ${SHIP_ENDPOINT} ` +
+    `to create a shipment, or ${TRACKING_ENDPOINT} to correct tracking on a ` +
+    `shipped order.`,
+  shipped_at:
+    `"shipped_at" cannot be set via PUT /api/orders — shipment timestamps are ` +
+    `server-owned. Use ${SHIP_ENDPOINT}.`,
+  delivered_at:
+    `"delivered_at" cannot be set via PUT /api/orders — delivery timestamps are ` +
+    `server-owned.`,
+  shipping_method:
+    `"shipping_method" cannot be changed via PUT /api/orders. Carrier changes ` +
+    `go through ${SHIP_ENDPOINT} or ${TRACKING_ENDPOINT}.`,
+  trackingUrl:
+    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
+    `or ${TRACKING_ENDPOINT}.`,
+  tracking_url:
+    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
+    `or ${TRACKING_ENDPOINT}.`,
+};
+
+/**
+ * Validates a PUT /api/orders body against the allowlist. Key PRESENCE (not
+ * truthiness) is what rejects — `{ status: null }` is still an attempt to
+ * touch a rejected field. Returns a discriminated result (never throws).
+ */
+export function validatePutOrderBody(
+  body: Record<string, unknown>
+): { ok: true } | { ok: false; error: string; status: number } {
+  for (const [field, message] of Object.entries(PUT_REJECTED_FIELD_MESSAGES)) {
+    if (field in body) {
+      return { ok: false, error: message, status: 400 };
+    }
+  }
+  const hasUpdatable = PUT_UPDATABLE_FIELDS.some((f) => body[f] !== undefined);
+  if (!hasUpdatable) {
+    return {
+      ok: false,
+      error:
+        'No updatable fields provided. PUT /api/orders accepts only: ' +
+        'notes, external_references, extensions.',
+      status: 400,
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Parses a `mode:"json"` extensions value that may be an object or a raw JSON
  * string. Distinguishes three cases the merge below cares about:
  *   - absent (`null`/`undefined`/empty string) → `{ ok: true, value: {} }`

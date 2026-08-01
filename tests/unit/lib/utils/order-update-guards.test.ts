@@ -23,6 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validatePutOrderStatus,
+  validatePutOrderBody,
   mergeExtensions,
   VALID_ORDER_STATUSES,
   REFUND_OWNED_STATUSES,
@@ -84,6 +85,81 @@ describe('validatePutOrderStatus', () => {
     expect(accepted).toEqual(['pending', 'processing', 'shipped', 'delivered']);
     for (const owned of REFUND_OWNED_STATUSES) {
       expect(accepted).not.toContain(owned);
+    }
+  });
+});
+
+describe('validatePutOrderBody — PUT /api/orders allowlist (BMC-216F)', () => {
+  it('rejects "status" with 400 naming the ship and refund endpoints', () => {
+    const r = validatePutOrderBody({ orderId: 'O-1', status: 'shipped' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toContain('POST /api/admin/orders/{id}/ship');
+      expect(r.error).toContain('POST /api/orders/refund');
+    }
+  });
+
+  it('rejects "tracking_number" with 400 naming the ship/tracking endpoints', () => {
+    const r = validatePutOrderBody({ orderId: 'O-1', tracking_number: '1Z999' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toContain('PATCH /api/admin/orders/{id}/tracking');
+    }
+  });
+
+  it.each(['shipped_at', 'delivered_at'])(
+    'rejects client timestamp "%s" with 400 (server-owned)',
+    (field) => {
+      const r = validatePutOrderBody({ orderId: 'O-1', [field]: '2026-07-30T00:00:00Z' });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.status).toBe(400);
+        expect(r.error).toContain(field);
+      }
+    }
+  );
+
+  it('rejects "shipping_method" with 400', () => {
+    const r = validatePutOrderBody({ orderId: 'O-1', shipping_method: 'express' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+  });
+
+  it.each(['trackingUrl', 'tracking_url'])(
+    'rejects any tracking URL key ("%s") with 400',
+    (field) => {
+      const r = validatePutOrderBody({ orderId: 'O-1', [field]: 'https://evil.example/x' });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.status).toBe(400);
+        expect(r.error).toMatch(/tracking url/i);
+      }
+    }
+  );
+
+  it('rejects a rejected key even when its value is null (presence is the offense)', () => {
+    const r = validatePutOrderBody({ orderId: 'O-1', status: null, notes: 'x' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('accepts notes-only, external_references-only, and extensions-only bodies', () => {
+    expect(validatePutOrderBody({ orderId: 'O-1', notes: 'hold at door' }).ok).toBe(true);
+    expect(validatePutOrderBody({ orderId: 'O-1', external_references: { erp: 'X-1' } }).ok).toBe(true);
+    expect(validatePutOrderBody({ orderId: 'O-1', extensions: { gift_note: 'hi' } }).ok).toBe(true);
+  });
+
+  it('does NOT reject payment_status here (route preserves the BMC-140 silent drop)', () => {
+    expect(validatePutOrderBody({ orderId: 'O-1', payment_status: 'paid', notes: 'x' }).ok).toBe(true);
+  });
+
+  it('rejects a body with no updatable fields with 400', () => {
+    const r = validatePutOrderBody({ orderId: 'O-1' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.error).toMatch(/notes, external_references, extensions/);
     }
   });
 });
