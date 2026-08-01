@@ -211,6 +211,8 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     'What is the cost of shipping?',
     'Do you offer free shipping?',
     'is there free shipping',
+    'Do you offer free-shipping?',
+    'whats the free-shipping minimum',
     'How long does shipping take?',
     'how long does delivery take',
     'How fast do you ship?',

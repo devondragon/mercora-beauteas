@@ -149,8 +149,10 @@ const RULES: CategoryRule[] = [
       /\b(cost|price|rate|fee) (of|for) (shipping|delivery|postage)\b/i,
       // The lookbehind matters: a bare `\bfree shipping\b` also matches INSIDE
       // "plastic-free shipping" / "carbon-free shipping", handing a packaging or
-      // sustainability question the rate card.
-      /(?<![\w-])free shipping\b/i,
+      // sustainability question the rate card. `[-\s]` still admits the
+      // hyphenated "free-shipping" spelling, which the lookbehind keeps distinct
+      // from the "<something>-free shipping" case.
+      /(?<![\w-])free[-\s]shipping\b/i,
       /\bhow (long|many days)\b.{0,30}\b(shipping|delivery|to (ship|deliver|arrive|get here))\b/i,
       /\bhow (fast|quick(ly)?|soon)\b.{0,25}\b(ship|shipped|deliver|delivered|arrive|get here)\b/i,
       /\b(shipping|delivery) (time|times|speed|estimate|estimates|option|options|method|methods)\b/i,
