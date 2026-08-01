@@ -33,6 +33,7 @@ import {
   mergeExtensions,
   mergeExternalReferences,
 } from "@/lib/utils/order-update-guards";
+import { MAX_CAS_ATTEMPTS, updatedAtGuard } from "@/lib/payments/refund-ledger-store";
 import { logCritical } from "@/lib/utils/observe";
 
 
@@ -561,108 +562,145 @@ export async function PUT(request: NextRequest) {
 
     const db = await getDbAsync();
 
-    // Check if order exists
-    const existingOrder = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (existingOrder.length === 0) {
+    // SECURITY (BMC-230 review): merging `extensions`/`external_references`
+    // reads the stored column once and writes a value derived from that read.
+    // Every OTHER writer of these same JSON columns (the refund route, the
+    // charge.refunded reconciler — both via lib/payments/refund-ledger-store.ts)
+    // is CAS-guarded on `updated_at` because D1 has no interactive
+    // transactions: an unguarded blind write here could race a concurrent
+    // refund settling between this handler's SELECT and its UPDATE and revert
+    // the refunds ledger / restock bookkeeping it just committed. Loop:
+    // re-read + re-merge + re-pin against FRESH state on every attempt, and
+    // commit only if the row is unchanged since that read.
+    let updatedOrder: typeof orders.$inferSelect | undefined;
+    let orderNotFound = false;
+    let updatedFields: string[] = [];
+
+    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+      const existingOrder = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      if (existingOrder.length === 0) {
+        orderNotFound = true;
+        break;
+      }
+
+      const currentOrder = existingOrder[0];
+
+      // SECURITY (BMC-140): payment_status is intentionally NOT accepted from
+      // this client-driven PUT. A caller holding only ORDERS_UPDATE (e.g. a
+      // webhook/automation token) could otherwise flip an unpaid order to
+      // 'paid' (or 'refunded') with zero Stripe verification. payment_status
+      // has exactly three legitimate writers, each of which verifies against
+      // Stripe first and none of which is client-controllable:
+      //   - order creation (POST /api/orders) via retrievePaymentIntent
+      //   - the Stripe webhook's markOrderPaid()
+      //   - the refund route (/api/orders/refund), which only sets
+      //     payment_status after actually creating a Stripe refund
+      // Any client-supplied payment_status is logged and silently dropped
+      // rather than applied (kept as a drop, not a 400, so existing
+      // automation callers that harmlessly echo the field keep working —
+      // BMC-216F). Logged once per attempt is acceptable — a lost CAS race is
+      // rare and the log is diagnostic, not load-bearing.
+      if (body.payment_status) {
+        console.warn(
+          `Order ${orderId}: ignoring client-supplied payment_status="${body.payment_status}" on PUT ` +
+            `(payment_status can only be set via verified payment or the /refund route)`
+        );
+      }
+
+      // SECURITY (BMC-158): the `extensions` JSON column holds server-owned keys
+      // the client must not clobber — `payment_intent_id` (the binding the refund
+      // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
+      // ledger computeRefundedTotal sums for the over-refund guard), plus
+      // refunds_version / restockedLineKeys / email / carrier / trackingUrl. A
+      // wholesale `extensions` overwrite here could rebind/drop the PI (refund
+      // fraud) or wipe the refunds ledger (resetting the over-refund guard →
+      // double refund). mergeExtensions MERGES the client's keys over the stored
+      // ones, re-pins payment_intent_id, and strips every key in
+      // SERVER_OWNED_EXTENSION_KEYS from the client overlay; it fails safe
+      // (rejects) if the stored extensions are corrupt rather than persisting a
+      // stripped object.
+      // `!= null` (not `!== undefined`): a null overlay carries no keys, so
+      // merging it would write back a value identical to what is stored — a
+      // no-op write that also silently re-serializes a stored raw JSON string
+      // into an object. validatePutOrderBody already rejects a body whose ONLY
+      // fields are null; this skips the column when other fields carry the write.
+      let mergedExtensions: Record<string, unknown> | undefined;
+      if (extensions != null) {
+        const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
+        if (!mergeResult.ok) {
+          return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
+        }
+        mergedExtensions = mergeResult.extensions;
+      }
+
+      // SECURITY (BMC-230): `external_references` gets the same treatment for the
+      // one key it shares with `extensions` — `payment_intent_id`, which order
+      // creation dual-writes into BOTH columns and getOrderByPaymentIntentId
+      // OR-matches across both. Written wholesale from the client, a PUT could
+      // point a second order at a victim's PaymentIntent so charge.refunded
+      // reconciliation lands on the wrong row. Everything else in this column
+      // (erp, shopify_id, …) is legitimate caller metadata and passes through.
+      let mergedExternalReferences: Record<string, unknown> | undefined;
+      if (external_references != null) {
+        const refsResult = mergeExternalReferences(
+          external_references,
+          currentOrder.external_references
+        );
+        if (!refsResult.ok) {
+          return NextResponse.json({ error: refsResult.error }, { status: refsResult.status });
+        }
+        mergedExternalReferences = refsResult.externalReferences;
+      }
+
+      // Build update data (metadata only — BMC-216F).
+      // external_references / extensions are `mode: "json"` columns — pass the RAW
+      // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
+      const updateData: any = {
+        // Presence, not truthiness — matching how validatePutOrderBody rejects.
+        // `notes && …` silently dropped `{ notes: '' }`, so a caller clearing a
+        // note got a 200 and no write. An explicit '' or null now clears it.
+        ...(notes !== undefined && { notes }),
+        ...(mergedExternalReferences !== undefined && {
+          external_references: mergedExternalReferences,
+        }),
+        ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
+        updated_at: new Date().toISOString()
+      };
+      updatedFields = Object.keys(updateData).filter((k) => k !== 'updated_at');
+
+      // Update the order. No email is sent from this route: with no status writes
+      // possible there is no status change to announce (BMC-216F deleted the
+      // email-on-status-change block rather than guarding it). CAS-guarded on
+      // `updated_at` — a zero-row result means a concurrent writer committed
+      // between our read and this write; re-read fresh state and retry rather
+      // than clobbering it.
+      const [row] = await db.update(orders)
+        .set(updateData)
+        .where(and(eq(orders.id, orderId), updatedAtGuard(currentOrder.updated_at ?? null)))
+        .returning();
+
+      if (row) {
+        updatedOrder = row;
+        break;
+      }
+      // Lost the CAS race — a concurrent write landed first; re-read and retry.
+    }
+
+    if (orderNotFound) {
       return NextResponse.json({
         error: 'Order not found'
       }, { status: 404 });
     }
 
-    const currentOrder = existingOrder[0];
-
-
-    // SECURITY (BMC-140): payment_status is intentionally NOT accepted from this
-    // client-driven PUT. A caller holding only ORDERS_UPDATE (e.g. a webhook/
-    // automation token) could otherwise flip an unpaid order to 'paid' (or
-    // 'refunded') with zero Stripe verification. payment_status has exactly
-    // three legitimate writers, each of which verifies against Stripe first and
-    // none of which is client-controllable:
-    //   - order creation (POST /api/orders) via retrievePaymentIntent
-    //   - the Stripe webhook's markOrderPaid()
-    //   - the refund route (/api/orders/refund), which only sets payment_status
-    //     after actually creating a Stripe refund
-    // Any client-supplied payment_status is logged and silently dropped rather
-    // than applied (kept as a drop, not a 400, so existing automation callers
-    // that harmlessly echo the field keep working — BMC-216F).
-    if (body.payment_status) {
-      console.warn(
-        `Order ${orderId}: ignoring client-supplied payment_status="${body.payment_status}" on PUT ` +
-          `(payment_status can only be set via verified payment or the /refund route)`
-      );
+    if (!updatedOrder) {
+      return NextResponse.json({
+        error: 'Order update could not be applied due to concurrent updates; please retry'
+      }, { status: 409 });
     }
-
-    // SECURITY (BMC-158): the `extensions` JSON column holds server-owned keys
-    // the client must not clobber — `payment_intent_id` (the binding the refund
-    // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
-    // ledger computeRefundedTotal sums for the over-refund guard), plus
-    // refunds_version / restockedLineKeys / email / carrier / trackingUrl. A
-    // wholesale `extensions` overwrite here could rebind/drop the PI (refund
-    // fraud) or wipe the refunds ledger (resetting the over-refund guard →
-    // double refund). mergeExtensions MERGES the client's keys over the stored
-    // ones, re-pins payment_intent_id, and strips every key in
-    // SERVER_OWNED_EXTENSION_KEYS from the client overlay; it fails safe
-    // (rejects) if the stored extensions are corrupt rather than persisting a
-    // stripped object.
-    // `!= null` (not `!== undefined`): a null overlay carries no keys, so
-    // merging it would write back a value identical to what is stored — a
-    // no-op write that also silently re-serializes a stored raw JSON string
-    // into an object. validatePutOrderBody already rejects a body whose ONLY
-    // fields are null; this skips the column when other fields carry the write.
-    let mergedExtensions: Record<string, unknown> | undefined;
-    if (extensions != null) {
-      const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
-      if (!mergeResult.ok) {
-        return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
-      }
-      mergedExtensions = mergeResult.extensions;
-    }
-
-    // SECURITY (BMC-230): `external_references` gets the same treatment for the
-    // one key it shares with `extensions` — `payment_intent_id`, which order
-    // creation dual-writes into BOTH columns and getOrderByPaymentIntentId
-    // OR-matches across both. Written wholesale from the client, a PUT could
-    // point a second order at a victim's PaymentIntent so charge.refunded
-    // reconciliation lands on the wrong row. Everything else in this column
-    // (erp, shopify_id, …) is legitimate caller metadata and passes through.
-    let mergedExternalReferences: Record<string, unknown> | undefined;
-    if (external_references != null) {
-      const refsResult = mergeExternalReferences(
-        external_references,
-        currentOrder.external_references
-      );
-      if (!refsResult.ok) {
-        return NextResponse.json({ error: refsResult.error }, { status: refsResult.status });
-      }
-      mergedExternalReferences = refsResult.externalReferences;
-    }
-
-    // Build update data (metadata only — BMC-216F).
-    // external_references / extensions are `mode: "json"` columns — pass the RAW
-    // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
-    const updateData: any = {
-      // Presence, not truthiness — matching how validatePutOrderBody rejects.
-      // `notes && …` silently dropped `{ notes: '' }`, so a caller clearing a
-      // note got a 200 and no write. An explicit '' or null now clears it.
-      ...(notes !== undefined && { notes }),
-      ...(mergedExternalReferences !== undefined && {
-        external_references: mergedExternalReferences,
-      }),
-      ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
-      updated_at: new Date().toISOString()
-    };
-
-    // Update the order. No email is sent from this route: with no status writes
-    // possible there is no status change to announce (BMC-216F deleted the
-    // email-on-status-change block rather than guarding it).
-    const [updatedOrder] = await db.update(orders)
-      .set(updateData)
-      .where(eq(orders.id, orderId))
-      .returning();
 
     console.log('Order metadata update:', {
       orderId,
-      fields: Object.keys(updateData).filter((k) => k !== 'updated_at'),
+      fields: updatedFields,
       updatedBy: authResult.tokenInfo?.tokenName || 'unknown',
       timestamp: new Date().toISOString(),
     });

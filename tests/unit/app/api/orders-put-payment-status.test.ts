@@ -71,8 +71,6 @@ vi.mock('@/lib/models/mach/orders', () => ({
   getOrdersByCustomer: vi.fn(),
   getOrderById: vi.fn(),
   createOrder: vi.fn(),
-  updateOrderStatus: vi.fn(),
-  updateOrderShipping: vi.fn(),
 }));
 
 vi.mock('@/lib/models/order', () => ({
@@ -190,7 +188,8 @@ describe('PUT /api/orders payment_status guard (BMC-140 / H3)', () => {
     expect(setArg.external_references).toEqual({ erp: 'X-1' });
     expect(setArg).not.toHaveProperty('payment_status');
 
-    const body = (await res.json()) as { data: { notes: string } };
-    expect(body.data).toBeDefined();
+    const body = (await res.json()) as { data: { id: string; notes: string } };
+    expect(body.data.id).toBe('WEB-TEST-1000');
+    expect(body.data.notes).toBe('gift wrap');
   });
 });

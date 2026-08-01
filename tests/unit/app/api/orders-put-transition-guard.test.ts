@@ -55,8 +55,6 @@ vi.mock('@/lib/models/mach/orders', () => ({
   getOrdersByCustomer: vi.fn(),
   getOrderById: vi.fn(),
   createOrder: vi.fn(),
-  updateOrderStatus: vi.fn(),
-  updateOrderShipping: vi.fn(),
 }));
 
 vi.mock('@/lib/models/order', () => ({

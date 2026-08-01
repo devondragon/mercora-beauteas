@@ -76,6 +76,29 @@ describe('generateOrderStatusUpdateHTML escaping (BMC-216F)', () => {
     expect(html).not.toContain('Track Your Package');
   });
 
+  it('escapes an item name/imageUrl attribute breakout in the img src="…"/alt="…" branch', async () => {
+    // Only reachable when the item carries an imageUrl (the "No Image" div
+    // branch never renders these values at all) — the sibling
+    // order-confirmation-email-escaping.test.ts covers this pattern for its
+    // own template; this pins the same pattern here.
+    const html = await renderedHtml(
+      baseData({
+        items: [
+          {
+            productId: 'p1',
+            name: 'Tea" onload="alert(1)',
+            price: 1250,
+            quantity: 1,
+            imageUrl: 'https://img.example/x.jpg"><a href="https://evil.example">Track</a><img src="',
+          },
+        ],
+      })
+    );
+    expect(html).not.toContain('alt="Tea" onload=');
+    expect(html).not.toContain('<a href="https://evil.example">');
+    expect(html).toContain('&quot;');
+  });
+
   it('escapes notes, item names, and shipping address fields', async () => {
     const html = await renderedHtml(
       baseData({

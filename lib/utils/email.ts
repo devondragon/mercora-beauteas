@@ -516,9 +516,17 @@ export async function sendGiftCardDeliveryEmail(
   }
 }
 
-// Escape user-controlled values before embedding them in email HTML.
-function escapeHtml(value = ''): string {
-  return value
+// Escape user-controlled values before embedding them in email HTML. The
+// default parameter only substitutes on `undefined` — `null` (e.g. an order
+// item whose product_name/name/title all parsed to `null` on a legacy row,
+// see buildRefundStatusEmail in app/api/orders/refund/route.ts) is coerced via
+// `?? ''` too, so a null field degrades to an empty string instead of
+// throwing `Cannot read properties of null` and silently failing the entire
+// send (caught by sendOrderStatusUpdateEmail's try/catch, but that means a
+// processed refund with no confirmation email and only a server log to show
+// for it).
+function escapeHtml(value: string | null | undefined = ''): string {
+  return (value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
