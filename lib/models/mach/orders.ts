@@ -247,7 +247,13 @@ export async function promoteOrderToPaid(
   return { promoted: false, order: current };
 }
 
-// Update order status
+/**
+ * @deprecated BMC-216F: DO NOT WIRE THIS INTO ANY ROUTE. Generic status /
+ * shipping writes bypass the fulfillment state machine. Shipments go through
+ * lib/fulfillment/service.ts (shipOrder / updateTracking — BMC-216B), which
+ * owns CAS-guarded transitions, server timestamps, and audit events. This
+ * function is retained only until the BMC-216 rollout completes, then deleted.
+ */
 export async function updateOrderStatus(orderId: string, status: Order['status']): Promise<Order | null> {
   const db = await getDbAsync();
   
@@ -344,7 +350,13 @@ export async function updateOrderNotes(orderId: string, notes: string): Promise<
     .where(eq(orders.id, orderId));
 }
 
-// Update order with shipping information
+/**
+ * @deprecated BMC-216F: DO NOT WIRE THIS INTO ANY ROUTE. Generic status /
+ * shipping writes bypass the fulfillment state machine. Shipments go through
+ * lib/fulfillment/service.ts (shipOrder / updateTracking — BMC-216B), which
+ * owns CAS-guarded transitions, server timestamps, and audit events. This
+ * function is retained only until the BMC-216 rollout completes, then deleted.
+ */
 export async function updateOrderShipping(
   orderId: string,
   shippingData: {

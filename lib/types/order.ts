@@ -98,14 +98,13 @@ export interface CreateOrderRequest {
   extensions?: Record<string, any>;
 }
 
-// Order update request interface
+// Order update request interface — PUT /api/orders metadata allowlist
+// (BMC-216F). Fulfillment fields (status, tracking_number, shipped_at,
+// delivered_at, shipping_method, tracking URLs) are rejected by the route
+// with a 400 naming the dedicated endpoint; they are deliberately absent
+// here so no caller type-checks against sending them.
 export interface UpdateOrderRequest {
-  status?: OrderStatus;
-  payment_status?: PaymentStatus;
-  shipping_method?: string;
-  tracking_number?: string;
-  shipped_at?: string;
-  delivered_at?: string;
+  orderId?: string;
   notes?: string;
   external_references?: Record<string, any>;
   extensions?: Record<string, any>;

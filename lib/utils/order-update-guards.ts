@@ -1,83 +1,135 @@
 /**
- * Pure guards for the fulfillment-only PUT /api/orders handler (BMC-158,
- * follow-up to BMC-140).
+ * Pure guards for the metadata-only PUT /api/orders handler (BMC-216F,
+ * hardening BMC-158 / BMC-140).
  *
  * The PUT handler is gated by ORDERS_UPDATE — a scoped webhook/automation
- * permission, NOT full admin. Two order fields it can otherwise write freely
- * are integrity-sensitive and belong to other, verified code paths:
+ * permission, NOT full admin. Two classes of order data it could otherwise
+ * write freely are integrity-sensitive and belong to other, verified paths:
  *
- *  1. `status` → 'refunded' / 'cancelled'. These are not a money vector on
- *     their own, but setting them here produces inconsistent state (an order
- *     marked 'refunded' while `payment_status` stays 'paid' and no Stripe
- *     refund exists) and emails the customer a false cancelled/refunded
- *     notice. Both statuses are owned exclusively by the dedicated
- *     POST /api/orders/refund route, which only flips them after actually
- *     creating a Stripe refund. So this handler must reject them.
+ *  1. Every fulfillment/lifecycle field (`status`, `tracking_number`,
+ *     `shipped_at`, `delivered_at`, `shipping_method`, tracking URLs). Each
+ *     now has a dedicated owner — the Stripe webhook (pending → processing),
+ *     POST /api/admin/orders/{id}/ship and PATCH .../tracking (shipment state,
+ *     CAS-guarded with audit events), and POST /api/orders/refund (cancelled /
+ *     refunded, only after a verified Stripe refund). Writing them here would
+ *     bypass the fulfillment state machine and produce inconsistent state
+ *     (e.g. status='refunded' while payment_status stays 'paid'). So this
+ *     handler rejects them outright — see `validatePutOrderBody`.
  *
- *  2. `extensions` as a whole. The PUT handler writes the `extensions` JSON
- *     column, but that column holds several server-owned keys the client must
- *     not be able to clobber:
+ *  2. The two JSON columns the handler writes — `extensions` and
+ *     `external_references`. Both hold server-owned keys the client must not be
+ *     able to clobber:
  *       - `payment_intent_id` — the binding the refund route trusts to locate
- *         the PaymentIntent it refunds. A holder of ORDERS_UPDATE could rebind
- *         it (or drop it via a wholesale overwrite) before a refund — a
- *         refund-fraud / integrity concern.
+ *         the PaymentIntent it refunds. It is dual-written at order creation to
+ *         BOTH columns, and `getOrderByPaymentIntentId` matches either with an
+ *         OR + `LIMIT 1`. A holder of ORDERS_UPDATE could rebind it (or drop it
+ *         via a wholesale overwrite) before a refund — a refund-fraud /
+ *         integrity concern — or point a second order at someone else's PI so
+ *         the `charge.refunded` reconciler writes onto the wrong row.
  *       - `refunds[]` — the refund ledger `computeRefundedTotal()` sums to
  *         enforce the over-refund guard. A wholesale `extensions` overwrite
  *         (e.g. `PUT { extensions: { carrier: 'X' } }`) would drop it, resetting
  *         the cumulative refunded total to 0 and enabling a second refund beyond
  *         the original amount.
- *       - other stored keys (`restockedLineKeys`, `email`, …) the client did
- *         not send.
- *     So this handler MERGES the client's `extensions` over the stored ones
- *     (rather than wholesale-replacing) and re-pins `payment_intent_id` to the
- *     stored value. See `mergeExtensions`.
+ *       - `refunds_version`, `restockedLineKeys`, `email`, `carrier`,
+ *         `trackingUrl` — see `SERVER_OWNED_EXTENSION_KEYS`.
+ *     So this handler MERGES the client's object over the stored one (rather
+ *     than wholesale-replacing), drops the server-owned keys from the client's
+ *     overlay, and re-pins `payment_intent_id` to the stored value. See
+ *     `mergeExtensions` / `mergeExternalReferences`.
+ *
+ * Note the deliberate asymmetry between those two mechanisms: a TOP-LEVEL
+ * `{ trackingUrl: … }` on the PUT body 400s the whole request (it is in
+ * `PUT_REJECTED_FIELD_MESSAGES`), while the same value NESTED as
+ * `{ extensions: { trackingUrl: … } }` is silently stripped and the request
+ * succeeds with a 200. Both are safe — the value is never stored either way —
+ * but only the first tells the caller. The rejected map exists to point a
+ * caller at the right endpoint for a field they clearly meant to set; the
+ * nested strip is a blanket integrity guard over a free-form JSON column where
+ * a 400 on any server-owned key would break automation callers that echo back
+ * an order they just read. If you are debugging "why didn't my
+ * `extensions.<key>` persist", the answer is `SERVER_OWNED_EXTENSION_KEYS`.
  *
  * Kept dependency-free (no DB / Cloudflare bindings) so they can be unit
  * tested directly. Consumed by app/api/orders/route.ts.
  */
 
-/** Statuses the schema accepts on an order row. */
-export const VALID_ORDER_STATUSES = [
-  'pending',
-  'processing',
-  'shipped',
-  'delivered',
-  'cancelled',
-  'refunded',
-] as const;
-
 /**
- * Statuses that PUT /api/orders must NOT set. They are owned exclusively by
- * POST /api/orders/refund, which sets them only after a verified Stripe refund.
- */
-export const REFUND_OWNED_STATUSES = ['cancelled', 'refunded'] as const;
-
-/**
- * Validates a status supplied to PUT /api/orders.
+ * BMC-216F: PUT /api/orders allowlist.
  *
- * Returns a discriminated result (never throws) so the route can turn a
- * failure straight into a clean error response:
- *   - unknown status                       → 400
- *   - 'cancelled' / 'refunded' (refund-owned) → 422 (route via /refund)
+ * After BMC-216 every lifecycle transition has a dedicated owner — the Stripe
+ * webhook (pending → processing), POST /api/admin/orders/{id}/ship
+ * (processing → shipped), and POST /api/orders/refund (→ cancelled/refunded).
+ * Nothing legitimate is left for a generic status/fulfillment write, so this
+ * route accepts ONLY order metadata: `notes`, `external_references`, and the
+ * (further restricted, merged) `extensions`. Every fulfillment field is
+ * rejected with a 400 whose message names the correct endpoint.
+ *
+ * `payment_status` is deliberately NOT in the rejected map: the route keeps
+ * the BMC-140 behavior of logging + silently dropping it (changing that to a
+ * 400 would break existing webhook/automation callers that harmlessly echo it).
  */
-export function validatePutOrderStatus(
-  status: unknown
+export const PUT_UPDATABLE_FIELDS = ['notes', 'external_references', 'extensions'] as const;
+
+const SHIP_ENDPOINT = 'POST /api/admin/orders/{id}/ship';
+const TRACKING_ENDPOINT = 'PATCH /api/admin/orders/{id}/tracking';
+const REFUND_ENDPOINT = 'POST /api/orders/refund';
+
+const PUT_REJECTED_FIELD_MESSAGES: Record<string, string> = {
+  status:
+    `"status" cannot be set via PUT /api/orders. Shipments are created via ` +
+    `${SHIP_ENDPOINT}; cancellations and refunds go through ${REFUND_ENDPOINT}, ` +
+    `which issues the Stripe refund and updates payment_status atomically.`,
+  tracking_number:
+    `"tracking_number" cannot be set via PUT /api/orders. Use ${SHIP_ENDPOINT} ` +
+    `to create a shipment, or ${TRACKING_ENDPOINT} to correct tracking on a ` +
+    `shipped order.`,
+  shipped_at:
+    `"shipped_at" cannot be set via PUT /api/orders — shipment timestamps are ` +
+    `server-owned. Use ${SHIP_ENDPOINT}.`,
+  delivered_at:
+    `"delivered_at" cannot be set via PUT /api/orders — delivery timestamps are ` +
+    `server-owned.`,
+  shipping_method:
+    `"shipping_method" cannot be changed via PUT /api/orders. Carrier changes ` +
+    `go through ${SHIP_ENDPOINT} or ${TRACKING_ENDPOINT}.`,
+  trackingUrl:
+    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
+    `or ${TRACKING_ENDPOINT}.`,
+  tracking_url:
+    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
+    `or ${TRACKING_ENDPOINT}.`,
+};
+
+/**
+ * Validates a PUT /api/orders body against the allowlist. Key PRESENCE (not
+ * truthiness) is what rejects — `{ status: null }` is still an attempt to
+ * touch a rejected field. Returns a discriminated result (never throws).
+ */
+export function validatePutOrderBody(
+  body: Record<string, unknown>
 ): { ok: true } | { ok: false; error: string; status: number } {
-  if (typeof status !== 'string' || !VALID_ORDER_STATUSES.includes(status as never)) {
-    return {
-      ok: false,
-      error: `Invalid status. Must be one of: ${VALID_ORDER_STATUSES.join(', ')}`,
-      status: 400,
-    };
+  for (const [field, message] of Object.entries(PUT_REJECTED_FIELD_MESSAGES)) {
+    if (field in body) {
+      return { ok: false, error: message, status: 400 };
+    }
   }
-  if (REFUND_OWNED_STATUSES.includes(status as never)) {
+  // `null` does NOT count as an updatable field. The two JSON columns treat a
+  // null overlay as "no keys to apply", so `{ external_references: null }`
+  // alone would otherwise 200 on a write that changed nothing — and would
+  // silently re-serialize a stored raw JSON string into an object as a side
+  // effect. Reject it as the no-op it is. (`notes: null` IS a real clear, but
+  // it needs a non-null field alongside it to be worth a write.)
+  const hasUpdatable = PUT_UPDATABLE_FIELDS.some((f) => body[f] !== undefined && body[f] !== null);
+  if (!hasUpdatable) {
     return {
       ok: false,
       error:
-        `Status "${status}" cannot be set via PUT /api/orders. ` +
-        `Cancellations and refunds must go through POST /api/orders/refund, ` +
-        `which issues the Stripe refund and updates payment_status atomically.`,
-      status: 422,
+        'No updatable fields provided. PUT /api/orders accepts only: ' +
+        'notes, external_references, extensions (a null value is not an update).',
+      status: 400,
     };
   }
   return { ok: true };
@@ -117,25 +169,105 @@ function parseExtensionsInput(
 }
 
 /**
- * Merges a client-supplied `extensions` object over the order's currently
- * stored `extensions`, then re-pins `payment_intent_id` to the stored value.
+ * Keys inside `extensions` that ONLY server code may write, dropped from the
+ * client's overlay before the merge. Merging alone is not enough: it protects
+ * keys the client OMITS, but a key the client SENDS still wins. Each of these
+ * has a verified server-side writer and a concrete abuse if a PUT can set it:
  *
- * This replaces the previous wholesale-replace behavior: a PUT that sends only
- * `{ carrier: 'X' }` must NOT wipe server-owned keys it omitted — most
- * critically `refunds[]` (summed by `computeRefundedTotal` for the over-refund
- * guard), plus `restockedLineKeys`, `email`, and any other stored keys. Those
- * survive because we start from the stored object and overlay the client keys.
+ *  - `carrier`, `trackingUrl` (BMC-216F) — written only by the shipment service
+ *    / legacy backfill; `trackingUrl` is always DERIVED from carrier + tracking
+ *    number, never stored from a client. Writable here, a PUT could plant a
+ *    phishing tracking link or rewrite the shipped carrier.
+ *  - `email` (BMC-230) — the guest-order email of record. `getOrderCustomerEmail`
+ *    prefers it over `shipping_address.email`, so it decides where the shipping /
+ *    refund / confirmation emails go AND is the value the guest order-status
+ *    token is signed over (`createOrderStatusToken`). Writable here, a PUT could
+ *    redirect a customer's emails to an attacker AND hand them a token that
+ *    verifies at `/order-status/[id]` — full guest-order takeover.
+ *  - `refunds`, `refunds_version` — the refund ledger and the monotonic counter
+ *    the refund route's CAS is guarded on. Writable here, a PUT could reset the
+ *    over-refund guard or stall/replay the CAS.
+ *  - `restockedLineKeys` — the restock idempotency record; rewriting it causes
+ *    double-restock or silently skipped restock on refund.
+ *
+ * `payment_intent_id` is NOT in this list because it is not merely dropped —
+ * it is re-pinned to the stored value. See `mergeGuardedJsonColumn`.
+ */
+export const SERVER_OWNED_EXTENSION_KEYS = [
+  'carrier',
+  'trackingUrl',
+  'email',
+  'refunds',
+  'refunds_version',
+  'restockedLineKeys',
+] as const;
+
+/**
+ * Merges a client-supplied JSON-column object over the order's stored one,
+ * drops `serverOwnedKeys` from the client's overlay, and re-pins
+ * `payment_intent_id` to the stored value.
+ *
+ * Merging (rather than wholesale-replacing) is what keeps a PUT that sends only
+ * `{ erp: 'X-1' }` from wiping keys it omitted — most critically `refunds[]`
+ * (summed by `computeRefundedTotal` for the over-refund guard). Dropping
+ * `serverOwnedKeys` is what keeps a PUT that DOES send them from winning the
+ * overlay. Both are needed.
  *
  * `payment_intent_id` is always forced back to the stored value (restored
  * whether the client rebound it, dropped it, or introduced one), or stripped
  * entirely if the order never had one — that binding is set only at verified
- * order creation and the refund route trusts it.
+ * order creation, the refund route trusts it, and `getOrderByPaymentIntentId`
+ * matches it across BOTH JSON columns, so a client-planted value in either one
+ * can misdirect refund reconciliation onto the wrong order.
  *
  * Fails SAFE: if the STORED `current` is a corrupt/unparseable string (or a
  * non-object), we return an error instead of persisting a stripped object that
  * would silently drop the refund ledger. A corrupt CLIENT `incoming` value is
  * treated leniently (as an empty overlay) — it can only fail to add keys, never
  * drop stored ones.
+ */
+function mergeGuardedJsonColumn(
+  incoming: unknown,
+  current: unknown,
+  serverOwnedKeys: readonly string[],
+  corruptStoredError: string
+):
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; error: string; status: number } {
+  const parsedCurrent = parseExtensionsInput(current);
+  if (!parsedCurrent.ok) {
+    return { ok: false, error: corruptStoredError, status: 422 };
+  }
+
+  const parsedIncoming = parseExtensionsInput(incoming);
+  const incomingObj = parsedIncoming.ok ? parsedIncoming.value : {};
+  const stored = parsedCurrent.value;
+
+  // Drop server-owned keys from the client's overlay. The STORED values survive
+  // untouched — this only removes the client's ability to change them.
+  const clientKeys: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(incomingObj)) {
+    if (!serverOwnedKeys.includes(key)) clientKeys[key] = value;
+  }
+
+  const merged: Record<string, unknown> = { ...stored, ...clientKeys };
+
+  // Re-pin the immutable PI binding to the stored value.
+  const storedPi = stored.payment_intent_id;
+  if (typeof storedPi === 'string' && storedPi.length > 0) {
+    merged.payment_intent_id = storedPi;
+  } else {
+    // No stored PI — PUT may not introduce one. Strip any client-supplied value.
+    delete merged.payment_intent_id;
+  }
+
+  return { ok: true, value: merged };
+}
+
+/**
+ * Merges a client-supplied `extensions` object over the order's currently
+ * stored `extensions`, dropping `SERVER_OWNED_EXTENSION_KEYS` from the client's
+ * overlay and re-pinning `payment_intent_id`.
  *
  * Returns a discriminated result (never throws) so the route can turn a
  * failure straight into a clean error response.
@@ -149,37 +281,48 @@ export function mergeExtensions(
 ):
   | { ok: true; extensions: Record<string, unknown> }
   | { ok: false; error: string; status: number } {
-  const parsedCurrent = parseExtensionsInput(current);
-  if (!parsedCurrent.ok) {
-    // Corrupt stored extensions — refuse rather than overwrite. Persisting the
-    // client's object here would drop the refunds ledger and reset the
-    // over-refund guard, so fail closed.
-    return {
-      ok: false,
-      error:
-        'Cannot update order: stored extensions are corrupt and cannot be safely ' +
-        'merged. Refusing to overwrite to avoid dropping server-owned data ' +
-        '(e.g. the refunds ledger).',
-      status: 422,
-    };
-  }
+  const result = mergeGuardedJsonColumn(
+    incoming,
+    current,
+    SERVER_OWNED_EXTENSION_KEYS,
+    'Cannot update order: stored extensions are corrupt and cannot be safely ' +
+      'merged. Refusing to overwrite to avoid dropping server-owned data ' +
+      '(e.g. the refunds ledger).'
+  );
+  return result.ok ? { ok: true, extensions: result.value } : result;
+}
 
-  const parsedIncoming = parseExtensionsInput(incoming);
-  const incomingObj = parsedIncoming.ok ? parsedIncoming.value : {};
-  const stored = parsedCurrent.value;
-
-  // Start from the stored keys, overlay the client's keys. Server-owned keys
-  // the client did NOT send (refunds, restockedLineKeys, email, …) survive.
-  const merged: Record<string, unknown> = { ...stored, ...incomingObj };
-
-  // Re-pin the immutable PI binding to the stored value.
-  const storedPi = stored.payment_intent_id;
-  if (typeof storedPi === 'string' && storedPi.length > 0) {
-    merged.payment_intent_id = storedPi;
-  } else {
-    // No stored PI — PUT may not introduce one. Strip any client-supplied value.
-    delete merged.payment_intent_id;
-  }
-
-  return { ok: true, extensions: merged };
+/**
+ * Merges a client-supplied `external_references` object over the order's stored
+ * one and re-pins `payment_intent_id` (BMC-230).
+ *
+ * `external_references` is genuine cross-system metadata (`erp`, `shopify_id`,
+ * …) that an ORDERS_UPDATE caller is meant to write, so unlike `extensions`
+ * there is no server-owned key list here — the ONE protected key is
+ * `payment_intent_id`, which order creation dual-writes into this column
+ * alongside `extensions`. `getOrderByPaymentIntentId` OR-matches both columns
+ * with `LIMIT 1` and no `ORDER BY`, so a client-planted value here makes a
+ * second row match a victim's PaymentIntent and lets `charge.refunded`
+ * reconciliation write `cancelled` / `refunded` and the refund-ledger entry
+ * onto the wrong order. Merging also stops a partial overwrite from dropping
+ * the stored binding.
+ *
+ * @param incoming  the client-supplied `external_references` from the PUT body
+ * @param current   the order's currently persisted `external_references`
+ */
+export function mergeExternalReferences(
+  incoming: unknown,
+  current: unknown
+):
+  | { ok: true; externalReferences: Record<string, unknown> }
+  | { ok: false; error: string; status: number } {
+  const result = mergeGuardedJsonColumn(
+    incoming,
+    current,
+    [],
+    'Cannot update order: stored external_references are corrupt and cannot be ' +
+      'safely merged. Refusing to overwrite to avoid dropping the stored ' +
+      'payment_intent_id binding.'
+  );
+  return result.ok ? { ok: true, externalReferences: result.value } : result;
 }

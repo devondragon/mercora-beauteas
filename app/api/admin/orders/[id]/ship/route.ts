@@ -11,8 +11,10 @@ import { logCritical } from "@/lib/utils/observe";
 /**
  * Derived at the response boundary. This route never stores a tracking URL —
  * it persists only (carrier, trackingNumber) and rebuilds the link on the way
- * out. Note the legacy PUT /api/orders path still accepts and stores a
- * client-supplied `extensions.trackingUrl`; removing that is BMC-230 (ticket F).
+ * out. As of BMC-230 (ticket F) no route stores one: PUT /api/orders rejects
+ * top-level tracking-URL keys and strips a client `extensions.trackingUrl`
+ * from the merge, so any stored value is a pre-BMC-230 legacy row that nothing
+ * renders.
  */
 function trackingProjection(order: Order) {
   const carrier = normalizeCarrier(order.shipping_carrier ?? null);
@@ -31,13 +33,13 @@ function trackingProjection(order: Order) {
  * server-owned and the body may carry nothing (untracked) or a full
  * carrier+tracking pair — it can never supply a status or a timestamp.
  *
- * It is NOT yet the only path that can set `shipped` repo-wide: the legacy
- * `PUT /api/orders` still accepts client-supplied `status`, `shipped_at` and
- * `tracking_number` (app/api/orders/route.ts), and the current admin UI uses
- * it. That path is unguarded — it can ship an unpaid order, backdate
- * `shipped_at`, and writes no order_events row. Closing it is BMC-230
- * (ticket F); until then, treat this route as the correct path, not the
- * enforced one.
+ * As of BMC-230 (ticket F) this is the ENFORCED path, not merely the correct
+ * one: the legacy `PUT /api/orders` was reduced to a metadata allowlist and now
+ * rejects client-supplied `status`, `shipped_at`, `tracking_number`,
+ * `shipping_method` and tracking URLs with a 400 naming this endpoint. Together
+ * with `PATCH .../tracking`, this route and the Stripe webhook are the only
+ * writers of order lifecycle state.
+ *
  * Email is a best-effort side effect AFTER the shipment commit — a failed
  * send is reported in the 201 body, never a rollback.
  */

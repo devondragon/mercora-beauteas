@@ -11,16 +11,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { getDbAsync } from "@/lib/db";
 import { orders } from "@/lib/db/schema/order";
-import { 
-  getOrdersByCustomer, 
-  getOrderById, 
-  createOrder, 
-  updateOrderStatus,
-  updateOrderShipping 
+import {
+  getOrdersByCustomer,
+  getOrderById,
+  createOrder
 } from "@/lib/models/mach/orders";
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateRequest, PERMISSIONS } from "@/lib/auth/unified-auth";
-import { sendOrderStatusUpdateEmail } from "@/lib/utils/email";
 import type { Order, CreateOrderRequest, UpdateOrderRequest } from "@/lib/types/order";
 import { getCustomer, createCustomer } from "@/lib/models/mach/customer";
 import { canonicalizeOrderItemsDisplay, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
@@ -31,7 +28,11 @@ import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
-import { validatePutOrderStatus, mergeExtensions } from "@/lib/utils/order-update-guards";
+import {
+  validatePutOrderBody,
+  mergeExtensions,
+  mergeExternalReferences,
+} from "@/lib/utils/order-update-guards";
 import { logCritical } from "@/lib/utils/observe";
 
 
@@ -519,7 +520,11 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PUT /api/orders - Update order status (consolidates update-order functionality)
+ * PUT /api/orders - Update order METADATA only (BMC-216F).
+ *
+ * Accepts exactly `notes`, `external_references`, and a merged `extensions`.
+ * Fulfillment fields are rejected with a 400 naming their dedicated endpoint —
+ * see validatePutOrderBody in lib/utils/order-update-guards.ts.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -529,10 +534,9 @@ export async function PUT(request: NextRequest) {
       return authResult.response!;
     }
 
-    const body = await request.json() as UpdateOrderRequest;
+    const body = await request.json() as UpdateOrderRequest & Record<string, unknown>;
 
-    const { status, payment_status, shipping_method, tracking_number, shipped_at, delivered_at, notes, external_references, extensions } = body;
-    const orderId = (body as any).orderId;
+    const orderId = body.orderId;
     if (!orderId) {
       return NextResponse.json({
         error: 'Validation failed',
@@ -540,27 +544,23 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (!status) {
-      return NextResponse.json({
-        error: 'Validation failed', 
-        details: ['status is required']
-      }, { status: 400 });
+    // SECURITY (BMC-216F): this route is an explicit metadata allowlist. Every
+    // lifecycle transition now has a dedicated, verified owner — the Stripe
+    // webhook (pending → processing), POST /api/admin/orders/{id}/ship
+    // (processing → shipped), and POST /api/orders/refund (→ cancelled /
+    // refunded, which issues the Stripe refund atomically). Nothing legitimate
+    // is left for a generic status/fulfillment write, so status,
+    // tracking_number, shipped_at, delivered_at, shipping_method, and any
+    // tracking URL are rejected with a 400 naming the correct endpoint.
+    const bodyCheck = validatePutOrderBody(body as Record<string, unknown>);
+    if (!bodyCheck.ok) {
+      return NextResponse.json({ error: bodyCheck.error }, { status: bodyCheck.status });
     }
 
-    // Validate the status value AND gate refund-owned transitions (BMC-158).
-    // 'cancelled'/'refunded' are rejected here (422) — they are set only by the
-    // dedicated POST /api/orders/refund route, which issues the Stripe refund
-    // and updates payment_status atomically. Setting them via this
-    // fulfillment-only PUT would leave the order in an inconsistent state
-    // (e.g. status='refunded' while payment_status stays 'paid' with no refund)
-    // and email the customer a false cancelled/refunded notice.
-    const statusCheck = validatePutOrderStatus(status);
-    if (!statusCheck.ok) {
-      return NextResponse.json({ error: statusCheck.error }, { status: statusCheck.status });
-    }
+    const { notes, external_references, extensions } = body;
 
     const db = await getDbAsync();
-    
+
     // Check if order exists
     const existingOrder = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     if (existingOrder.length === 0) {
@@ -582,11 +582,12 @@ export async function PUT(request: NextRequest) {
     //   - the Stripe webhook's markOrderPaid()
     //   - the refund route (/api/orders/refund), which only sets payment_status
     //     after actually creating a Stripe refund
-    // This PUT handler is for fulfillment/tracking updates only, so any client-
-    // supplied payment_status is logged and silently dropped rather than applied.
-    if (payment_status) {
+    // Any client-supplied payment_status is logged and silently dropped rather
+    // than applied (kept as a drop, not a 400, so existing automation callers
+    // that harmlessly echo the field keep working — BMC-216F).
+    if (body.payment_status) {
       console.warn(
-        `Order ${orderId}: ignoring client-supplied payment_status="${payment_status}" on PUT ` +
+        `Order ${orderId}: ignoring client-supplied payment_status="${body.payment_status}" on PUT ` +
           `(payment_status can only be set via verified payment or the /refund route)`
       );
     }
@@ -595,14 +596,21 @@ export async function PUT(request: NextRequest) {
     // the client must not clobber — `payment_intent_id` (the binding the refund
     // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
     // ledger computeRefundedTotal sums for the over-refund guard), plus
-    // restockedLineKeys / email / etc. A wholesale `extensions` overwrite here
-    // could rebind/drop the PI (refund fraud) or wipe the refunds ledger
-    // (resetting the over-refund guard → double refund). mergeExtensions MERGES
-    // the client's keys over the stored ones and re-pins payment_intent_id; it
-    // fails safe (rejects) if the stored extensions are corrupt rather than
-    // persisting a stripped object.
+    // refunds_version / restockedLineKeys / email / carrier / trackingUrl. A
+    // wholesale `extensions` overwrite here could rebind/drop the PI (refund
+    // fraud) or wipe the refunds ledger (resetting the over-refund guard →
+    // double refund). mergeExtensions MERGES the client's keys over the stored
+    // ones, re-pins payment_intent_id, and strips every key in
+    // SERVER_OWNED_EXTENSION_KEYS from the client overlay; it fails safe
+    // (rejects) if the stored extensions are corrupt rather than persisting a
+    // stripped object.
+    // `!= null` (not `!== undefined`): a null overlay carries no keys, so
+    // merging it would write back a value identical to what is stored — a
+    // no-op write that also silently re-serializes a stored raw JSON string
+    // into an object. validatePutOrderBody already rejects a body whose ONLY
+    // fields are null; this skips the column when other fields carry the write.
     let mergedExtensions: Record<string, unknown> | undefined;
-    if (extensions !== undefined) {
+    if (extensions != null) {
       const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
       if (!mergeResult.ok) {
         return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
@@ -610,45 +618,51 @@ export async function PUT(request: NextRequest) {
       mergedExtensions = mergeResult.extensions;
     }
 
-    // Build update data (MACH-compliant).
+    // SECURITY (BMC-230): `external_references` gets the same treatment for the
+    // one key it shares with `extensions` — `payment_intent_id`, which order
+    // creation dual-writes into BOTH columns and getOrderByPaymentIntentId
+    // OR-matches across both. Written wholesale from the client, a PUT could
+    // point a second order at a victim's PaymentIntent so charge.refunded
+    // reconciliation lands on the wrong row. Everything else in this column
+    // (erp, shopify_id, …) is legitimate caller metadata and passes through.
+    let mergedExternalReferences: Record<string, unknown> | undefined;
+    if (external_references != null) {
+      const refsResult = mergeExternalReferences(
+        external_references,
+        currentOrder.external_references
+      );
+      if (!refsResult.ok) {
+        return NextResponse.json({ error: refsResult.error }, { status: refsResult.status });
+      }
+      mergedExternalReferences = refsResult.externalReferences;
+    }
+
+    // Build update data (metadata only — BMC-216F).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
     const updateData: any = {
-      ...(status && { status }),
-      ...(shipping_method && { shipping_method }),
-      ...(tracking_number && { tracking_number }),
-      ...(shipped_at && { shipped_at }),
-      ...(delivered_at && { delivered_at }),
-      ...(notes && { notes }),
-      ...(external_references && { external_references }),
+      // Presence, not truthiness — matching how validatePutOrderBody rejects.
+      // `notes && …` silently dropped `{ notes: '' }`, so a caller clearing a
+      // note got a 200 and no write. An explicit '' or null now clears it.
+      ...(notes !== undefined && { notes }),
+      ...(mergedExternalReferences !== undefined && {
+        external_references: mergedExternalReferences,
+      }),
       ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
       updated_at: new Date().toISOString()
     };
 
-    // Update the order
+    // Update the order. No email is sent from this route: with no status writes
+    // possible there is no status change to announce (BMC-216F deleted the
+    // email-on-status-change block rather than guarding it).
     const [updatedOrder] = await db.update(orders)
       .set(updateData)
       .where(eq(orders.id, orderId))
       .returning();
 
-    // Send email notification for status changes
-    const emailStatuses = ['processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
-    if (emailStatuses.includes(status) && currentOrder.status !== status) {
-      try {
-        const orderData = transformOrderForEmail(updatedOrder);
-        await sendOrderStatusUpdateEmail(orderData);
-        console.log(`Status update email sent for order ${orderId}: ${status}`);
-      } catch (emailError) {
-        console.error(`Failed to send status update email for order ${orderId}:`, emailError);
-      }
-    }
-
-    // TODO: Re-implement webhook audit trail in MACH orders model
-    // Create webhook record for audit trail
-    console.log('Order status update:', {
+    console.log('Order metadata update:', {
       orderId,
-      previousStatus: currentOrder.status,
-      newStatus: status,
+      fields: Object.keys(updateData).filter((k) => k !== 'updated_at'),
       updatedBy: authResult.tokenInfo?.tokenName || 'unknown',
       timestamp: new Date().toISOString(),
     });
@@ -746,48 +760,3 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
   };
 }
 
-/**
- * Transform order data for email notification
- */
-function transformOrderForEmail(order: any): any {
-  // Use MACH-compliant fields
-  const items = order.items ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items) : [];
-  const shippingAddr = order.shipping_address ? (typeof order.shipping_address === 'string' ? JSON.parse(order.shipping_address) : order.shipping_address) : {};
-  const extensions = order.extensions ? (typeof order.extensions === 'string' ? JSON.parse(order.extensions) : order.extensions) : {};
-
-  // MACHAddress: line1, line2, city, region, postal_code, country, recipient, company
-  let customerName = '';
-  if (shippingAddr.recipient) {
-    customerName = shippingAddr.recipient;
-  } else if (shippingAddr.company) {
-    customerName = shippingAddr.company;
-  } else {
-    customerName = 'Valued Customer';
-  }
-
-  return {
-    orderNumber: order.id,
-    customerName,
-    customerEmail: extensions.email || shippingAddr.email || '',
-    status: order.status,
-    carrier: extensions.carrier,
-    trackingNumber: order.tracking_number,
-    trackingUrl: extensions.trackingUrl,
-    notes: order.notes,
-    cancellationReason: extensions.cancellationReason,
-    items: items.map((item: any) => ({
-      productId: item.product_id || item.id,
-      name: item.product_name || item.name || item.title,
-      price: item.unit_price?.amount || item.unit_price || item.price || 0,
-      quantity: item.quantity || 1,
-      imageUrl: item.imageUrl || '',
-    })),
-    shippingAddress: {
-      street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
-      city: shippingAddr.city || '',
-      state: shippingAddr.region || '',
-      zipCode: shippingAddr.postal_code || '',
-      country: shippingAddr.country || 'US',
-    },
-  };
-}

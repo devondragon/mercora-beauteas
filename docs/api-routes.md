@@ -41,7 +41,7 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 Timestamps and tracking URLs are **server-owned** — the request body can never supply a status or a timestamp.
 
-> ⚠️ **These are not yet the only writer of `shipped`.** The legacy `PUT /api/orders` still accepts client-supplied `status` / `shipped_at` / `tracking_number`, can ship an unpaid order, and writes no `order_events` row. Closing it is **BMC-230** — until then these routes are the *correct* path, not the *enforced* one.
+> ✅ **These are the only writer of `shipped`** as of **BMC-230**. The legacy `PUT /api/orders` was reduced to a metadata allowlist (`notes`, `external_references`, merged `extensions`) and now rejects `status` / `tracking_number` / `shipped_at` / `delivered_at` / `shipping_method` / any tracking-URL key with a **400 naming the endpoint above**. It also strips the server-owned keys (`carrier`, `trackingUrl`, `email`, `refunds`, `refunds_version`, `restockedLineKeys`) from the `extensions` merge, merges `external_references` instead of replacing it, re-pins `payment_intent_id` in **both** JSON columns, and sends no email.
 
 Requires migrations `0022` + `0023` on the target environment — see [`database-migrations.md`](database-migrations.md).
 

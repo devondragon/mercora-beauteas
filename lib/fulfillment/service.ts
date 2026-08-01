@@ -7,8 +7,10 @@
  * as lib/models/mach/subscriptions.ts, and the same guarded-CAS zero-row
  * re-read shape as promoteOrderToPaid (lib/models/mach/orders.ts).
  *
- * Concurrency invariants (they hold for writes THROUGH this module — the
- * legacy PUT /api/orders path is still unguarded until BMC-230/ticket F):
+ * Concurrency invariants (they hold for writes THROUGH this module; BMC-230
+ * closed the last unguarded writer, but the refund route and the Stripe
+ * charge.refunded reconciler can still move an order out of `shipped`
+ * concurrently, so the guards below remain load-bearing):
  *  - Only a paid `processing` order can flip to `shipped` (WHERE guard).
  *  - `shipped_at` = THIS request's `new Date().toISOString()` and doubles as
  *    the operation marker: the event INSERT…SELECT is guarded on both
@@ -119,9 +121,9 @@ export async function shipOrder(
   // atomically, so NOT EXISTS reliably observes the winner's event row.
   //
   // Scoped to THIS request's own marker (created_at = now), not "ever" —
-  // order status can legitimately cycle back to processing and re-ship
-  // later (the still-unguarded legacy PUT /api/orders path, BMC-230), which
-  // must record its own fresh shipment_created event. An unscoped NOT
+  // order status can legitimately cycle back to processing and re-ship later
+  // (a refund/cancel followed by a re-ship), which must record its own fresh
+  // shipment_created event. An unscoped NOT
   // EXISTS would silently swallow that legitimate re-ship's event while
   // still reporting a 201 (review pass 2 CRITICAL).
   const shipmentEventAlreadyRecorded = db
@@ -188,8 +190,8 @@ export async function shipOrder(
     case "ship":
       // Zero-row CAS yet the re-read shows processing+paid: the order cycled
       // back to processing and got paid again between our batch and this
-      // re-read (the still-unguarded legacy PUT /api/orders path, BMC-230 —
-      // see the module doc above). This request's own conditional insert
+      // re-read (see the module doc's concurrency note above). This request's
+      // own conditional insert
       // never fired (its shipped_at marker didn't match), so surface a
       // retryable 409 rather than a false success — no event row was written
       // for this request; a fresh retry will win its own CAS normally.
@@ -263,8 +265,9 @@ export async function updateTracking(
   // Re-asserting the observed pair means a loser matches zero rows instead.
   //
   // Deliberately NOT keyed on `updated_at` as well: that would turn any
-  // unrelated concurrent write to the order (a note edit through the legacy
-  // PUT /api/orders, BMC-230) into a spurious conflict without making
+  // unrelated concurrent write to the order (a note edit through
+  // PUT /api/orders, which BMC-230 reduced to exactly that) into a spurious
+  // conflict without making
   // `previous` any truer. An A-B-A on the pair is likewise harmless here —
   // if the values were flipped back to what we observed, our `previous` is
   // accurate at commit time, which is the whole property being protected.
@@ -349,8 +352,8 @@ export async function updateTracking(
   if (canEditTracking(toSnapshot(reread))) {
     // Zero-row CAS yet the re-read says the order is still editable: either
     // another corrector committed a different pair first (lost value-CAS), or
-    // status ping-ponged shipped -> X -> shipped around our batch (the still-
-    // unguarded legacy PUT /api/orders, BMC-230). Both are retryable, and
+    // status ping-ponged shipped -> X -> shipped around our batch (a concurrent
+    // refund/cancel followed by a re-ship). Both are retryable, and
     // neither is `not_shipped` — reporting that here would emit a
     // self-contradictory 409 {code: 'not_shipped', status: 'shipped'}.
     // shipOrder's `case 'ship':` re-read paradox branch is the same defense.
