@@ -13,7 +13,9 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 - `GET`/`POST /api/orders`
 - `GET /api/orders/[id]`
-- `POST /api/orders/refund` — authenticated (`ORDERS_UPDATE`)
+- `POST /api/orders/refund` — authenticated (`ORDERS_UPDATE`). The ledger entry mirrors Stripe's refund status: a delayed payment method (Klarna / Cash App Pay / Amazon Pay) returns `pending`, and the order is **not** cancelled or restocked until `refund.updated` confirms it settled (BMC-224). The response carries `refund.status` so an operator can tell the two apart. A refund Stripe rejects synchronously releases its reservation and returns 502.
+
+  ⚠️ **Because the order stays `processing` + `paid` while a refund is unsettled, `POST /api/admin/orders/[id]/ship` refuses to ship it** — otherwise the goods go out and the refund then succeeds, leaving the customer with both. The guard is a SQL predicate inside the ship CAS (not just a pre-read), so a refund reserving its entry mid-request can't be raced past. The 409 carries `refundPending: true` and an operator-readable `error`.
 - `POST /api/payment-intent`
 
 ## Subscriptions
@@ -23,9 +25,18 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 ## Webhooks
 
-`POST /api/webhooks/stripe` — handles `payment_intent`, subscription, invoice, and `charge.refunded`; deduplicated via `processed_webhook_events`.
+`POST /api/webhooks/stripe` — handles `payment_intent`, subscription, invoice, and the refund events below; deduplicated via `processed_webhook_events`.
 
 `charge.refunded` reconciles refunds issued **outside** the app (Stripe Dashboard) into the `orders.extensions.refunds[]` ledger so the over-refund guard can see them (BMC-213). It must also be **subscribed on the Stripe endpoint**, or the handler never runs.
+
+`refund.updated` / `refund.failed` apply a refund's later **transition** (BMC-224). `charge.refunded` fires when a refund is *created* and never re-fires, so BMC-213 records a `pending` ledger entry and withholds cancellation + restock until Stripe confirms the money left — and nothing resumed that. These events do:
+
+- **succeeded** → settle the entry, then apply the held `status: 'cancelled'` / `payment_status: 'refunded'` and the two-phase restock claim. Also sends the customer's "you have been refunded" email if the entry was **app-initiated** — `POST /api/orders/refund` defers that message on an unsettled refund, and this is where it becomes true. Externally-reconciled (Dashboard) refunds have never sent it and still don't.
+- **failed / canceled** → release the entry to `failed` so it stops counting toward the over-refund guard, and lower `extensions.stripe_amount_refunded` to the charge's cumulative `amount_refunded` **read back from Stripe**. This is the only place that high-water mark may fall, and it is never inferred — an unreadable charge throws so Stripe redelivers.
+
+`charge.refund.updated` (the legacy name) routes to the same handler, but per Stripe's SDK docs it fires only "on selected payment methods" — **it is not a substitute for subscribing `refund.updated` and `refund.failed`.** Without those two, a delayed refund (Klarna / Cash App Pay / Amazon Pay) stays stuck forever.
+
+A lifecycle event whose refund matches no ledger entry is a deliberate **no-op, never an append**: `charge.refunded` is the authoritative recorder and its entry may legitimately carry no Stripe refund id, so appending would double-count the money.
 
 ## Agent
 

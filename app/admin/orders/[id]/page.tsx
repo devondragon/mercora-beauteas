@@ -962,10 +962,27 @@ export default function OrderDetailPage() {
                     {refund.source === 'stripe_external' && (
                       <Badge className="bg-state-info">Stripe Dashboard</Badge>
                     )}
+                    {/* BMC-224: a refund on a delayed payment method (Klarna,
+                        Cash App Pay, Amazon Pay) sits `pending` until Stripe
+                        confirms it settled — the order is NOT cancelled or
+                        restocked yet. A `failed` entry moved no money and no
+                        longer counts toward the refunded total. Neither is a
+                        completed refund, so neither may look like one. */}
+                    {refund.status === 'pending' && (
+                      <Badge className="bg-state-warning">Pending</Badge>
+                    )}
+                    {refund.status === 'failed' && (
+                      <Badge className="bg-state-error">Failed</Badge>
+                    )}
                   </div>
-                  <span className="text-xs text-text-secondary">
-                    {new Date(refund.processed_at).toLocaleDateString()}
-                  </span>
+                  {/* Only a settled refund has a processed_at. Rendering it
+                      unguarded printed a literal "Invalid Date" on every pending
+                      entry, so fall back to when it was reserved. */}
+                  {(refund.processed_at || refund.created_at) && (
+                    <span className="text-xs text-text-secondary">
+                      {new Date(refund.processed_at ?? refund.created_at).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
                 <div className="text-sm text-text-secondary space-y-1">
                   <p><strong>Reason:</strong> {refund.reason}</p>

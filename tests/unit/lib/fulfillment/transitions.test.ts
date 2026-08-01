@@ -22,9 +22,61 @@ function snapshot(over: Partial<OrderFulfillmentSnapshot> = {}): OrderFulfillmen
     payment_status: 'paid',
     shipping_carrier: null,
     tracking_number: null,
+    refund_pending: false,
     ...over,
   };
 }
+
+describe('decideShipment — a refund in flight blocks shipping (BMC-224)', () => {
+  it('refuses an otherwise-shippable order while a refund is pending', () => {
+    // The exact hole this closes: `POST /api/orders/refund` records a delayed
+    // refund (Klarna / Cash App Pay / Amazon Pay) as `pending` and withholds the
+    // cancellation until it settles — leaving the order in processing + paid,
+    // which is precisely what this module ships. Ship it and the refund then
+    // succeeds, and the customer keeps both the goods and the money.
+    const decision = decideShipment(snapshot({ refund_pending: true }), UPS);
+
+    expect(decision).toEqual({
+      kind: 'not_fulfillable',
+      status: 'processing',
+      paymentStatus: 'paid',
+      refundPending: true,
+    });
+  });
+
+  it('still ships when no refund is in flight', () => {
+    expect(decideShipment(snapshot({ refund_pending: false }), UPS)).toEqual({ kind: 'ship' });
+  });
+
+  it('does NOT disturb an already-shipped order', () => {
+    // A shipment that physically happened must stay idempotent/conflict. Turning
+    // it into a 409 because someone later opened a refund would break the retry
+    // contract for a shipment already out the door.
+    const shipped = snapshot({
+      status: 'shipped',
+      refund_pending: true,
+      shipping_carrier: 'ups',
+      tracking_number: '1Z999AA10123456784',
+    });
+
+    expect(decideShipment(shipped, UPS)).toEqual({ kind: 'idempotent' });
+    expect(decideShipment(shipped, { carrier: 'usps', trackingNumber: '9400111' })).toEqual({
+      kind: 'conflict',
+    });
+  });
+
+  it('reports refundPending only when that is the actual blocker', () => {
+    // A cancelled order is not fulfillable for its own reason; mislabelling it
+    // would send an operator hunting for a refund that is not the problem.
+    const decision = decideShipment(snapshot({ status: 'cancelled' }), UPS);
+    expect(decision).toEqual({
+      kind: 'not_fulfillable',
+      status: 'cancelled',
+      paymentStatus: 'paid',
+    });
+    expect((decision as any).refundPending).toBeUndefined();
+  });
+});
 
 const UNTRACKED: ShipmentInput = { carrier: null, trackingNumber: null };
 const UPS: ShipmentInput = { carrier: 'ups', trackingNumber: '1Z999AA10123456784' };

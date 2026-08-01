@@ -144,6 +144,19 @@ export async function POST(
             code: "not_fulfillable",
             status: result.status,
             paymentStatus: result.paymentStatus,
+            // BMC-224: the order can be `processing` + `paid` and STILL not
+            // shippable while a refund is in flight. Named `error` rather than
+            // something more descriptive on purpose — OrdersQueueClient renders
+            // `body.error ?? \`${code} (order is ${status})\``, so without it the
+            // operator is told "not_fulfillable (order is processing)", which
+            // reads as a bug in the app rather than a deliberate hold.
+            ...(result.refundPending
+              ? {
+                  refundPending: true,
+                  error:
+                    "A refund on this order is awaiting settlement. Shipping is blocked until it succeeds or fails.",
+                }
+              : {}),
           },
           { status: 409 },
         );

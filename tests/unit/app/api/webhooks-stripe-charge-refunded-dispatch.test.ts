@@ -48,6 +48,7 @@ vi.mock('@/app/api/webhooks/stripe/handlers/invoice-handlers', () => ({
 
 vi.mock('@/app/api/webhooks/stripe/handlers/refund-handlers', () => ({
   handleChargeRefunded: vi.fn().mockResolvedValue(undefined),
+  handleRefundLifecycle: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/models/mach/orders', () => ({ getOrderById: vi.fn() }));
@@ -56,8 +57,26 @@ vi.mock('@/lib/utils/observe', () => ({ logCritical: vi.fn() }));
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/webhooks/stripe/route';
-import { handleChargeRefunded } from '@/app/api/webhooks/stripe/handlers/refund-handlers';
+import {
+  handleChargeRefunded,
+  handleRefundLifecycle,
+} from '@/app/api/webhooks/stripe/handlers/refund-handlers';
 import { releaseWebhookEventClaim } from '@/lib/models/mach/subscriptions';
+
+/** The `charge.refunded` shape every test starts from (see `resetEvent`). */
+const CHARGE_REFUNDED = {
+  id: 'evt_charge_refunded_dispatch',
+  type: 'charge.refunded',
+  data: { object: { id: 'ch_test_123', payment_intent: 'pi_test_123', amount_refunded: 5000 } },
+};
+
+/**
+ * `verifyWebhookSignature` resolves the SAME object reference every call, so a
+ * test selects an event type by rewriting that object in place.
+ */
+function resetEvent() {
+  Object.assign(fakeEvent, structuredClone(CHARGE_REFUNDED));
+}
 
 function post() {
   return new NextRequest('https://shop.beauteas.com/api/webhooks/stripe', {
@@ -67,7 +86,10 @@ function post() {
   });
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetEvent();
+});
 
 describe('POST /api/webhooks/stripe — charge.refunded dispatch', () => {
   it('routes the event to the reconciliation handler', async () => {
@@ -91,5 +113,56 @@ describe('POST /api/webhooks/stripe — charge.refunded dispatch', () => {
     // Without the release, the PK row from this failed attempt would make every
     // legitimate Stripe retry look like a duplicate and skip forever.
     expect(releaseWebhookEventClaim).toHaveBeenCalledWith(fakeEvent.id);
+  });
+});
+
+/**
+ * BMC-224: `charge.refunded` alone cannot resume a refund it recorded as
+ * `pending` — it fires at refund creation and never re-fires. These three event
+ * types are the only ones that do, so the dispatch gets the same guard: dropping
+ * a `case` here silently restores the stuck-refund path.
+ */
+describe('POST /api/webhooks/stripe — refund lifecycle dispatch', () => {
+  const REFUND = { id: 're_test_123', charge: 'ch_test_123', amount: 5000 };
+
+  it.each([
+    ['refund.updated', 'succeeded'],
+    ['refund.failed', 'failed'],
+    // The legacy name, which fires only on selected payment methods — routed for
+    // completeness, never a substitute for the two above.
+    ['charge.refund.updated', 'succeeded'],
+  ])('routes %s to the lifecycle handler', async (type, status) => {
+    Object.assign(fakeEvent, {
+      id: `evt_${type}`,
+      type,
+      data: { object: { ...REFUND, status } },
+    });
+
+    const res = await POST(post());
+
+    expect(res.status).toBe(200);
+    expect(handleChargeRefunded).not.toHaveBeenCalled();
+    expect(handleRefundLifecycle).toHaveBeenCalledTimes(1);
+    // The event TYPE is passed through — the handler logs against it, and the
+    // three names are not interchangeable operationally.
+    expect(handleRefundLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 're_test_123', status }),
+      `evt_${type}`,
+      type
+    );
+  });
+
+  it('releases the dedup claim and 500s when the lifecycle handler fails', async () => {
+    Object.assign(fakeEvent, {
+      id: 'evt_refund_updated_boom',
+      type: 'refund.updated',
+      data: { object: { ...REFUND, status: 'succeeded' } },
+    });
+    vi.mocked(handleRefundLifecycle).mockRejectedValueOnce(new Error('charge unreadable'));
+
+    const res = await POST(post());
+
+    expect(res.status).toBe(500);
+    expect(releaseWebhookEventClaim).toHaveBeenCalledWith('evt_refund_updated_boom');
   });
 });

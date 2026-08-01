@@ -245,10 +245,14 @@ In **Stripe Live mode**:
   - `customer.subscription.created` / `.updated` / `.deleted`
   - `invoice.payment_succeeded` ← creates renewal orders · `invoice.payment_failed` · `invoice.upcoming`
   - ☑ **`charge.refunded`** — reconciles refunds issued outside the app (Stripe Dashboard) into `orders.extensions.refunds[]` so the over-refund guard can see them (BMC-213). **Added and verified present 2026-07-30.**
+  - ☑ **`refund.updated` + `refund.failed`** — apply a refund's later *transition* (BMC-224): resume the cancellation + restock BMC-213 withholds on a `pending` refund, or release its ledger entry and lower the over-refund floor when it fails. **Added and VERIFIED present 2026-08-01** via `stripe webhook_endpoints list --live` (69 → 72 events; the append did not disturb the other 69 — all 13 handled events re-verified individually, including `payment_intent.succeeded`).
+    `charge.refund.updated` is also subscribed and routes to the same handler, but Stripe's own SDK docs say it fires only "on selected payment methods", so it was never a substitute for these two.
+    `refund.created` came along in the same edit and has **no handler** — it falls through to `default:` and logs one line. Harmless: `charge.refunded` already covers refund creation, and BMC-224 deliberately makes a lifecycle event that matches no ledger entry a no-op rather than an append.
 
   **The other 59 are deliberately subscribed with no handler yet** (decision 2026-07-30): they fall through to `default:` and log a single `[webhook] Unhandled event type: …` line. The reasoning is that it is cheaper to have the events arriving already than to discover a gap later and have to touch live Stripe config again — so functionality can be layered on purely in code. Notable ones already flowing:
   - **`charge.dispute.created` / `.updated` / `.closed` / `.funds_withdrawn` / `.funds_reinstated`** — the complete event set [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) needs. **The Stripe side of BMC-214 is already done**; only the handler remains, and it should reuse BMC-213's reconciliation seam (`lib/payments/refund-ledger-store.ts`).
-  - `charge.succeeded` / `.updated` / `.captured` / `.failed` / `.expired` / `.pending`, `charge.refund.updated`
+  - `charge.succeeded` / `.updated` / `.captured` / `.failed` / `.expired` / `.pending`
+  - ~~`charge.refund.updated`~~ — **now handled** (BMC-224), though only on selected payment methods; see the `refund.updated` / `refund.failed` item above
   - `customer.*` (incl. `customer.subscription.paused` / `.resumed` / `.trial_will_end`), the wider `invoice.*` lifecycle, `payment_intent.created` / `.canceled` / `.processing` / `.requires_action`, `checkout.session.async_*` / `.expired`
 
   > ⚠️ **Two consequences of the wide subscription, neither a problem at current volume but worth knowing.**

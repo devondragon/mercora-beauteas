@@ -51,11 +51,37 @@ export type ShipOrderResult =
       outcome: "not_fulfillable";
       status: string;
       paymentStatus: string | null;
+      /** Blocked by an in-flight refund rather than by the status (BMC-224). */
+      refundPending?: true;
     }; // -> 409 not_fulfillable
+
+/**
+ * Is a refund on this order accepted-but-not-settled? (BMC-224)
+ *
+ * `pending` is the ledger's in-flight state: the amount is reserved against
+ * over-refund, but Stripe has not confirmed the money reached the customer and
+ * it can still fail. `succeeded` and `failed` are both terminal and do not block.
+ *
+ * Reads the JSON column defensively — a malformed `extensions` must not throw
+ * inside the ship path. It returns FALSE on a parse failure, matching the
+ * pre-BMC-224 behaviour (ship allowed) rather than bricking fulfillment on bad
+ * data; the SQL guard below is the authoritative check at commit time.
+ */
+function hasPendingRefund(rawExtensions: unknown): boolean {
+  try {
+    const extensions =
+      typeof rawExtensions === "string" ? JSON.parse(rawExtensions) : rawExtensions;
+    const refunds = (extensions as { refunds?: unknown })?.refunds;
+    return Array.isArray(refunds) && refunds.some((r) => r?.status === "pending");
+  } catch {
+    return false;
+  }
+}
 
 function toSnapshot(row: typeof orders.$inferSelect): OrderFulfillmentSnapshot {
   return {
     status: row.status,
+    refund_pending: hasPendingRefund(row.extensions),
     payment_status: row.payment_status ?? null,
     shipping_carrier: row.shipping_carrier ?? null,
     tracking_number: row.tracking_number ?? null,
@@ -79,9 +105,47 @@ export async function shipOrder(
     trackingUrl,
   });
 
-  // Guarded CAS: only a paid, processing order can flip to shipped. The SET
-  // list is exhaustive on purpose — payment/refund/inventory fields are owned
-  // by other services and must never appear here.
+  // Guarded CAS: only a paid, processing order with no refund in flight can flip
+  // to shipped. The SET list is exhaustive on purpose — payment/refund/inventory
+  // fields are owned by other services and must never appear here.
+  //
+  // The refund predicate is IN THE SQL, not just the pre-read (BMC-224): a
+  // refund reserving its `pending` entry between the pre-read above and this
+  // batch would otherwise sail straight past the snapshot check, which is
+  // exactly the race the reservation is written before the Stripe call to
+  // prevent. `json_each` is used rather than a `LIKE` on the serialized column
+  // so a `"status":"pending"` substring inside some other field (a note, a
+  // reason) cannot block a legitimate shipment.
+  // Written in the TWO-ARGUMENT `json_each(X, path)` form, with a `type =
+  // 'object'` filter, for reasons tests/integration/**/ship-refund-guard.test.ts
+  // found the hard way. SQLite's JSON functions PARSE any TEXT argument as JSON,
+  // so every extract-then-re-parse step is a chance to raise
+  // `malformed JSON: SQLITE_ERROR` — which aborts the whole batch. Because this
+  // predicate sits on the ONLY path that ships an order, such an error does not
+  // fail closed on one refund; it makes that order permanently unshippable with
+  // a 500. Two real ways it happened:
+  //
+  //  - `json_type(json_extract(ext,'$.refunds'))` where `$.refunds` is the
+  //    STRING "not-an-array": json_extract hands back the bare unquoted text and
+  //    json_type then tries to parse it as JSON. Error.
+  //  - `json_extract(json_each.value,'$.status')` where the element is a scalar
+  //    (`refunds: ['nonsense', 7]`): same re-parse of a bare value. Error.
+  //
+  // `json_each(X, path)` walks to the path inside one already-parsed document:
+  // an absent path yields zero rows, a scalar at the path yields one row whose
+  // `type` is not 'object', and only genuine object elements ever reach the
+  // json_extract. Non-object data therefore reads as "no pending refunds",
+  // matching hasPendingRefund()'s JS fallback above so the two halves of the
+  // guard cannot disagree. Failing OPEN on corrupt data is deliberate: every
+  // writer of this column writes an array of objects, so the case is
+  // pathological, and failing closed would turn one bad row into a
+  // self-inflicted fulfillment outage with no way out through the UI.
+  const noPendingRefund = sql`NOT EXISTS (
+    SELECT 1 FROM json_each(COALESCE(${orders.extensions}, '{}'), '$.refunds')
+    WHERE json_each.type = 'object'
+      AND json_extract(json_each.value, '$.status') = 'pending'
+  )`;
+
   const guardedUpdate = db
     .update(orders)
     .set({
@@ -96,6 +160,7 @@ export async function shipOrder(
         eq(orders.id, orderId),
         eq(orders.status, "processing"),
         eq(orders.payment_status, "paid"),
+        noPendingRefund,
       ),
     )
     .returning();
@@ -186,6 +251,7 @@ export async function shipOrder(
         outcome: "not_fulfillable",
         status: decision.status,
         paymentStatus: decision.paymentStatus,
+        ...(decision.refundPending ? { refundPending: true as const } : {}),
       };
     case "ship":
       // Zero-row CAS yet the re-read shows processing+paid: the order cycled
