@@ -65,6 +65,10 @@ export interface OrderStatusUpdateData {
   status: string;
   carrier?: string;
   trackingNumber?: string;
+  /**
+   * @deprecated BMC-216F: no longer rendered — the template does not emit stored
+   * tracking URLs. Kept only because the refund route still populates it.
+   */
   trackingUrl?: string;
   notes?: string;
   cancellationReason?: string;
@@ -283,13 +287,8 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         ${orderData.carrier ? `
           <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 8px;">Shipping Details</h3>
-            <p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Carrier:</strong> ${orderData.carrier}</p>
-            ${orderData.trackingNumber ? `<p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Tracking Number:</strong> ${orderData.trackingNumber}</p>` : ''}
-            ${orderData.trackingUrl ? `
-              <a href="${orderData.trackingUrl}" style="display: inline-block; background-color: #cf8577; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 12px;">
-                Track Your Package
-              </a>
-            ` : ''}
+            <p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Carrier:</strong> ${escapeHtml(orderData.carrier)}</p>
+            ${orderData.trackingNumber ? `<p style="color: #64748b; font-size: 14px; margin: 0 0 4px;"><strong>Tracking Number:</strong> ${escapeHtml(orderData.trackingNumber)}</p>` : ''}
           </div>
         ` : ''}
       `;
@@ -311,7 +310,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been cancelled as requested.</p>
         ${orderData.cancellationReason ? `
           <div style="background-color: #fef3f2; border-left: 4px solid #dc2626; padding: 12px 16px; margin: 16px 0;">
-            <p style="color: #7f1d1d; font-size: 14px; margin: 0;"><strong>Reason:</strong> ${orderData.cancellationReason}</p>
+            <p style="color: #7f1d1d; font-size: 14px; margin: 0;"><strong>Reason:</strong> ${escapeHtml(orderData.cancellationReason)}</p>
           </div>
         ` : ''}
         <p style="color: #64748b; font-size: 14px; line-height: 20px; margin: 0 0 16px;">If you have any questions about this cancellation or need assistance with a new order, please contact our support team.</p>
@@ -325,7 +324,7 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been refunded and the payment has been processed back to your original payment method.</p>
         ${orderData.orderCancelled ? `<p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Your order has been cancelled and will not be shipped.</p>` : ''}
         <div style="background-color: #fef3f2; border-left: 4px solid #cf8577; padding: 12px 16px; margin: 16px 0;">
-          ${orderData.refundAmount ? `<p style="color: #7c2d12; font-size: 14px; margin: 0 0 8px;"><strong>Refund amount:</strong> ${orderData.refundAmount}</p>` : ''}
+          ${orderData.refundAmount ? `<p style="color: #7c2d12; font-size: 14px; margin: 0 0 8px;"><strong>Refund amount:</strong> ${escapeHtml(orderData.refundAmount)}</p>` : ''}
           <p style="color: #ea580c; font-size: 14px; margin: 0 0 4px;"><strong>Refund Processing:</strong></p>
           <p style="color: #7c2d12; font-size: 14px; margin: 0;">Please allow 5-10 business days for the refund to appear on your statement.</p>
         </div>
@@ -344,10 +343,10 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
     return `
     <tr style="border-bottom: 1px solid #e2e8f0;">
       <td style="padding: 8px 0; vertical-align: top; width: 50px;">
-        ${absoluteImageUrl ? `<img src="${absoluteImageUrl}" alt="${item.name}" style="width: 40px; height: 40px; border-radius: 4px; object-fit: cover; display: block;">` : `<div style="width: 40px; height: 40px; background-color: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 10px; text-align: center;">No Image</div>`}
+        ${absoluteImageUrl ? `<img src="${escapeHtml(absoluteImageUrl)}" alt="${escapeHtml(item.name)}" style="width: 40px; height: 40px; border-radius: 4px; object-fit: cover; display: block;">` : `<div style="width: 40px; height: 40px; background-color: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 10px; text-align: center;">No Image</div>`}
       </td>
       <td style="padding: 8px 0 8px 12px; vertical-align: top;">
-        <div style="color: #1e293b; font-size: 14px; font-weight: bold; margin: 0 0 2px;">${item.name}</div>
+        <div style="color: #1e293b; font-size: 14px; font-weight: bold; margin: 0 0 2px;">${escapeHtml(item.name)}</div>
         <div style="color: #64748b; font-size: 12px; margin: 0;">Qty: ${item.quantity}</div>
       </td>
     </tr>
@@ -376,18 +375,18 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <!-- Status Update -->
         <div style="padding: 24px 32px;">
           <h2 style="color: ${statusColor}; font-size: 24px; font-weight: bold; margin: 0 0 16px;">${statusMessage}</h2>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${orderData.customerName},</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${escapeHtml(orderData.customerName)},</p>
           
           ${statusContent}
 
           <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 8px;">Order #${orderData.orderNumber}</p>
-            <p style="color: #64748b; font-size: 14px; margin: 0;">Status: <span style="color: ${statusColor}; font-weight: bold;">${orderData.status.charAt(0).toUpperCase() + orderData.status.slice(1)}</span></p>
+            <p style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 8px;">Order #${escapeHtml(orderData.orderNumber)}</p>
+            <p style="color: #64748b; font-size: 14px; margin: 0;">Status: <span style="color: ${statusColor}; font-weight: bold;">${escapeHtml(orderData.status.charAt(0).toUpperCase() + orderData.status.slice(1))}</span></p>
           </div>
-          
+
           ${orderData.notes ? `
             <div style="background-color: #f1f5f9; border-radius: 8px; padding: 12px; margin: 16px 0;">
-              <p style="color: #64748b; font-size: 14px; margin: 0;"><strong>Note:</strong> ${orderData.notes}</p>
+              <p style="color: #64748b; font-size: 14px; margin: 0;"><strong>Note:</strong> ${escapeHtml(orderData.notes)}</p>
             </div>
           ` : ''}
         </div>
@@ -409,9 +408,9 @@ function generateOrderStatusUpdateHTML(orderData: OrderStatusUpdateData): string
         <div style="padding: 24px 32px;">
           <h3 style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 12px;">Shipping Address</h3>
           <p style="color: #64748b; font-size: 14px; line-height: 20px; margin: 0;">
-            ${orderData.shippingAddress.street}<br>
-            ${orderData.shippingAddress.city}, ${orderData.shippingAddress.state} ${orderData.shippingAddress.zipCode}<br>
-            ${orderData.shippingAddress.country}
+            ${escapeHtml(orderData.shippingAddress.street)}<br>
+            ${escapeHtml(orderData.shippingAddress.city)}, ${escapeHtml(orderData.shippingAddress.state)} ${escapeHtml(orderData.shippingAddress.zipCode)}<br>
+            ${escapeHtml(orderData.shippingAddress.country)}
           </p>
         </div>
 
