@@ -23,9 +23,18 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 ## Webhooks
 
-`POST /api/webhooks/stripe` — handles `payment_intent`, subscription, invoice, and `charge.refunded`; deduplicated via `processed_webhook_events`.
+`POST /api/webhooks/stripe` — handles `payment_intent`, subscription, invoice, and the refund events below; deduplicated via `processed_webhook_events`.
 
 `charge.refunded` reconciles refunds issued **outside** the app (Stripe Dashboard) into the `orders.extensions.refunds[]` ledger so the over-refund guard can see them (BMC-213). It must also be **subscribed on the Stripe endpoint**, or the handler never runs.
+
+`refund.updated` / `refund.failed` apply a refund's later **transition** (BMC-224). `charge.refunded` fires when a refund is *created* and never re-fires, so BMC-213 records a `pending` ledger entry and withholds cancellation + restock until Stripe confirms the money left — and nothing resumed that. These events do:
+
+- **succeeded** → settle the entry, then apply the held `status: 'cancelled'` / `payment_status: 'refunded'` and the two-phase restock claim.
+- **failed / canceled** → release the entry to `failed` so it stops counting toward the over-refund guard, and lower `extensions.stripe_amount_refunded` to the charge's cumulative `amount_refunded` **read back from Stripe**. This is the only place that high-water mark may fall, and it is never inferred — an unreadable charge throws so Stripe redelivers.
+
+`charge.refund.updated` (the legacy name) routes to the same handler, but per Stripe's SDK docs it fires only "on selected payment methods" — **it is not a substitute for subscribing `refund.updated` and `refund.failed`.** Without those two, a delayed refund (Klarna / Cash App Pay / Amazon Pay) stays stuck forever.
+
+A lifecycle event whose refund matches no ledger entry is a deliberate **no-op, never an append**: `charge.refunded` is the authoritative recorder and its entry may legitimately carry no Stripe refund id, so appending would double-count the money.
 
 ## Agent
 

@@ -25,6 +25,12 @@
  * - charge.refunded (BMC-213 — reconciles refunds issued outside the app, e.g.
  *   from the Stripe Dashboard, into the `extensions.refunds[]` ledger so the
  *   over-refund guard can see them)
+ * - refund.updated / refund.failed / charge.refund.updated (BMC-224 — resumes
+ *   the cancellation + restock BMC-213 withheld on a `pending` refund once it
+ *   succeeds, or releases the ledger entry and lowers the over-refund floor when
+ *   it fails). `charge.refunded` fires at refund CREATION and never re-fires, so
+ *   without these a delayed refund (Klarna / Cash App Pay / Amazon Pay) is stuck
+ *   forever.
  *
  * === Security ===
  * - Async webhook signature verification via verifyWebhookSignature (HMAC-SHA256)
@@ -53,7 +59,7 @@ import {
   handleInvoicePaymentFailed,
   handleInvoiceUpcoming,
 } from './handlers/invoice-handlers';
-import { handleChargeRefunded } from './handlers/refund-handlers';
+import { handleChargeRefunded, handleRefundLifecycle } from './handlers/refund-handlers';
 import { getOrderById } from '@/lib/models/mach/orders';
 import { finalizePaidOrder } from '@/lib/services/order-finalization';
 import { logCritical } from '@/lib/utils/observe';
@@ -149,6 +155,20 @@ export async function POST(req: NextRequest) {
       // ─── Refund events ─────────────────────────────────
       case 'charge.refunded':
         await handleChargeRefunded(event.data.object as Stripe.Charge, event.id);
+        break;
+
+      // A refund TRANSITIONING (BMC-224). `charge.refunded` fires only at refund
+      // creation and never re-fires, so these are the only events that can resume
+      // the cancellation + restock BMC-213 withheld on a `pending` refund, or
+      // release its ledger entry when the refund fails.
+      //
+      // `charge.refund.updated` is the legacy name and fires only on selected
+      // payment methods; it is routed for completeness but `refund.updated` /
+      // `refund.failed` are the ones that must be subscribed on the endpoint.
+      case 'refund.updated':
+      case 'refund.failed':
+      case 'charge.refund.updated':
+        await handleRefundLifecycle(event.data.object as Stripe.Refund, event.id, event.type);
         break;
 
       default:

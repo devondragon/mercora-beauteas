@@ -38,6 +38,10 @@ import {
   type StripeRefundSummary,
 } from '@/lib/payments/refund-ledger';
 import {
+  classifyRefundTransition,
+  decideRefundLifecycle,
+} from '@/lib/payments/refund-lifecycle';
+import {
   confirmRestockedLines,
   mutateRefundLedger,
   parseJson,
@@ -236,8 +240,9 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
     // Irreversible effects require BOTH a covered total and Stripe confirming
     // every refund actually succeeded. A `pending`/`requires_action` refund can
     // still fail — Stripe hands that money back to us and the customer is left
-    // un-refunded, so cancelling and restocking on it would be wrong and is not
-    // reversed by anything (no refund.failed handler yet).
+    // un-refunded, so cancelling and restocking on it would be wrong. What is
+    // withheld here is resumed by `handleRefundLifecycle` below when the refund
+    // finally transitions (BMC-224); before that handler existed, nothing did.
     const finalize = decision.isFullyRefunded && decision.allSettled;
     if (decision.isFullyRefunded && !decision.allSettled) {
       unsettled = decision.unattributedRefundIds;
@@ -391,7 +396,8 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
 
   // The order is fully covered but Stripe has not confirmed every refund final.
   // Deliberately NOT cancelled or restocked: a `pending`/`requires_action` refund
-  // can still fail, and there is no refund.failed handler to undo those effects.
+  // can still fail, and those effects have no safe undo. `handleRefundLifecycle`
+  // applies them when `refund.updated` reports the refund succeeded (BMC-224).
   const pendingIds = unsettled as string[] | null;
   if (pendingIds) {
     console.warn(
@@ -459,5 +465,367 @@ export async function handleChargeRefunded(charge: Stripe.Charge, eventId: strin
     console.log(
       `[webhook] Partial external refund on order ${order.id}: stock left unchanged (no line attribution available)`
     );
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * === Refund lifecycle: `refund.updated` / `refund.failed` (BMC-224) ===
+ *
+ * `charge.refunded` above fires once, at refund CREATION, and never re-fires
+ * when that refund later transitions. For a delayed payment method — Klarna,
+ * Cash App Pay, Amazon Pay, all live here via `automatic_payment_methods` with
+ * `allow_redirects: 'always'` — creation is not settlement, so BMC-213 withheld
+ * cancellation and restock behind a `pending` ledger entry. These events are what
+ * resume (or release) that entry.
+ *
+ * ⚠️ Subscribe `refund.updated` AND `refund.failed` on the Stripe endpoint. The
+ * legacy `charge.refund.updated` event — the one this endpoint has had all along
+ * — fires only "on selected payment methods" per Stripe's own SDK docs, so it is
+ * NOT a substitute. It is routed here too, since it carries the same Refund
+ * object and costs nothing to accept, but it cannot be relied on alone.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** `Refund.charge` / `Refund.payment_intent` are `string | object | null`. */
+function idOf(value: string | { id?: string } | null | undefined): string | null {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && typeof value.id === 'string') return value.id;
+  return null;
+}
+
+/**
+ * Resolve the PaymentIntent a refund belongs to, which is how orders are keyed.
+ *
+ * `Refund.payment_intent` is populated for anything created against a
+ * PaymentIntent, which is every storefront order. The charge fallback covers a
+ * refund raised directly against a charge (possible from the Dashboard).
+ *
+ * Returns null ONLY when Stripe is reachable and genuinely reports no payment
+ * intent — a normal no-op, same as a charge that maps to no order. A retrieve
+ * ERROR is deliberately NOT swallowed into that same null: this event is already
+ * claimed in `processed_webhook_events`, so treating a transient Stripe blip as
+ * "no order" would silently drop the transition forever and leave the refund
+ * stuck — the exact failure mode this handler exists to close. Throwing returns
+ * 500 and Stripe redelivers.
+ */
+async function resolvePaymentIntentId(refund: Stripe.Refund): Promise<string | null> {
+  const direct = idOf(refund.payment_intent);
+  if (direct) return direct;
+
+  const chargeId = idOf(refund.charge);
+  if (!chargeId) return null;
+
+  const charge = await getStripeClient().charges.retrieve(chargeId);
+  return idOf(charge?.payment_intent);
+}
+
+/**
+ * Read back the charge's CUMULATIVE `amount_refunded` after a reversal.
+ *
+ * The Refund object carries only its own amount, and the floor
+ * (`extensions.stripe_amount_refunded`) is a cumulative figure — so lowering it
+ * requires asking Stripe what the new cumulative total is. Deliberately NOT
+ * derived as `floor - refund.amount`: that arithmetic would lower the
+ * over-refund guard on inference rather than on verified data, and a stale or
+ * concurrent view would silently open the exact hole BMC-213 closed.
+ *
+ * Throws on failure so the route returns 500 and Stripe redelivers. Every write
+ * below is idempotent, so a retry is safe and self-correcting.
+ */
+async function fetchChargeAmountRefunded(chargeId: string): Promise<number> {
+  const charge = await getStripeClient().charges.retrieve(chargeId);
+  const amount = charge?.amount_refunded;
+  if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0) {
+    throw new Error(`Charge ${chargeId} returned no usable amount_refunded`);
+  }
+  return amount;
+}
+
+/**
+ * Apply a `refund.updated` / `refund.failed` / `charge.refund.updated` event to
+ * the order's refund ledger.
+ *
+ * Idempotent: the decision is re-derived from ledger state every delivery, so a
+ * redelivery whose entry already carries the target status writes nothing, and
+ * the two-phase restock claim makes a repeated finalize a no-op.
+ */
+export async function handleRefundLifecycle(
+  refund: Stripe.Refund,
+  eventId: string,
+  eventType: string
+): Promise<void> {
+  const transition = classifyRefundTransition(refund.status);
+  if (transition === 'inconclusive') {
+    // `pending` / `requires_action` — the refund is still in flight. Stripe emits
+    // an update on entering those states too; there is simply nothing to decide.
+    console.log(
+      `[webhook] ${eventType} ${refund.id}: status '${refund.status}' is not terminal; nothing to apply`
+    );
+    return;
+  }
+
+  const paymentIntentId = await resolvePaymentIntentId(refund);
+  if (!paymentIntentId) {
+    console.warn(`[webhook] ${eventType} ${refund.id} has no payment intent; nothing to apply`);
+    return;
+  }
+
+  const order = await getOrderByPaymentIntentId(paymentIntentId);
+  if (!order) {
+    // EXPECTED — same as `charge.refunded`: subscription renewal orders are keyed
+    // by invoice/subscription id and store no `payment_intent_id`.
+    console.warn(
+      `[webhook] ${eventType} ${refund.id}: no order for payment intent ${paymentIntentId}; skipping`
+    );
+    return;
+  }
+
+  const orderId = order.id;
+  if (!orderId) {
+    console.error(`[webhook] ${eventType} ${refund.id}: matched an order with no id; skipping`);
+    logCritical('webhook', 'refund_lifecycle_order_missing_id', { refundId: refund.id });
+    return;
+  }
+
+  const chargeId = idOf(refund.charge);
+
+  // On a reversal the floor must come from a verified read, so fetch it BEFORE
+  // the CAS — a throw here is a clean retry rather than a half-applied write.
+  let chargeAmountRefunded: number | undefined;
+  if (transition === 'reversed') {
+    if (chargeId) {
+      chargeAmountRefunded = await fetchChargeAmountRefunded(chargeId);
+    } else {
+      // No charge to ask, so the floor cannot be lowered on verified data. The
+      // entry is still released; the floor simply stays high, which only ever
+      // over-blocks (the safe direction) and is visible in this log.
+      console.warn(
+        `[webhook] ${eventType} ${refund.id}: no charge id; releasing the ledger entry but ` +
+          `leaving stripe_amount_refunded unchanged`
+      );
+    }
+  }
+
+  const db = await getDbAsync();
+  const restockEnabled = transition === 'succeeded' ? await shouldRestockOnExternalRefund() : false;
+
+  let applied: { action: 'settle'; finalize: boolean } | { action: 'release'; floor: number | null; wasSettled: boolean } | null = null;
+  let noopReason: string | null = null;
+  let restockLines: any[] = [];
+
+  const result = await mutateRefundLedger(db, orderId, (ctx) => {
+    // Reset per attempt — the CAS loop may re-run this callback.
+    applied = null;
+    noopReason = null;
+    restockLines = [];
+
+    const totalAmount = ctx.order.total_amount
+      ? (parseJson(ctx.order.total_amount) ?? { amount: 0 })
+      : { amount: 0 };
+
+    const decision = decideRefundLifecycle(ctx.refunds, transition, {
+      refundId: refund.id,
+      refundAmount: refund.amount,
+      totalAmount: totalAmount.amount ?? 0,
+      chargeAmountRefunded,
+      recordedFloor: ctx.extensions.stripe_amount_refunded,
+    });
+
+    if (decision.action === 'noop') {
+      noopReason = decision.reason;
+      return { action: 'skip' };
+    }
+
+    if (decision.action === 'settle') {
+      const nextRefunds = decision.needsFlip
+        ? ctx.refunds.map((r: any, i: number) =>
+            i === decision.entryIndex
+              ? {
+                  ...r,
+                  status: 'succeeded',
+                  // Stamp provenance so a later delivery matches on id rather
+                  // than falling back to the amount heuristic.
+                  stripe_refund_id: r?.stripe_refund_id ?? refund.id,
+                  ...(chargeId ? { stripe_charge_id: r?.stripe_charge_id ?? chargeId } : {}),
+                  settled_by_webhook: eventId,
+                  processed_at: r?.processed_at ?? ctx.nowIso,
+                }
+              : r
+          )
+        : ctx.refunds;
+
+      const restock = planRestock(ctx, {
+        enabled: restockEnabled,
+        finalize: decision.finalize,
+      });
+      restockLines = restock.lines;
+
+      // A redelivery that changes nothing must not burn a version bump.
+      const alreadyFinal =
+        ctx.order.status === 'cancelled' && ctx.order.payment_status === 'refunded';
+      if (
+        !decision.needsFlip &&
+        restock.keys.length === 0 &&
+        (!decision.finalize || alreadyFinal)
+      ) {
+        return { action: 'skip' };
+      }
+
+      applied = { action: 'settle', finalize: decision.finalize };
+      return {
+        action: 'write',
+        extensions: {
+          ...ctx.extensions,
+          refunds: nextRefunds,
+          ...restock.extensions,
+          refunds_version: ctx.nextVersion,
+        },
+        // The effects BMC-213 withheld, applied now that Stripe confirms the
+        // money reached the customer and no other refund on this order is still
+        // in flight.
+        columns: decision.finalize ? { status: 'cancelled', payment_status: 'refunded' } : {},
+      };
+    }
+
+    // ── release ───────────────────────────────────────────────────────────────
+    if (!decision.needsFlip && decision.floor === null) {
+      return { action: 'skip' };
+    }
+
+    const nextRefunds = decision.needsFlip
+      ? ctx.refunds.map((r: any, i: number) =>
+          i === decision.entryIndex
+            ? {
+                ...r,
+                // `failed` is what `computeRefundedTotal` excludes, so this is
+                // what stops the entry counting against the over-refund guard and
+                // unblocks a legitimate re-refund of the same amount.
+                status: 'failed',
+                stripe_refund_id: r?.stripe_refund_id ?? refund.id,
+                ...(chargeId ? { stripe_charge_id: r?.stripe_charge_id ?? chargeId } : {}),
+                released_by_webhook: eventId,
+                ...(refund.failure_reason ? { failure_reason: refund.failure_reason } : {}),
+              }
+            : r
+        )
+      : ctx.refunds;
+
+    applied = { action: 'release', floor: decision.floor, wasSettled: decision.wasSettled };
+    return {
+      action: 'write',
+      extensions: {
+        ...ctx.extensions,
+        refunds: nextRefunds,
+        ...(decision.floor !== null ? { stripe_amount_refunded: decision.floor } : {}),
+        refunds_version: ctx.nextVersion,
+      },
+    };
+  });
+
+  if (!result.ok) {
+    const reason =
+      result.reason === 'not_found'
+        ? `order ${orderId} disappeared while applying the transition`
+        : `CAS exhausted writing the ledger for order ${orderId}`;
+    console.error(`[webhook] ${eventType} ${refund.id}: ${reason}`);
+    logCritical('webhook', 'refund_lifecycle_apply_failed', {
+      orderId,
+      refundId: refund.id,
+      eventType,
+      transition,
+      reason: result.reason,
+    });
+    // Retryable and self-correcting — the decision is re-derived from fresh
+    // ledger state on every delivery.
+    throw new Error(`Failed to apply ${eventType} for order ${orderId}: ${reason}`);
+  }
+
+  const outcome = applied as
+    | { action: 'settle'; finalize: boolean }
+    | { action: 'release'; floor: number | null; wasSettled: boolean }
+    | null;
+
+  if (!outcome) {
+    if (noopReason === 'no_matching_entry') {
+      // Not an error: `charge.refunded` is the authoritative recorder and its
+      // entry may carry no Stripe refund id (the provenance list call is
+      // best-effort), so a match can legitimately fail. Appending here would
+      // double-count that money — see the module doc on refund-lifecycle.ts.
+      console.warn(
+        `[webhook] ${eventType} ${refund.id}: no ledger entry on order ${orderId} matches this ` +
+          `refund; leaving the ledger to charge.refunded`
+      );
+    } else {
+      console.log(
+        `[webhook] ${eventType} ${refund.id}: ledger already reflects this transition on order ${orderId}; no-op`
+      );
+    }
+    return;
+  }
+
+  if (outcome.action === 'release') {
+    console.log(
+      `[webhook] ${eventType} ${refund.id}: released the ledger entry on order ${orderId}` +
+        (outcome.floor !== null ? ` and set stripe_amount_refunded to ${outcome.floor}` : '') +
+        (refund.failure_reason ? ` (${refund.failure_reason})` : '')
+    );
+    if (outcome.wasSettled) {
+      // The entry was already `succeeded`, so the order may ALREADY have been
+      // cancelled and the stock returned on a refund that has now reversed —
+      // Stripe kept the money and the customer was never paid. The ledger and the
+      // over-refund floor are corrected above, but un-cancelling an order and
+      // de-stocking inventory are destructive and racy, so they are NOT automated.
+      console.error(
+        `[webhook] ${eventType} ${refund.id}: a SETTLED refund reversed on order ${orderId}; ` +
+          `order status and inventory may need manual review`
+      );
+      logCritical('webhook', 'settled_refund_reversed', {
+        orderId,
+        refundId: refund.id,
+        chargeId,
+        amount: refund.amount,
+        failureReason: refund.failure_reason ?? null,
+      });
+    }
+    return;
+  }
+
+  console.log(
+    `[webhook] ${eventType} ${refund.id}: settled the ledger entry on order ${orderId}` +
+      (outcome.finalize ? ' and applied the held cancellation' : ' (effects still held)')
+  );
+
+  // ── Phase two of the restock commit (same contract as `charge.refunded`) ────
+  // Lines were CLAIMED inside the CAS; only what actually lands is promoted. A
+  // failed line stays in-flight as a durable record that stock is still owed.
+  if (restockLines.length > 0) {
+    try {
+      const { restocked, completedKeys, failedKeys } = await restockForOrder(restockLines);
+      // Report what inventory actually did BEFORE promoting the claim: the
+      // promotion can itself fail, and a stock shortfall must still page when it
+      // does rather than being swallowed by the catch below.
+      if (restocked.length) {
+        console.log(
+          `[webhook] Restocked ${restocked.length} variant(s) on order ${orderId} after refund ${refund.id} settled`
+        );
+      }
+      if (failedKeys.length) {
+        console.error(
+          `[webhook] Restock incomplete on order ${orderId}; still owed: ${failedKeys.join(',')}`
+        );
+        logCritical('webhook', 'refund_lifecycle_restock_incomplete', {
+          orderId,
+          refundId: refund.id,
+          failedKeys,
+        });
+      }
+      await confirmRestockedLines(db, orderId, completedKeys);
+    } catch (restockError) {
+      // restockForOrder does not throw, so this is confirmRestockedLines or a
+      // binding failure — the claim stands, which is the safe direction.
+      console.error(
+        `[webhook] Failed to restock inventory for refund ${refund.id} on order ${orderId}:`,
+        restockError
+      );
+    }
   }
 }
