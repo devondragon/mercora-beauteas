@@ -116,13 +116,19 @@ export function validatePutOrderBody(
       return { ok: false, error: message, status: 400 };
     }
   }
-  const hasUpdatable = PUT_UPDATABLE_FIELDS.some((f) => body[f] !== undefined);
+  // `null` does NOT count as an updatable field. The two JSON columns treat a
+  // null overlay as "no keys to apply", so `{ external_references: null }`
+  // alone would otherwise 200 on a write that changed nothing — and would
+  // silently re-serialize a stored raw JSON string into an object as a side
+  // effect. Reject it as the no-op it is. (`notes: null` IS a real clear, but
+  // it needs a non-null field alongside it to be worth a write.)
+  const hasUpdatable = PUT_UPDATABLE_FIELDS.some((f) => body[f] !== undefined && body[f] !== null);
   if (!hasUpdatable) {
     return {
       ok: false,
       error:
         'No updatable fields provided. PUT /api/orders accepts only: ' +
-        'notes, external_references, extensions.',
+        'notes, external_references, extensions (a null value is not an update).',
       status: 400,
     };
   }

@@ -536,7 +536,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json() as UpdateOrderRequest & Record<string, unknown>;
 
-    const orderId = (body as any).orderId;
+    const orderId = body.orderId;
     if (!orderId) {
       return NextResponse.json({
         error: 'Validation failed',
@@ -604,8 +604,13 @@ export async function PUT(request: NextRequest) {
     // SERVER_OWNED_EXTENSION_KEYS from the client overlay; it fails safe
     // (rejects) if the stored extensions are corrupt rather than persisting a
     // stripped object.
+    // `!= null` (not `!== undefined`): a null overlay carries no keys, so
+    // merging it would write back a value identical to what is stored — a
+    // no-op write that also silently re-serializes a stored raw JSON string
+    // into an object. validatePutOrderBody already rejects a body whose ONLY
+    // fields are null; this skips the column when other fields carry the write.
     let mergedExtensions: Record<string, unknown> | undefined;
-    if (extensions !== undefined) {
+    if (extensions != null) {
       const mergeResult = mergeExtensions(extensions, currentOrder.extensions);
       if (!mergeResult.ok) {
         return NextResponse.json({ error: mergeResult.error }, { status: mergeResult.status });
@@ -621,7 +626,7 @@ export async function PUT(request: NextRequest) {
     // reconciliation lands on the wrong row. Everything else in this column
     // (erp, shopify_id, …) is legitimate caller metadata and passes through.
     let mergedExternalReferences: Record<string, unknown> | undefined;
-    if (external_references !== undefined) {
+    if (external_references != null) {
       const refsResult = mergeExternalReferences(
         external_references,
         currentOrder.external_references
@@ -636,7 +641,10 @@ export async function PUT(request: NextRequest) {
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
     const updateData: any = {
-      ...(notes && { notes }),
+      // Presence, not truthiness — matching how validatePutOrderBody rejects.
+      // `notes && …` silently dropped `{ notes: '' }`, so a caller clearing a
+      // note got a 200 and no write. An explicit '' or null now clears it.
+      ...(notes !== undefined && { notes }),
       ...(mergedExternalReferences !== undefined && {
         external_references: mergedExternalReferences,
       }),

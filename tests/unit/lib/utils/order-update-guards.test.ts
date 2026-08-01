@@ -111,6 +111,23 @@ describe('validatePutOrderBody — PUT /api/orders allowlist (BMC-216F)', () => 
       expect(r.error).toMatch(/notes, external_references, extensions/);
     }
   });
+
+  it.each(['external_references', 'extensions', 'notes'])(
+    'rejects a null-only "%s" body with 400 (a null overlay is a no-op write)',
+    (field) => {
+      const r = validatePutOrderBody({ orderId: 'O-1', [field]: null });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status).toBe(400);
+    }
+  );
+
+  it('accepts a null field when a real update rides alongside it', () => {
+    expect(validatePutOrderBody({ orderId: 'O-1', notes: null, extensions: { g: 1 } }).ok).toBe(true);
+  });
+
+  it('accepts an empty-string notes clear (presence, not truthiness)', () => {
+    expect(validatePutOrderBody({ orderId: 'O-1', notes: '' }).ok).toBe(true);
+  });
 });
 
 /** Unwrap a successful mergeExtensions result (fails the test if it errored). */
