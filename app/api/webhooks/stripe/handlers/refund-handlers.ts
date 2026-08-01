@@ -48,7 +48,10 @@ import {
   readInflightRestockKeys,
   readUnavailableRestockKeys,
 } from '@/lib/payments/refund-ledger-store';
+import { buildRefundStatusEmail } from '@/lib/payments/refund-email';
 import { restockForOrder, selectRestockLines } from '@/lib/services/inventory-adjustment';
+import { sendOrderStatusUpdateEmail } from '@/lib/utils/email';
+import { Money } from '@/lib/money';
 import { getRefundPolicy } from '@/lib/utils/settings';
 import { logCritical } from '@/lib/utils/observe';
 
@@ -608,7 +611,7 @@ export async function handleRefundLifecycle(
   const db = await getDbAsync();
   const restockEnabled = transition === 'succeeded' ? await shouldRestockOnExternalRefund() : false;
 
-  let applied: { action: 'settle'; finalize: boolean } | { action: 'release'; floor: number | null; wasSettled: boolean; wasAppInitiated: boolean } | null = null;
+  let applied: { action: 'settle'; finalize: boolean; emailCustomer: boolean; amount: number | null; isFullRefund: boolean } | { action: 'release'; floor: number | null; wasSettled: boolean; wasAppInitiated: boolean } | null = null;
   let noopReason: string | null = null;
   let restockLines: any[] = [];
 
@@ -670,7 +673,16 @@ export async function handleRefundLifecycle(
         return { action: 'skip' };
       }
 
-      applied = { action: 'settle', finalize: decision.finalize };
+      applied = {
+        action: 'settle',
+        finalize: decision.finalize,
+        // Gated on needsFlip so the email fires exactly once: only the delivery
+        // that actually moves the entry to `succeeded` sends it, and a
+        // redelivery (needsFlip false) cannot repeat it.
+        emailCustomer: decision.needsFlip && decision.wasAppInitiated,
+        amount: decision.amount,
+        isFullRefund: decision.isFullRefund,
+      };
       return {
         action: 'write',
         extensions: {
@@ -745,7 +757,7 @@ export async function handleRefundLifecycle(
   }
 
   const outcome = applied as
-    | { action: 'settle'; finalize: boolean }
+    | { action: 'settle'; finalize: boolean; emailCustomer: boolean; amount: number | null; isFullRefund: boolean }
     | { action: 'release'; floor: number | null; wasSettled: boolean; wasAppInitiated: boolean }
     | null;
 
@@ -811,6 +823,55 @@ export async function handleRefundLifecycle(
     `[webhook] ${eventType} ${refund.id}: settled the ledger entry on order ${orderId}` +
       (outcome.finalize ? ' and applied the held cancellation' : ' (effects still held)')
   );
+
+  // ── The customer's "you have been refunded" email ────────────────────────
+  // `POST /api/orders/refund` DEFERS this message when Stripe has only ACCEPTED
+  // the refund, because a delayed payment method can still fail and the claim
+  // would have been untrue with no automated correction. Settling here is the
+  // moment it becomes true, so this is where it gets sent.
+  //
+  // Scoped to app-initiated refunds (`wasAppInitiated`) so this does not become
+  // a NEW email surface: an externally-reconciled Dashboard refund has never
+  // emailed the customer, and silently starting to would be a store-owner
+  // decision, not a bug fix. Best-effort — the money and the ledger are already
+  // committed, so a mail failure must never 500 and make Stripe retry a write
+  // that landed.
+  if (outcome.emailCustomer) {
+    try {
+      const refundAmountFormatted = Money.fromMinor(
+        outcome.amount ?? 0,
+        result.order.currency_code
+      ).format();
+      const emailResult = await sendOrderStatusUpdateEmail(
+        buildRefundStatusEmail(result.order, {
+          isFullRefund: outcome.isFullRefund,
+          refundAmount: refundAmountFormatted,
+        })
+      );
+      if (emailResult.success) {
+        console.log(
+          `[webhook] Refund status email sent for order ${orderId} once refund ${refund.id} settled (${refundAmountFormatted})`
+        );
+      } else {
+        // The customer was never told their money came back, and the route
+        // deliberately did not send it earlier — so nothing else will.
+        console.error(
+          `[webhook] Failed to send settled-refund email for order ${orderId}: ${emailResult.error}`
+        );
+        logCritical('webhook', 'settled_refund_email_failed', {
+          orderId,
+          refundId: refund.id,
+          error: emailResult.error ?? null,
+        });
+      }
+    } catch (emailError) {
+      console.error(
+        `[webhook] Failed to send settled-refund email for order ${orderId}:`,
+        emailError
+      );
+      logCritical('webhook', 'settled_refund_email_failed', { orderId, refundId: refund.id }, emailError);
+    }
+  }
 
   // ── Phase two of the restock commit (same contract as `charge.refunded`) ────
   // Lines were CLAIMED inside the CAS; only what actually lands is promoted. A

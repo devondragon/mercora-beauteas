@@ -83,6 +83,7 @@ import { type RefundRecord } from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
 import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
 import { classifyRefundTransition } from '@/lib/payments/refund-lifecycle';
+import { buildRefundStatusEmail } from '@/lib/payments/refund-email';
 import {
   MAX_CAS_ATTEMPTS,
   confirmRestockedLines,
@@ -511,23 +512,37 @@ export async function POST(request: NextRequest) {
     // 'refunded' template. A full refund also cancels the order, so we flag it
     // (isFullRefund) to add a "will not be shipped" line, and we always surface
     // the refunded amount (remaining for full, partial amount for partial).
-    try {
-      const refundAmountFormatted = Money.fromMinor(refundAmount, updatedOrder.currency_code).format();
-      const emailData = buildRefundStatusEmail(updatedOrder, {
-        isFullRefund: type === 'full',
-        refundAmount: refundAmountFormatted,
-      });
-      // sendOrderStatusUpdateEmail() swallows Resend errors and returns
-      // { success:false } rather than throwing, so inspect the result instead of
-      // logging success unconditionally.
-      const emailResult = await sendOrderStatusUpdateEmail(emailData);
-      if (emailResult.success) {
-        console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
-      } else {
-        console.error(`Failed to send refund status email for order ${orderId}: ${emailResult.error}`);
+    //
+    // Sent ONLY on a refund that actually settled (BMC-224). Telling a customer
+    // "you have been refunded" the instant Stripe ACCEPTS a delayed refund is a
+    // claim we cannot back: it can still fail, and then the message was simply
+    // untrue with no automated correction. Every card refund settles
+    // synchronously and is unaffected; a delayed one is emailed by the
+    // `refund.updated` handler when the money genuinely lands.
+    if (!settled) {
+      console.log(
+        `[refund] Order ${orderId}: refund ${stripeRefund.id} is '${stripeRefund.status}'; ` +
+          `deferring the customer email until it settles`
+      );
+    } else {
+      try {
+        const refundAmountFormatted = Money.fromMinor(refundAmount, updatedOrder.currency_code).format();
+        const emailData = buildRefundStatusEmail(updatedOrder, {
+          isFullRefund: type === 'full',
+          refundAmount: refundAmountFormatted,
+        });
+        // sendOrderStatusUpdateEmail() swallows Resend errors and returns
+        // { success:false } rather than throwing, so inspect the result instead of
+        // logging success unconditionally.
+        const emailResult = await sendOrderStatusUpdateEmail(emailData);
+        if (emailResult.success) {
+          console.log(`Refund status email sent for order ${orderId}: refunded (${refundAmountFormatted})`);
+        } else {
+          console.error(`Failed to send refund status email for order ${orderId}: ${emailResult.error}`);
+        }
+      } catch (emailError) {
+        console.error(`Failed to send refund status email for order ${orderId}:`, emailError);
       }
-    } catch (emailError) {
-      console.error(`Failed to send refund status email for order ${orderId}:`, emailError);
     }
 
     return NextResponse.json({
@@ -612,55 +627,3 @@ async function settleRefundEntry(
   console.error(`Failed to settle refund ledger entry ${entryId} on order ${orderId} after ${MAX_CAS_ATTEMPTS} attempts`);
 }
 
-/**
- * Build the status-update email payload for a refunded order.
- *
- * BMC-230 deleted the PUT handler's transformOrderForEmail() (that route no
- * longer sends email), so this is now the only builder for the legacy
- * OrderStatusUpdateData shape. Always uses the
- * 'refunded' status (this is the refund endpoint — money always comes back), and
- * carries the formatted refund amount plus an `isFullRefund` flag: a full refund
- * also cancels the order (→ "will not be shipped" line), while a partial refund
- * leaves the order active. `order` is the post-write row; its JSON columns arrive
- * already parsed (mode:"json"), but we parse defensively in case a raw string ever
- * slips through.
- */
-function buildRefundStatusEmail(
-  order: typeof orders.$inferSelect,
-  opts: { isFullRefund: boolean; refundAmount: string }
-): OrderStatusUpdateData {
-  const parse = (value: unknown): any =>
-    typeof value === 'string' ? JSON.parse(value) : value;
-  const rawItems = order.items ? parse(order.items) : [];
-  const items: any[] = Array.isArray(rawItems) ? rawItems : [];
-  const shippingAddr = (order.shipping_address ? parse(order.shipping_address) : {}) || {};
-  const extensions = (order.extensions ? parse(order.extensions) : {}) || {};
-
-  return {
-    orderNumber: order.id ?? '',
-    customerName: shippingAddr.recipient || shippingAddr.company || 'Valued Customer',
-    customerEmail: extensions.email || shippingAddr.email || '',
-    status: 'refunded',
-    refundAmount: opts.refundAmount,
-    orderCancelled: opts.isFullRefund,
-    carrier: extensions.carrier,
-    trackingNumber: order.tracking_number ?? undefined,
-    trackingUrl: extensions.trackingUrl,
-    notes: order.notes ?? undefined,
-    cancellationReason: extensions.cancellationReason,
-    items: items.map((item: any) => ({
-      productId: item.product_id || item.id,
-      name: item.product_name || item.name || item.title,
-      price: item.unit_price?.amount || item.unit_price || item.price || 0,
-      quantity: item.quantity || 1,
-      imageUrl: item.imageUrl || '',
-    })),
-    shippingAddress: {
-      street: [shippingAddr.line1, shippingAddr.line2].filter(Boolean).join(', '),
-      city: shippingAddr.city || '',
-      state: shippingAddr.region || '',
-      zipCode: shippingAddr.postal_code || '',
-      country: shippingAddr.country || 'US',
-    },
-  };
-}

@@ -32,6 +32,7 @@ const {
   getRefundPolicy,
   restockForOrder,
   selectRestockLines,
+  sendOrderStatusUpdateEmail,
   logCritical,
 } = vi.hoisted(() => ({
   getOrderByPaymentIntentId: vi.fn(),
@@ -41,6 +42,7 @@ const {
   getRefundPolicy: vi.fn(),
   restockForOrder: vi.fn(),
   selectRestockLines: vi.fn(),
+  sendOrderStatusUpdateEmail: vi.fn(),
   logCritical: vi.fn(),
 }));
 
@@ -54,6 +56,7 @@ vi.mock('@/lib/stripe', () => ({
 vi.mock('@/lib/models/mach/orders', () => ({ getOrderByPaymentIntentId }));
 vi.mock('@/lib/utils/settings', () => ({ getRefundPolicy }));
 vi.mock('@/lib/services/inventory-adjustment', () => ({ restockForOrder, selectRestockLines }));
+vi.mock('@/lib/utils/email', () => ({ sendOrderStatusUpdateEmail }));
 vi.mock('@/lib/utils/observe', () => ({ logCritical }));
 
 // Keep the real `parseJson` (a plain helper) but stub the CAS loop, which needs D1.
@@ -137,6 +140,7 @@ beforeEach(() => {
   // test rewires must be restored here or it leaks into the next one.
   getOrderByPaymentIntentId.mockResolvedValue(makeOrder());
   confirmRestockedLines.mockResolvedValue(undefined);
+  sendOrderStatusUpdateEmail.mockResolvedValue({ success: true });
   getRefundPolicy.mockResolvedValue({ restockOnExternalRefund: true });
   chargesRetrieve.mockResolvedValue({ id: CHARGE, payment_intent: PI, amount_refunded: 0 });
   restockForOrder.mockResolvedValue({
@@ -332,6 +336,110 @@ describe('handleRefundLifecycle — a pending refund SUCCEEDS (AC 1, AC 4)', () 
 
     expect(mutation()).toEqual({ action: 'skip' });
     expect(restockForOrder).not.toHaveBeenCalled();
+  });
+
+  it('emails the customer when an APP-INITIATED refund finally settles', async () => {
+    // `POST /api/orders/refund` DEFERS this message on a refund Stripe has only
+    // ACCEPTED, because a delayed refund can still fail and the claim would be
+    // untrue. Settling here is the moment it becomes true.
+    const order = makeOrder({
+      currency_code: 'USD',
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'pending',
+            amount: TOTAL,
+            type: 'full',
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+      },
+    });
+    runLedgerOnce(order);
+
+    await handleRefundLifecycle(makeRefund(), EVENT_ID, 'refund.updated');
+
+    expect(sendOrderStatusUpdateEmail).toHaveBeenCalledTimes(1);
+    expect(sendOrderStatusUpdateEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderNumber: order.id,
+        status: 'refunded',
+        orderCancelled: true, // full refund → "will not be shipped"
+        refundAmount: '$50.00',
+      })
+    );
+  });
+
+  it('does NOT email for an externally-reconciled refund', async () => {
+    // A Dashboard refund has never emailed the customer. Silently starting to is
+    // a store-owner decision, not a bug fix — so the sender is scoped to
+    // app-initiated entries rather than firing on every settlement.
+    runLedgerOnce(makeOrder());
+
+    await handleRefundLifecycle(makeRefund(), EVENT_ID, 'refund.updated');
+
+    expect(sendOrderStatusUpdateEmail).not.toHaveBeenCalled();
+  });
+
+  it('does NOT email twice on a redelivery', async () => {
+    // Gated on the flip, which happens exactly once — the entry is already
+    // `succeeded` here, so this delivery must stay silent.
+    const order = makeOrder({
+      status: 'cancelled',
+      payment_status: 'refunded',
+      currency_code: 'USD',
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'succeeded',
+            amount: TOTAL,
+            type: 'full',
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+        restockedLineKeys: ['prod-1-var-1'],
+      },
+    });
+    runLedgerOnce(order);
+    selectRestockLines.mockReturnValue({ lines: [], keys: [] });
+
+    await handleRefundLifecycle(makeRefund(), 'evt_redelivery', 'refund.updated');
+
+    expect(sendOrderStatusUpdateEmail).not.toHaveBeenCalled();
+  });
+
+  it('pages when the settled-refund email fails — nothing else will send it', async () => {
+    // The route deliberately did not send this earlier, so a silent failure here
+    // means the customer is never told their money came back.
+    const order = makeOrder({
+      currency_code: 'USD',
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'pending',
+            amount: TOTAL,
+            type: 'full',
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+      },
+    });
+    runLedgerOnce(order);
+    sendOrderStatusUpdateEmail.mockResolvedValue({ success: false, error: 'Resend down' });
+
+    await handleRefundLifecycle(makeRefund(), EVENT_ID, 'refund.updated');
+
+    expect(logCritical).toHaveBeenCalledWith(
+      'webhook',
+      'settled_refund_email_failed',
+      expect.objectContaining({ orderId: order.id, refundId: 're_1' })
+    );
   });
 
   it('leaves the ledger to charge.refunded when nothing matches the refund', async () => {

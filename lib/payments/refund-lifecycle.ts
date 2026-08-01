@@ -92,6 +92,21 @@ export type RefundLifecycleDecision =
        * cancellation and restock behind. Only now may they run.
        */
       finalize: boolean;
+      /**
+       * True when this entry came from `POST /api/orders/refund` — identified by
+       * the deterministic `idempotency_key` only that route stamps.
+       *
+       * That route now DEFERS the customer's "you have been refunded" email on a
+       * refund Stripe has merely ACCEPTED, so settling one here is what makes the
+       * message true. External (Dashboard) refunds have never sent that email and
+       * must not start now, which is why the sender is scoped to this flag rather
+       * than firing on every settlement.
+       */
+      wasAppInitiated: boolean;
+      /** The settled entry's amount in minor units — the emailed figure. */
+      amount: number | null;
+      /** True when the entry is a full refund (drives "will not be shipped"). */
+      isFullRefund: boolean;
     }
   | {
       /** Stripe returned the money to us — release the entry. */
@@ -237,6 +252,9 @@ export function decideRefundLifecycle(
       isFullyRefunded,
       allSettled,
       finalize: isFullyRefunded && allSettled,
+      wasAppInitiated: isAppInitiated(entry),
+      amount: typeof entry?.amount === 'number' ? entry.amount : null,
+      isFullRefund: entry?.type === 'full',
     };
   }
 
@@ -261,6 +279,17 @@ export function decideRefundLifecycle(
     needsFlip: entry?.status !== 'failed',
     floor,
     wasSettled: entry?.status === 'succeeded',
-    wasAppInitiated: typeof entry?.idempotency_key === 'string' && !!entry.idempotency_key,
+    wasAppInitiated: isAppInitiated(entry),
   };
+}
+
+/**
+ * Did `POST /api/orders/refund` create this entry?
+ *
+ * The deterministic `idempotency_key` is stamped by that route and nothing else
+ * — `charge.refunded`'s externally-reconciled entries carry `source:
+ * 'stripe_external'` and no key.
+ */
+function isAppInitiated(entry: RefundRecord | undefined): boolean {
+  return typeof entry?.idempotency_key === 'string' && entry.idempotency_key.length > 0;
 }

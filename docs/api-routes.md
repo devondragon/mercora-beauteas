@@ -31,7 +31,7 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 `refund.updated` / `refund.failed` apply a refund's later **transition** (BMC-224). `charge.refunded` fires when a refund is *created* and never re-fires, so BMC-213 records a `pending` ledger entry and withholds cancellation + restock until Stripe confirms the money left — and nothing resumed that. These events do:
 
-- **succeeded** → settle the entry, then apply the held `status: 'cancelled'` / `payment_status: 'refunded'` and the two-phase restock claim.
+- **succeeded** → settle the entry, then apply the held `status: 'cancelled'` / `payment_status: 'refunded'` and the two-phase restock claim. Also sends the customer's "you have been refunded" email if the entry was **app-initiated** — `POST /api/orders/refund` defers that message on an unsettled refund, and this is where it becomes true. Externally-reconciled (Dashboard) refunds have never sent it and still don't.
 - **failed / canceled** → release the entry to `failed` so it stops counting toward the over-refund guard, and lower `extensions.stripe_amount_refunded` to the charge's cumulative `amount_refunded` **read back from Stripe**. This is the only place that high-water mark may fall, and it is never inferred — an unreadable charge throws so Stripe redelivers.
 
 `charge.refund.updated` (the legacy name) routes to the same handler, but per Stripe's SDK docs it fires only "on selected payment methods" — **it is not a substitute for subscribing `refund.updated` and `refund.failed`.** Without those two, a delayed refund (Klarna / Cash App Pay / Amazon Pay) stays stuck forever.

@@ -19,13 +19,22 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { IDEMPOTENCY_KEY, REFUND_AMOUNT, refundsCreate, selectRestockLines, restockForOrder, logCritical } =
+const {
+  IDEMPOTENCY_KEY,
+  REFUND_AMOUNT,
+  refundsCreate,
+  selectRestockLines,
+  restockForOrder,
+  sendOrderStatusUpdateEmail,
+  logCritical,
+} =
   vi.hoisted(() => ({
     IDEMPOTENCY_KEY: 'refund:c0ffee0123456789',
     REFUND_AMOUNT: 10000,
     refundsCreate: vi.fn(),
     selectRestockLines: vi.fn(),
     restockForOrder: vi.fn(),
+    sendOrderStatusUpdateEmail: vi.fn(),
     logCritical: vi.fn(),
   }));
 
@@ -48,9 +57,7 @@ vi.mock('@/lib/payments/refund-ledger', () => ({
 }));
 
 vi.mock('@/lib/services/inventory-adjustment', () => ({ restockForOrder, selectRestockLines }));
-vi.mock('@/lib/utils/email', () => ({
-  sendOrderStatusUpdateEmail: vi.fn().mockResolvedValue({ success: true }),
-}));
+vi.mock('@/lib/utils/email', () => ({ sendOrderStatusUpdateEmail }));
 vi.mock('@/lib/utils/observe', () => ({ logCritical }));
 vi.mock('@/lib/db', () => ({ getDbAsync: vi.fn() }));
 
@@ -121,6 +128,7 @@ function ledgerEntry() {
 beforeEach(() => {
   vi.clearAllMocks();
   refundsCreate.mockResolvedValue({ id: 're_test_1', status: 'succeeded' });
+  sendOrderStatusUpdateEmail.mockResolvedValue({ success: true });
   selectRestockLines.mockReturnValue({
     lines: [{ product_id: 'prod-1', variant_id: 'var-1', quantity: 1 }],
     keys: ['prod-1-var-1'],
@@ -145,6 +153,10 @@ describe('POST /api/orders/refund — a refund Stripe SETTLES immediately (cards
     expect(current).toMatchObject({ status: 'cancelled', payment_status: 'refunded' });
     expect(current.notes).toContain('CANCELLED:');
     expect(restockForOrder).toHaveBeenCalledTimes(1);
+
+    // A card refund settles synchronously, so the email still goes out from the
+    // route exactly as before — the deferral is delayed-method-only.
+    expect(sendOrderStatusUpdateEmail).toHaveBeenCalledTimes(1);
 
     expect(await res.json()).toMatchObject({
       success: true,
@@ -177,6 +189,11 @@ describe('POST /api/orders/refund — a refund Stripe has NOT settled (Klarna et
       expect(current.notes).toBe('');
       expect(selectRestockLines).not.toHaveBeenCalled();
       expect(restockForOrder).not.toHaveBeenCalled();
+
+      // No premature "you have been refunded" — the money is not back yet, and
+      // if the refund fails that claim would simply be untrue with no automated
+      // correction. The `refund.updated` handler sends it on settlement.
+      expect(sendOrderStatusUpdateEmail).not.toHaveBeenCalled();
 
       // The operator can see it is not done yet.
       expect(await res.json()).toMatchObject({
