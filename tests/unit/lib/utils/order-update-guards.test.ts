@@ -1,12 +1,13 @@
 /**
- * Regression tests for BMC-158 — hardening PUT /api/orders (follow-up to
- * BMC-140). Two adjacent integrity gaps in the ORDERS_UPDATE-gated PUT handler:
+ * Regression tests for BMC-158 / BMC-216F — hardening PUT /api/orders (follow-up
+ * to BMC-140). Two adjacent integrity gaps in the ORDERS_UPDATE-gated PUT handler:
  *
- *  1. Order `status` was freely settable to 'refunded'/'cancelled', producing
- *     inconsistent state (order 'refunded' while payment_status stays 'paid',
- *     no Stripe refund) and emailing a false notice. Those statuses belong
- *     exclusively to POST /api/orders/refund. validatePutOrderStatus() rejects
- *     them (and unknown statuses) with a discriminated result.
+ *  1. Fulfillment fields (`status`, `tracking_number`, `shipped_at`,
+ *     `delivered_at`, `shipping_method`, tracking URLs) were freely settable,
+ *     bypassing the fulfillment state machine and producing inconsistent state
+ *     (order 'refunded' while payment_status stays 'paid', no Stripe refund).
+ *     BMC-216F reduced the route to a metadata allowlist: validatePutOrderBody()
+ *     rejects every one of those fields with a 400 naming the correct endpoint.
  *
  *  2. A wholesale `extensions` overwrite via PUT could rebind (or drop)
  *     `extensions.payment_intent_id`, which the refund route trusts to locate
@@ -22,72 +23,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  validatePutOrderStatus,
   validatePutOrderBody,
   mergeExtensions,
-  VALID_ORDER_STATUSES,
-  REFUND_OWNED_STATUSES,
 } from '@/lib/utils/order-update-guards';
-
-describe('validatePutOrderStatus', () => {
-  it('accepts fulfillment statuses', () => {
-    for (const status of ['pending', 'processing', 'shipped', 'delivered']) {
-      expect(validatePutOrderStatus(status)).toEqual({ ok: true });
-    }
-  });
-
-  it('rejects "refunded" with 422 and points to the refund route', () => {
-    const result = validatePutOrderStatus('refunded');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(422);
-      expect(result.error).toMatch(/refund/i);
-    }
-  });
-
-  it('rejects "cancelled" with 422', () => {
-    const result = validatePutOrderStatus('cancelled');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(422);
-    }
-  });
-
-  it('rejects every refund-owned status', () => {
-    for (const status of REFUND_OWNED_STATUSES) {
-      const result = validatePutOrderStatus(status);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.status).toBe(422);
-    }
-  });
-
-  it('rejects an unknown status with 400', () => {
-    const result = validatePutOrderStatus('paid');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.status).toBe(400);
-      expect(result.error).toMatch(/must be one of/i);
-    }
-  });
-
-  it('rejects non-string input with 400', () => {
-    for (const bad of [undefined, null, 42, {}, ['shipped']]) {
-      const result = validatePutOrderStatus(bad);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.status).toBe(400);
-    }
-  });
-
-  it('only accepts statuses that are NOT refund-owned', () => {
-    const accepted = VALID_ORDER_STATUSES.filter(
-      (s) => validatePutOrderStatus(s).ok
-    );
-    expect(accepted).toEqual(['pending', 'processing', 'shipped', 'delivered']);
-    for (const owned of REFUND_OWNED_STATUSES) {
-      expect(accepted).not.toContain(owned);
-    }
-  });
-});
 
 describe('validatePutOrderBody — PUT /api/orders allowlist (BMC-216F)', () => {
   it('rejects "status" with 400 naming the ship and refund endpoints', () => {

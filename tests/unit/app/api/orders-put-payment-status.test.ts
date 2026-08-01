@@ -152,7 +152,7 @@ describe('PUT /api/orders payment_status guard (BMC-140 / H3)', () => {
     } as any);
 
     const res = await PUT(
-      putRequest({ orderId: 'WEB-TEST-1000', status: 'processing', payment_status: 'paid' })
+      putRequest({ orderId: 'WEB-TEST-1000', notes: 'metadata update', payment_status: 'paid' })
     );
 
     expect(res.status).toBe(200);
@@ -164,29 +164,33 @@ describe('PUT /api/orders payment_status guard (BMC-140 / H3)', () => {
     expect(updateChain.set).toHaveBeenCalledTimes(1);
     const setArg = updateChain.set.mock.calls[0][0];
     expect(setArg).not.toHaveProperty('payment_status');
-    // The legitimate part of the same request (status) must still apply.
-    expect(setArg.status).toBe('processing');
+    // The legitimate part of the same request (notes) must still apply.
+    expect(setArg.notes).toBe('metadata update');
   });
 
-  it('still applies a normal, non-payment status/tracking update', async () => {
+  it('still applies a normal metadata update and returns the wire order', async () => {
     const selectChain = makeSelectChain([existingOrderRow]);
-    const updateChain = makeUpdateChain([{ ...existingOrderRow, status: 'shipped', tracking_number: '1Z999' }]);
+    const updateChain = makeUpdateChain([{ ...existingOrderRow, notes: 'gift wrap' }]);
     vi.mocked(getDbAsync).mockResolvedValue({
       select: vi.fn().mockReturnValue(selectChain),
       update: vi.fn().mockReturnValue(updateChain),
     } as any);
 
     const res = await PUT(
-      putRequest({ orderId: 'WEB-TEST-1000', status: 'shipped', tracking_number: '1Z999' })
+      putRequest({
+        orderId: 'WEB-TEST-1000',
+        notes: 'gift wrap',
+        external_references: { erp: 'X-1' },
+      })
     );
 
     expect(res.status).toBe(200);
     const setArg = updateChain.set.mock.calls[0][0];
-    expect(setArg.status).toBe('shipped');
-    expect(setArg.tracking_number).toBe('1Z999');
+    expect(setArg.notes).toBe('gift wrap');
+    expect(setArg.external_references).toEqual({ erp: 'X-1' });
     expect(setArg).not.toHaveProperty('payment_status');
 
-    const body = (await res.json()) as { data: { status: string } };
-    expect(body.data.status).toBe('shipped');
+    const body = (await res.json()) as { data: { notes: string } };
+    expect(body.data).toBeDefined();
   });
 });

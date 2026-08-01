@@ -1,18 +1,20 @@
 /**
- * Pure guards for the fulfillment-only PUT /api/orders handler (BMC-158,
- * follow-up to BMC-140).
+ * Pure guards for the metadata-only PUT /api/orders handler (BMC-216F,
+ * hardening BMC-158 / BMC-140).
  *
  * The PUT handler is gated by ORDERS_UPDATE — a scoped webhook/automation
- * permission, NOT full admin. Two order fields it can otherwise write freely
- * are integrity-sensitive and belong to other, verified code paths:
+ * permission, NOT full admin. Two classes of order data it could otherwise
+ * write freely are integrity-sensitive and belong to other, verified paths:
  *
- *  1. `status` → 'refunded' / 'cancelled'. These are not a money vector on
- *     their own, but setting them here produces inconsistent state (an order
- *     marked 'refunded' while `payment_status` stays 'paid' and no Stripe
- *     refund exists) and emails the customer a false cancelled/refunded
- *     notice. Both statuses are owned exclusively by the dedicated
- *     POST /api/orders/refund route, which only flips them after actually
- *     creating a Stripe refund. So this handler must reject them.
+ *  1. Every fulfillment/lifecycle field (`status`, `tracking_number`,
+ *     `shipped_at`, `delivered_at`, `shipping_method`, tracking URLs). Each
+ *     now has a dedicated owner — the Stripe webhook (pending → processing),
+ *     POST /api/admin/orders/{id}/ship and PATCH .../tracking (shipment state,
+ *     CAS-guarded with audit events), and POST /api/orders/refund (cancelled /
+ *     refunded, only after a verified Stripe refund). Writing them here would
+ *     bypass the fulfillment state machine and produce inconsistent state
+ *     (e.g. status='refunded' while payment_status stays 'paid'). So this
+ *     handler rejects them outright — see `validatePutOrderBody`.
  *
  *  2. `extensions` as a whole. The PUT handler writes the `extensions` JSON
  *     column, but that column holds several server-owned keys the client must
@@ -35,53 +37,6 @@
  * Kept dependency-free (no DB / Cloudflare bindings) so they can be unit
  * tested directly. Consumed by app/api/orders/route.ts.
  */
-
-/** Statuses the schema accepts on an order row. */
-export const VALID_ORDER_STATUSES = [
-  'pending',
-  'processing',
-  'shipped',
-  'delivered',
-  'cancelled',
-  'refunded',
-] as const;
-
-/**
- * Statuses that PUT /api/orders must NOT set. They are owned exclusively by
- * POST /api/orders/refund, which sets them only after a verified Stripe refund.
- */
-export const REFUND_OWNED_STATUSES = ['cancelled', 'refunded'] as const;
-
-/**
- * Validates a status supplied to PUT /api/orders.
- *
- * Returns a discriminated result (never throws) so the route can turn a
- * failure straight into a clean error response:
- *   - unknown status                       → 400
- *   - 'cancelled' / 'refunded' (refund-owned) → 422 (route via /refund)
- */
-export function validatePutOrderStatus(
-  status: unknown
-): { ok: true } | { ok: false; error: string; status: number } {
-  if (typeof status !== 'string' || !VALID_ORDER_STATUSES.includes(status as never)) {
-    return {
-      ok: false,
-      error: `Invalid status. Must be one of: ${VALID_ORDER_STATUSES.join(', ')}`,
-      status: 400,
-    };
-  }
-  if (REFUND_OWNED_STATUSES.includes(status as never)) {
-    return {
-      ok: false,
-      error:
-        `Status "${status}" cannot be set via PUT /api/orders. ` +
-        `Cancellations and refunds must go through POST /api/orders/refund, ` +
-        `which issues the Stripe refund and updates payment_status atomically.`,
-      status: 422,
-    };
-  }
-  return { ok: true };
-}
 
 /**
  * BMC-216F: PUT /api/orders allowlist.
