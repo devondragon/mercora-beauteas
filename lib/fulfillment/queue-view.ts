@@ -198,6 +198,12 @@ export interface FulfillmentEventLike {
   type: string;
   actorType?: string | null;
   actorId?: string | null;
+  /**
+   * Human name/email for `actorId`, resolved from `admin_users` by the events
+   * route. Absent when the actor isn't an admin or the row has since been
+   * removed — the view then falls back to a shortened id.
+   */
+  actorLabel?: string | null;
   fromStatus?: string | null;
   toStatus?: string | null;
   details?: Record<string, unknown> | null;
@@ -291,9 +297,24 @@ const ACTOR_LABELS: Record<string, string> = {
   system: "System",
 };
 
-function actorLabel(event: FulfillmentEventLike): string {
+/**
+ * A raw Clerk id ("user_3HI6hxcFuFFXiitdZ5ilNkpD7xC") is meaningless to an
+ * operator and crowds out the rest of the sentence, but dropping it entirely
+ * would make two admins indistinguishable in an audit trail. Keep a tail long
+ * enough to tell them apart. Ids already short enough to read are left alone.
+ */
+const ACTOR_ID_READABLE_MAX = 12;
+
+function shortenActorId(id: string): string {
+  return id.length > ACTOR_ID_READABLE_MAX ? `…${id.slice(-6)}` : id;
+}
+
+function formatActor(event: FulfillmentEventLike): string {
   const base = ACTOR_LABELS[event.actorType ?? ""] ?? "Unknown actor";
-  return event.actorId ? `${base} (${event.actorId})` : base;
+  const resolved = event.actorLabel?.trim();
+  if (resolved) return `${base} (${resolved})`;
+  const id = event.actorId?.trim();
+  return id ? `${base} (${shortenActorId(id)})` : base;
 }
 
 function carrierText(value: unknown): string {
@@ -357,7 +378,7 @@ export function formatFulfillmentEvent(event: FulfillmentEventLike): TimelineEnt
       break;
   }
 
-  return { id: event.id, title, details, actor: actorLabel(event), timestamp: event.createdAt, tone };
+  return { id: event.id, title, details, actor: formatActor(event), timestamp: event.createdAt, tone };
 }
 
 export function formatFulfillmentTimeline(events: FulfillmentEventLike[]): TimelineEntry[] {

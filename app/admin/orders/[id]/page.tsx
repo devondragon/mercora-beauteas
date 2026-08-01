@@ -169,10 +169,14 @@ export default function OrderDetailPage() {
     try {
       const response = await fetch('/api/admin/settings?category=refund');
       if (response.ok) {
-        const data = await response.json() as { data: Array<{key: string, value: string}> };
+        // The route returns { settings }, not { data } — reading `data.data`
+        // threw on every load, so the refund policy silently fell back to
+        // defaults. `?? []` keeps a future shape change degrading to defaults
+        // rather than crashing the whole order-detail page again.
+        const data = await response.json() as { settings?: Array<{key: string, value: string}> };
         const policySettings: Record<string, any> = {};
 
-        data.data.forEach(setting => {
+        (data.settings ?? []).forEach(setting => {
           const key = setting.key.replace('refund.', '');
           try {
             policySettings[key] = JSON.parse(setting.value);
