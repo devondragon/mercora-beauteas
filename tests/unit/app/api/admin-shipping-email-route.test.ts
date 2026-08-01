@@ -20,13 +20,13 @@ const {
   sendMock,
   checkAdminPermissionsMock,
   getOrderByIdMock,
-  listOrderEventsMock,
+  latestOrderEventMock,
   recordEmailEventMock,
 } = vi.hoisted(() => ({
   sendMock: vi.fn().mockResolvedValue({ data: { id: 'email-1' }, error: null }),
   checkAdminPermissionsMock: vi.fn().mockResolvedValue({ success: true, userId: 'user_admin_1' }),
   getOrderByIdMock: vi.fn(),
-  listOrderEventsMock: vi.fn().mockResolvedValue([]),
+  latestOrderEventMock: vi.fn().mockResolvedValue(null),
   recordEmailEventMock: vi.fn().mockResolvedValue('evt-new'),
 }));
 
@@ -45,7 +45,7 @@ vi.mock('@/lib/models/mach/orders', () => ({
 }));
 
 vi.mock('@/lib/fulfillment/service', () => ({
-  listOrderEvents: listOrderEventsMock,
+  latestOrderEvent: latestOrderEventMock,
   recordEmailEvent: recordEmailEventMock,
 }));
 
@@ -125,7 +125,7 @@ beforeEach(() => {
   sendMock.mockResolvedValue({ data: { id: 'email-1' }, error: null });
   checkAdminPermissionsMock.mockResolvedValue({ success: true, userId: 'user_admin_1' });
   getOrderByIdMock.mockResolvedValue(shippedOrder());
-  listOrderEventsMock.mockResolvedValue([]);
+  latestOrderEventMock.mockResolvedValue(null);
   recordEmailEventMock.mockResolvedValue('evt-new');
   process.env.ORDER_STATUS_SECRET = TEST_SECRET;
 });
@@ -171,6 +171,14 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ email: { success: true }, eventId: 'evt-new' });
+    // Bounded read (BMC-246): the gate asks only for the latest successful-send
+    // row — filtered to the two success types, never the whole history. This
+    // call-shape assertion is also what pins "a failed event can't gate":
+    // shipping_email_failed is excluded by the filter itself.
+    expect(latestOrderEventMock).toHaveBeenCalledWith('ORD-1', [
+      'shipping_email_sent',
+      'shipping_email_resent',
+    ]);
     expect(sentKey()).toMatch(INITIAL_KEY_RE);
     expect(recordEmailEventMock).toHaveBeenCalledWith(
       'ORD-1',
@@ -181,7 +189,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   });
 
   it('retry after a successful send is a 409 wrong_mode', async () => {
-    listOrderEventsMock.mockResolvedValueOnce([sentEvent()]);
+    latestOrderEventMock.mockResolvedValueOnce(sentEvent());
 
     const res = await post('retry');
 
@@ -193,9 +201,10 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   it('retry after a prior RESEND is also a 409 wrong_mode', async () => {
     // A resent order has, by construction, already had a successful send.
     // Recognizing only `shipping_email_sent` would reopen retry on it.
-    listOrderEventsMock.mockResolvedValueOnce([
-      { ...sentEvent('evt-resent-1'), event_type: 'shipping_email_resent' },
-    ]);
+    latestOrderEventMock.mockResolvedValueOnce({
+      ...sentEvent('evt-resent-1'),
+      event_type: 'shipping_email_resent',
+    });
 
     const res = await post('retry');
 
@@ -205,9 +214,11 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   });
 
   it('a prior FAILED send leaves retry legal', async () => {
-    listOrderEventsMock.mockResolvedValueOnce([
-      { ...sentEvent('evt-failed-1'), event_type: 'shipping_email_failed' },
-    ]);
+    // The bounded accessor filters to the two success types in SQL, so an
+    // order whose only history is shipping_email_failed rows resolves to
+    // null — exactly the state retry exists for. The success-type filter
+    // itself is pinned by the call-shape assertion in the retry test above.
+    latestOrderEventMock.mockResolvedValueOnce(null);
 
     const res = await post('retry');
 
@@ -224,7 +235,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   });
 
   it('resend after a successful send mints a unique key and records shipping_email_resent', async () => {
-    listOrderEventsMock.mockResolvedValue([sentEvent()]);
+    latestOrderEventMock.mockResolvedValue(sentEvent());
 
     const res = await post('resend');
     expect(res.status).toBe(200);
@@ -244,6 +255,33 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
     expect(secondKey).not.toBe(firstKey);
   });
 
+  it('a resend after a prior resend still attributes to the ORIGINAL sent event', async () => {
+    // The bounded read returns only the LATEST successful send. When that row
+    // is itself a resend, the root lives in its details — recorded on every
+    // resend precisely so the chain collapses without scanning the history.
+    latestOrderEventMock.mockResolvedValueOnce({
+      ...sentEvent('evt-resent-1'),
+      event_type: 'shipping_email_resent',
+      details: {
+        idempotencyKey: 'shipping-confirmation/ORD-1/resend/earlier',
+        resendOfEventId: 'evt-sent-1',
+      },
+    });
+
+    const res = await post('resend');
+
+    expect(res.status).toBe(200);
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_resent',
+      { type: 'admin', id: 'user_admin_1' },
+      {
+        idempotencyKey: expect.stringMatching(/^shipping-confirmation\/ORD-1\/resend\/.+/),
+        resendOfEventId: 'evt-sent-1',
+      },
+    );
+  });
+
   it('a failed send is 200 with success:false and a shipping_email_failed event', async () => {
     sendMock.mockResolvedValueOnce({ data: null, error: { message: 'domain not verified' } });
     recordEmailEventMock.mockResolvedValueOnce('evt-fail-1');
@@ -261,6 +299,55 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
       { type: 'admin', id: 'user_admin_1' },
       { idempotencyKey: expect.stringMatching(INITIAL_KEY_RE), error: 'domain not verified' },
     );
+  });
+
+  it('represents a concurrent_idempotent_requests 409 distinctly and non-critically', async () => {
+    // A retry raced the in-flight original send. The original may have been
+    // delivered — the route must not claim success, but must not page either.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'Concurrent requests with the same idempotency key.',
+        name: 'concurrent_idempotent_requests',
+      },
+    });
+    recordEmailEventMock.mockResolvedValueOnce('evt-conc-1');
+
+    const res = await post('retry');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      email: {
+        success: false,
+        error: 'Concurrent requests with the same idempotency key.',
+        errorCode: 'concurrent_idempotent_requests',
+      },
+      eventId: 'evt-conc-1',
+    });
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      { type: 'admin', id: 'user_admin_1' },
+      {
+        idempotencyKey: expect.stringMatching(INITIAL_KEY_RE),
+        error: 'Concurrent requests with the same idempotency key.',
+        errorCode: 'concurrent_idempotent_requests',
+        concurrentDuplicate: true,
+      },
+    );
+    // No [critical] line — that marker is what the observability tail worker
+    // pages on; this failure class must stay a warn-level diagnostic.
+    const criticalLines = errorSpy.mock.calls.filter((c) => String(c[0]).includes('[critical]'));
+    expect(criticalLines).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'email.shipping_email_concurrent_duplicate',
+      expect.stringContaining('"orderId":"ORD-1"'),
+    );
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it('records a failed event when the order has no customer email', async () => {
@@ -298,7 +385,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   });
 
   it('a failed RESEND is 200 with success:false, a resend-shaped key, and a shipping_email_failed event', async () => {
-    listOrderEventsMock.mockResolvedValueOnce([sentEvent()]);
+    latestOrderEventMock.mockResolvedValueOnce(sentEvent());
     sendMock.mockResolvedValueOnce({ data: null, error: { message: 'domain not verified' } });
     recordEmailEventMock.mockResolvedValueOnce('evt-fail-resend-1');
 
@@ -324,7 +411,7 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
   });
 
   it('records a failed event with a resend key when a resend target has no customer email', async () => {
-    listOrderEventsMock.mockResolvedValueOnce([sentEvent()]);
+    latestOrderEventMock.mockResolvedValueOnce(sentEvent());
     getOrderByIdMock.mockResolvedValueOnce(
       shippedOrder({
         extensions: {},

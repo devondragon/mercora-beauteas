@@ -94,6 +94,37 @@ export function logCritical(
   writeMetric(area, event);
 }
 
+/**
+ * Non-alerting sibling of {@link logCritical}: same stable `<area>.<event>` +
+ * JSON-payload line shape (and the same PII rule — error class only, never the
+ * message), but emitted via console.warn WITHOUT {@link CRITICAL_MARKER}, so
+ * the observability Tail Worker never turns it into an alert. For failure
+ * classes that are diagnosable-but-expected — e.g. Resend's
+ * `concurrent_idempotent_requests` 409 when a shipping-email retry races the
+ * still-in-flight original send (BMC-246). Still writes the best-effort
+ * metric. Never throws.
+ */
+export function logWarn(
+  area: CriticalArea,
+  event: string,
+  detail: Record<string, unknown> = {},
+  error?: unknown
+): void {
+  try {
+    const payload: Record<string, unknown> = { ...detail, area, event };
+    if (error !== undefined) payload.errorType = errorLabel(error);
+    console.warn(`${area}.${event}`, safeStringify(payload));
+  } catch {
+    try {
+      console.warn(`${area}.${event}`);
+    } catch {
+      /* nothing more we can safely do */
+    }
+  }
+
+  writeMetric(area, event);
+}
+
 function safeStringify(value: unknown): string {
   try {
     return JSON.stringify(value);

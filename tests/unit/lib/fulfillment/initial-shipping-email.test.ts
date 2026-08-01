@@ -31,7 +31,8 @@ vi.mock('@/lib/fulfillment/service', () => ({
   listOrderEvents: vi.fn().mockResolvedValue([]),
 }));
 
-import { sendInitialShippingEmail } from '@/lib/fulfillment/shipping-email';
+import { sendInitialShippingEmail, initialShippingEmailKey } from '@/lib/fulfillment/shipping-email';
+import { SHIPPING_EMAIL_TEMPLATE_VERSION, type ShippingConfirmationData } from '@/lib/utils/email';
 import type { Order } from '@/lib/types/order';
 import type { Actor } from '@/lib/fulfillment/types';
 
@@ -108,6 +109,49 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.ORDER_STATUS_SECRET;
+});
+
+describe('initialShippingEmailKey', () => {
+  const data: ShippingConfirmationData = {
+    orderNumber: 'ORD-1',
+    customerName: 'Ada Lovelace',
+    customerEmail: 'ada@example.com',
+    items: [{ name: 'Morning Blend', quantity: 2 }],
+    carrier: 'ups',
+    trackingNumber: '1Z999AA10123456784',
+    trackingUrl: 'https://www.ups.com/track?loc=en_US&tracknum=1Z999AA10123456784',
+    orderStatusUrl: null,
+  };
+
+  /**
+   * Deliberately replicates the digest formula: the assertion this exists for
+   * is that SHIPPING_EMAIL_TEMPLATE_VERSION is folded into the digest, so a
+   * template-changing deploy between a failed send and a retry mints a FRESH
+   * key instead of reusing the old key with a new rendered body — which Resend
+   * would 409 for the rest of its 24h idempotency window (BMC-246).
+   */
+  async function keyFor(version: number, payload: ShippingConfirmationData): Promise<string> {
+    const bytes = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(JSON.stringify([version, payload])),
+    );
+    const digest = Array.from(new Uint8Array(bytes).slice(0, 6))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    return `shipping-confirmation/ORD-1/initial/${digest}`;
+  }
+
+  it('folds the template version into the digest', async () => {
+    const key = await initialShippingEmailKey('ORD-1', data);
+    expect(key).toBe(await keyFor(SHIPPING_EMAIL_TEMPLATE_VERSION, data));
+  });
+
+  it('a template-version bump changes the key for an unchanged payload', async () => {
+    const key = await initialShippingEmailKey('ORD-1', data);
+    const bumped = await keyFor(SHIPPING_EMAIL_TEMPLATE_VERSION + 1, data);
+    expect(bumped).toMatch(INITIAL_KEY_RE);
+    expect(key).not.toBe(bumped);
+  });
 });
 
 describe('sendInitialShippingEmail', () => {
@@ -266,6 +310,82 @@ describe('sendInitialShippingEmail', () => {
       ACTOR,
       { idempotencyKey: expect.stringMatching(INITIAL_KEY_RE), error: 'domain not verified' },
     );
+  });
+
+  it('passes a Resend errorCode through to the result and the audit event', async () => {
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'domain not verified', name: 'validation_error' },
+    });
+    recordEmailEventMock.mockResolvedValueOnce('evt-fail-2');
+
+    const res = await sendInitialShippingEmail(baseOrder(), ACTOR);
+
+    expect(res).toEqual({
+      attempted: true,
+      success: false,
+      error: 'domain not verified',
+      errorCode: 'validation_error',
+      eventId: 'evt-fail-2',
+    });
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      ACTOR,
+      {
+        idempotencyKey: expect.stringMatching(INITIAL_KEY_RE),
+        error: 'domain not verified',
+        errorCode: 'validation_error',
+      },
+    );
+  });
+
+  it('reports a concurrent_idempotent_requests 409 as diagnosable but NOT alarming', async () => {
+    // A retry racing the still-in-flight original send: the original email may
+    // well be delivered, so this must not page as a send failure — but must
+    // stay visible in the audit trail with a distinct flag.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'Concurrent requests with the same idempotency key.',
+        name: 'concurrent_idempotent_requests',
+      },
+    });
+    recordEmailEventMock.mockResolvedValueOnce('evt-conc-1');
+
+    const res = await sendInitialShippingEmail(baseOrder(), ACTOR);
+
+    // Still a failure — delivery of the racing original is unknown here.
+    expect(res).toEqual({
+      attempted: true,
+      success: false,
+      error: 'Concurrent requests with the same idempotency key.',
+      errorCode: 'concurrent_idempotent_requests',
+      eventId: 'evt-conc-1',
+    });
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      ACTOR,
+      {
+        idempotencyKey: expect.stringMatching(INITIAL_KEY_RE),
+        error: 'Concurrent requests with the same idempotency key.',
+        errorCode: 'concurrent_idempotent_requests',
+        concurrentDuplicate: true,
+      },
+    );
+    // No [critical] line — the observability tail worker pages on that marker.
+    const criticalLines = errorSpy.mock.calls.filter((c) => String(c[0]).includes('[critical]'));
+    expect(criticalLines).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'email.shipping_email_concurrent_duplicate',
+      expect.stringContaining('"orderId":"ORD-1"'),
+    );
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it('a failed send never reverts the shipment', async () => {

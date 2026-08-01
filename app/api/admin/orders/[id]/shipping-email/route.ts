@@ -28,14 +28,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPermissions, type AdminAuthResult } from "@/lib/auth/admin-middleware";
 import { getOrderById } from "@/lib/models/mach/orders";
-import { listOrderEvents, recordEmailEvent } from "@/lib/fulfillment/service";
+import { latestOrderEvent, recordEmailEvent } from "@/lib/fulfillment/service";
 import {
   buildShippingConfirmationData,
   initialShippingEmailKey,
 } from "@/lib/fulfillment/shipping-email";
-import { sendShippingConfirmationEmail } from "@/lib/utils/email";
+import { sendShippingConfirmationEmail, RESEND_CONCURRENT_SEND_ERROR } from "@/lib/utils/email";
 import type { Actor, OrderEventType } from "@/lib/fulfillment/types";
-import { logCritical } from "@/lib/utils/observe";
+import { logCritical, logWarn } from "@/lib/utils/observe";
 
 type Mode = "retry" | "resend";
 
@@ -49,10 +49,10 @@ type Mode = "retry" | "resend";
  * emailed. A `shipping_email_failed` row is deliberately NOT here: a failed
  * automatic send is exactly the case retry exists for.
  */
-const SUCCESSFUL_SEND_EVENTS: ReadonlySet<OrderEventType> = new Set<OrderEventType>([
+const SUCCESSFUL_SEND_EVENTS: readonly OrderEventType[] = [
   "shipping_email_sent",
   "shipping_email_resent",
-]);
+];
 
 /**
  * ADMIN_VECTORIZE_TOKEN callers are automation, not a person — record them as
@@ -95,21 +95,27 @@ export async function POST(
       return NextResponse.json({ code: "not_shipped", status: order.status }, { status: 409 });
     }
 
-    // History, not the client, decides which mode is legal.
-    const events = await listOrderEvents(id);
-    const hasSuccessfulSend = events.some((event) =>
-      SUCCESSFUL_SEND_EVENTS.has(event.event_type as OrderEventType),
-    );
-    if (mode === "retry" && hasSuccessfulSend) {
+    // History, not the client, decides which mode is legal. Bounded read
+    // (BMC-246): the gate only needs the latest successful-send row, not the
+    // order's whole event history.
+    const lastSuccessfulSend = await latestOrderEvent(id, SUCCESSFUL_SEND_EVENTS);
+    if (mode === "retry" && lastSuccessfulSend) {
       return NextResponse.json({ code: "wrong_mode" }, { status: 409 });
     }
-    if (mode === "resend" && !hasSuccessfulSend) {
+    if (mode === "resend" && !lastSuccessfulSend) {
       return NextResponse.json({ code: "wrong_mode" }, { status: 409 });
     }
 
     // Attribute a resend to the ORIGINAL successful send, so a chain of
-    // resends all point back at one root rather than at each other.
-    const originalSent = events.find((event) => event.event_type === "shipping_email_sent");
+    // resends all point back at one root rather than at each other. The
+    // latest successful-send row is enough: a `sent` row IS the root, and a
+    // `resent` row already carries the root in its details (written below on
+    // every resend), so the chain collapses without scanning the history.
+    const rootSentEventId =
+      lastSuccessfulSend?.event_type === "shipping_email_sent"
+        ? lastSuccessfulSend.id
+        : (lastSuccessfulSend?.details as { resendOfEventId?: string } | null | undefined)
+            ?.resendOfEventId;
 
     const actor = actorFrom(auth);
     const data = await buildShippingConfirmationData(order);
@@ -148,13 +154,25 @@ export async function POST(
     const result = await sendShippingConfirmationEmail(data, { idempotencyKey });
 
     if (!result.success) {
-      logCritical("email", "shipping_email_send_failed", { orderId: id, mode }, result.error);
-      const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, {
-        idempotencyKey,
-        error: result.error,
-      });
+      // concurrent_idempotent_requests: this retry raced the still-in-flight
+      // original send under the same key — the original may well be delivered.
+      // Not claimable as success (delivery is unknown here), but not a
+      // pageable failure either: warn-level log (no [critical] marker for the
+      // observability tail worker) and a flagged audit event (BMC-246).
+      const concurrentDuplicate = result.errorCode === RESEND_CONCURRENT_SEND_ERROR;
+      if (concurrentDuplicate) {
+        logWarn("email", "shipping_email_concurrent_duplicate", { orderId: id, mode }, result.error);
+      } else {
+        logCritical("email", "shipping_email_send_failed", { orderId: id, mode }, result.error);
+      }
+      const failureDetails: Record<string, unknown> = { idempotencyKey, error: result.error };
+      if (result.errorCode) failureDetails.errorCode = result.errorCode;
+      if (concurrentDuplicate) failureDetails.concurrentDuplicate = true;
+      const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, failureDetails);
       return NextResponse.json(
-        { email: { success: false, error: result.error }, eventId },
+        // errorCode is additive and omitted (undefined) unless Resend named
+        // the error, so existing consumers see an unchanged shape.
+        { email: { success: false, error: result.error, errorCode: result.errorCode }, eventId },
         { status: 200 },
       );
     }
@@ -169,7 +187,7 @@ export async function POST(
         mode === "resend"
           ? await recordEmailEvent(id, "shipping_email_resent", actor, {
               idempotencyKey,
-              resendOfEventId: originalSent?.id,
+              resendOfEventId: rootSentEventId,
             })
           : await recordEmailEvent(id, "shipping_email_sent", actor, { idempotencyKey });
     } catch (error) {
