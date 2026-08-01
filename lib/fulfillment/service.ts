@@ -26,7 +26,7 @@
  *    — `db.run(sql\`...\`)` throws inside db.batch() on drizzle-orm 0.45.2's
  *    D1 driver (SQLiteRaw has no `.stmt` for `preparedQuery.stmt.bind(...)`).
  */
-import { and, asc, eq, isNull, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
 import { getDbAsync } from "@/lib/db";
 import { orders } from "@/lib/db/schema/order";
 import { orderEvents, type OrderEventRow } from "@/lib/db/schema/order-events";
@@ -38,7 +38,7 @@ import {
   type OrderFulfillmentSnapshot,
 } from "./transitions";
 import { buildTrackingUrl } from "./tracking";
-import type { Actor, ShipmentInput } from "./types";
+import type { Actor, OrderEventType, ShipmentInput } from "./types";
 
 export type { OrderEventRow };
 
@@ -372,6 +372,50 @@ export async function listOrderEvents(
     .from(orderEvents)
     .where(eq(orderEvents.order_id, orderId))
     .orderBy(asc(orderEvents.created_at), asc(orderEvents.id));
+}
+
+/**
+ * Most recent event of the given types for one order, or null — the bounded
+ * accessor for gates that only need the latest matching row (e.g. "has a
+ * shipping email ever succeeded"), instead of scanning the whole history
+ * (BMC-246). Same id tie-break as listOrderEvents, inverted.
+ */
+export async function latestOrderEvent(
+  orderId: string,
+  eventTypes: readonly OrderEventType[],
+): Promise<OrderEventRow | null> {
+  const db = await getDbAsync();
+  const rows = await db
+    .select()
+    .from(orderEvents)
+    .where(
+      and(
+        eq(orderEvents.order_id, orderId),
+        inArray(orderEvents.event_type, [...eventTypes]),
+      ),
+    )
+    .orderBy(desc(orderEvents.created_at), desc(orderEvents.id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Newest-first bounded page of fulfillment events for one order (BMC-246).
+ * Bounding from the newest end keeps the most recent — most relevant — events
+ * when a history exceeds the limit; callers that serve the wire's oldest-first
+ * order reverse the page.
+ */
+export async function listRecentOrderEvents(
+  orderId: string,
+  limit: number,
+): Promise<OrderEventRow[]> {
+  const db = await getDbAsync();
+  return db
+    .select()
+    .from(orderEvents)
+    .where(eq(orderEvents.order_id, orderId))
+    .orderBy(desc(orderEvents.created_at), desc(orderEvents.id))
+    .limit(limit);
 }
 
 /** Append-only email audit event writer (consumed by ticket C). */

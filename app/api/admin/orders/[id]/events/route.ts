@@ -3,16 +3,22 @@ import { inArray } from "drizzle-orm";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { getDbAsync } from "@/lib/db";
 import { adminUsers } from "@/lib/db/schema/admin_users";
-import { listOrderEvents } from "@/lib/fulfillment/service";
+import { listRecentOrderEvents } from "@/lib/fulfillment/service";
 import { getOrderById } from "@/lib/models/mach/orders";
 import { logCritical } from "@/lib/utils/observe";
+
+/** Bounded read (BMC-246): `?limit=` default / hard cap. */
+const DEFAULT_EVENT_LIMIT = 100;
+const MAX_EVENT_LIMIT = 500;
 
 /**
  * GET /api/admin/orders/[id]/events (BMC-216B)
  *
- * Fulfillment audit history, oldest first. order_events contains only
- * fulfillment events — refund-ledger details and server-owned extension data
- * live elsewhere and are not reachable through this projection.
+ * Fulfillment audit history, oldest first, bounded by `?limit=` (default 100,
+ * capped at 500 — when a history exceeds the limit it is the OLDEST events
+ * that drop). order_events contains only fulfillment events — refund-ledger
+ * details and server-owned extension data live elsewhere and are not
+ * reachable through this projection.
  */
 export async function GET(
   request: NextRequest,
@@ -27,6 +33,19 @@ export async function GET(
   }
   const { id } = await params;
 
+  const limitParam = request.nextUrl.searchParams.get("limit");
+  let limit = DEFAULT_EVENT_LIMIT;
+  if (limitParam !== null) {
+    const parsed = Number(limitParam);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return NextResponse.json(
+        { error: "limit must be a positive integer" },
+        { status: 400 },
+      );
+    }
+    limit = Math.min(parsed, MAX_EVENT_LIMIT);
+  }
+
   try {
     // Distinguish "order doesn't exist" from "no fulfillment events yet" —
     // both would otherwise render as the same 200 { events: [] }.
@@ -35,7 +54,9 @@ export async function GET(
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    const rows = await listOrderEvents(id);
+    // Newest-first bounded page from the service, reversed to the wire's
+    // oldest-first contract.
+    const rows = (await listRecentOrderEvents(id, limit)).reverse();
 
     // Resolve admin actor ids to something an operator can read. The timeline
     // otherwise renders a raw Clerk id. One grouped lookup for the whole page —
