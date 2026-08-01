@@ -114,7 +114,7 @@
         "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51ToUoXFdZ6iCcQWyo4eO3JBmMNcP9svR3B1ARPFgXoJ1AL8mF8l0bhFU3PoxfSHqN1DT9zYIpEGSwSFiivh1Q8yV00T7ko8aoj",
         // Canonical host for this environment — drives canonical tags, OG URLs,
         // sitemap, JSON-LD and email links (lib/seo/metadata.ts).
-        "NEXT_PUBLIC_SITE_URL": "https://beauteas-dev.workers.dev"
+        "NEXT_PUBLIC_SITE_URL": "https://beauteas-dev.justblackmagic.workers.dev"
       }
     },
 
