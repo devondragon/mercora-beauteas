@@ -6,8 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import type { OrderItem } from "@/lib/types/order";
 import { formatDate, formatAddress } from "@/lib/utils/account";
 import { Money } from "@/lib/money";
-import { buildTrackingUrl, normalizeLegacyCarrier, sanitizeTrackingNumber } from "@/lib/fulfillment/tracking";
-import { CARRIER_LABELS } from "@/lib/fulfillment/types";
+import { buildShipmentView } from "@/lib/fulfillment/shipment-view";
 
 export const metadata = {
   title: "Order Details - BeauTeas",
@@ -79,21 +78,11 @@ export default async function OrderDetailPage({
 
   const items = Array.isArray(order.items) ? order.items : [];
 
-  // Carrier comes from the shipping_carrier COLUMN only — migration 0022
-  // backfilled it. This page never reads extensions.carrier / extensions.trackingUrl:
-  // a stored, client-supplied URL is an open-redirect vector, so the link is
-  // always DERIVED from (carrier, trackingNumber). As of BMC-230/ticket F this
-  // holds repo-wide: PUT /api/orders can no longer store a client trackingUrl
-  // and the legacy status-update email no longer renders a stored one.
-  // normalizeLegacyCarrier is defensive for any row that escaped the backfill.
-  const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
-  const carrierLabel = carrier ? CARRIER_LABELS[carrier] : null;
-  // Sanitized before both rendering and URL-building: a legacy row's tracking
-  // number can carry bidi/invisible characters (only the new fulfillment
-  // write path enforces sanitizeTrackingNumber), which would otherwise render
-  // reversed or hidden digits directly in this customer-facing page.
-  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
-  const trackingUrl = buildTrackingUrl(carrier, trackingNumber);
+  // Shared derivation (BMC-240): carrier normalization, label lookup,
+  // tracking-number sanitization and URL construction live in
+  // buildShipmentView — see that module for the column-only / derived-URL
+  // policy (BMC-230) and why sanitization is enforced at render time.
+  const { carrierLabel, trackingNumber, trackingUrl } = buildShipmentView(order);
 
   return (
     <div>
