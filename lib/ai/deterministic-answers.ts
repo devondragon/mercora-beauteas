@@ -14,13 +14,16 @@
  * Every value in an answer comes from `canonical-facts.ts`, never a literal here.
  *
  * === Scope ===
- * Only categories whose answer is available synchronously from config are
- * handled. Refund windows, shipping costs, and prices are deliberately NOT here:
- * their sources of truth live in D1 (`refund.*` admin settings, the checkout
- * charge config, the catalog), so answering them deterministically would make
- * this classifier async and put database reads on the chat hot path. They stay
- * on the retrieval path, where the response guard still prevents them from
- * carrying invented contact details.
+ * A category belongs here when the question has ONE correct answer that some
+ * system of record already owns — config (`canonical-facts.ts`) or an admin
+ * setting in D1. Config-backed categories resolve synchronously; D1-backed ones
+ * (`refund_window`, BMC-243; `shipping_rates`, BMC-242) resolve in the async
+ * second step, so a MISS still performs no I/O.
+ *
+ * PRICES are deliberately excluded (BMC-242). "How much is the Evening blend?"
+ * is entity resolution, not a lookup — a regex can spot the question shape but
+ * cannot decide WHICH product, which is exactly what vector retrieval already
+ * does well. That belongs in the system prompt's VERIFIED FACTS block, not here.
  */
 
 import {
@@ -28,8 +31,12 @@ import {
   CONTACT_EMAIL,
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
+  SHIPPING_POLICY_URL,
   SUPPORT_HOURS,
 } from "@/lib/ai/canonical-facts";
+import { Money } from "@/lib/money";
+import { resolveShippingOptions } from "@/lib/services/shipping-options";
+import type { ShippingOption } from "@/lib/types/shipping";
 import { getRefundPolicy } from "@/lib/utils/settings";
 
 /** Identifier for the matched category, surfaced for logging/tests. */
@@ -37,12 +44,18 @@ export type DeterministicCategory =
   | "contact_email"
   | "order_status"
   | "business_address"
-  | "refund_window";
+  | "refund_window"
+  | "shipping_rates";
 
 interface CategoryRule {
   category: DeterministicCategory;
   /** Question matches the category if ANY pattern matches. */
   patterns: RegExp[];
+  /**
+   * Question is NOT this category if ANY of these match, even when a `patterns`
+   * entry does. Used where a narrower topic shares the category's vocabulary.
+   */
+  exclude?: RegExp[];
   /**
    * Sync answer, built lazily so it always reflects the current canonical value.
    * Omitted for categories whose value comes from D1 — those are resolved in
@@ -121,6 +134,40 @@ const RULES: CategoryRule[] = [
       /\bdo you (accept|take|do) returns\b/i,
     ],
   },
+  {
+    category: "shipping_rates",
+    // Answered from the storefront shipping model in D1 (`shipping.methods` +
+    // `store.free_shipping_threshold`), so no sync `answer` — see
+    // `resolveDeterministicAnswer`.
+    //
+    // Last in the table on purpose: `order_status` owns "when will MY order
+    // arrive" (a question about one shipment, not the rate card), and this rule
+    // must not reach it.
+    patterns: [
+      /\bhow much\b.{0,30}\b(shipping|delivery|postage)\b/i,
+      /\b(shipping|delivery|postage)\b.{0,20}\b(cost|costs|rate|rates|price|prices|fee|fees|charge|charges)\b/i,
+      /\b(cost|price|rate|fee) (of|for) (shipping|delivery|postage)\b/i,
+      // The lookbehind matters: a bare `\bfree shipping\b` also matches INSIDE
+      // "plastic-free shipping" / "carbon-free shipping", handing a packaging or
+      // sustainability question the rate card.
+      /(?<![\w-])free shipping\b/i,
+      /\bhow (long|many days)\b.{0,30}\b(shipping|delivery|to (ship|deliver|arrive|get here))\b/i,
+      /\bhow (fast|quick(ly)?|soon)\b.{0,25}\b(ship|shipped|deliver|delivered|arrive|get here)\b/i,
+      /\b(shipping|delivery) (time|times|speed|estimate|estimates|option|options|method|methods)\b/i,
+      /\bwhat (are|r) your shipping\b/i,
+      /\bdo you (offer|have|do)\b.{0,20}\b(express|overnight|expedited|rush|next[- ]day|2[- ]day|two[- ]day)\b/i,
+    ],
+    exclude: [
+      // Return/exchange postage is a different policy with a different answer,
+      // and the rate card above is the OUTBOUND one. Let retrieval take it.
+      /\b(return|exchange)s?\b.{0,20}\bship/i,
+      /\bship(ping)?\b.{0,20}\b(it |them )?back\b/i,
+      // The customer's own address on an order — not a question about rates.
+      /\bshipping address\b/i,
+      // Destination coverage ("do you ship to Canada?") is not in the rate card.
+      /\bship(s|ping)? (to|internationally|outside|overseas|abroad)\b/i,
+    ],
+  },
 ];
 
 /**
@@ -141,6 +188,7 @@ export function classifyQuery(question: string): DeterministicCategory | null {
   if (!q) return null;
 
   for (const rule of RULES) {
+    if (rule.exclude?.some((pattern) => pattern.test(q))) continue;
     if (rule.patterns.some((pattern) => pattern.test(q))) return rule.category;
   }
   return null;
@@ -159,6 +207,7 @@ export async function resolveDeterministicAnswer(
   if (rule?.answer) return rule.answer();
 
   if (category === "refund_window") return refundWindowAnswer();
+  if (category === "shipping_rates") return shippingRatesAnswer();
 
   // Unreachable while every category has either a sync answer or a branch
   // above; falling back to the contact address beats returning nothing.
@@ -181,6 +230,90 @@ async function refundWindowAnswer(): Promise<string> {
     console.error("[chai] refund window lookup failed:", error);
     return `Our full return policy is here: ${REFUND_POLICY_URL} — it has the current return window and how to start one. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
   }
+}
+
+/**
+ * Shipping rates + delivery estimates, read from the storefront shipping model
+ * (`lib/services/shipping-options.ts`) — the SAME seam `/api/shipping-options`
+ * quotes and the charge floor enforces (BMC-242).
+ *
+ * Two things this answer is careful about:
+ *
+ * 1. **It never says the shopper qualifies for free shipping.** A chat message
+ *    carries no cart, so the subtotal passed here is `0` and the quoted costs are
+ *    the UNDISCOUNTED base rates. The threshold is stated as a policy ("orders of
+ *    $X or more"), never as a fact about this person. Telling someone their order
+ *    ships free when it doesn't is a new way to be confidently wrong, which is the
+ *    whole reason this module exists.
+ * 2. **On a settings-read failure it states no numbers.** The response guard
+ *    rewrites invented emails and URLs but has nothing to say about an invented
+ *    price — so a degraded read points at the policy page instead of guessing.
+ */
+async function shippingRatesAnswer(): Promise<string> {
+  try {
+    const { options, freeShippingThresholdMajor, freeMethodIds } =
+      await resolveShippingOptions(0);
+    if (options.length === 0) throw new Error("no enabled shipping methods configured");
+
+    const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
+    const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
+
+    return `Here's how we ship 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard rates — checkout shows the exact cost for your order before you pay. Full details: ${SHIPPING_POLICY_URL}`;
+  } catch (error) {
+    console.error("[chai] shipping rate lookup failed:", error);
+    return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL} — and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+  }
+}
+
+/**
+ * One rate line: `Standard (5–7 days) — $5.99`. `cost` is MAJOR units.
+ *
+ * THROWS on a cost that isn't a usable number. `shipping.methods` is admin-edited
+ * JSON, so a method can arrive with a missing or non-numeric `cost`; rendering
+ * that as "free" would advertise a rate we don't charge. Failing here routes the
+ * whole answer to the no-numbers fallback instead.
+ */
+function describeShippingOption(option: ShippingOption): string {
+  const cost = Number(option.cost);
+  if (!Number.isFinite(cost) || cost < 0) {
+    throw new Error(`shipping method ${option.id} has an unusable cost: ${option.cost}`);
+  }
+  const price = cost > 0 ? Money.fromMajor(cost).format() : "free";
+  // The stock labels already carry their timing ("Standard (5–7 days)"); only
+  // append an estimate when an admin-configured label doesn't state one.
+  const days =
+    !/\d/.test(option.label) && Number.isFinite(option.estimatedDays) && option.estimatedDays > 0
+      ? ` (about ${option.estimatedDays} business ${option.estimatedDays === 1 ? "day" : "days"})`
+      : "";
+  return `${option.label} — ${price}${days}`;
+}
+
+/**
+ * The free-shipping policy as a THRESHOLD, never as a claim about this shopper.
+ *
+ * Returns "" — say nothing — in every case where the perk can't be stated
+ * accurately: no eligible method is enabled, or the configured threshold isn't a
+ * usable positive number. A threshold at or below zero already shows up as a
+ * `free` rate line above, so silence there is terse but never wrong; the failure
+ * mode worth avoiding is announcing free shipping off an unreadable setting.
+ */
+function freeShippingSentence(
+  options: ShippingOption[],
+  thresholdMajor: number,
+  freeMethodIds: string[]
+): string {
+  const eligible = options.filter((option) => freeMethodIds.includes(option.id));
+  if (eligible.length === 0) return "";
+  if (!Number.isFinite(thresholdMajor) || thresholdMajor <= 0) return "";
+
+  const names = formatList(eligible.map((option) => option.label));
+  return `Orders with a subtotal of ${Money.fromMajor(thresholdMajor).format()} or more ship free via ${names}. `;
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+function formatList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /** Category ids in match order — exported for tests and diagnostics. */

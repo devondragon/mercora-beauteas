@@ -8,14 +8,24 @@
  * pin the exact question that failed.
  *
  * BMC-243 adds `refund_window`, the first category whose value comes from D1.
+ * BMC-242 adds `shipping_rates`, which reads the storefront shipping model.
  * The settings layer is mocked here rather than the Cloudflare binding, per the
  * repo's unit-test rule.
+ *
+ * NOTE: only `@/lib/utils/settings` is mocked. `lib/services/shipping-options.ts`
+ * is left REAL so these tests exercise the actual rate card — including its
+ * built-in defaults — rather than a stand-in. That is the point of BMC-242's
+ * "no copied constants" requirement: if someone re-hardcodes $5.99 in the AI
+ * layer, or the storefront defaults change without the answer following, the
+ * `getSettings` → `{}` cases below break.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const getRefundPolicy = vi.fn();
+const getSettings = vi.fn();
 vi.mock('@/lib/utils/settings', () => ({
   getRefundPolicy: (...args: unknown[]) => getRefundPolicy(...args),
+  getSettings: (...args: unknown[]) => getSettings(...args),
 }));
 
 import {
@@ -28,11 +38,15 @@ import {
   CONTACT_EMAIL,
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
+  SHIPPING_POLICY_URL,
 } from '@/lib/ai/canonical-facts';
 
 beforeEach(() => {
   vi.clearAllMocks();
   getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  // `{}` → the storefront defaults baked into `shipping-options.ts`
+  // (standard $5.99 / express $9.99 / overnight $19.99, free ≥ $75 on standard).
+  getSettings.mockResolvedValue({});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -188,6 +202,202 @@ describe('classifyQuery — refund window (BMC-243)', () => {
   });
 });
 
+describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
+  const phrasings = [
+    'How much does shipping cost?',
+    'how much is shipping',
+    'What are your shipping rates?',
+    "What's the shipping cost?",
+    'What is the cost of shipping?',
+    'Do you offer free shipping?',
+    'is there free shipping',
+    'How long does shipping take?',
+    'how long does delivery take',
+    'How fast do you ship?',
+    'How soon will it get here?',
+    'What are my shipping options?',
+    'what are your shipping methods',
+    'delivery times?',
+    'Do you offer overnight shipping?',
+    'do you have express',
+    'How much for express shipping?',
+  ];
+
+  it.each(phrasings)('answers %j from the storefront rate card', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('shipping_rates');
+
+    const answer = await resolveDeterministicAnswer(category!);
+    // Rates come from `shipping-options.ts`, not a literal in the AI layer.
+    expect(answer).toContain('$5.99');
+    expect(answer).toContain('$9.99');
+    expect(answer).toContain('$19.99');
+    expect(answer).toContain(SHIPPING_POLICY_URL);
+    expect(getSettings).toHaveBeenCalledWith('shipping');
+    expect(getSettings).toHaveBeenCalledWith('store');
+  });
+
+  it('states the free-shipping THRESHOLD and never that the shopper qualifies', async () => {
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    // The policy, as a condition on the order — not a claim about this person.
+    expect(answer).toContain('$75.00 or more');
+    expect(answer).toMatch(/i can'?t see your cart/i);
+    // No second-person qualification claim.
+    expect(answer).not.toMatch(/you (qualify|get free|have free|are eligible)/i);
+    expect(answer).not.toMatch(/your order ships free/i);
+    // And the quoted rates are the UNDISCOUNTED ones: standard is still $5.99,
+    // which is only true if the lookup passed a $0 subtotal.
+    expect(answer).toContain('$5.99');
+  });
+
+  it('reflects admin-configured methods and threshold rather than baked-in rates', async () => {
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'ground', label: 'Ground', cost: 4.5, estimatedDays: 6, enabled: true },
+              { id: 'air', label: 'Air (1–2 days)', cost: 24, estimatedDays: 2, enabled: true },
+              { id: 'retired', label: 'Retired', cost: 1, estimatedDays: 9, enabled: false },
+            ],
+            'shipping.free_methods': ['ground'],
+          }
+        : { 'store.free_shipping_threshold': 120 }
+    );
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).toContain('Ground — $4.50');
+    // The label carries no timing, so the estimate is appended from the setting.
+    expect(answer).toContain('about 6 business days');
+    expect(answer).toContain('Air (1–2 days) — $24.00');
+    expect(answer).toContain('$120.00 or more');
+    expect(answer).toContain('ship free via Ground');
+    // Disabled methods are not quoted.
+    expect(answer).not.toContain('Retired');
+    // Nothing from the defaults leaks through.
+    expect(answer).not.toContain('$5.99');
+  });
+
+  it('omits the free-shipping sentence when no enabled method is eligible', async () => {
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'flat', label: 'Flat rate', cost: 7, estimatedDays: 4, enabled: true },
+            ],
+            'shipping.free_methods': [],
+          }
+        : {}
+    );
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).toContain('Flat rate — $7.00');
+    expect(answer).not.toMatch(/free/i);
+  });
+
+  it('states NO rate rather than "free" when a method has an unusable cost', async () => {
+    // `shipping.methods` is admin-edited JSON. A method with a missing or
+    // non-numeric cost must NOT render as "free" — that advertises a rate we
+    // don't charge, which is the same failure class as an invented price.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'broken', label: 'Broken', estimatedDays: 3, enabled: true },
+            ],
+          }
+        : {}
+    );
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).not.toMatch(/free/i);
+    expect(answer).toContain(SHIPPING_POLICY_URL);
+  });
+
+  it('states NO rate rather than "free" when the threshold is unreadable', async () => {
+    // A garbled `store.free_shipping_threshold` makes `Money.fromMajor` throw
+    // inside the shared seam, so the whole answer degrades to the policy page.
+    // Pinned because the wrong outcome here — announcing free shipping off an
+    // unreadable setting — is exactly the confidently-wrong failure BMC-242
+    // exists to prevent.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'standard', label: 'Standard', cost: 6, estimatedDays: 5, enabled: true },
+            ],
+            'shipping.free_methods': ['standard'],
+          }
+        : { 'store.free_shipping_threshold': 'not-a-number' }
+    );
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).not.toMatch(/free/i);
+    expect(answer).not.toMatch(/\$\s*\d/);
+    expect(answer).toContain(SHIPPING_POLICY_URL);
+  });
+
+  it('states NO rate when the settings read fails', async () => {
+    // Same rule as the refund window: the response guard rewrites invented
+    // emails and URLs but cannot catch an invented price, so a degraded read
+    // points at the policy page instead of guessing a number.
+    getSettings.mockRejectedValue(new Error('D1 unavailable'));
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).toContain(SHIPPING_POLICY_URL);
+    expect(answer).toContain(CONTACT_EMAIL);
+    expect(answer).not.toMatch(/\$\s*\d/);
+  });
+
+  it('states NO rate when no shipping method is enabled', async () => {
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? { 'shipping.methods': [{ id: 'off', label: 'Off', cost: 3, estimatedDays: 3, enabled: false }] }
+        : {}
+    );
+
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).toContain(SHIPPING_POLICY_URL);
+    expect(answer).not.toMatch(/\$\s*\d/);
+  });
+
+  it('leaves questions the rate card cannot answer to retrieval', async () => {
+    const notOurs = [
+      // Return postage is a different policy from the outbound rate card.
+      'How much does return shipping cost?',
+      'Do I have to pay shipping to send it back?',
+      // Destination coverage is not in the rate card.
+      'Do you ship to Canada?',
+      'do you ship internationally',
+      // The customer's own address on an order.
+      'Can I change the shipping address on my subscription?',
+      // Packaging/sustainability, not rates. A bare /\bfree shipping\b/ matches
+      // inside "plastic-free shipping" and hands these the rate card.
+      'Do you use plastic-free shipping materials?',
+      'Is your packaging carbon-free shipping?',
+      // Carrier and materials questions belong to retrieval.
+      'What shipping carrier do you use?',
+      'Is your shipping carbon neutral?',
+      'Where do you ship from?',
+    ];
+
+    for (const question of notOurs) expect(classifyQuery(question)).not.toBe('shipping_rates');
+  });
+
+  it('leaves "when will MY order arrive" to order_status, not the rate card', () => {
+    // A question about ONE shipment must route to the account page, not to a
+    // generic rate card that cannot see their order.
+    expect(classifyQuery('When will my order arrive?')).toBe('order_status');
+    expect(classifyQuery('Has my order shipped yet?')).toBe('order_status');
+  });
+});
+
 describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', () => {
   const passthrough = [
     'Which tea helps with breakouts?',
@@ -199,7 +409,6 @@ describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', (
     'Can I gift a subscription?',
     // Mentions "address" but is about the CUSTOMER's shipping address, not ours.
     'Can I change the shipping address on my subscription?',
-    'How much does shipping cost?',
     // "Where are you ..." small talk must NOT be read as an address question.
     // The location qualifier is required precisely so these reach the model.
     'Where are you today?',
@@ -218,12 +427,21 @@ describe('classifyQuery — leaves ordinary questions to retrieval (BMC-215)', (
     expect(classifyQuery(null as unknown as string)).toBeNull();
   });
 
-  it('performs NO I/O on a miss (BMC-243)', () => {
+  it('performs NO I/O on a miss (BMC-243, BMC-242)', () => {
     // This is the property that makes it safe to run the classifier ahead of
     // every chat request. If classification ever goes async or reads settings
     // eagerly, every ordinary product question starts paying for D1.
     for (const question of passthrough) classifyQuery(question);
     expect(getRefundPolicy).not.toHaveBeenCalled();
+    expect(getSettings).not.toHaveBeenCalled();
+  });
+
+  it('performs NO I/O for a question a rule EXCLUDES (BMC-242)', () => {
+    // An exclusion must be a plain miss, not a hit that resolves and discards —
+    // otherwise adding exclusions quietly puts D1 back on the miss path.
+    classifyQuery('How much does return shipping cost?');
+    classifyQuery('Do you ship internationally?');
+    expect(getSettings).not.toHaveBeenCalled();
   });
 });
 
@@ -235,6 +453,7 @@ describe('deterministic category table (BMC-215)', () => {
       'order_status',
       'business_address',
       'refund_window',
+      'shipping_rates',
     ]);
   });
 });
