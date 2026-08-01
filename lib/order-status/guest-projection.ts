@@ -11,18 +11,14 @@
  * totals/Money, shipping + billing address, payment method / PaymentIntent id,
  * internal notes, extensions, admin audit history, refund ledger.
  *
- * Carrier is read from the `orders.shipping_carrier` COLUMN only. The legacy
- * `extensions.carrier` / `extensions.trackingUrl` keys are never consulted:
- * migration 0022 backfilled the column, and a client-persisted tracking URL is
- * exactly the arbitrary-redirect vector the typed carrier boundary removes.
+ * Shipment fields come from the shared buildShipmentView helper
+ * (lib/fulfillment/shipment-view.ts), which reads the `orders.shipping_carrier`
+ * COLUMN only — see that module for why `extensions.carrier` /
+ * `extensions.trackingUrl` are never consulted.
  * Pure module — no D1/Next/Clerk/Resend imports.
  */
-import {
-  buildTrackingUrl,
-  normalizeLegacyCarrier,
-  sanitizeTrackingNumber,
-} from "@/lib/fulfillment/tracking";
-import { CARRIER_LABELS, type Carrier } from "@/lib/fulfillment/types";
+import { buildShipmentView } from "@/lib/fulfillment/shipment-view";
+import type { Carrier } from "@/lib/fulfillment/types";
 
 export interface GuestOrderProjectionItem {
   name: string;
@@ -65,12 +61,11 @@ export interface GuestProjectionOrder {
 }
 
 export function buildGuestOrderProjection(order: GuestProjectionOrder): GuestOrderProjection {
-  const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
-  // Sanitized before rendering: only the new fulfillment write path enforces
-  // sanitizeTrackingNumber, so a legacy row can still carry bidi/invisible
-  // characters — this is a bearer-token page a stranger with the link can
-  // load, so it must never render an unsanitized value.
-  const trackingNumber = sanitizeTrackingNumber(order.tracking_number ?? null);
+  // Shared derivation (BMC-240): normalization, label lookup, tracking-number
+  // sanitization and URL construction all live in buildShipmentView — see its
+  // module docs for why sanitization is non-negotiable on this bearer-token
+  // page a stranger with the link can load.
+  const shipment = buildShipmentView(order);
   const items = Array.isArray(order.items) ? order.items : [];
 
   return {
@@ -78,10 +73,10 @@ export function buildGuestOrderProjection(order: GuestProjectionOrder): GuestOrd
     placedAt: order.created_at ?? null,
     status: order.status,
     shippedAt: order.shipped_at ?? null,
-    carrier,
-    carrierLabel: carrier ? CARRIER_LABELS[carrier] : null,
-    trackingNumber,
-    trackingUrl: buildTrackingUrl(carrier, trackingNumber),
+    carrier: shipment.carrier,
+    carrierLabel: shipment.carrierLabel,
+    trackingNumber: shipment.trackingNumber,
+    trackingUrl: shipment.trackingUrl,
     items: items.map((item) => ({
       name: typeof item?.product_name === "string" ? item.product_name : "Item",
       quantity: typeof item?.quantity === "number" ? item.quantity : 1,
