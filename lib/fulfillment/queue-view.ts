@@ -171,11 +171,16 @@ export function applyShipmentResult<T extends QueueOrderLike>(
 /**
  * Fold a mutation response's order into the row already on screen.
  *
- * The ship / tracking routes return the INTERNAL order projection, whose
- * `total_amount` is in minor units, while the queue renders the MACH wire shape
- * (major units) from GET /api/admin/orders. Replacing the row wholesale would
- * render a $25.00 order as $2,500.00, so only the fulfillment-owned fields are
- * merged and every money/display field on the existing row is preserved.
+ * Deliberately narrow: only the fulfillment-owned fields are merged, and every
+ * money/display field on the existing row is preserved. Those are the only
+ * fields a ship/tracking mutation can change, and keeping the merge narrow means
+ * the row's money can never be overwritten by a response — the shape of which is
+ * this function's business to distrust, not to assume.
+ *
+ * As of BMC-233 the ship / tracking routes do emit the MACH wire shape (major
+ * units) that the queue renders, matching GET /api/admin/orders. Before that
+ * they returned the internal minor-unit projection, and a wholesale replace
+ * here would have rendered a $25.00 order as $2,500.00.
  */
 export function mergeFulfillmentFields<T extends QueueOrderLike>(
   row: T,

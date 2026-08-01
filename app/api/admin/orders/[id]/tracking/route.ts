@@ -5,6 +5,7 @@ import { buildTrackingUrl, normalizeCarrier } from "@/lib/fulfillment/tracking";
 import { parseShipmentInput } from "@/lib/fulfillment/transitions";
 import type { Actor } from "@/lib/fulfillment/types";
 import { logCritical } from "@/lib/utils/observe";
+import { toWireOrder } from "@/lib/utils/order-wire";
 
 /**
  * PATCH /api/admin/orders/[id]/tracking (BMC-216B)
@@ -65,7 +66,10 @@ export async function PATCH(
         const trackingNumber = result.order.tracking_number ?? null;
         return NextResponse.json(
           {
-            order: result.order,
+            // Wire shape, not the internal cents projection (BMC-233) — the
+            // same conversion every other order endpoint applies immediately
+            // before NextResponse.json.
+            order: toWireOrder(result.order),
             tracking: {
               carrier,
               trackingNumber,

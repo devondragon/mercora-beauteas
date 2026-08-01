@@ -40,6 +40,7 @@ function patchMalformed(raw: string) {
   });
 }
 
+/** Internal (minor-unit) projection, as hydrateOrder returns it. */
 const updatedOrder = {
   id: "ORD-1",
   status: "shipped",
@@ -48,7 +49,14 @@ const updatedOrder = {
   tracking_number: "999999999999",
   total_amount: { amount: 2500, currency: "USD" },
   currency_code: "USD",
-  items: [],
+  items: [
+    {
+      product_id: "tea-morning",
+      quantity: 2,
+      unit_price: { amount: 1250, currency: "USD" },
+      total_price: { amount: 2500, currency: "USD" },
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -174,5 +182,61 @@ describe("outcome mapping", () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBeTruthy();
+  });
+});
+
+/**
+ * BMC-233 — the serialized `order` must be the MACH wire shape (major units,
+ * `precision`), not hydrateOrder's internal cents projection. Dropping the
+ * toWireOrder() call renders every total 100x (the BMC-179 bug).
+ */
+describe("wire-shaped money on the response boundary (BMC-233)", () => {
+  it("updated -> order.total_amount and each line are major-unit MachMoney", async () => {
+    vi.mocked(updateTracking).mockResolvedValue({
+      outcome: "updated",
+      order: updatedOrder as never,
+      eventId: "evt-9",
+    });
+    const res = await PATCH(
+      patch({ carrier: "fedex", trackingNumber: "999999999999" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.order).toEqual(
+      expect.objectContaining({
+        total_amount: { amount: 25, currency: "USD", precision: 2 },
+        items: [
+          expect.objectContaining({
+            product_id: "tea-morning",
+            unit_price: { amount: 12.5, currency: "USD", precision: 2 },
+            total_price: { amount: 25, currency: "USD", precision: 2 },
+          }),
+        ],
+      }),
+    );
+    // The service's own order object is untouched — conversion happens only
+    // at NextResponse.json.
+    expect(updatedOrder.total_amount).toEqual({ amount: 2500, currency: "USD" });
+  });
+
+  it("an order with no line items still serializes items as an empty array", async () => {
+    vi.mocked(updateTracking).mockResolvedValue({
+      outcome: "updated",
+      order: { ...updatedOrder, items: [] } as never,
+      eventId: "evt-9",
+    });
+    const res = await PATCH(
+      patch({ carrier: "fedex", trackingNumber: "999999999999" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { order: Record<string, unknown> };
+    expect(body.order.items).toEqual([]);
+    expect(body.order.total_amount).toEqual({
+      amount: 25,
+      currency: "USD",
+      precision: 2,
+    });
   });
 });

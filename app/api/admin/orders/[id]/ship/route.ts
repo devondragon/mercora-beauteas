@@ -7,6 +7,7 @@ import { parseShipmentInput } from "@/lib/fulfillment/transitions";
 import type { Actor } from "@/lib/fulfillment/types";
 import type { Order } from "@/lib/types/order";
 import { logCritical } from "@/lib/utils/observe";
+import { toWireOrder } from "@/lib/utils/order-wire";
 
 /**
  * Derived at the response boundary. This route never stores a tracking URL —
@@ -103,7 +104,11 @@ export async function POST(
         }
         return NextResponse.json(
           {
-            order: result.order,
+            // Wire shape, not the internal cents projection (BMC-233) — the
+            // same conversion every other order endpoint applies immediately
+            // before NextResponse.json. `result.order` stays internal for the
+            // email seam above, which reads cents.
+            order: toWireOrder(result.order),
             tracking: trackingProjection(result.order),
             email,
             eventId: result.eventId,
@@ -115,7 +120,7 @@ export async function POST(
         // Idempotent identical retry: no new event, no second email attempt.
         return NextResponse.json(
           {
-            order: result.order,
+            order: toWireOrder(result.order),
             tracking: trackingProjection(result.order),
             email: { attempted: false, success: false },
             eventId: null,

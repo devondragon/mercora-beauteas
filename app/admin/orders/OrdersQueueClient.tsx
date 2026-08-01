@@ -56,9 +56,15 @@ interface EventsResponse {
 }
 interface MutationResponse {
   /**
-   * The ship/tracking routes answer with the INTERNAL order projection, whose
-   * money is in minor units — never spread it over a wire-shaped queue row.
-   * mergeFulfillmentFields takes only the fulfillment-owned fields.
+   * Typed as QueueOrderLike — the fulfillment-owned fields — because that is
+   * all this page consumes: mergeFulfillmentFields takes those and preserves
+   * every money/display field already on the row. Never spread this wholesale
+   * over a queue row.
+   *
+   * As of BMC-233 the ship/tracking routes do emit the MACH wire shape (major
+   * units) that the queue renders. Before that they answered with the internal
+   * minor-unit projection, and a wholesale spread would have rendered a $25.00
+   * order as $2,500.00.
    */
   order?: QueueOrderLike;
   email?: { attempted?: boolean; success?: boolean; error?: string };
