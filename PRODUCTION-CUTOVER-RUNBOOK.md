@@ -507,12 +507,12 @@ One real order on live Stripe keys: **`WEB-GUEST-1785194376707`**, $21.47, guest
 | Inventory | decremented 250 → 249 |
 | Confirmation email | delivered and rendered |
 
-### ◐ Email smoke test — order confirmation PASSED; the rest are unexercised
+### ◐ Email smoke test — both order-path emails PASSED; the rest are unexercised (and not blockers)
 
 | Path | Status |
 |---|---|
 | Order confirmation (`lib/utils/email.ts:103`) | ☑ **delivered and rendered.** Two bugs found: missing line-item images (fixed, `6dc60e6`) and no merchant notification (added, `a4376e5`). |
-| Merchant new-order notification (`:893`) | ◐ **built and unit-tested, not yet observed in production.** Place one more order — or refund/re-place — and confirm the owner email arrives. This is the only signal that an order needs fulfilling. |
+| Merchant new-order notification (`:893`) | ☑ **delivered in production 2026-08-01** — the live Apple Pay order (`WEB-USER…-1785626377011`) produced both the customer confirmation and the shop-owner notification. |
 | Gift card delivery (`:495`) | ☐ not a launch blocker |
 | Subscription lifecycle (`:636`) | ⊘ not sold at launch |
 | Review notifications (`lib/utils/review-notifications.ts`) | ☐ not a launch blocker |
