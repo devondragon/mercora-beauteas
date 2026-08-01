@@ -82,9 +82,9 @@ export default async function OrderDetailPage({
   // Carrier comes from the shipping_carrier COLUMN only — migration 0022
   // backfilled it. This page never reads extensions.carrier / extensions.trackingUrl:
   // a stored, client-supplied URL is an open-redirect vector, so the link is
-  // always DERIVED from (carrier, trackingNumber). Note this is not yet true
-  // repo-wide — the legacy PUT /api/orders path and the legacy status-update
-  // email still read extensions.trackingUrl; closing those is BMC-230/ticket F.
+  // always DERIVED from (carrier, trackingNumber). As of BMC-230/ticket F this
+  // holds repo-wide: PUT /api/orders can no longer store a client trackingUrl
+  // and the legacy status-update email no longer renders a stored one.
   // normalizeLegacyCarrier is defensive for any row that escaped the backfill.
   const carrier = normalizeLegacyCarrier(order.shipping_carrier ?? null);
   const carrierLabel = carrier ? CARRIER_LABELS[carrier] : null;

@@ -55,10 +55,11 @@ export async function buildShippingConfirmationData(
   // unrecognized is treated as no carrier rather than silently downgraded.
   const carrier = normalizeCarrier(order.shipping_carrier ?? null);
 
-  // sanitizeTrackingNumber, not a bare trim: order.tracking_number can still
-  // reach here via the legacy PUT /api/orders writer (BMC-230 hasn't closed
-  // it), so this is the sink its own docstring names for bidi/zero-width
-  // characters and unbounded length before the value reaches a customer email.
+  // sanitizeTrackingNumber, not a bare trim: BMC-230 closed the legacy
+  // PUT /api/orders writer, but rows it wrote before that still carry
+  // unsanitized values, so this remains the sink its own docstring names for
+  // bidi/zero-width characters and unbounded length before the value reaches a
+  // customer email.
   const trackingNumber = sanitizeTrackingNumber(order.tracking_number);
   // Derived at the boundary — never read a stored customer-facing URL.
   const trackingUrl = buildTrackingUrl(carrier, trackingNumber);
