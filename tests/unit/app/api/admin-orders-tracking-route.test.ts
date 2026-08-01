@@ -220,7 +220,7 @@ describe("wire-shaped money on the response boundary (BMC-233)", () => {
     expect(updatedOrder.total_amount).toEqual({ amount: 2500, currency: "USD" });
   });
 
-  it("an order with no line items converts to items: [], not undefined", async () => {
+  it("an order with no line items still serializes items as an empty array", async () => {
     vi.mocked(updateTracking).mockResolvedValue({
       outcome: "updated",
       order: { ...updatedOrder, items: [] } as never,
