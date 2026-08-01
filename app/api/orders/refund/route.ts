@@ -538,7 +538,9 @@ async function settleRefundEntry(
 /**
  * Build the status-update email payload for a refunded order.
  *
- * Mirrors transformOrderForEmail() in app/api/orders/route.ts. Always uses the
+ * BMC-230 deleted the PUT handler's transformOrderForEmail() (that route no
+ * longer sends email), so this is now the only builder for the legacy
+ * OrderStatusUpdateData shape. Always uses the
  * 'refunded' status (this is the refund endpoint — money always comes back), and
  * carries the formatted refund amount plus an `isFullRefund` flag: a full refund
  * also cancels the order (→ "will not be shipped" line), while a partial refund

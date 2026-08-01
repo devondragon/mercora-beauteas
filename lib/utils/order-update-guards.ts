@@ -38,6 +38,18 @@
  *     overlay, and re-pins `payment_intent_id` to the stored value. See
  *     `mergeExtensions` / `mergeExternalReferences`.
  *
+ * Note the deliberate asymmetry between those two mechanisms: a TOP-LEVEL
+ * `{ trackingUrl: … }` on the PUT body 400s the whole request (it is in
+ * `PUT_REJECTED_FIELD_MESSAGES`), while the same value NESTED as
+ * `{ extensions: { trackingUrl: … } }` is silently stripped and the request
+ * succeeds with a 200. Both are safe — the value is never stored either way —
+ * but only the first tells the caller. The rejected map exists to point a
+ * caller at the right endpoint for a field they clearly meant to set; the
+ * nested strip is a blanket integrity guard over a free-form JSON column where
+ * a 400 on any server-owned key would break automation callers that echo back
+ * an order they just read. If you are debugging "why didn't my
+ * `extensions.<key>` persist", the answer is `SERVER_OWNED_EXTENSION_KEYS`.
+ *
  * Kept dependency-free (no DB / Cloudflare bindings) so they can be unit
  * tested directly. Consumed by app/api/orders/route.ts.
  */
