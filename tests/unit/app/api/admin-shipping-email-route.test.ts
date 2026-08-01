@@ -263,6 +263,55 @@ describe('POST /api/admin/orders/[id]/shipping-email', () => {
     );
   });
 
+  it('represents a concurrent_idempotent_requests 409 distinctly and non-critically', async () => {
+    // A retry raced the in-flight original send. The original may have been
+    // delivered — the route must not claim success, but must not page either.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'Concurrent requests with the same idempotency key.',
+        name: 'concurrent_idempotent_requests',
+      },
+    });
+    recordEmailEventMock.mockResolvedValueOnce('evt-conc-1');
+
+    const res = await post('retry');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      email: {
+        success: false,
+        error: 'Concurrent requests with the same idempotency key.',
+        errorCode: 'concurrent_idempotent_requests',
+      },
+      eventId: 'evt-conc-1',
+    });
+    expect(recordEmailEventMock).toHaveBeenCalledWith(
+      'ORD-1',
+      'shipping_email_failed',
+      { type: 'admin', id: 'user_admin_1' },
+      {
+        idempotencyKey: expect.stringMatching(INITIAL_KEY_RE),
+        error: 'Concurrent requests with the same idempotency key.',
+        errorCode: 'concurrent_idempotent_requests',
+        concurrentDuplicate: true,
+      },
+    );
+    // No [critical] line — that marker is what the observability tail worker
+    // pages on; this failure class must stay a warn-level diagnostic.
+    const criticalLines = errorSpy.mock.calls.filter((c) => String(c[0]).includes('[critical]'));
+    expect(criticalLines).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'email.shipping_email_concurrent_duplicate',
+      expect.stringContaining('"orderId":"ORD-1"'),
+    );
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
   it('records a failed event when the order has no customer email', async () => {
     getOrderByIdMock.mockResolvedValueOnce(
       shippedOrder({

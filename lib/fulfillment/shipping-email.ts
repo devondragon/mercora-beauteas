@@ -21,15 +21,18 @@ import { createOrderStatusToken, isOrderStatusTokenConfigured } from "@/lib/orde
 import {
   sendShippingConfirmationEmail,
   SHIPPING_EMAIL_TEMPLATE_VERSION,
+  RESEND_CONCURRENT_SEND_ERROR,
   type ShippingConfirmationData,
 } from "@/lib/utils/email";
 import { BASE_URL } from "@/lib/seo/metadata";
-import { logCritical } from "@/lib/utils/observe";
+import { logCritical, logWarn } from "@/lib/utils/observe";
 
 export interface InitialShippingEmailResult {
   attempted: boolean;
   success: boolean;
   error?: string;
+  /** Resend's machine error name, when the provider supplied one (BMC-246). */
+  errorCode?: string;
   eventId?: string; // shipping_email_sent / shipping_email_failed event
 }
 
@@ -193,12 +196,29 @@ export async function sendInitialShippingEmail(
       return { attempted: true, success: true, eventId };
     }
 
-    logCritical("email", "shipping_email_send_failed", { orderId }, result.error);
-    const eventId = await recordEmailEvent(orderId, "shipping_email_failed", actor, {
-      idempotencyKey,
+    // A concurrent_idempotent_requests 409 means a duplicate of this send is
+    // still in flight at Resend — the racing original may well be delivered.
+    // Not claimable as success (delivery is unknown here), but not a pageable
+    // failure either: log at warn level (no [critical] marker for the
+    // observability tail worker to alert on) and flag the audit event so the
+    // timeline shows what actually happened (BMC-246).
+    const concurrentDuplicate = result.errorCode === RESEND_CONCURRENT_SEND_ERROR;
+    if (concurrentDuplicate) {
+      logWarn("email", "shipping_email_concurrent_duplicate", { orderId }, result.error);
+    } else {
+      logCritical("email", "shipping_email_send_failed", { orderId }, result.error);
+    }
+    const failureDetails: Record<string, unknown> = { idempotencyKey, error: result.error };
+    if (result.errorCode) failureDetails.errorCode = result.errorCode;
+    if (concurrentDuplicate) failureDetails.concurrentDuplicate = true;
+    const eventId = await recordEmailEvent(orderId, "shipping_email_failed", actor, failureDetails);
+    return {
+      attempted: true,
+      success: false,
       error: result.error,
-    });
-    return { attempted: true, success: false, error: result.error, eventId };
+      errorCode: result.errorCode,
+      eventId,
+    };
   } catch (error) {
     // Swallow by contract: the shipment is already committed and must stay so.
     console.error(`[shipping-email] initial send failed for ${orderId}:`, error);

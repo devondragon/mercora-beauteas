@@ -7,7 +7,7 @@ vi.mock('@opennextjs/cloudflare', () => ({
   getCloudflareContext: (...args: unknown[]) => getCloudflareContext(...args),
 }));
 
-import { logCritical, CRITICAL_MARKER } from '@/lib/utils/observe';
+import { logCritical, logWarn, CRITICAL_MARKER } from '@/lib/utils/observe';
 
 describe('logCritical', () => {
   let writeDataPoint: ReturnType<typeof vi.fn>;
@@ -91,5 +91,60 @@ describe('logCritical', () => {
     // Marker is present in some form so the failure remains alertable.
     const firstArgs = errorSpy.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(firstArgs.some((a: string) => a.includes(CRITICAL_MARKER))).toBe(true);
+  });
+});
+
+describe('logWarn', () => {
+  let writeDataPoint: ReturnType<typeof vi.fn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    writeDataPoint = vi.fn();
+    getCloudflareContext.mockReturnValue({ env: { ANALYTICS: { writeDataPoint } } });
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('mirrors the critical line shape at warn level WITHOUT the [critical] marker', () => {
+    logWarn('email', 'shipping_email_concurrent_duplicate', { orderId: 'o1' }, new Error('409'));
+
+    // Nothing alertable: the Tail Worker keys on CRITICAL_MARKER in log text,
+    // so this line must never carry it — that is the entire point of logWarn.
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [prefix, json] = warnSpy.mock.calls[0];
+    expect(prefix).toBe('email.shipping_email_concurrent_duplicate');
+    expect(String(prefix)).not.toContain(CRITICAL_MARKER);
+    const payload = JSON.parse(json as string);
+    expect(payload).toMatchObject({
+      area: 'email',
+      event: 'shipping_email_concurrent_duplicate',
+      orderId: 'o1',
+      // Same PII rule as logCritical: error CLASS only, never the message.
+      errorType: 'Error',
+    });
+  });
+
+  it('still writes the best-effort metric', () => {
+    logWarn('email', 'shipping_email_concurrent_duplicate');
+    expect(writeDataPoint).toHaveBeenCalledWith({
+      blobs: ['email', 'shipping_email_concurrent_duplicate'],
+      doubles: [1],
+      indexes: ['email'],
+    });
+  });
+
+  it('never throws when the Cloudflare context is unavailable', () => {
+    getCloudflareContext.mockImplementation(() => {
+      throw new Error('no workers runtime');
+    });
+    expect(() => logWarn('email', 'shipping_email_concurrent_duplicate')).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
   });
 });

@@ -228,6 +228,27 @@ describe('sendShippingConfirmationEmail', () => {
 
     expect(res.success).toBe(false);
     expect(res.error).toBe('domain not verified');
+    expect(res.errorCode).toBeUndefined();
+  });
+
+  it('surfaces the Resend error name as errorCode so callers can tell failure classes apart', async () => {
+    sendMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'Concurrent requests with the same idempotency key.',
+        name: 'concurrent_idempotent_requests',
+      },
+    });
+
+    const res = await sendShippingConfirmationEmail(baseData(), {
+      idempotencyKey: 'shipping-confirmation/ORD-1/initial',
+    });
+
+    expect(res).toEqual({
+      success: false,
+      error: 'Concurrent requests with the same idempotency key.',
+      errorCode: 'concurrent_idempotent_requests',
+    });
   });
 
   it('returns a typed failure instead of throwing when the transport throws', async () => {

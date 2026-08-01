@@ -33,9 +33,9 @@ import {
   buildShippingConfirmationData,
   initialShippingEmailKey,
 } from "@/lib/fulfillment/shipping-email";
-import { sendShippingConfirmationEmail } from "@/lib/utils/email";
+import { sendShippingConfirmationEmail, RESEND_CONCURRENT_SEND_ERROR } from "@/lib/utils/email";
 import type { Actor, OrderEventType } from "@/lib/fulfillment/types";
-import { logCritical } from "@/lib/utils/observe";
+import { logCritical, logWarn } from "@/lib/utils/observe";
 
 type Mode = "retry" | "resend";
 
@@ -148,13 +148,25 @@ export async function POST(
     const result = await sendShippingConfirmationEmail(data, { idempotencyKey });
 
     if (!result.success) {
-      logCritical("email", "shipping_email_send_failed", { orderId: id, mode }, result.error);
-      const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, {
-        idempotencyKey,
-        error: result.error,
-      });
+      // concurrent_idempotent_requests: this retry raced the still-in-flight
+      // original send under the same key — the original may well be delivered.
+      // Not claimable as success (delivery is unknown here), but not a
+      // pageable failure either: warn-level log (no [critical] marker for the
+      // observability tail worker) and a flagged audit event (BMC-246).
+      const concurrentDuplicate = result.errorCode === RESEND_CONCURRENT_SEND_ERROR;
+      if (concurrentDuplicate) {
+        logWarn("email", "shipping_email_concurrent_duplicate", { orderId: id, mode }, result.error);
+      } else {
+        logCritical("email", "shipping_email_send_failed", { orderId: id, mode }, result.error);
+      }
+      const failureDetails: Record<string, unknown> = { idempotencyKey, error: result.error };
+      if (result.errorCode) failureDetails.errorCode = result.errorCode;
+      if (concurrentDuplicate) failureDetails.concurrentDuplicate = true;
+      const eventId = await recordEmailEvent(id, "shipping_email_failed", actor, failureDetails);
       return NextResponse.json(
-        { email: { success: false, error: result.error }, eventId },
+        // errorCode is additive and omitted (undefined) unless Resend named
+        // the error, so existing consumers see an unchanged shape.
+        { email: { success: false, error: result.error, errorCode: result.errorCode }, eventId },
         { status: 200 },
       );
     }

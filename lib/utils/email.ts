@@ -646,7 +646,22 @@ export interface ShippingConfirmationData {
 export interface ShippingEmailResult {
   success: boolean;
   error?: string;
+  /**
+   * Resend's machine error name (e.g. "concurrent_idempotent_requests"), when
+   * the provider supplied one. Lets callers distinguish failure classes —
+   * a retry racing the still-in-flight original send is not the same event as
+   * an unverified domain (BMC-246). Absent for transport throws.
+   */
+  errorCode?: string;
 }
+
+/**
+ * Resend's error name for the 409 returned when an idempotency key is reused
+ * while the ORIGINAL request under that key is still in flight — i.e. a retry
+ * raced a send that is being processed. Not proof of delivery (the racing
+ * original can itself still fail), but not an alarming failure either.
+ */
+export const RESEND_CONCURRENT_SEND_ERROR = 'concurrent_idempotent_requests';
 
 /** The email is a preview, not a packing slip. */
 const MAX_SHIPPING_PREVIEW_ITEMS = 5;
@@ -695,7 +710,11 @@ export async function sendShippingConfirmationEmail(
 
     if (error) {
       console.error('[shipping-email] send failed:', error);
-      return { success: false, error: error.message || 'Email sending failed' };
+      return {
+        success: false,
+        error: error.message || 'Email sending failed',
+        ...(error.name ? { errorCode: error.name } : {}),
+      };
     }
 
     console.log('[shipping-email] sent:', resendData?.id);
