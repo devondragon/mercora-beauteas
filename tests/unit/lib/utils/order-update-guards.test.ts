@@ -36,6 +36,7 @@ import {
   validatePutOrderBody,
   mergeExtensions,
   mergeExternalReferences,
+  SERVER_OWNED_EXTENSION_KEYS,
 } from '@/lib/utils/order-update-guards';
 
 describe('validatePutOrderBody — PUT /api/orders allowlist (BMC-216F)', () => {
@@ -341,6 +342,74 @@ describe('mergeExtensions — refund/restock bookkeeping keys (BMC-230)', () => 
       { payment_intent_id: 'pi_real_123', restockedLineKeys: ['sku-1', 'sku-2'] }
     );
     expect(out.restockedLineKeys).toEqual(['sku-1', 'sku-2']);
+  });
+});
+
+/**
+ * BMC-230 review follow-up — the strip list must cover EVERY `extensions` key
+ * that server code reads for a money, authorization, or idempotency decision.
+ * The first revision listed six keys while the codebase read eleven, leaving
+ * the over-refund floor, the MCP ownership predicate, the BMC-201 undercharge
+ * guard and half of the restock idempotency pair client-writable.
+ *
+ * The table below is the audit result (grep over app/ + lib/ + components/ for
+ * `extensions.<key>`, `extensions?.<key>`, bracket access and
+ * `json_extract(… '$.key')`). If you add a server-owned extensions key, add it
+ * here AND to SERVER_OWNED_EXTENSION_KEYS — the last test in this block fails
+ * otherwise.
+ */
+describe('mergeExtensions — every server-read key is protected (BMC-230 review)', () => {
+  const SERVER_READ_KEYS: Array<[key: string, stored: unknown, hostile: unknown]> = [
+    // Money: the over-refund reject gate — Math.max(allRefunded, floor).
+    ['stripe_amount_refunded', 2500, 0],
+    // Authorization: getOwnedOrder compares this to the calling agent id.
+    ['agent_id', 'agent-legit', 'agent-attacker'],
+    // Undercharge guard: re-enforced by order-finalization at payment.
+    ['expected_shipping_cents', 599, 0],
+    ['expected_tax_cents', 210, 0],
+    // Idempotency: unioned with restockedLineKeys in readUnavailableRestockKeys.
+    ['restockInflightLineKeys', ['sku-2'], []],
+    // Already covered above, re-pinned here so the set is enumerated in one place.
+    ['carrier', 'ups', 'AttackerExpress'],
+    ['trackingUrl', 'https://www.ups.com/track?t=1Z', 'https://evil.example/phish'],
+    ['email', 'victim@example.com', 'attacker@example.com'],
+    ['refunds', [{ amount: 500 }], []],
+    ['refunds_version', 7, 0],
+    ['restockedLineKeys', ['sku-1'], []],
+  ];
+
+  it.each(SERVER_READ_KEYS)(
+    'keeps the stored "%s" when a client tries to overwrite it',
+    (key, stored, hostile) => {
+      const out = merged(
+        { [key]: hostile, gift_note: 'innocent' },
+        { payment_intent_id: 'pi_real_123', [key]: stored }
+      );
+      expect(out[key]).toEqual(stored);
+      expect(out.gift_note).toBe('innocent'); // ordinary keys still apply
+    }
+  );
+
+  it('strips every server-owned key in one hostile payload', () => {
+    const stored = Object.fromEntries(SERVER_READ_KEYS.map(([k, s]) => [k, s]));
+    const hostile = Object.fromEntries(SERVER_READ_KEYS.map(([k, , h]) => [k, h]));
+    const out = merged(hostile, { payment_intent_id: 'pi_real_123', ...stored });
+
+    const overwritten = SERVER_READ_KEYS.map(([k]) => k).filter(
+      (k) => JSON.stringify(out[k]) !== JSON.stringify(stored[k])
+    );
+    expect(overwritten).toEqual([]);
+  });
+
+  it('SERVER_OWNED_EXTENSION_KEYS covers every key audited here', () => {
+    for (const [key] of SERVER_READ_KEYS) {
+      expect(SERVER_OWNED_EXTENSION_KEYS).toContain(key);
+    }
+  });
+
+  it('also strips the snake_case tracking_url spelling (top-level rejects both)', () => {
+    const out = merged({ tracking_url: 'https://evil.example/x' }, {});
+    expect(out).not.toHaveProperty('tracking_url');
   });
 });
 
