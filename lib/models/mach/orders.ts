@@ -457,9 +457,15 @@ function parseJsonField<T>(value: unknown): T | undefined {
 }
 
 /**
- * Map a raw `orders` row to the API-facing `Order` shape. Exported for the
- * fulfillment service (BMC-216B), which owns its own guarded writes but must
- * return the same projection every other order API returns.
+ * Map a raw `orders` row to the INTERNAL `Order` shape — money stays in minor
+ * units (cents). Exported for the fulfillment service (BMC-216B), which owns
+ * its own guarded writes but must read orders through the same projection.
+ *
+ * This is NOT the wire shape (BMC-233): every route that serializes a hydrated
+ * Order runs it through `toWireOrder` (lib/utils/order-wire.ts) immediately
+ * before `NextResponse.json`, converting money to MACH `{amount, currency,
+ * precision}` in major units. Returning this output verbatim from a route is
+ * a 100x money bug — see BMC-179.
  */
 export function hydrateOrder(orderRecord: typeof orders.$inferSelect): Order {
   return {

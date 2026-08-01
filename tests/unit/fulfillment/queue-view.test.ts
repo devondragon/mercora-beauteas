@@ -131,9 +131,10 @@ describe('applyShipmentResult', () => {
 });
 
 describe('mergeFulfillmentFields', () => {
-  // The ship/tracking routes answer with the INTERNAL order projection (minor
-  // units), while the queue row holds the MACH wire shape (major units).
-  // Merging must never let the response's money overwrite the row's.
+  // The queue row holds the MACH wire shape (major units). Since BMC-233 the
+  // ship/tracking routes emit that same shape, but the merge stays narrow on
+  // purpose: a response's money must never overwrite the row's, whatever shape
+  // the response arrives in.
   const wireRow = {
     ...base,
     total_amount: { amount: 25, currency: 'USD', precision: 2 },
@@ -142,7 +143,7 @@ describe('mergeFulfillmentFields', () => {
     shipping_address: { recipient: 'Ada Lovelace' },
   };
 
-  it('keeps the wire-shaped total when folding in a minor-unit response order', () => {
+  it('keeps the row total even if a response order carries minor-unit money', () => {
     const merged = mergeFulfillmentFields(wireRow, {
       id: 'WEB-1',
       status: 'shipped',
@@ -150,7 +151,8 @@ describe('mergeFulfillmentFields', () => {
       shipping_carrier: 'ups',
       tracking_number: '1Z999',
       shipped_at: '2026-07-03T00:00:00.000Z',
-      // A hostile/naive wholesale replace would carry this 2500 into the row.
+      // Pre-BMC-233 shape, kept as the adversarial input: a naive wholesale
+      // replace would carry this 2500 into the row and render $2,500.00.
       ...({ total_amount: { amount: 2500, currency: 'USD' } } as Record<string, unknown>),
     } as never);
 

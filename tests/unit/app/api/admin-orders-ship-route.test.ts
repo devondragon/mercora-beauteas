@@ -44,6 +44,10 @@ function postMalformed(raw: string) {
   });
 }
 
+/**
+ * Internal (minor-unit) projection, exactly as hydrateOrder returns it —
+ * total 2500 cents = $25.00, one line at 1250 cents = $12.50 each.
+ */
 const shippedOrder = {
   id: "ORD-1",
   status: "shipped",
@@ -53,7 +57,14 @@ const shippedOrder = {
   shipped_at: "2026-07-30T12:00:00.000Z",
   total_amount: { amount: 2500, currency: "USD" },
   currency_code: "USD",
-  items: [],
+  items: [
+    {
+      product_id: "tea-morning",
+      quantity: 2,
+      unit_price: { amount: 1250, currency: "USD" },
+      total_price: { amount: 2500, currency: "USD" },
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -299,5 +310,71 @@ describe("outcome mapping", () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBeTruthy();
+  });
+});
+
+/**
+ * BMC-233 — the serialized `order` must be the MACH wire shape (major units,
+ * `precision`), not hydrateOrder's internal cents projection. Dropping the
+ * toWireOrder() call renders every total 100x (the BMC-179 bug).
+ */
+describe("wire-shaped money on the response boundary (BMC-233)", () => {
+  const wireExpectations = {
+    total_amount: { amount: 25, currency: "USD", precision: 2 },
+    items: [
+      expect.objectContaining({
+        product_id: "tea-morning",
+        unit_price: { amount: 12.5, currency: "USD", precision: 2 },
+        total_price: { amount: 25, currency: "USD", precision: 2 },
+      }),
+    ],
+  };
+
+  it("201 shipped -> order.total_amount and each line are major-unit MachMoney", async () => {
+    vi.mocked(shipOrder).mockResolvedValue({
+      outcome: "shipped",
+      order: shippedOrder as never,
+      eventId: "evt-1",
+    });
+    const res = await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.order).toEqual(expect.objectContaining(wireExpectations));
+  });
+
+  it("200 already_shipped emits the same wire shape as the 201", async () => {
+    vi.mocked(shipOrder).mockResolvedValue({
+      outcome: "already_shipped",
+      order: shippedOrder as never,
+    });
+    const res = await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.order).toEqual(expect.objectContaining(wireExpectations));
+  });
+
+  it("the email seam still receives the INTERNAL cents order, not the wire one", async () => {
+    vi.mocked(shipOrder).mockResolvedValue({
+      outcome: "shipped",
+      order: shippedOrder as never,
+      eventId: "evt-1",
+    });
+    await POST(
+      post({ carrier: "ups", trackingNumber: "1Z999AA10123456784" }),
+      params,
+    );
+    // Same object identity: the conversion happens at NextResponse.json only,
+    // so nothing internal starts seeing major units.
+    expect(vi.mocked(sendInitialShippingEmail)).toHaveBeenCalledWith(
+      shippedOrder,
+      { type: "admin", id: "user_2abc" },
+    );
+    expect(shippedOrder.total_amount).toEqual({ amount: 2500, currency: "USD" });
   });
 });
