@@ -27,6 +27,16 @@ function buildOrderRecord(orderData: CreateOrderRequest) {
   // PK on insert — see CreateOrderRequest.id / BMC-132); otherwise generate one.
   const orderId = orderData.id ?? `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
+  // Timestamp contract (F-10): ALWAYS write ISO-8601 UTC, never fall through to
+  // the column's CURRENT_TIMESTAMP default. The default emits SQLite's
+  // "YYYY-MM-DD HH:MM:SS", app/api/orders/route.ts emits ISO, and SQLite compares
+  // TEXT byte-wise — `' '` (0x20) sorts before `'T'` (0x54), so a mixed column
+  // sorts EVERY space-encoded row before EVERY ISO row regardless of the real
+  // instant. That silently corrupts the admin queue's oldest-first ordering and
+  // its pagination boundaries. ISO also parses as UTC in `new Date(...)`, where
+  // the space form is read as LOCAL time by V8 and renders the wrong day.
+  const nowIso = new Date().toISOString();
+
   return {
     id: orderId,
     customer_id: orderData.customer_id,
@@ -42,6 +52,8 @@ function buildOrderRecord(orderData: CreateOrderRequest) {
     notes: orderData.notes,
     external_references: orderData.external_references ?? null,
     extensions: orderData.extensions ?? null,
+    created_at: nowIso,
+    updated_at: nowIso,
   };
 }
 
@@ -83,7 +95,7 @@ export async function createOrderPaid(
   const paidUpdate: Record<string, unknown> = {
     payment_status: 'paid',
     status: paid?.status ?? 'processing',
-    updated_at: sql`CURRENT_TIMESTAMP`,
+    updated_at: new Date().toISOString(),
   };
   if (paid?.notes) {
     paidUpdate.notes = paid.notes;
@@ -212,7 +224,7 @@ export async function promoteOrderToPaid(
   const updateData: Record<string, unknown> = {
     payment_status: 'paid',
     status: opts?.status ?? 'processing',
-    updated_at: sql`CURRENT_TIMESTAMP`,
+    updated_at: new Date().toISOString(),
   };
   if (opts?.notes) {
     updateData.notes = opts.notes;
@@ -243,7 +255,7 @@ export async function updateOrderStatus(orderId: string, status: Order['status']
     .update(orders)
     .set({
       status,
-      updated_at: sql`CURRENT_TIMESTAMP`,
+      updated_at: new Date().toISOString(),
     })
     .where(eq(orders.id, orderId))
     .returning();
@@ -272,7 +284,7 @@ export async function markOrderPaid(
   const updateData: Record<string, unknown> = {
     payment_status: 'paid',
     status: opts?.status ?? 'processing',
-    updated_at: sql`CURRENT_TIMESTAMP`,
+    updated_at: new Date().toISOString(),
   };
   if (opts?.notes) {
     updateData.notes = opts.notes;
@@ -305,7 +317,7 @@ export async function markOrderUnpaid(
   const updateData: Record<string, unknown> = {
     payment_status: 'pending',
     status: 'pending',
-    updated_at: sql`CURRENT_TIMESTAMP`,
+    updated_at: new Date().toISOString(),
   };
   if (opts?.notes) {
     updateData.notes = opts.notes;
@@ -328,7 +340,7 @@ export async function updateOrderNotes(orderId: string, notes: string): Promise<
   const db = await getDbAsync();
   await db
     .update(orders)
-    .set({ notes, updated_at: sql`CURRENT_TIMESTAMP` })
+    .set({ notes, updated_at: new Date().toISOString() })
     .where(eq(orders.id, orderId));
 }
 
@@ -345,7 +357,7 @@ export async function updateOrderShipping(
   const db = await getDbAsync();
   
   const updateData: any = {
-    updated_at: sql`CURRENT_TIMESTAMP`,
+    updated_at: new Date().toISOString(),
   };
   
   if (shippingData.status) {
@@ -394,7 +406,7 @@ export async function cancelOrder(
     .set({
       status: "cancelled",
       notes: notes || reason,
-      updated_at: sql`CURRENT_TIMESTAMP`,
+      updated_at: new Date().toISOString(),
     })
     .where(eq(orders.id, orderId))
     .returning();

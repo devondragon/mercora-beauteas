@@ -17,6 +17,16 @@ vi.mock("@/lib/models/mach/orders", () => ({
   getOrderById: vi.fn(),
 }));
 
+// The route resolves admin actor ids to a human label via admin_users so the
+// timeline doesn't render a raw Clerk id. Mock the db seam and let each test
+// decide what the lookup returns.
+const adminLookup = vi.fn();
+vi.mock("@/lib/db", () => ({
+  getDbAsync: vi.fn(async () => ({
+    select: () => ({ from: () => ({ where: () => adminLookup() }) }),
+  })),
+}));
+
 import { NextRequest } from "next/server";
 import { GET } from "@/app/api/admin/orders/[id]/events/route";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
@@ -35,6 +45,7 @@ beforeEach(() => {
     userId: "user_2abc",
   });
   vi.mocked(getOrderById).mockResolvedValue(existingOrder as never);
+  adminLookup.mockResolvedValue([]);
 });
 
 it("401 when admin check denies; events are never read", async () => {
@@ -98,6 +109,7 @@ it("200 with rows projected to contract wire keys, order preserved (oldest first
     actorId: "user_2abc",
     fromStatus: "processing",
     toStatus: "shipped",
+    actorLabel: null,
     details: {
       carrier: "ups",
       trackingNumber: "1Z",
@@ -106,6 +118,79 @@ it("200 with rows projected to contract wire keys, order preserved (oldest first
     createdAt: "2026-07-30T11:00:00.000Z",
   });
   expect(body.events[1].type).toBe("tracking_updated");
+});
+
+it("resolves an admin actor to their display name", async () => {
+  adminLookup.mockResolvedValue([
+    { userId: "user_2abc", email: "devon@justblackmagic.com", displayName: "Devon Hillard" },
+  ]);
+  vi.mocked(listOrderEvents).mockResolvedValue([
+    {
+      id: "evt-1",
+      event_type: "shipment_created",
+      actor_type: "admin",
+      actor_id: "user_2abc",
+      details: null,
+      created_at: "2026-07-30T11:00:00.000Z",
+    },
+  ] as never);
+  const res = await GET(new NextRequest(url), params);
+  const body = (await res.json()) as { events: Record<string, unknown>[] };
+  expect(body.events[0].actorLabel).toBe("Devon Hillard");
+});
+
+it("falls back to the admin's email when no display name is set", async () => {
+  adminLookup.mockResolvedValue([
+    { userId: "user_2abc", email: "devon@justblackmagic.com", displayName: null },
+  ]);
+  vi.mocked(listOrderEvents).mockResolvedValue([
+    {
+      id: "evt-1",
+      event_type: "shipment_created",
+      actor_type: "admin",
+      actor_id: "user_2abc",
+      details: null,
+      created_at: "2026-07-30T11:00:00.000Z",
+    },
+  ] as never);
+  const res = await GET(new NextRequest(url), params);
+  const body = (await res.json()) as { events: Record<string, unknown>[] };
+  expect(body.events[0].actorLabel).toBe("devon@justblackmagic.com");
+});
+
+it("still returns the audit history when the actor lookup fails", async () => {
+  // A cosmetic label must never cost the operator their audit trail.
+  adminLookup.mockRejectedValue(new Error("D1 unavailable"));
+  vi.mocked(listOrderEvents).mockResolvedValue([
+    {
+      id: "evt-1",
+      event_type: "shipment_created",
+      actor_type: "admin",
+      actor_id: "user_2abc",
+      details: null,
+      created_at: "2026-07-30T11:00:00.000Z",
+    },
+  ] as never);
+  const res = await GET(new NextRequest(url), params);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { events: Record<string, unknown>[] };
+  expect(body.events).toHaveLength(1);
+  expect(body.events[0].actorLabel).toBeNull();
+});
+
+it("does not query admin_users when no event has an admin actor", async () => {
+  vi.mocked(listOrderEvents).mockResolvedValue([
+    {
+      id: "evt-1",
+      event_type: "shipping_email_sent",
+      actor_type: "service",
+      actor_id: "api-token",
+      details: null,
+      created_at: "2026-07-30T11:00:00.000Z",
+    },
+  ] as never);
+  await GET(new NextRequest(url), params);
+  expect(adminLookup).not.toHaveBeenCalled();
 });
 
 it("200 with an empty list for an order with no events", async () => {

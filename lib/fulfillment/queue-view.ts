@@ -108,6 +108,54 @@ export function buildQueueQueryString(params: {
 }
 
 /**
+ * Latest-request-wins guard for the queue's list fetch (review finding C-1).
+ *
+ * The queue refetches on every view / search / page change, and each load also
+ * fans out N `/events` requests for email status before it finishes. Without a
+ * guard the LAST RESPONSE wins rather than the LAST REQUEST: switch from a slow
+ * tab to a fast one and the slow tab's rows land on top of the fast tab's,
+ * leaving the header and the rows describing different views — e.g. "Mark
+ * shipped" buttons rendered under Cancelled.
+ *
+ * `start()` before firing, `isCurrent(token)` before committing any state from
+ * the response. A superseded response is dropped.
+ */
+export function createRequestSequence(): {
+  start: () => number;
+  isCurrent: (token: number) => boolean;
+} {
+  let latest = 0;
+  return {
+    start: () => ++latest,
+    isCurrent: (token: number) => token === latest,
+  };
+}
+
+/**
+ * Clamp a pagination offset onto a page that still exists (review finding C-2).
+ *
+ * Removing the last row of the last page (shipping it out of the awaiting view)
+ * leaves `offset` pointing past the end of the list. The queue then renders its
+ * empty state — and because `total` has also dropped to exactly one page, the
+ * `total > PAGE_SIZE` pager guard hides the pager, so there is no control left
+ * to navigate back. The operator sees "Nothing in awaiting shipment" over a
+ * queue that is not empty.
+ *
+ * Returns the start of the last page that still holds a row, never moving the
+ * operator FORWARD past rows they have not seen.
+ */
+export function clampOffsetAfterRemoval(params: {
+  offset: number;
+  pageSize: number;
+  totalAfter: number;
+}): number {
+  const { offset, pageSize, totalAfter } = params;
+  if (totalAfter <= 0) return 0;
+  const lastPageStart = Math.floor((totalAfter - 1) / pageSize) * pageSize;
+  return Math.min(offset, lastPageStart);
+}
+
+/**
  * After a successful shipment the order is no longer awaiting shipment, so the
  * awaiting view drops it immediately; every other view shows the updated row.
  */
@@ -150,6 +198,12 @@ export interface FulfillmentEventLike {
   type: string;
   actorType?: string | null;
   actorId?: string | null;
+  /**
+   * Human name/email for `actorId`, resolved from `admin_users` by the events
+   * route. Absent when the actor isn't an admin or the row has since been
+   * removed — the view then falls back to a shortened id.
+   */
+  actorLabel?: string | null;
   fromStatus?: string | null;
   toStatus?: string | null;
   details?: Record<string, unknown> | null;
@@ -243,9 +297,24 @@ const ACTOR_LABELS: Record<string, string> = {
   system: "System",
 };
 
-function actorLabel(event: FulfillmentEventLike): string {
+/**
+ * A raw Clerk id ("user_3HI6hxcFuFFXiitdZ5ilNkpD7xC") is meaningless to an
+ * operator and crowds out the rest of the sentence, but dropping it entirely
+ * would make two admins indistinguishable in an audit trail. Keep a tail long
+ * enough to tell them apart. Ids already short enough to read are left alone.
+ */
+const ACTOR_ID_READABLE_MAX = 12;
+
+function shortenActorId(id: string): string {
+  return id.length > ACTOR_ID_READABLE_MAX ? `…${id.slice(-6)}` : id;
+}
+
+function formatActor(event: FulfillmentEventLike): string {
   const base = ACTOR_LABELS[event.actorType ?? ""] ?? "Unknown actor";
-  return event.actorId ? `${base} (${event.actorId})` : base;
+  const resolved = event.actorLabel?.trim();
+  if (resolved) return `${base} (${resolved})`;
+  const id = event.actorId?.trim();
+  return id ? `${base} (${shortenActorId(id)})` : base;
 }
 
 function carrierText(value: unknown): string {
@@ -309,7 +378,7 @@ export function formatFulfillmentEvent(event: FulfillmentEventLike): TimelineEnt
       break;
   }
 
-  return { id: event.id, title, details, actor: actorLabel(event), timestamp: event.createdAt, tone };
+  return { id: event.id, title, details, actor: formatActor(event), timestamp: event.createdAt, tone };
 }
 
 export function formatFulfillmentTimeline(events: FulfillmentEventLike[]): TimelineEntry[] {
