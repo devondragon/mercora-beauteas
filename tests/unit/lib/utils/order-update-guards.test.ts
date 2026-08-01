@@ -176,12 +176,12 @@ function merged(incoming: unknown, current: unknown): Record<string, unknown> {
 describe('mergeExtensions — payment_intent_id pinning', () => {
   it('restores the stored PI id when the client tries to rebind it', () => {
     const out = merged(
-      { payment_intent_id: 'pi_attacker', carrier: 'UPS' },
+      { payment_intent_id: 'pi_attacker', gift_note: 'x' },
       { payment_intent_id: 'pi_real_123' }
     );
     expect(out.payment_intent_id).toBe('pi_real_123');
     // Other client-supplied extensions keys apply.
-    expect(out.carrier).toBe('UPS');
+    expect(out.gift_note).toBe('x');
   });
 
   it('restores the stored PI id when the client drops it via a wholesale overwrite', () => {
@@ -190,7 +190,8 @@ describe('mergeExtensions — payment_intent_id pinning', () => {
       { payment_intent_id: 'pi_real_123', carrier: 'UPS' }
     );
     expect(out.payment_intent_id).toBe('pi_real_123');
-    expect(out.carrier).toBe('FedEx');
+    // BMC-216F: the client's `carrier` is stripped, so the stored one survives.
+    expect(out.carrier).toBe('UPS');
   });
 
   it('leaves the stored PI id when the client sends the same value', () => {
@@ -228,7 +229,8 @@ describe('mergeExtensions — payment_intent_id pinning', () => {
       { payment_intent_id: 'pi_real_123' }
     );
     expect(out.payment_intent_id).toBe('pi_real_123');
-    expect(out.carrier).toBe('DHL');
+    // BMC-216F: client `carrier` is stripped even from a JSON-string overlay.
+    expect(out).not.toHaveProperty('carrier');
   });
 
   it('handles empty/absent client extensions but still pins the stored PI id', () => {
@@ -246,17 +248,17 @@ describe('mergeExtensions — payment_intent_id pinning', () => {
 });
 
 describe('mergeExtensions — server-owned key preservation', () => {
-  it('preserves the stored refunds[] ledger when the client sends only carrier', () => {
+  it('preserves the stored refunds[] ledger on a metadata-only client overlay', () => {
     const stored = {
       payment_intent_id: 'pi_real_123',
       refunds: [{ amount: 500 }, { amount: 250 }],
       email: 'customer@example.com',
       restockedLineKeys: ['sku-1'],
     };
-    const out = merged({ carrier: 'X' }, stored);
+    const out = merged({ gift_note: 'x' }, stored);
 
     // The client's key applies…
-    expect(out.carrier).toBe('X');
+    expect(out.gift_note).toBe('x');
     // …and every server-owned key the client omitted survives.
     expect(out.refunds).toEqual([{ amount: 500 }, { amount: 250 }]);
     expect(out.email).toBe('customer@example.com');
@@ -282,12 +284,52 @@ describe('mergeExtensions — server-owned key preservation', () => {
 
   it('preserves stored refunds[] when parsing a stored JSON string', () => {
     const out = merged(
-      { carrier: 'X' },
+      { gift_note: 'x' },
       JSON.stringify({ payment_intent_id: 'pi_real_123', refunds: [{ amount: 750 }] })
     );
-    expect(out.carrier).toBe('X');
+    expect(out.gift_note).toBe('x');
     expect(out.refunds).toEqual([{ amount: 750 }]);
     expect(out.payment_intent_id).toBe('pi_real_123');
+  });
+});
+
+describe('mergeExtensions — client carrier/trackingUrl stripping (BMC-216F)', () => {
+  it('strips a client-supplied carrier while keeping the stored carrier', () => {
+    const out = merged(
+      { carrier: 'AttackerExpress', gift_note: 'hi' },
+      { payment_intent_id: 'pi_real_123', carrier: 'ups' }
+    );
+    expect(out.carrier).toBe('ups');       // stored survives
+    expect(out.gift_note).toBe('hi');      // innocent client key applies
+  });
+
+  it('strips a client-supplied carrier when the order has none stored', () => {
+    const out = merged({ carrier: 'AttackerExpress' }, { payment_intent_id: 'pi_real_123' });
+    expect(out).not.toHaveProperty('carrier');
+  });
+
+  it('strips a client-supplied trackingUrl (server-derived only) while keeping a stored one', () => {
+    const out = merged(
+      { trackingUrl: 'https://evil.example/phish' },
+      { payment_intent_id: 'pi_real_123', trackingUrl: 'https://www.ups.com/track?tracknum=1Z' }
+    );
+    expect(out.trackingUrl).toBe('https://www.ups.com/track?tracknum=1Z');
+  });
+
+  it('strips a client trackingUrl when none is stored', () => {
+    const out = merged({ trackingUrl: 'https://evil.example/phish', note: 'x' }, {});
+    expect(out).not.toHaveProperty('trackingUrl');
+    expect(out.note).toBe('x');
+  });
+
+  it('strips carrier/trackingUrl arriving as a client JSON string too', () => {
+    const out = merged(
+      JSON.stringify({ carrier: 'AttackerExpress', trackingUrl: 'https://evil.example', note: 'x' }),
+      { carrier: 'fedex' }
+    );
+    expect(out.carrier).toBe('fedex');
+    expect(out).not.toHaveProperty('trackingUrl');
+    expect(out.note).toBe('x');
   });
 });
 

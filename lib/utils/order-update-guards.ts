@@ -243,9 +243,22 @@ export function mergeExtensions(
   const incomingObj = parsedIncoming.ok ? parsedIncoming.value : {};
   const stored = parsedCurrent.value;
 
-  // Start from the stored keys, overlay the client's keys. Server-owned keys
-  // the client did NOT send (refunds, restockedLineKeys, email, …) survive.
-  const merged: Record<string, unknown> = { ...stored, ...incomingObj };
+  // BMC-216F: `carrier` and `trackingUrl` are server-owned fulfillment keys
+  // (written only by the shipment service / legacy backfill; trackingUrl is
+  // always DERIVED from carrier + tracking number, never stored from a
+  // client). Strip them from the client overlay before merging so a PUT can
+  // neither plant a phishing trackingUrl nor rewrite the shipped carrier —
+  // the STORED values survive untouched for legacy orders.
+  const {
+    carrier: _clientCarrier,
+    trackingUrl: _clientTrackingUrl,
+    ...clientKeys
+  } = incomingObj;
+
+  // Start from the stored keys, overlay the client's remaining keys.
+  // Server-owned keys the client did NOT send (refunds, restockedLineKeys,
+  // email, carrier, trackingUrl, …) survive.
+  const merged: Record<string, unknown> = { ...stored, ...clientKeys };
 
   // Re-pin the immutable PI binding to the stored value.
   const storedPi = stored.payment_intent_id;
