@@ -28,7 +28,11 @@ import { retrievePaymentIntent } from "@/lib/stripe";
 import { Money } from "@/lib/money";
 import { toWireOrder } from "@/lib/utils/order-wire";
 import { isUniqueViolation } from "@/lib/utils/db-errors";
-import { validatePutOrderBody, mergeExtensions } from "@/lib/utils/order-update-guards";
+import {
+  validatePutOrderBody,
+  mergeExtensions,
+  mergeExternalReferences,
+} from "@/lib/utils/order-update-guards";
 import { logCritical } from "@/lib/utils/observe";
 
 
@@ -592,11 +596,12 @@ export async function PUT(request: NextRequest) {
     // the client must not clobber — `payment_intent_id` (the binding the refund
     // route trusts to locate the PaymentIntent it refunds) and `refunds[]` (the
     // ledger computeRefundedTotal sums for the over-refund guard), plus
-    // restockedLineKeys / email / etc. A wholesale `extensions` overwrite here
-    // could rebind/drop the PI (refund fraud) or wipe the refunds ledger
-    // (resetting the over-refund guard → double refund). mergeExtensions MERGES
-    // the client's keys over the stored ones, re-pins payment_intent_id, and
-    // (BMC-216F) strips client-supplied carrier/trackingUrl; it fails safe
+    // refunds_version / restockedLineKeys / email / carrier / trackingUrl. A
+    // wholesale `extensions` overwrite here could rebind/drop the PI (refund
+    // fraud) or wipe the refunds ledger (resetting the over-refund guard →
+    // double refund). mergeExtensions MERGES the client's keys over the stored
+    // ones, re-pins payment_intent_id, and strips every key in
+    // SERVER_OWNED_EXTENSION_KEYS from the client overlay; it fails safe
     // (rejects) if the stored extensions are corrupt rather than persisting a
     // stripped object.
     let mergedExtensions: Record<string, unknown> | undefined;
@@ -608,12 +613,33 @@ export async function PUT(request: NextRequest) {
       mergedExtensions = mergeResult.extensions;
     }
 
+    // SECURITY (BMC-230): `external_references` gets the same treatment for the
+    // one key it shares with `extensions` — `payment_intent_id`, which order
+    // creation dual-writes into BOTH columns and getOrderByPaymentIntentId
+    // OR-matches across both. Written wholesale from the client, a PUT could
+    // point a second order at a victim's PaymentIntent so charge.refunded
+    // reconciliation lands on the wrong row. Everything else in this column
+    // (erp, shopify_id, …) is legitimate caller metadata and passes through.
+    let mergedExternalReferences: Record<string, unknown> | undefined;
+    if (external_references !== undefined) {
+      const refsResult = mergeExternalReferences(
+        external_references,
+        currentOrder.external_references
+      );
+      if (!refsResult.ok) {
+        return NextResponse.json({ error: refsResult.error }, { status: refsResult.status });
+      }
+      mergedExternalReferences = refsResult.externalReferences;
+    }
+
     // Build update data (metadata only — BMC-216F).
     // external_references / extensions are `mode: "json"` columns — pass the RAW
     // objects and let Drizzle serialize; a manual JSON.stringify double-encodes.
     const updateData: any = {
       ...(notes && { notes }),
-      ...(external_references && { external_references }),
+      ...(mergedExternalReferences !== undefined && {
+        external_references: mergedExternalReferences,
+      }),
       ...(mergedExtensions !== undefined && { extensions: mergedExtensions }),
       updated_at: new Date().toISOString()
     };

@@ -19,12 +19,23 @@
  *     stored ones (preserving omitted server-owned keys), re-pins the stored
  *     payment_intent_id, and fails SAFE on corrupt stored extensions.
  *
+ *  3. BMC-230 closed two gaps left in (2). Merging protects keys the client
+ *     OMITS, but a key the client SENDS still won the overlay — so `email`
+ *     (the guest-order email of record the order-status token is signed over),
+ *     `refunds`, `refunds_version`, and `restockedLineKeys` were all still
+ *     client-writable. They are now dropped from the overlay alongside
+ *     `carrier`/`trackingUrl`. And `external_references` was written wholesale
+ *     with no guard at all, even though order creation dual-writes
+ *     `payment_intent_id` into it and getOrderByPaymentIntentId OR-matches both
+ *     columns — mergeExternalReferences() now merges + re-pins it.
+ *
  * Exercises the pure helpers directly (no DB / Cloudflare bindings).
  */
 import { describe, it, expect } from 'vitest';
 import {
   validatePutOrderBody,
   mergeExtensions,
+  mergeExternalReferences,
 } from '@/lib/utils/order-update-guards';
 
 describe('validatePutOrderBody — PUT /api/orders allowlist (BMC-216F)', () => {
@@ -209,14 +220,10 @@ describe('mergeExtensions — server-owned key preservation', () => {
       payment_intent_id: 'pi_real_123',
       refunds: [{ amount: 500 }],
     };
-    // A client that resends refunds still cannot shrink the stored ledger below
-    // what was already recorded — the merge overlays, and the over-refund guard
-    // reads whichever the client sent, but the pure-helper contract here is
-    // that omitted keys survive. When the client DOES send refunds, its value
-    // overlays (documented behavior); the double-refund vector we close is the
-    // OMITTED case above. This asserts the overlay is deterministic.
+    // BMC-230: `refunds` is a server-owned key, so a client that SENDS it does
+    // not win the overlay either — merging alone would have let this through.
     const out = merged({ refunds: [{ amount: 500 }, { amount: 999 }] }, stored);
-    expect(out.refunds).toEqual([{ amount: 500 }, { amount: 999 }]);
+    expect(out.refunds).toEqual([{ amount: 500 }]);
     expect(out.payment_intent_id).toBe('pi_real_123');
   });
 
@@ -271,6 +278,55 @@ describe('mergeExtensions — client carrier/trackingUrl stripping (BMC-216F)', 
   });
 });
 
+describe('mergeExtensions — client email stripping (BMC-230)', () => {
+  // extensions.email is the guest-order email of record: getOrderCustomerEmail
+  // prefers it over shipping_address.email, so it decides where the shipping /
+  // refund emails go AND is the value createOrderStatusToken signs over. If a
+  // PUT could overwrite it, an ORDERS_UPDATE holder would receive the guest's
+  // emails carrying a token that verifies at /order-status/[id] for THEIR
+  // address — a full guest-order takeover.
+  it('strips a client-supplied email while keeping the stored one', () => {
+    const out = merged(
+      { email: 'attacker@evil.example', gift_note: 'hi' },
+      { payment_intent_id: 'pi_real_123', email: 'customer@example.com' }
+    );
+    expect(out.email).toBe('customer@example.com');
+    expect(out.gift_note).toBe('hi');
+  });
+
+  it('strips a client-supplied email when the order has none stored', () => {
+    const out = merged({ email: 'attacker@evil.example' }, { payment_intent_id: 'pi_real_123' });
+    expect(out).not.toHaveProperty('email');
+  });
+
+  it('strips a client email arriving as a JSON string too', () => {
+    const out = merged(
+      JSON.stringify({ email: 'attacker@evil.example', note: 'x' }),
+      { email: 'customer@example.com' }
+    );
+    expect(out.email).toBe('customer@example.com');
+    expect(out.note).toBe('x');
+  });
+});
+
+describe('mergeExtensions — refund/restock bookkeeping keys (BMC-230)', () => {
+  it('strips a client-supplied refunds_version so the refund CAS cannot be stalled or replayed', () => {
+    const out = merged(
+      { refunds_version: 0 },
+      { payment_intent_id: 'pi_real_123', refunds_version: 7 }
+    );
+    expect(out.refunds_version).toBe(7);
+  });
+
+  it('strips a client-supplied restockedLineKeys so restock idempotency holds', () => {
+    const out = merged(
+      { restockedLineKeys: [] },
+      { payment_intent_id: 'pi_real_123', restockedLineKeys: ['sku-1', 'sku-2'] }
+    );
+    expect(out.restockedLineKeys).toEqual(['sku-1', 'sku-2']);
+  });
+});
+
 describe('mergeExtensions — fail-safe on corrupt stored extensions', () => {
   it('rejects (422) a corrupt stored JSON string rather than dropping keys', () => {
     const result = mergeExtensions({ carrier: 'X' }, '{ not valid json');
@@ -296,5 +352,63 @@ describe('mergeExtensions — fail-safe on corrupt stored extensions', () => {
     });
     expect(out.refunds).toEqual([{ amount: 500 }]);
     expect(out.payment_intent_id).toBe('pi_real_123');
+  });
+});
+
+/** Unwrap a successful mergeExternalReferences result. */
+function mergedRefs(incoming: unknown, current: unknown): Record<string, unknown> {
+  const result = mergeExternalReferences(incoming, current);
+  if (!result.ok) {
+    throw new Error(`expected ok merge, got error: ${result.error}`);
+  }
+  return result.externalReferences;
+}
+
+describe('mergeExternalReferences — payment_intent_id pinning (BMC-230)', () => {
+  // The PI id is dual-written to external_references AND extensions at order
+  // creation, and getOrderByPaymentIntentId OR-matches both columns with
+  // LIMIT 1 and no ORDER BY. A client-planted value here makes a second row
+  // match a victim's PaymentIntent, so charge.refunded reconciliation can write
+  // status='cancelled' / payment_status='refunded' onto the wrong order.
+  it('strips a client-planted PI id when the order has none stored', () => {
+    const out = mergedRefs({ payment_intent_id: 'pi_victim', erp: 'X-1' }, null);
+    expect(out).not.toHaveProperty('payment_intent_id');
+    expect(out.erp).toBe('X-1');
+  });
+
+  it('restores the stored PI id when the client tries to rebind it', () => {
+    const out = mergedRefs(
+      { payment_intent_id: 'pi_victim' },
+      { payment_intent_id: 'pi_real_123' }
+    );
+    expect(out.payment_intent_id).toBe('pi_real_123');
+  });
+
+  it('keeps the stored PI id when the client omits it (no wholesale drop)', () => {
+    const out = mergedRefs({ erp: 'X-2' }, { payment_intent_id: 'pi_real_123', erp: 'X-1' });
+    expect(out.payment_intent_id).toBe('pi_real_123');
+    expect(out.erp).toBe('X-2');
+  });
+
+  it('passes through ordinary cross-system references unchanged', () => {
+    const out = mergedRefs({ erp: 'X-1', shopify_id: '99' }, null);
+    expect(out).toEqual({ erp: 'X-1', shopify_id: '99' });
+  });
+
+  it('parses a stored JSON string', () => {
+    const out = mergedRefs(
+      { payment_intent_id: 'pi_victim' },
+      JSON.stringify({ payment_intent_id: 'pi_real_123' })
+    );
+    expect(out.payment_intent_id).toBe('pi_real_123');
+  });
+
+  it('rejects (422) corrupt stored external_references rather than dropping the binding', () => {
+    const result = mergeExternalReferences({ erp: 'X-1' }, '{ not valid json');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(422);
+      expect(result.error).toMatch(/corrupt/i);
+    }
   });
 });

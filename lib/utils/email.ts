@@ -141,19 +141,23 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
     return `https://img.beauteas.com/cdn-cgi/image/width=100,quality=80,format=auto/${normalizedPath}`;
   };
 
+  // Every interpolation below is escaped — `item.name` and `imageUrl` land
+  // inside `alt="…"` / `src="…"` attributes, where an unescaped quote breaks
+  // out and can inject arbitrary markup (e.g. a fake tracking link) into the
+  // email. Same treatment generateOrderStatusUpdateHTML already applies.
   const itemsHTML = orderData.items.map(item => {
     const absoluteImageUrl = getAbsoluteImageUrl(item.imageUrl);
     return `
     <tr style="border-bottom: 1px solid #e2e8f0;">
       <td style="padding: 12px 0; vertical-align: top; width: 60px;">
-        ${absoluteImageUrl ? `<img src="${absoluteImageUrl}" alt="${item.name}" style="width: 50px; height: 50px; border-radius: 4px; object-fit: cover; display: block;">` : `<div style="width: 50px; height: 50px; background-color: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 12px; text-align: center;">No Image</div>`}
+        ${absoluteImageUrl ? `<img src="${escapeHtml(absoluteImageUrl)}" alt="${escapeHtml(item.name)}" style="width: 50px; height: 50px; border-radius: 4px; object-fit: cover; display: block;">` : `<div style="width: 50px; height: 50px; background-color: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 12px; text-align: center;">No Image</div>`}
       </td>
       <td style="padding: 12px 0 12px 16px; vertical-align: top;">
-        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 4px;">${item.name}</div>
-        <div style="color: #64748b; font-size: 14px; margin: 0;">Quantity: ${item.quantity} × ${item.price}</div>
+        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 4px;">${escapeHtml(item.name)}</div>
+        <div style="color: #64748b; font-size: 14px; margin: 0;">Quantity: ${item.quantity} × ${escapeHtml(item.price)}</div>
       </td>
       <td style="padding: 12px 0; text-align: right; vertical-align: top;">
-        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0;">${item.lineTotal}</div>
+        <div style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0;">${escapeHtml(item.lineTotal)}</div>
       </td>
     </tr>
   `;
@@ -179,12 +183,12 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <!-- Order Confirmation -->
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Order Confirmed!</h2>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${orderData.customerName},</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${escapeHtml(orderData.customerName)},</p>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order! Your teas are being prepared and will be shipped soon.</p>
-          
+
           <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 8px;">Order #${orderData.orderNumber}</p>
-            ${orderData.estimatedDelivery ? `<p style="color: #64748b; font-size: 14px; margin: 0;">Estimated delivery: ${orderData.estimatedDelivery}</p>` : ''}
+            <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 8px;">Order #${escapeHtml(orderData.orderNumber)}</p>
+            ${orderData.estimatedDelivery ? `<p style="color: #64748b; font-size: 14px; margin: 0;">Estimated delivery: ${escapeHtml(orderData.estimatedDelivery)}</p>` : ''}
           </div>
         </div>
 
@@ -201,28 +205,28 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
           <table style="width: 100%;">
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Subtotal:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.subtotal}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${escapeHtml(orderData.subtotal)}</td>
             </tr>
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Shipping:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.shipping}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${escapeHtml(orderData.shipping)}</td>
             </tr>
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Tax:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">${orderData.tax}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">${escapeHtml(orderData.tax)}</td>
             </tr>
             <tr style="border-top: 2px solid #e2e8f0; padding: 12px 0 0; margin: 12px 0 0;">
               <td style="color: #1e293b; font-size: 16px; font-weight: bold; padding-top: 12px;">Total:</td>
-              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${orderData.total}</td>
+              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${escapeHtml(orderData.total)}</td>
             </tr>
             ${orderData.giftCard ? `
             <tr style="padding: 4px 0;">
               <td style="color: #64748b; font-size: 14px;">Gift card:</td>
-              <td style="text-align: right; color: #1e293b; font-size: 14px;">-${orderData.giftCard}</td>
+              <td style="text-align: right; color: #1e293b; font-size: 14px;">-${escapeHtml(orderData.giftCard)}</td>
             </tr>
             <tr style="border-top: 2px solid #e2e8f0; padding: 12px 0 0; margin: 12px 0 0;">
               <td style="color: #1e293b; font-size: 16px; font-weight: bold; padding-top: 12px;">Amount charged:</td>
-              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${orderData.amountCharged}</td>
+              <td style="text-align: right; color: #cf8577; font-size: 18px; font-weight: bold; padding-top: 12px;">${escapeHtml(orderData.amountCharged)}</td>
             </tr>
             ` : ''}
           </table>
@@ -232,9 +236,9 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <div style="padding: 24px 32px;">
           <h3 style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 12px;">Shipping Address</h3>
           <p style="color: #64748b; font-size: 14px; line-height: 20px; margin: 0;">
-            ${orderData.shippingAddress.street}<br>
-            ${orderData.shippingAddress.city}, ${orderData.shippingAddress.state} ${orderData.shippingAddress.zipCode}<br>
-            ${orderData.shippingAddress.country}
+            ${escapeHtml(orderData.shippingAddress.street)}<br>
+            ${escapeHtml(orderData.shippingAddress.city)}, ${escapeHtml(orderData.shippingAddress.state)} ${escapeHtml(orderData.shippingAddress.zipCode)}<br>
+            ${escapeHtml(orderData.shippingAddress.country)}
           </p>
         </div>
 

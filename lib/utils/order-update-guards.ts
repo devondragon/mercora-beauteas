@@ -16,23 +16,27 @@
  *     (e.g. status='refunded' while payment_status stays 'paid'). So this
  *     handler rejects them outright — see `validatePutOrderBody`.
  *
- *  2. `extensions` as a whole. The PUT handler writes the `extensions` JSON
- *     column, but that column holds several server-owned keys the client must
- *     not be able to clobber:
+ *  2. The two JSON columns the handler writes — `extensions` and
+ *     `external_references`. Both hold server-owned keys the client must not be
+ *     able to clobber:
  *       - `payment_intent_id` — the binding the refund route trusts to locate
- *         the PaymentIntent it refunds. A holder of ORDERS_UPDATE could rebind
- *         it (or drop it via a wholesale overwrite) before a refund — a
- *         refund-fraud / integrity concern.
+ *         the PaymentIntent it refunds. It is dual-written at order creation to
+ *         BOTH columns, and `getOrderByPaymentIntentId` matches either with an
+ *         OR + `LIMIT 1`. A holder of ORDERS_UPDATE could rebind it (or drop it
+ *         via a wholesale overwrite) before a refund — a refund-fraud /
+ *         integrity concern — or point a second order at someone else's PI so
+ *         the `charge.refunded` reconciler writes onto the wrong row.
  *       - `refunds[]` — the refund ledger `computeRefundedTotal()` sums to
  *         enforce the over-refund guard. A wholesale `extensions` overwrite
  *         (e.g. `PUT { extensions: { carrier: 'X' } }`) would drop it, resetting
  *         the cumulative refunded total to 0 and enabling a second refund beyond
  *         the original amount.
- *       - other stored keys (`restockedLineKeys`, `email`, …) the client did
- *         not send.
- *     So this handler MERGES the client's `extensions` over the stored ones
- *     (rather than wholesale-replacing) and re-pins `payment_intent_id` to the
- *     stored value. See `mergeExtensions`.
+ *       - `refunds_version`, `restockedLineKeys`, `email`, `carrier`,
+ *         `trackingUrl` — see `SERVER_OWNED_EXTENSION_KEYS`.
+ *     So this handler MERGES the client's object over the stored one (rather
+ *     than wholesale-replacing), drops the server-owned keys from the client's
+ *     overlay, and re-pins `payment_intent_id` to the stored value. See
+ *     `mergeExtensions` / `mergeExternalReferences`.
  *
  * Kept dependency-free (no DB / Cloudflare bindings) so they can be unit
  * tested directly. Consumed by app/api/orders/route.ts.
@@ -147,25 +151,105 @@ function parseExtensionsInput(
 }
 
 /**
- * Merges a client-supplied `extensions` object over the order's currently
- * stored `extensions`, then re-pins `payment_intent_id` to the stored value.
+ * Keys inside `extensions` that ONLY server code may write, dropped from the
+ * client's overlay before the merge. Merging alone is not enough: it protects
+ * keys the client OMITS, but a key the client SENDS still wins. Each of these
+ * has a verified server-side writer and a concrete abuse if a PUT can set it:
  *
- * This replaces the previous wholesale-replace behavior: a PUT that sends only
- * `{ carrier: 'X' }` must NOT wipe server-owned keys it omitted — most
- * critically `refunds[]` (summed by `computeRefundedTotal` for the over-refund
- * guard), plus `restockedLineKeys`, `email`, and any other stored keys. Those
- * survive because we start from the stored object and overlay the client keys.
+ *  - `carrier`, `trackingUrl` (BMC-216F) — written only by the shipment service
+ *    / legacy backfill; `trackingUrl` is always DERIVED from carrier + tracking
+ *    number, never stored from a client. Writable here, a PUT could plant a
+ *    phishing tracking link or rewrite the shipped carrier.
+ *  - `email` (BMC-230) — the guest-order email of record. `getOrderCustomerEmail`
+ *    prefers it over `shipping_address.email`, so it decides where the shipping /
+ *    refund / confirmation emails go AND is the value the guest order-status
+ *    token is signed over (`createOrderStatusToken`). Writable here, a PUT could
+ *    redirect a customer's emails to an attacker AND hand them a token that
+ *    verifies at `/order-status/[id]` — full guest-order takeover.
+ *  - `refunds`, `refunds_version` — the refund ledger and the monotonic counter
+ *    the refund route's CAS is guarded on. Writable here, a PUT could reset the
+ *    over-refund guard or stall/replay the CAS.
+ *  - `restockedLineKeys` — the restock idempotency record; rewriting it causes
+ *    double-restock or silently skipped restock on refund.
+ *
+ * `payment_intent_id` is NOT in this list because it is not merely dropped —
+ * it is re-pinned to the stored value. See `mergeGuardedJsonColumn`.
+ */
+export const SERVER_OWNED_EXTENSION_KEYS = [
+  'carrier',
+  'trackingUrl',
+  'email',
+  'refunds',
+  'refunds_version',
+  'restockedLineKeys',
+] as const;
+
+/**
+ * Merges a client-supplied JSON-column object over the order's stored one,
+ * drops `serverOwnedKeys` from the client's overlay, and re-pins
+ * `payment_intent_id` to the stored value.
+ *
+ * Merging (rather than wholesale-replacing) is what keeps a PUT that sends only
+ * `{ erp: 'X-1' }` from wiping keys it omitted — most critically `refunds[]`
+ * (summed by `computeRefundedTotal` for the over-refund guard). Dropping
+ * `serverOwnedKeys` is what keeps a PUT that DOES send them from winning the
+ * overlay. Both are needed.
  *
  * `payment_intent_id` is always forced back to the stored value (restored
  * whether the client rebound it, dropped it, or introduced one), or stripped
  * entirely if the order never had one — that binding is set only at verified
- * order creation and the refund route trusts it.
+ * order creation, the refund route trusts it, and `getOrderByPaymentIntentId`
+ * matches it across BOTH JSON columns, so a client-planted value in either one
+ * can misdirect refund reconciliation onto the wrong order.
  *
  * Fails SAFE: if the STORED `current` is a corrupt/unparseable string (or a
  * non-object), we return an error instead of persisting a stripped object that
  * would silently drop the refund ledger. A corrupt CLIENT `incoming` value is
  * treated leniently (as an empty overlay) — it can only fail to add keys, never
  * drop stored ones.
+ */
+function mergeGuardedJsonColumn(
+  incoming: unknown,
+  current: unknown,
+  serverOwnedKeys: readonly string[],
+  corruptStoredError: string
+):
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; error: string; status: number } {
+  const parsedCurrent = parseExtensionsInput(current);
+  if (!parsedCurrent.ok) {
+    return { ok: false, error: corruptStoredError, status: 422 };
+  }
+
+  const parsedIncoming = parseExtensionsInput(incoming);
+  const incomingObj = parsedIncoming.ok ? parsedIncoming.value : {};
+  const stored = parsedCurrent.value;
+
+  // Drop server-owned keys from the client's overlay. The STORED values survive
+  // untouched — this only removes the client's ability to change them.
+  const clientKeys: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(incomingObj)) {
+    if (!serverOwnedKeys.includes(key)) clientKeys[key] = value;
+  }
+
+  const merged: Record<string, unknown> = { ...stored, ...clientKeys };
+
+  // Re-pin the immutable PI binding to the stored value.
+  const storedPi = stored.payment_intent_id;
+  if (typeof storedPi === 'string' && storedPi.length > 0) {
+    merged.payment_intent_id = storedPi;
+  } else {
+    // No stored PI — PUT may not introduce one. Strip any client-supplied value.
+    delete merged.payment_intent_id;
+  }
+
+  return { ok: true, value: merged };
+}
+
+/**
+ * Merges a client-supplied `extensions` object over the order's currently
+ * stored `extensions`, dropping `SERVER_OWNED_EXTENSION_KEYS` from the client's
+ * overlay and re-pinning `payment_intent_id`.
  *
  * Returns a discriminated result (never throws) so the route can turn a
  * failure straight into a clean error response.
@@ -179,50 +263,48 @@ export function mergeExtensions(
 ):
   | { ok: true; extensions: Record<string, unknown> }
   | { ok: false; error: string; status: number } {
-  const parsedCurrent = parseExtensionsInput(current);
-  if (!parsedCurrent.ok) {
-    // Corrupt stored extensions — refuse rather than overwrite. Persisting the
-    // client's object here would drop the refunds ledger and reset the
-    // over-refund guard, so fail closed.
-    return {
-      ok: false,
-      error:
-        'Cannot update order: stored extensions are corrupt and cannot be safely ' +
-        'merged. Refusing to overwrite to avoid dropping server-owned data ' +
-        '(e.g. the refunds ledger).',
-      status: 422,
-    };
-  }
+  const result = mergeGuardedJsonColumn(
+    incoming,
+    current,
+    SERVER_OWNED_EXTENSION_KEYS,
+    'Cannot update order: stored extensions are corrupt and cannot be safely ' +
+      'merged. Refusing to overwrite to avoid dropping server-owned data ' +
+      '(e.g. the refunds ledger).'
+  );
+  return result.ok ? { ok: true, extensions: result.value } : result;
+}
 
-  const parsedIncoming = parseExtensionsInput(incoming);
-  const incomingObj = parsedIncoming.ok ? parsedIncoming.value : {};
-  const stored = parsedCurrent.value;
-
-  // BMC-216F: `carrier` and `trackingUrl` are server-owned fulfillment keys
-  // (written only by the shipment service / legacy backfill; trackingUrl is
-  // always DERIVED from carrier + tracking number, never stored from a
-  // client). Strip them from the client overlay before merging so a PUT can
-  // neither plant a phishing trackingUrl nor rewrite the shipped carrier —
-  // the STORED values survive untouched for legacy orders.
-  const {
-    carrier: _clientCarrier,
-    trackingUrl: _clientTrackingUrl,
-    ...clientKeys
-  } = incomingObj;
-
-  // Start from the stored keys, overlay the client's remaining keys.
-  // Server-owned keys the client did NOT send (refunds, restockedLineKeys,
-  // email, carrier, trackingUrl, …) survive.
-  const merged: Record<string, unknown> = { ...stored, ...clientKeys };
-
-  // Re-pin the immutable PI binding to the stored value.
-  const storedPi = stored.payment_intent_id;
-  if (typeof storedPi === 'string' && storedPi.length > 0) {
-    merged.payment_intent_id = storedPi;
-  } else {
-    // No stored PI — PUT may not introduce one. Strip any client-supplied value.
-    delete merged.payment_intent_id;
-  }
-
-  return { ok: true, extensions: merged };
+/**
+ * Merges a client-supplied `external_references` object over the order's stored
+ * one and re-pins `payment_intent_id` (BMC-230).
+ *
+ * `external_references` is genuine cross-system metadata (`erp`, `shopify_id`,
+ * …) that an ORDERS_UPDATE caller is meant to write, so unlike `extensions`
+ * there is no server-owned key list here — the ONE protected key is
+ * `payment_intent_id`, which order creation dual-writes into this column
+ * alongside `extensions`. `getOrderByPaymentIntentId` OR-matches both columns
+ * with `LIMIT 1` and no `ORDER BY`, so a client-planted value here makes a
+ * second row match a victim's PaymentIntent and lets `charge.refunded`
+ * reconciliation write `cancelled` / `refunded` and the refund-ledger entry
+ * onto the wrong order. Merging also stops a partial overwrite from dropping
+ * the stored binding.
+ *
+ * @param incoming  the client-supplied `external_references` from the PUT body
+ * @param current   the order's currently persisted `external_references`
+ */
+export function mergeExternalReferences(
+  incoming: unknown,
+  current: unknown
+):
+  | { ok: true; externalReferences: Record<string, unknown> }
+  | { ok: false; error: string; status: number } {
+  const result = mergeGuardedJsonColumn(
+    incoming,
+    current,
+    [],
+    'Cannot update order: stored external_references are corrupt and cannot be ' +
+      'safely merged. Refusing to overwrite to avoid dropping the stored ' +
+      'payment_intent_id binding.'
+  );
+  return result.ok ? { ok: true, externalReferences: result.value } : result;
 }
