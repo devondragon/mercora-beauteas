@@ -248,8 +248,9 @@ export async function POST(req: NextRequest) {
 
     // === DETERMINISTIC ANSWER PHASE (BMC-215) ===
     // Questions with exactly one correct answer (support email, order status,
-    // business address) are answered from config BEFORE any embedding or
-    // generation work. A model asked for a support address will occasionally
+    // business address, return window, shipping rates) are answered from config
+    // or admin settings BEFORE any embedding or generation work. A model asked
+    // for a support address will occasionally
     // invent a plausible one — `support@beauteteas.com` reached a real customer
     // on 2026-07-27 — and no amount of prompt tuning makes that never happen.
     //

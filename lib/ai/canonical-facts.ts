@@ -46,6 +46,9 @@ export const ORDER_HISTORY_URL = `${BASE_URL}/account/orders`;
 /** Published refund/return policy page (CMS, seeded by migration 0014). */
 export const REFUND_POLICY_URL = `${BASE_URL}/refund-policy`;
 
+/** Published shipping policy page (CMS, seeded by migration 0014). */
+export const SHIPPING_POLICY_URL = `${BASE_URL}/shipping-policy`;
+
 export { MAILING_ADDRESS };
 
 /**

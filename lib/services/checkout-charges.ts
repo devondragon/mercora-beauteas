@@ -20,7 +20,8 @@
  * shopper who paid what `/api/tax` quoted always clears the floor within
  * `AMOUNT_TOLERANCE_CENTS`; only a fabricated (tax-omitting) amount is rejected.
  *
- * Shipping is deterministic (`calculateShipping`) so it needs no external call.
+ * Shipping is deterministic (settings-driven, `lib/services/shipping-options.ts`)
+ * so it needs no external call.
  * Tax degrades to a flat `FALLBACK_TAX_RATE` on the same conditions `/api/tax`
  * does (no usable address / Stripe Tax error / Stripe unconfigured) so both
  * paths agree in the degraded case too. The expected numbers are computed once
@@ -29,15 +30,22 @@
  */
 
 import type { Address } from '@/lib/types';
-import type { ShippingOption } from '@/lib/types/shipping';
-import { Money } from '@/lib/money';
 import {
   calculateTax as stripeCalculateTax,
   formatAmountForStripe,
   isStripeConfigured,
 } from '@/lib/stripe';
 import { computeCatalogLineCents } from '@/lib/services/order-pricing';
-import { getSettings } from '@/lib/utils/settings';
+import { resolveShippingOptions } from '@/lib/services/shipping-options';
+
+/**
+ * The storefront shipping model now lives in `lib/services/shipping-options.ts`
+ * so the Chai assistant can read the same rates without importing the Stripe SDK
+ * (BMC-242). Re-exported here because this module was its original home and
+ * `/api/shipping-options` still imports it from this path.
+ */
+export { resolveShippingOptions };
+export type { ResolvedShippingOptions } from '@/lib/services/shipping-options';
 
 /**
  * Fallback flat tax rate, applied whenever Stripe Tax can't be used (no usable
@@ -70,59 +78,6 @@ function hasUsableTaxAddress(address?: Address | null): boolean {
 /** Flat fallback tax (cents) on a taxable base already expressed in cents. */
 function fallbackTaxCents(taxableCents: number): number {
   return Math.max(0, Math.round(taxableCents * FALLBACK_TAX_RATE));
-}
-
-// The storefront's shipping methods when `shipping.methods` isn't configured —
-// IDENTICAL to the `/api/shipping-options` default (kept in lockstep because both
-// this seam and that route resolve options through `resolveShippingOptions`). Costs
-// are MAJOR units (dollars), matching how admin settings store them.
-const DEFAULT_SHIPPING_METHODS = [
-  { id: 'standard', label: 'Standard (5–7 days)', cost: 5.99, estimatedDays: 5, enabled: true },
-  { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
-  { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true },
-];
-const DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR = 75;
-const DEFAULT_FREE_SHIPPING_METHODS = ['standard'];
-
-/**
- * Resolve the storefront's shipping options for a catalog goods subtotal, from
- * admin settings (BMC-201). This is the SINGLE source of the storefront shipping
- * model — `/api/shipping-options` (the customer-facing quote) and the charge floor
- * (`computeShippingFloorCents`) both call it, so the shipping a customer is quoted
- * and the shipping the floor enforces can never diverge.
- *
- * Free shipping (`store.free_shipping_threshold`, default $75) zeroes the cost of
- * the configured free methods (`shipping.free_methods`, default `['standard']`)
- * once the goods subtotal clears the threshold. `goodsCents` must be the SERVER
- * catalog subtotal (never a client price); pass `qualifiesForFreeShipping: false`
- * when the cart couldn't be priced authoritatively so the perk fails closed.
- */
-export async function resolveShippingOptions(
-  goodsCents: number,
-  opts: { subtotalPriceable?: boolean } = {}
-): Promise<{ options: ShippingOption[]; qualifiesForFreeShipping: boolean }> {
-  const [shippingSettings, storeSettings] = await Promise.all([
-    getSettings('shipping'),
-    getSettings('store'),
-  ]);
-
-  const methods = shippingSettings['shipping.methods'] || DEFAULT_SHIPPING_METHODS;
-  const enabled = methods.filter((m: any) => m.enabled);
-
-  const threshold = storeSettings['store.free_shipping_threshold'] || DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR;
-  const qualifiesForFreeShipping =
-    opts.subtotalPriceable !== false &&
-    Money.fromMinor(Math.max(0, Math.round(goodsCents))).gte(Money.fromMajor(threshold));
-  const freeMethods = shippingSettings['shipping.free_methods'] || DEFAULT_FREE_SHIPPING_METHODS;
-
-  const options: ShippingOption[] = enabled.map((m: any) => ({
-    id: m.id,
-    label: m.label,
-    cost: qualifiesForFreeShipping && freeMethods.includes(m.id) ? 0 : m.cost,
-    estimatedDays: m.estimatedDays,
-  }));
-
-  return { options, qualifiesForFreeShipping };
 }
 
 /**
