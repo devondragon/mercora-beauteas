@@ -26,9 +26,9 @@ Mock the model layer instead — `vi.mock("@/lib/models/…")` — rather than r
 
 ## Deploy is separate from CI
 
-`.github/workflows/production-deploy-guard.yml` is `workflow_dispatch` only. It checks `wrangler.jsonc` for `REPLACE_WITH_` placeholders, then runs `npm run deploy:production` from `main`.
+`.github/workflows/production-deploy-guard.yml` is `workflow_dispatch` only. It checks `wrangler.jsonc` for `REPLACE_WITH_` placeholders, previews the pending D1 migrations (read-only), then runs `npm run deploy:production` from `main`.
 
-It does **not** run migrations. See the deploy-ordering blocker in [`database-migrations.md`](database-migrations.md).
+It **does** run migrations, via the `predeploy:production` hook inside that command — backup, apply, then build and deploy, aborting the deploy if the apply fails. See [Auto-apply on deploy](database-migrations.md#auto-apply-on-deploy-bmc-239).
 
 ## Local database for tests and dev
 

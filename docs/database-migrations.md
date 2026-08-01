@@ -15,9 +15,47 @@
 
 Both the migrations (`bb14313`, BMC-225) and the fulfillment code that requires them (`e2474ff`, BMC-226) are on `main`. Deploying without the apply takes down **every order read and write** with "no such column", plus the ship/tracking/events endpoints.
 
-CI never closes this gap: `ci.yml` lints, typechecks, runs the unit suite, and builds — it does not deploy or run migrations. Deploy is a separate `workflow_dispatch`, and `npm run deploy:production` does not run migrations either.
+`ci.yml` does not close this gap either — it lints, typechecks, runs the unit suite, and builds, but never deploys. Deploy is a separate `workflow_dispatch`.
+
+**As of BMC-239 the deploy itself closes it:** `npm run deploy:production` now applies pending migrations before building (see [Auto-apply on deploy](#auto-apply-on-deploy-bmc-239)), so a deploy can no longer land code on an unmigrated database. That makes BMC-231 a matter of *choosing when* `0022`/`0023` land on each remote env — the next deploy of any env applies them automatically, with a pre-flight backup.
 
 **If a bad deploy needs undoing pre-BMC-231:** roll the app back to a pre-`shipping_carrier` build **first** (redeploy the last-known-good commit), *then* — only once no deployed code names the column — `ALTER TABLE orders DROP COLUMN shipping_carrier;` (SQLite ≥3.35, which D1 supports) is safe. Dropping the column while the new build is still live reproduces the exact outage this warning exists to prevent.
+
+---
+
+## Auto-apply on deploy (BMC-239)
+
+**Deploys apply pending migrations for you, before the Worker ships.** `scripts/d1-migrate.mjs` is wired into npm's `predeploy:dev` / `predeploy:production` lifecycle hooks, so both entry points are covered from one place — manual (`npm run deploy:dev`, `npm run deploy:production`) and CI (`production-deploy-guard.yml`, which invokes `npm run deploy:production`). A non-zero exit from a `pre*` hook aborts the run, so **a failed migration blocks the deploy**: the Worker is never deployed against a half-migrated database.
+
+| Deploy target | Databases migrated |
+|---|---|
+| `npm run deploy:dev` | `beauteas-db-dev` **and** the dev preview DB (`--preview`) — the preview DB is no longer something you have to remember |
+| `npm run deploy:production` | `beauteas-db` |
+
+```bash
+npm run db:migrate:status:dev          # read-only: what would be applied
+npm run db:migrate:status:production
+npm run db:migrate:dev                 # apply by hand (same path the hook takes)
+npm run db:migrate:production
+```
+
+**Ordering.** The hook runs *before* the build, so a build failure can leave the DB migrated while the old code is still live. That is the safe direction — DB ahead of code — and it is why the policy below exists.
+
+**Backups.** Any database with pending migrations gets a pre-flight `d1 export` first, written to `./.backups` (gitignored) and uploaded to the private R2 bucket **`beauteas-db-backups`** under `d1/<db>/<db>-<ISO>.sql`. That bucket has a **90-day expiry lifecycle rule** (`expire-d1-backups-90d`) — these are full customer-PII exports, so they must not accumulate forever; 90 days is long enough to still have the backup when a bad migration surfaces weeks later. The local `./.backups` copies are **not** pruned automatically — delete them when you're done, they are PII too. Production **requires** the R2 upload to succeed: on a CI runner the local file dies with the job, and that backup is the only thing standing between an auto-applied destructive migration and lost data. Override the bucket with `D1_BACKUP_R2_BUCKET`; `none` disables the upload for dev only. A prod export is full customer PII — it must never go to a public bucket (`beauteas-images` is public) or a GitHub Actions artifact (downloadable by anyone with repo read).
+
+**Token scope.** `CLOUDFLARE_API_TOKEN` needs **D1:Edit** and **R2:Edit**. Verified 2026-07-31 against dev: list, export, and R2 put all succeed with the current CI token.
+
+### 🚨 Destructive-migration policy
+
+**The runner applies everything that is pending. It does not inspect the SQL, and it will happily apply a `DROP` to production unattended.** There is no destructive-statement scan and no separate opt-in — the pre-flight backup is the entire safety net.
+
+So the discipline moves to the migration author:
+
+- **Write expand-first, contract-later.** A rename is *two* migrations in two deploys: add the new column and backfill (safe to auto-apply), ship the code that reads it, and only then, in a later migration, drop the old one. Never expand and contract in the same file.
+- **A `DROP TABLE` / `DROP COLUMN` / `ALTER … RENAME` in a migration is a deploy-ordering decision, not a schema detail.** Confirm no deployed code still names the thing being dropped before the migration merges — the deploy will not stop to ask.
+- **Data-only migrations that `UPDATE` or `DELETE` count as destructive too.** They auto-apply with no diff shown.
+- **Check what is about to land.** `npm run db:migrate:status:production` before dispatching a production deploy; the CI workflow also prints the pending list in its pre-deploy job, before anything is written.
+- **Recovering** means pulling the pre-flight export from `beauteas-db-backups` and replaying it — see the rollback ordering in [Deploy ordering](#-deploy-ordering-current-blocker) for why the app must be rolled back *before* the schema.
 
 ---
 
@@ -66,7 +104,7 @@ CI never closes this gap: `ci.yml` lints, typechecks, runs the unit suite, and b
 
 1. Update the Drizzle schema/types in `lib/db/schema/` (and `lib/models/`) so app code matches.
 2. `npx wrangler d1 migrations create beauteas-db-dev <description>`, then hand-write the SQL in the new `migrations/NNNN_*.sql`.
-3. Apply per environment:
+3. Apply per environment. **A deploy now does this for you** (see [Auto-apply on deploy](#auto-apply-on-deploy-bmc-239)) — reach for these when applying out of band, or to a database no deploy target covers:
 
 ```bash
 npx wrangler d1 migrations apply beauteas-db-dev --remote --env dev            # dev

@@ -6,8 +6,14 @@
  *   - production: Live production environment
  *
  * Deploy commands:
- *   npm run build && wrangler deploy --env dev
- *   npm run build && wrangler deploy --env production
+ *   npm run deploy:dev
+ *   npm run deploy:production
+ *
+ * Use those, NOT a bare `wrangler deploy`. The deploy scripts carry npm
+ * `predeploy:*` lifecycle hooks that back up and apply pending D1 migrations
+ * before the Worker ships (scripts/d1-migrate.mjs, BMC-239). `wrangler` has no
+ * concept of npm hooks, so invoking it directly skips the migration gate
+ * entirely and can put code onto a database missing a migration it requires.
  *
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
