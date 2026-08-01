@@ -13,7 +13,7 @@ Authorization rules live in [`auth-model.md`](auth-model.md).
 
 - `GET`/`POST /api/orders`
 - `GET /api/orders/[id]`
-- `POST /api/orders/refund` — authenticated (`ORDERS_UPDATE`)
+- `POST /api/orders/refund` — authenticated (`ORDERS_UPDATE`). The ledger entry mirrors Stripe's refund status: a delayed payment method (Klarna / Cash App Pay / Amazon Pay) returns `pending`, and the order is **not** cancelled or restocked until `refund.updated` confirms it settled (BMC-224). The response carries `refund.status` so an operator can tell the two apart. A refund Stripe rejects synchronously releases its reservation and returns 502.
 - `POST /api/payment-intent`
 
 ## Subscriptions

@@ -114,14 +114,23 @@ export type RefundLifecycleDecision =
       floor: number | null;
       /**
        * True when the released entry was already `succeeded`, meaning the order
-       * may ALREADY have been cancelled and restocked on this refund. The app
-       * refund route records `succeeded` as soon as Stripe accepts the refund,
-       * without waiting for a delayed payment method to settle, so this is
-       * reachable. Callers must escalate: the ledger is corrected here, but
-       * un-cancelling an order and de-stocking inventory are destructive,
-       * racy operations that need a human.
+       * may ALREADY have been cancelled and restocked on this refund. Callers
+       * must escalate: the ledger is corrected here, but un-cancelling an order
+       * and de-stocking inventory are destructive, racy operations that need a
+       * human.
        */
       wasSettled: boolean;
+      /**
+       * True when the released entry came from `POST /api/orders/refund` rather
+       * than an external reconciliation — identified by the deterministic
+       * `idempotency_key` only that route stamps.
+       *
+       * Also an escalation signal, for a different reason: that route emails the
+       * customer "you have been refunded" as soon as Stripe ACCEPTS the refund.
+       * When it later reverses, someone has been told they were paid and was not.
+       * No automated message can fix that, so it goes to a human.
+       */
+      wasAppInitiated: boolean;
     };
 
 /**
@@ -252,5 +261,6 @@ export function decideRefundLifecycle(
     needsFlip: entry?.status !== 'failed',
     floor,
     wasSettled: entry?.status === 'succeeded',
+    wasAppInitiated: typeof entry?.idempotency_key === 'string' && !!entry.idempotency_key,
   };
 }

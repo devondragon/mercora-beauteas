@@ -42,6 +42,24 @@
  *      concurrency contract. The CAS LOOPS stay here because they interleave the
  *      Stripe call and order-level effects with the ledger write.
  *
+ * === Accepted ≠ settled (BMC-224) ===
+ * `stripe.refunds.create` returning without throwing means Stripe ACCEPTED the
+ * refund, not that the money reached the customer. For a delayed payment method
+ * — Klarna / Cash App Pay / Amazon Pay, live here via `automatic_payment_methods`
+ * with `allow_redirects: 'always'` — it comes back `pending` and can still FAIL,
+ * at which point Stripe returns the money to the merchant.
+ *
+ * So the ledger entry MIRRORS `stripeRefund.status` rather than asserting
+ * `succeeded`, and the irreversible order-level effects (cancel, mark refunded,
+ * restock) are withheld until it settles — the same gate BMC-213 applies to
+ * externally-initiated refunds. A `pending` entry still counts toward the
+ * over-refund guard, so the amount stays reserved either way.
+ *
+ * Nothing is stranded by withholding: the `refund.updated` / `refund.failed`
+ * handler (`app/api/webhooks/stripe/handlers/refund-handlers.ts`) settles the
+ * entry and applies the held effects, or releases it and lowers the over-refund
+ * floor. Card refunds settle synchronously and are unaffected.
+ *
  * === Request Format ===
  * ```json
  * {
@@ -64,6 +82,7 @@ import { authenticateRequest, PERMISSIONS } from '@/lib/auth/unified-auth';
 import { type RefundRecord } from '@/lib/utils/refund-validation';
 import { errorDetails } from '@/lib/utils/error-response';
 import { decideRefundLedgerAction } from '@/lib/payments/refund-ledger';
+import { classifyRefundTransition } from '@/lib/payments/refund-lifecycle';
 import {
   MAX_CAS_ATTEMPTS,
   confirmRestockedLines,
@@ -269,6 +288,44 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
+    // ── Phase 2b: does Stripe say the money actually LEFT? (BMC-224) ──────────
+    // `stripe.refunds.create` returning without throwing means Stripe ACCEPTED
+    // the refund, not that it settled. For a delayed payment method — Klarna /
+    // Cash App Pay / Amazon Pay, all live here via `automatic_payment_methods`
+    // with `allow_redirects: 'always'` — the refund comes back `pending` and can
+    // still FAIL, at which point Stripe returns the money to us and the customer
+    // is never refunded.
+    //
+    // This route used to record `succeeded` unconditionally and cancel + restock
+    // on the spot, so a failed Klarna refund left a cancelled order, returned
+    // stock and a `succeeded` ledger line for money we still hold. Now the entry
+    // mirrors Stripe's own status and the irreversible effects are withheld until
+    // it settles — the same gate BMC-213 applies to external refunds.
+    //
+    // Nothing is stranded by withholding: `refund.updated` / `refund.failed`
+    // (BMC-224, handlers/refund-handlers.ts) settle the entry and apply the held
+    // effects, or release it. Classified through the SAME helper that handler
+    // uses so the two can never disagree about what a status means.
+    const refundState = classifyRefundTransition(stripeRefund.status);
+    const settled = refundState === 'succeeded';
+
+    if (refundState === 'reversed') {
+      // Stripe rejected it outright, synchronously. No money moved, so release the
+      // reservation exactly as the throw path does and tell the caller.
+      console.error(
+        `Stripe returned refund ${stripeRefund.id} as '${stripeRefund.status}' for order ${orderId}`
+      );
+      logCritical('refund', 'stripe_refund_returned_unsuccessful', {
+        orderId,
+        stripeRefundId: stripeRefund.id,
+        status: stripeRefund.status,
+      });
+      await settleRefundEntry(db, orderId, entryId, () => 'failed');
+      return NextResponse.json({
+        error: `Stripe reported the refund as '${stripeRefund.status}'; no money was returned`,
+      }, { status: 502 });
+    }
+
     // ── Phase 3: settle the ledger entry (CAS) + apply order-level effects ────
     // BMC-178: restock is decided from the FRESH order read inside the CAS loop,
     // so the "already restocked" record commits atomically with the settled
@@ -316,7 +373,12 @@ export async function POST(request: NextRequest) {
       const settledEntry = {
         ...(idx >= 0 ? refunds[idx] : {}),
         id: stripeRefund.id,
-        status: 'succeeded' as const,
+        // Mirror Stripe rather than asserting success (BMC-224). A `pending`
+        // entry still counts toward the over-refund guard — it reserves the
+        // amount — but stays reversible, and `refund.updated`/`refund.failed`
+        // resolve it. The Stripe refund id is stamped either way so that handler
+        // matches this entry on id instead of the amount fallback.
+        status: settled ? ('succeeded' as const) : ('pending' as const),
         amount: refundAmount,
         type,
         reason,
@@ -324,7 +386,7 @@ export async function POST(request: NextRequest) {
         notes: notes || '',
         idempotency_key: idempotencyKey,
         stripe_refund_id: stripeRefund.id,
-        processed_at: nowIso,
+        ...(settled ? { processed_at: nowIso } : {}),
       };
       const nextRefunds = idx >= 0
         ? refunds.map((r: any, i: number) => (i === idx ? settledEntry : r))
@@ -334,11 +396,17 @@ export async function POST(request: NextRequest) {
       const orderItems: any[] = Array.isArray(rawItems) ? rawItems : [];
       // Exclude lines already restored AND lines another refund has claimed but
       // not yet confirmed, so concurrent refunds can never double-restock a line.
-      const { lines: restockLines, keys: newlyRestockedKeys } = selectRestockLines(orderItems, {
-        fullRefund: type === 'full',
-        refundedItemKeys,
-        alreadyRestockedKeys: readUnavailableRestockKeys(extensions),
-      });
+      //
+      // Withheld entirely on an unsettled refund (BMC-224): returning stock for
+      // money that can still come back to us overstates on-hand and oversells to
+      // real customers. The lifecycle handler restocks when the refund settles.
+      const { lines: restockLines, keys: newlyRestockedKeys } = settled
+        ? selectRestockLines(orderItems, {
+            fullRefund: type === 'full',
+            refundedItemKeys,
+            alreadyRestockedKeys: readUnavailableRestockKeys(extensions),
+          })
+        : { lines: [] as any[], keys: [] as string[] };
 
       const nextExtensions = {
         ...extensions,
@@ -357,14 +425,18 @@ export async function POST(request: NextRequest) {
       // extensions is a `mode: "json"` column — assign the RAW object and let
       // Drizzle serialize; a manual JSON.stringify would double-encode.
       const updateData: Record<string, unknown> = {
-        status: newStatus,
-        payment_status: newPaymentStatus,
         extensions: nextExtensions,
         updated_at: nowIso,
+        // Order-level effects are withheld until Stripe confirms the money left
+        // (BMC-224). Cancelling on a refund that can still fail would leave the
+        // customer un-refunded AND the order cancelled, with no safe undo. The
+        // ledger entry above still reserves the amount against over-refund, and
+        // `refund.updated` applies these columns once the refund settles.
+        ...(settled ? { status: newStatus, payment_status: newPaymentStatus } : {}),
       };
 
       // Add cancellation reason to notes for full cancellations
-      if (type === 'full') {
+      if (settled && type === 'full') {
         const currentNotes = order.notes || '';
         const cancellationNote = `CANCELLED: ${reason}${notes ? ` - ${notes}` : ''}`;
         updateData.notes = currentNotes ? `${currentNotes}\n\n${cancellationNote}` : cancellationNote;
@@ -466,7 +538,12 @@ export async function POST(request: NextRequest) {
         type,
         reason,
         items: items || [],
-        processed_at: new Date().toISOString()
+        // Surfaced so an operator can tell "the money is back" from "Stripe has
+        // accepted it and it is still settling" (BMC-224). A `pending` refund has
+        // NOT cancelled the order or restocked yet — `refund.updated` does that.
+        status: settled ? 'succeeded' : 'pending',
+        stripe_status: stripeRefund.status,
+        ...(settled ? { processed_at: new Date().toISOString() } : {}),
       },
       order: {
         id: updatedOrder.id,

@@ -608,7 +608,7 @@ export async function handleRefundLifecycle(
   const db = await getDbAsync();
   const restockEnabled = transition === 'succeeded' ? await shouldRestockOnExternalRefund() : false;
 
-  let applied: { action: 'settle'; finalize: boolean } | { action: 'release'; floor: number | null; wasSettled: boolean } | null = null;
+  let applied: { action: 'settle'; finalize: boolean } | { action: 'release'; floor: number | null; wasSettled: boolean; wasAppInitiated: boolean } | null = null;
   let noopReason: string | null = null;
   let restockLines: any[] = [];
 
@@ -709,7 +709,12 @@ export async function handleRefundLifecycle(
         )
       : ctx.refunds;
 
-    applied = { action: 'release', floor: decision.floor, wasSettled: decision.wasSettled };
+    applied = {
+      action: 'release',
+      floor: decision.floor,
+      wasSettled: decision.wasSettled,
+      wasAppInitiated: decision.wasAppInitiated,
+    };
     return {
       action: 'write',
       extensions: {
@@ -741,7 +746,7 @@ export async function handleRefundLifecycle(
 
   const outcome = applied as
     | { action: 'settle'; finalize: boolean }
-    | { action: 'release'; floor: number | null; wasSettled: boolean }
+    | { action: 'release'; floor: number | null; wasSettled: boolean; wasAppInitiated: boolean }
     | null;
 
   if (!outcome) {
@@ -768,21 +773,34 @@ export async function handleRefundLifecycle(
         (outcome.floor !== null ? ` and set stripe_amount_refunded to ${outcome.floor}` : '') +
         (refund.failure_reason ? ` (${refund.failure_reason})` : '')
     );
-    if (outcome.wasSettled) {
-      // The entry was already `succeeded`, so the order may ALREADY have been
-      // cancelled and the stock returned on a refund that has now reversed —
-      // Stripe kept the money and the customer was never paid. The ledger and the
-      // over-refund floor are corrected above, but un-cancelling an order and
-      // de-stocking inventory are destructive and racy, so they are NOT automated.
+    // Two situations the ledger correction above cannot put right on its own:
+    //
+    //  - `wasSettled` — the entry was already `succeeded`, so the order may
+    //    ALREADY be cancelled and the stock already returned on money that has
+    //    now come back to us. Un-cancelling and de-stocking are destructive and
+    //    racy, so they are NOT automated.
+    //  - `wasAppInitiated` — `POST /api/orders/refund` emails the customer as
+    //    soon as Stripe ACCEPTS a refund, so someone has been told they were
+    //    refunded and was not. No automated message can undo that.
+    //
+    // Either way a human has to look, so page rather than only logging.
+    if (outcome.wasSettled || outcome.wasAppInitiated) {
+      const why = [
+        outcome.wasSettled && 'order status and inventory may need review',
+        outcome.wasAppInitiated && 'the customer was already emailed that they were refunded',
+      ]
+        .filter(Boolean)
+        .join('; ');
       console.error(
-        `[webhook] ${eventType} ${refund.id}: a SETTLED refund reversed on order ${orderId}; ` +
-          `order status and inventory may need manual review`
+        `[webhook] ${eventType} ${refund.id}: refund reversed on order ${orderId} — ${why}`
       );
       logCritical('webhook', 'settled_refund_reversed', {
         orderId,
         refundId: refund.id,
         chargeId,
         amount: refund.amount,
+        wasSettled: outcome.wasSettled,
+        wasAppInitiated: outcome.wasAppInitiated,
         failureReason: refund.failure_reason ?? null,
       });
     }

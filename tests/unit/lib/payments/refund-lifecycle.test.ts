@@ -233,6 +233,7 @@ describe('decideRefundLifecycle — a pending refund that FAILS (AC 2, AC 3)', (
       needsFlip: true,
       floor: 0,
       wasSettled: false,
+      wasAppInitiated: false,
     });
   });
 
@@ -318,6 +319,45 @@ describe('decideRefundLifecycle — a pending refund that FAILS (AC 2, AC 3)', (
     });
 
     expect(decision).toMatchObject({ action: 'release', needsFlip: true, wasSettled: true });
+  });
+
+  it('flags an APP-INITIATED reversal, because that customer was already emailed', () => {
+    // `POST /api/orders/refund` emails "you have been refunded" as soon as Stripe
+    // ACCEPTS the refund. When it reverses, someone was told they were paid and
+    // was not — no automated message fixes that, so it must reach a human. The
+    // deterministic `idempotency_key` is what only that route stamps.
+    const appEntry = {
+      id: 'refund:abc123',
+      status: 'pending' as const,
+      amount: TOTAL,
+      idempotency_key: 'refund:abc123',
+      stripe_refund_id: 're_1',
+    };
+    const decision = decideRefundLifecycle([appEntry], 'reversed', {
+      refundId: 're_1',
+      refundAmount: TOTAL,
+      totalAmount: TOTAL,
+      recordedFloor: TOTAL,
+      chargeAmountRefunded: 0,
+    });
+
+    expect(decision).toMatchObject({
+      action: 'release',
+      wasSettled: false, // no order effects landed …
+      wasAppInitiated: true, // … but the customer heard about it
+    });
+  });
+
+  it('does not flag an externally-reconciled reversal as app-initiated', () => {
+    // A Dashboard refund sends no customer email, so a quiet release is correct.
+    const decision = decideRefundLifecycle([pendingExternal()], 'reversed', {
+      refundId: 're_1',
+      refundAmount: TOTAL,
+      totalAmount: TOTAL,
+      chargeAmountRefunded: 0,
+    });
+
+    expect(decision).toMatchObject({ action: 'release', wasAppInitiated: false });
   });
 });
 

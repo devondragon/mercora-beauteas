@@ -447,8 +447,49 @@ describe('handleRefundLifecycle — a pending refund FAILS (AC 2, AC 3)', () => 
     expect(logCritical).toHaveBeenCalledWith(
       'webhook',
       'settled_refund_reversed',
-      expect.objectContaining({ orderId: order.id, refundId: 're_1' })
+      expect.objectContaining({ orderId: order.id, refundId: 're_1', wasSettled: true })
     );
+  });
+
+  it('pages when an APP-INITIATED refund reverses — that customer was emailed', async () => {
+    // The route emails "you have been refunded" when Stripe ACCEPTS the refund,
+    // before it settles. A reversal makes that message wrong, and only a human
+    // can put it right.
+    const order = makeOrder({
+      extensions: {
+        refunds: [
+          {
+            id: 'refund:abc123',
+            status: 'pending',
+            amount: TOTAL,
+            idempotency_key: 'refund:abc123',
+            stripe_refund_id: 're_1',
+          },
+        ],
+      },
+    });
+    runLedgerOnce(order);
+    chargesRetrieve.mockResolvedValue({ id: CHARGE, amount_refunded: 0 });
+
+    await handleRefundLifecycle(makeRefund({ status: 'failed' }), EVENT_ID, 'refund.failed');
+
+    expect(logCritical).toHaveBeenCalledWith(
+      'webhook',
+      'settled_refund_reversed',
+      expect.objectContaining({ wasSettled: false, wasAppInitiated: true })
+    );
+  });
+
+  it('stays quiet on an externally-reconciled reversal', async () => {
+    // A Dashboard refund cancelled nothing and emailed nobody — releasing the
+    // entry is the whole fix, so paging would be noise.
+    const order = makeOrder();
+    runLedgerOnce(order);
+    chargesRetrieve.mockResolvedValue({ id: CHARGE, amount_refunded: 0 });
+
+    await handleRefundLifecycle(makeRefund({ status: 'failed' }), EVENT_ID, 'refund.failed');
+
+    expect(logCritical).not.toHaveBeenCalled();
   });
 });
 
