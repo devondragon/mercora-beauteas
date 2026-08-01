@@ -289,6 +289,30 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     expect(answer).not.toContain('$5.99');
   });
 
+  it.each([
+    [['ground', 'air'], 'Ground and Air'],
+    [['ground', 'air', 'rocket'], 'Ground, Air and Rocket'],
+  ])('joins %j free-eligible methods as %j', async (freeMethods, expected) => {
+    // A store can make more than one method free. Without this the two- and
+    // three-item branches of the list join never run.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'ground', label: 'Ground', cost: 4, estimatedDays: 6, enabled: true },
+              { id: 'air', label: 'Air', cost: 12, estimatedDays: 2, enabled: true },
+              { id: 'rocket', label: 'Rocket', cost: 99, estimatedDays: 1, enabled: true },
+            ],
+            'shipping.free_methods': freeMethods,
+          }
+        : {}
+    );
+
+    expect(await resolveDeterministicAnswer('shipping_rates')).toContain(
+      `ship free via ${expected}`
+    );
+  });
+
   it('omits the free-shipping sentence when no enabled method is eligible', async () => {
     getSettings.mockImplementation(async (category: string) =>
       category === 'shipping'
