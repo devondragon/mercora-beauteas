@@ -25,8 +25,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Use the actual Worker preview so D1/R2 bindings match production runtime.
-    command: 'npm run preview:dev',
+    // Run the actual Worker with local D1/R2 bindings. Workers AI and
+    // Vectorize have no local simulation, so the E2E preview deliberately
+    // disables remote bindings instead of requiring Cloudflare credentials in
+    // the release gate. The checkout suite does not exercise those bindings.
+    command: 'npm run preview:e2e',
     url: 'http://localhost:3217',
     // A different app on the checkout port must never satisfy the release gate.
     reuseExistingServer: false,

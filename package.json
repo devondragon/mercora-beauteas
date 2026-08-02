@@ -33,6 +33,7 @@
     "clean": "rm -rf .open-next .next .wrangler/state .wrangler/public",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "preview:dev": "npm run seed:local && node scripts/build-with-env.mjs dev opennextjs-cloudflare build && wrangler dev --env dev --port 3217",
+    "preview:e2e": "npm run seed:local && node scripts/build-with-env.mjs dev opennextjs-cloudflare build && wrangler dev --env dev --port 3217 --local",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "token:generate": "tsx scripts/manage-tokens.ts generate",
     "token:list": "tsx scripts/manage-tokens.ts list",
