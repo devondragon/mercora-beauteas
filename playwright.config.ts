@@ -30,6 +30,9 @@ export default defineConfig({
     url: 'http://localhost:3217',
     // A different app on the checkout port must never satisfy the release gate.
     reuseExistingServer: false,
-    timeout: 120_000,
+    // Fresh GitHub runners compile both Next.js and the OpenNext Worker from a
+    // cold cache. Keep local feedback fast, but give CI enough time to finish
+    // that startup before Playwright decides the server is unavailable.
+    timeout: process.env.CI ? 240_000 : 120_000,
   },
 });
