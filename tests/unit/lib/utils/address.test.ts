@@ -10,6 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeCountryCode,
+  normalizeUsRegion,
+  validateUsShippingAddress,
   normalizeShippableAddress,
 } from '@/lib/utils/address';
 
@@ -29,6 +31,23 @@ describe('normalizeCountryCode', () => {
     expect(normalizeCountryCode(undefined)).toBeNull();
     expect(normalizeCountryCode(null)).toBeNull();
     expect(normalizeCountryCode(42)).toBeNull();
+  });
+});
+
+describe('launch US shipping validation', () => {
+  it('normalizes Colorado names and case variants', () => {
+    expect(normalizeUsRegion('co')).toBe('CO');
+    expect(normalizeUsRegion('Colorado')).toBe('CO');
+  });
+
+  it('accepts supported territories and rejects non-US or malformed ZIPs', () => {
+    expect(validateUsShippingAddress({ country: 'US', region: 'PR', postal_code: '00901' })).toEqual([]);
+    expect(validateUsShippingAddress({ country: 'CA', region: 'ON', postal_code: 'K1A 0B1' })).toContain(
+      'We currently ship within the United States only'
+    );
+    expect(validateUsShippingAddress({ country: 'US', region: 'CO', postal_code: '80' })).toContain(
+      'Enter a valid 5-digit US ZIP code'
+    );
   });
 });
 

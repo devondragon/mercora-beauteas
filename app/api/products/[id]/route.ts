@@ -3,6 +3,7 @@ import { getProduct, updateProduct, deleteProduct } from "@/lib/models/mach/prod
 import { toWireProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { Product } from "@/lib/types";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 /**
  * GET /api/products/[id] - Get a specific product
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Product ID is required" }, { status: 400 });
     }
     const product = await getProduct(productId);
-    if (!product) {
+    const adminAuth = await checkAdminPermissions(request);
+    if (!product || (!adminAuth.success && !isPubliclyPurchasableProduct(product))) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
     // BMC-164 review follow-up: emit the same MACH wire shape (major-unit

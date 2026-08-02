@@ -36,10 +36,11 @@ import type { CartItem } from "@/lib/types/cartitem";
 import type { Address } from "@/lib/types";
 import { formatAmountForStripe, formatAmountFromStripe } from "@/lib/stripe";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
-import { computeCatalogLineCents } from "@/lib/services/order-pricing";
-import { computeExpectedTaxCents, FALLBACK_TAX_RATE } from "@/lib/services/checkout-charges";
+import { computeDiscountedCatalogTaxLines, computeExpectedTaxCents } from "@/lib/services/checkout-charges";
+import { MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES, normalizeDiscountCodes } from "@/lib/services/discount-pricing";
+import { normalizeCountryCode } from "@/lib/utils/address";
 
-// The Stripe-Tax-vs-fallback decision and the flat FALLBACK_TAX_RATE now live in
+// The Stripe-Tax-vs-fallback decision and the launch fallback policy now live in
 // the shared `checkout-charges` seam (BMC-201) so the tax quoted here and the tax
 // ENFORCED at the charge floor are computed by one function — see its header for
 // why the flat fallback is a degraded, cutover-blocking path. This route only
@@ -54,6 +55,8 @@ interface TaxRequest {
   items: CartItem[];
   shippingAddress?: Address;
   shippingCost?: number;
+  discountCodes?: string[];
+  orderId?: string;
 }
 
 interface TaxBreakdown {
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
     const limited = await enforceRateLimit("PUBLIC_RATE_LIMITER", `tax:${getClientIp(req)}`);
     if (limited) return limited;
 
-    const { items, shippingAddress, shippingCost: rawShippingCost }: TaxRequest = await req.json();
+    const { items, shippingAddress, shippingCost: rawShippingCost, discountCodes, orderId }: TaxRequest = await req.json();
 
     // `shippingCost` is client-supplied and gets ADDED into the taxable base, so
     // a negative or non-finite value could zero out (or invert) the tax — the
@@ -87,11 +90,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
 
+    if (
+      shippingAddress?.country != null &&
+      shippingAddress.country !== '' &&
+      normalizeCountryCode(shippingAddress.country) !== 'US'
+    ) {
+      return NextResponse.json(
+        { error: 'We currently ship within the United States only' },
+        { status: 400 }
+      );
+    }
+
     if (items.length > MAX_TAX_LINE_ITEMS) {
       return NextResponse.json(
         { error: `Too many line items (max ${MAX_TAX_LINE_ITEMS})` },
         { status: 400 }
       );
+    }
+
+    if (Array.isArray(discountCodes) && discountCodes.length > MAX_RAW_DISCOUNT_CODES) {
+      return NextResponse.json({ error: "Too many discount codes" }, { status: 400 });
+    }
+    const normalizedDiscountCodes = normalizeDiscountCodes(discountCodes);
+    if (normalizedDiscountCodes.length > MAX_DISCOUNT_CODES) {
+      return NextResponse.json({ error: "Too many discount codes" }, { status: 400 });
     }
 
     // Derive the taxable goods base from the D1 catalog (`product_variants.price`),
@@ -105,12 +127,13 @@ export async function POST(req: NextRequest) {
     // amount — the same cart is rejected downstream by the charge gate anyway.
     let catalogLines;
     try {
-      catalogLines = await computeCatalogLineCents(
+      catalogLines = await computeDiscountedCatalogTaxLines(
         items.map((item) => ({
           product_id: item.productId,
           variant_id: item.variantId,
           quantity: item.quantity,
-        }))
+        })),
+        normalizedDiscountCodes
       );
     } catch (pricingErr) {
       // A THROWN catalog read (e.g. a transient D1 error/timeout) is an infra
@@ -126,9 +149,7 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
-    const pricingErrors = catalogLines.flatMap((line) =>
-      "error" in line ? [line.error] : []
-    );
+    const pricingErrors = catalogLines.errors;
     if (pricingErrors.length) {
       console.warn(`[tax] catalog pricing errors — ${pricingErrors.join("; ")}`);
       return NextResponse.json(
@@ -140,20 +161,22 @@ export async function POST(req: NextRequest) {
     // Per-line taxable amounts in cents (catalog truth), and the goods subtotal
     // in dollars for the response contract (`/api/tax` speaks major-unit dollars
     // to the client — see CheckoutClient's `cartItemsToMajorUnits` bridge).
-    const lineCents = catalogLines.map((line) => ("cents" in line ? line.cents : 0));
-    const subtotalCents = lineCents.reduce((sum, cents) => sum + cents, 0);
+    const lineCents = catalogLines.lineCents;
+    const subtotalCents = catalogLines.grossGoodsCents;
+    const taxableGoodsCents = catalogLines.netGoodsCents;
     const subtotal = formatAmountFromStripe(subtotalCents);
 
     // Delegate the tax NUMBER to the shared checkout-charges seam (BMC-201), the
     // SAME function `/api/payment-intent` uses to compute the enforced floor — so
     // the tax quoted here and the tax enforced at capture are computed identically
     // and can't drift. It handles the Stripe-Tax-vs-fallback decision internally
-    // (no usable address / Stripe error / Stripe unconfigured → flat rate) on the
-    // same `subtotal + shippingCost` base (BMC-187/BMC-200). This route keeps its
+    // (no usable address / Stripe error / Stripe unconfigured → Colorado 3.25%
+    // on discounted goods, zero elsewhere, shipping excluded). This route keeps its
     // own catalog pricing above for the distinct 422/503 semantics and speaks
     // major-unit dollars to the client, so it converts cents at the boundary.
     const taxResult = await computeExpectedTaxCents({
       lineCents,
+      taxCodes: catalogLines.taxCodes,
       shippingAddress,
       // `/api/tax` taxes the CLIENT's shipping estimate (dollars → cents); the
       // authoritative floor recomputes shipping server-side. Same seam, different
@@ -161,15 +184,16 @@ export async function POST(req: NextRequest) {
       shippingCents: formatAmountForStripe(shippingCost),
       // Preserve per-product references in Stripe's tax_breakdown for audit/debug.
       itemReferences: items.map((item, index) => `item_${index}_${item.productId}`),
+      orderId,
     });
     const taxAmount = formatAmountFromStripe(taxResult.taxCents);
-    const taxableAmount = subtotal + shippingCost;
+    const taxableAmount = formatAmountFromStripe(taxableGoodsCents) + shippingCost;
     const breakdown: TaxBreakdown = {
       subtotal,
       shippingCost,
       taxableAmount,
       taxAmount,
-      total: subtotal + shippingCost + taxAmount,
+      total: formatAmountFromStripe(taxableGoodsCents) + shippingCost + taxAmount,
     };
 
     if (taxResult.calculatedBy === "stripe") {
@@ -186,12 +210,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Stripe Tax unavailable. A missing secret key means EVERY order is charged a
-    // flat FALLBACK_TAX_RATE with no accurate tax — that must be loud, not silent.
+    // The shared seam already logged a redacted fallback event with state/order id.
     if (taxResult.fallbackReason === "not_configured") {
       console.error(
-        "[tax] STRIPE_SECRET_KEY not configured — charging flat fallback tax " +
-          `rate (${FALLBACK_TAX_RATE * 100}%) for ALL orders. Set it in ` +
+        "[tax] STRIPE_SECRET_KEY not configured — using the launch fallback policy. Set it in " +
           "`.dev.vars` for `wrangler dev`, or `wrangler secret put " +
           "STRIPE_SECRET_KEY --env <env>` for deployed envs."
       );

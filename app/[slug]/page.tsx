@@ -12,6 +12,7 @@ import { SITE_NAME } from "@/lib/seo/metadata";
 import { getCustomJsEnabled } from "@/lib/cms/custom-js-guard";
 import PageRenderer from "./PageRenderer";
 import { auth } from "@clerk/nextjs/server";
+import { cmsTimestampToDate } from "@/lib/utils/date";
 
 interface PageProps {
   params: Promise<{
@@ -42,8 +43,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         title: page.meta_title || page.title,
         description: page.meta_description || page.excerpt || `${page.title} - ${SITE_NAME}`,
         type: 'article',
-        publishedTime: page.published_at ? new Date(page.published_at).toISOString() : new Date(page.created_at).toISOString(),
-        modifiedTime: new Date(page.updated_at).toISOString(),
+        publishedTime: cmsTimestampToDate(page.published_at ?? page.created_at).toISOString(),
+        modifiedTime: cmsTimestampToDate(page.updated_at).toISOString(),
       },
       alternates: {
         canonical: `/${page.slug}`,

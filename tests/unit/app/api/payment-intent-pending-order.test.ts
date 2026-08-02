@@ -69,7 +69,7 @@ vi.mock('@/lib/models/mach/customer', () => ({
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/payment-intent/route';
 import { createPaymentIntent, cancelPaymentIntent } from '@/lib/stripe';
-import { getProductVariant } from '@/lib/models/mach/products';
+import { getProductVariant, getProduct } from '@/lib/models/mach/products';
 import { createOrder } from '@/lib/models/mach/orders';
 import { getCustomer, createCustomer } from '@/lib/models/mach/customer';
 import { auth } from '@clerk/nextjs/server';
@@ -128,6 +128,7 @@ beforeEach(() => {
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
+  vi.mocked(getProduct).mockResolvedValue({ id: 'tea-1', type: 'Tea Bags', tax_category: 'food' } as any);
   vi.mocked(createOrder).mockResolvedValue({ id: 'WEB-X-1' } as any);
   // Default: the customer already exists (no provisioning insert needed).
   vi.mocked(getCustomer).mockResolvedValue({ id: 'existing' } as any);
@@ -167,6 +168,20 @@ describe('POST /api/payment-intent pending-order persistence (BMC-167)', () => {
     // Guest checkout → no customer id bound, no provisioning attempted.
     expect(persisted.customer_id).toBeUndefined();
     expect(vi.mocked(getCustomer)).not.toHaveBeenCalled();
+  });
+
+  it('persists the validated Stripe shipping address instead of a forged draft address', async () => {
+    const forgedDraft = orderDraft({
+      shipping_address: {
+        line1: '1 International Way', city: 'Toronto', region: 'ON', postal_code: 'M5V 2T6', country: 'CA',
+      },
+    });
+
+    const res = await POST(postRequest(baseBody({ order: forgedDraft })));
+
+    expect(res.status).toBe(200);
+    const persisted = vi.mocked(createOrder).mock.calls[0][0] as any;
+    expect(persisted.shipping_address).toEqual(shippingAddress);
   });
 
   it('BMC-201: overwrites a client-supplied expected_tax_cents in the draft with the SERVER value', async () => {

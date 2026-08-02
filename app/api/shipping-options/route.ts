@@ -5,6 +5,7 @@ import type { CartItem } from "@/lib/types/cartitem";
 import { computeCatalogSubtotalCents, MAX_ORDER_LINE_ITEMS } from "@/lib/services/order-pricing";
 import { resolveShippingOptions } from "@/lib/services/checkout-charges";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
+import { validateUsShippingAddress } from "@/lib/utils/address";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,9 +26,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (address.country !== "US") {
+    const addressErrors = validateUsShippingAddress(address);
+    if (addressErrors.length) {
       return NextResponse.json(
-        { error: "Shipping options only available for US addresses" },
+        { error: addressErrors[0], details: addressErrors },
         { status: 400 }
       );
     }

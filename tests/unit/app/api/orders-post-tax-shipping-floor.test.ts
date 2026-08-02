@@ -126,7 +126,7 @@ beforeEach(() => {
   insertedRows = [];
   selectResults = [[]]; // existing lookup: none → fresh insert (branch c)
   vi.mocked(getDbAsync).mockResolvedValue(makeDb() as any);
-  vi.mocked(getProduct).mockResolvedValue(null as any);
+  vi.mocked(getProduct).mockResolvedValue({ id: 'tea-1', type: 'Tea Bags', tax_category: 'food' } as any);
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
@@ -138,6 +138,14 @@ beforeEach(() => {
 });
 
 describe('POST /api/orders fresh-insert stamps expected tax/shipping (BMC-201 bypass fix)', () => {
+  it('rejects a direct non-US shipping address', async () => {
+    const res = await POST(postRequest(orderBody({
+      shipping_address: { line1: '1 King St', city: 'Toronto', region: 'ON', postal_code: 'M5V 2T6', country: 'CA' },
+    })));
+    expect(res.status).toBe(400);
+    expect(insertedRows).toHaveLength(0);
+  });
+
   it('recomputes + stamps server expected shipping ($5.99) and tax ($2.00) on the fresh insert', async () => {
     const res = await POST(postRequest(orderBody()));
     expect(res.status).toBe(201);

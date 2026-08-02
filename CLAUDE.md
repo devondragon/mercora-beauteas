@@ -77,8 +77,8 @@ All monetary values flow through `lib/money` (`Money`). Internal unit is **integ
 ### Do not reintroduce a root `app/loading.tsx`
 That is what caused the soft-404s. A root `loading.tsx` wraps every route in a Suspense boundary, and with the root layout `force-dynamic` Next flushes the shell (committing a 200) before the page runs `notFound()`. You cannot have both a root Suspense boundary and a real 404 — which is why the global navigation spinner is gone. Nested loading files are fine on segments that never `notFound()` or aren't indexed (`app/account/loading.tsx` is kept — auth-gated). The trap is recorded in code at `app/layout.tsx`.
 
-### Only unit tests gate a merge
-CI runs lint + `tsc --noEmit` + `npm test` + build. `test:workers` and E2E do **not** run in CI, so a regression test only blocks a merge if it is unit-style under `tests/unit/`. Unit tests must not touch Cloudflare bindings — mock the model layer (`vi.mock("@/lib/models/…")`). See [`docs/testing.md`](docs/testing.md).
+### The full launch-readiness suite gates production
+CI runs lint, TypeScript, the production dependency audit, unit tests, Workers integration tests, a production OpenNext build, and Playwright against a local Worker preview. Production deployment checks that the exact commit passed the `Launch readiness gate`. Unit tests must still mock the model layer rather than touch Cloudflare bindings directly. See [`docs/testing.md`](docs/testing.md).
 
 ### Never commit secrets or pass them as CLI args
 `.dev.vars` locally; `wrangler secret put … --env <env>` for deployed environments.

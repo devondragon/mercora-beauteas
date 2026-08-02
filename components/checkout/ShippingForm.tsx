@@ -1,20 +1,13 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Address } from "@/lib/types";
+import { isValidUsPostalCode, normalizeUsRegion } from "@/lib/utils/address";
 
 interface Props {
   address: Partial<Address>;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSelectCountry: (value: string) => void;
   onSubmit: (address: Partial<Address>) => void;
   error?: string | null;
   disabled?: boolean;
@@ -23,7 +16,6 @@ interface Props {
 export default function ShippingForm({
   address,
   onChange,
-  onSelectCountry,
   onSubmit,
   error,
   disabled = false,
@@ -37,7 +29,9 @@ export default function ShippingForm({
       address.city &&
       address.region &&
       address.postal_code &&
-      address.country
+      address.country === "US" &&
+      normalizeUsRegion(address.region) &&
+      isValidUsPostalCode(address.postal_code)
     );
 
   return (
@@ -47,6 +41,9 @@ export default function ShippingForm({
       }`}
     >
       <h2 className="text-lg font-semibold mb-4">Shipping Address</h2>
+      <p className="mb-4 text-sm text-text-secondary">
+        Currently shipping within the United States only.
+      </p>
 
       <div className="space-y-4">
         <Input
@@ -113,23 +110,22 @@ export default function ShippingForm({
             onChange={onChange}
             autoComplete="postal-code"
             inputMode="numeric"
-            pattern="[0-9]*"
+            pattern="[0-9]{5}(-[0-9]{4})?"
             required
           />
         </div>
 
         <div className="flex gap-2 items-end">
           <div className="flex-[3]">
-            <Select onValueChange={onSelectCountry} value={address.country || ""}>
-              <SelectTrigger id="country" className="bg-white text-text-primary touch-manipulation">
-                <SelectValue placeholder="Select Country" />
-              </SelectTrigger>
-              <SelectContent className="bg-white text-text-primary">
-                <SelectItem value="US">United States</SelectItem>
-                <SelectItem value="CA">Canada</SelectItem>
-                <SelectItem value="UK">United Kingdom</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input
+              id="country"
+              name="country"
+              value="United States"
+              aria-label="Country"
+              readOnly
+              disabled
+              className="bg-surface-light text-text-primary"
+            />
           </div>
           <div className="flex-1">
             <Button

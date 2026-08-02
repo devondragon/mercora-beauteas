@@ -170,6 +170,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
     try {
       setShippingOption(option);
+
+      const timestamp = Date.now();
+      let baseId = userId ?? 'guest';
+      if (baseId.includes('@')) baseId = baseId.split('@')[0];
+      const safeUserId = baseId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const newOrderId = `WEB-${safeUserId}-${timestamp}`;
+      setOrderId(newOrderId);
       
       // Update shipping discounts based on new shipping cost
       updateShippingDiscounts();
@@ -183,6 +190,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           items: cartItemsToMajorUnits(items),
           shippingAddress,
           shippingCost: minorToMajor(option.cost || 0),
+          discountCodes: cartDiscountCodes(appliedDiscounts),
+          orderId: newOrderId,
         }),
       });
 
@@ -196,7 +205,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       setTaxAmount(majorToMinor(taxData.amount));
 
       // Create order and payment intent
-      await createPaymentIntent(option);
+      await createPaymentIntent(option, newOrderId);
 
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -206,18 +215,8 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   };
 
   // Create Payment Intent with Stripe
-  const createPaymentIntent = async (selectedShippingOption: ShippingOption) => {
+  const createPaymentIntent = async (selectedShippingOption: ShippingOption, newOrderId: string) => {
     try {
-      // Generate order ID
-      const timestamp = Date.now();
-      let baseId = userId ?? 'guest';
-      if (baseId.includes('@')) {
-        baseId = baseId.split('@')[0];
-      }
-      const safeUserId = baseId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      const newOrderId = `WEB-${safeUserId}-${timestamp}`;
-      setOrderId(newOrderId);
-
       // The caller (handleShippingSelected) just wrote selectedShippingOption
       // and the freshly-computed tax to the store (setShippingOption +
       // setTaxAmount, both synchronous) — calculateTotals() reads that fresh
@@ -409,9 +408,6 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
               <ShippingForm
                 address={address}
                 onChange={handleAddressChange}
-                onSelectCountry={(value) =>
-                  setAddress((prev) => ({ ...prev, country: value }))
-                }
                 onSubmit={handleAddressSubmit}
                 error={null}
               />

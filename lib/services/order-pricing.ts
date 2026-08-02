@@ -50,6 +50,11 @@ import type { MACHAddress as Address } from '@/lib/types/mach/Address';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
 import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
+import {
+  GIFT_CARD_PRODUCT_ID,
+  giftCardPurchasesEnabled,
+  isGiftCardPurchaseProduct,
+} from '@/lib/config/commerce';
 
 // A few cents of slack for cent/dollar rounding across the checkout math. This
 // is the single source of truth for the tolerance; the gift-card fulfillment
@@ -212,6 +217,21 @@ export async function computeCatalogLineCents(
         return { error: `line ${i} is not a valid item object` };
       }
 
+      if (!giftCardPurchasesEnabled()) {
+        let productId = item.product_id;
+        // Do not let a forged line evade the launch control by supplying only
+        // a gift-card variant id and omitting its product id.
+        if (!productId && item.variant_id) {
+          productId = (await getProductVariant(item.variant_id))?.product_id;
+        }
+        const product = productId && productId !== GIFT_CARD_PRODUCT_ID
+          ? await getProduct(productId)
+          : null;
+        if (productId === GIFT_CARD_PRODUCT_ID || isGiftCardPurchaseProduct(product)) {
+          return { error: `line ${i} contains a launch-disabled gift-card purchase` };
+        }
+      }
+
       const quantity = normalizeQuantity((item as { quantity?: unknown }).quantity);
       if (quantity == null) {
         return { error: `line ${i} has an invalid quantity` };
@@ -277,8 +297,6 @@ export async function resolveGiftCardTenderCents(
 // The server-known gift-card product id. Duplicated as a bare literal (rather
 // than imported from gift-card-fulfillment) to avoid an import cycle — that
 // module imports AMOUNT_TOLERANCE_CENTS from here.
-const GIFT_CARD_PRODUCT_ID = 'gift-card';
-
 /** Coerce a catalog product name (string or i18n map) to a display string. */
 function coerceProductName(name: unknown): string | null {
   if (typeof name === 'string') return name;

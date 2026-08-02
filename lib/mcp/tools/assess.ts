@@ -4,6 +4,7 @@ import { AssessRequest, AssessResponse, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { ritualBundleSuggestions } from '../catalog';
 import { Money, toWireMoney } from '../../money';
+import { isPubliclyPurchasableProduct } from '../../config/commerce';
 
 export async function assessFulfillmentCapability(
   request: AssessRequest,
@@ -39,7 +40,7 @@ export async function assessFulfillmentCapability(
       );
       
       // Search for products matching this item
-      const searchResults = await searchProducts(item);
+      const searchResults = (await searchProducts(item)).filter(isPubliclyPurchasableProduct);
       
       const confidence = calculateConfidence(itemLower, searchResults, isOurSpecialty);
       

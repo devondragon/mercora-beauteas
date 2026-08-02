@@ -73,6 +73,29 @@ beforeEach(() => {
 });
 
 describe('computeCatalogSubtotalCents (BMC-131)', () => {
+  it('rejects a forged launch-disabled gift-card purchase line before catalog lookup', async () => {
+    const result = await computeCatalogSubtotalCents([
+      { product_id: 'gift-card', variant_id: 'gift-card-25', quantity: 1 },
+    ]);
+    expect(result.errors[0]).toContain('launch-disabled gift-card purchase');
+    expect(vi.mocked(getProductVariant)).not.toHaveBeenCalled();
+  });
+
+  it('rejects a gift-card variant even when a forged line omits product_id', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'gift-card-25',
+      product_id: 'gift-card',
+      price: { amount: 2500, currency: 'USD' },
+    } as any);
+
+    const result = await computeCatalogSubtotalCents([
+      { variant_id: 'gift-card-25', quantity: 1 },
+    ]);
+
+    expect(result.subtotalCents).toBe(0);
+    expect(result.errors[0]).toContain('launch-disabled gift-card purchase');
+  });
+
   it('prices from the catalog and ignores any client-supplied price', async () => {
     // The client claims a laughable unit_price; the catalog is authoritative.
     const { subtotalCents, errors } = await computeCatalogSubtotalCents([

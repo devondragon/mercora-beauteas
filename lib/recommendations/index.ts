@@ -6,6 +6,7 @@ import { getRecommendationSettings } from "@/lib/utils/settings";
 import { listProducts } from "@/lib/models/mach/products";
 import { getProvider } from "./providers/registry";
 import { blendRecommendations } from "./blend";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 export async function getRecommendationsForProduct(
   product: Product,
@@ -14,7 +15,7 @@ export async function getRecommendationsForProduct(
   try {
     const settings = await getRecommendationSettings();
     const limit = opts.limit ?? settings.limit;
-    const allProducts = await listProducts({ status: ["active"] });
+    const allProducts = (await listProducts({ status: ["active"] })).filter(isPubliclyPurchasableProduct);
     const provider = getProvider(settings.strategy);
 
     let base: Product[] = [];

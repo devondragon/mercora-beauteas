@@ -93,6 +93,13 @@ const fakeActiveCategoryProduct = {
   ],
 };
 
+const fakeGiftCardProduct = {
+  ...fakeActiveCategoryProduct,
+  id: 'gift-card',
+  slug: 'gift-card',
+  type: 'gift-card',
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -161,6 +168,22 @@ describe('GET /api/products public access (BMC-149 / M6)', () => {
     for (const call of vi.mocked(listProducts).mock.calls) {
       expect(call[0]?.status).toEqual(['active']);
     }
+  });
+
+  it('excludes launch-disabled gift cards before public pagination and totals', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValue({
+      success: false,
+      error: 'Authentication required. Please sign in.',
+    });
+    vi.mocked(listProducts).mockResolvedValue([
+      fakeGiftCardProduct as any,
+      fakeActiveCategoryProduct as any,
+    ]);
+
+    const res = await GET(new NextRequest('http://localhost/api/products'));
+    const body = await res.json() as any;
+    expect(body.data.map((p: any) => p.id)).toEqual(['prod_active']);
+    expect(body.meta.total).toBe(1);
   });
 });
 

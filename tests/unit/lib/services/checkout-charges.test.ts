@@ -6,8 +6,8 @@
  * the enforced charge floor, and the same Stripe-Tax-vs-fallback logic `/api/tax`
  * quotes the shopper with. These tests pin:
  *   - shipping is deterministic (standard / AK-HI surcharge / free over threshold);
- *   - tax uses Stripe Tax when usable, else the flat fallback on goods + shipping,
- *     with a distinct reason for no-address / stripe-error / not-configured;
+ *   - tax uses Stripe Tax when usable, else the Colorado/zero launch fallback
+ *     on discounted goods only, with a distinct fallback reason;
  *   - the one-shot extras helper prices from the catalog and fails closed when a
  *     line is unpriceable (never spending a Stripe Tax call on a doomed cart).
  *
@@ -40,7 +40,9 @@ import {
   resolveShippingOptions,
   computeExpectedTaxCents,
   computeExpectedChargeExtras,
-  FALLBACK_TAX_RATE,
+  COLORADO_FALLBACK_TAX_RATE,
+  TEA_TAX_CODE,
+  allocateDiscountAcrossLines,
 } from '@/lib/services/checkout-charges';
 import { calculateTax, isStripeConfigured } from '@/lib/stripe';
 import { getProductVariant, getProduct } from '@/lib/models/mach/products';
@@ -56,7 +58,9 @@ beforeEach(() => {
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
-  vi.mocked(getProduct).mockResolvedValue(null as any);
+  vi.mocked(getProduct).mockImplementation(async (id: string) =>
+    id === 'tea-1' ? ({ id, type: 'Tea Bags', tax_category: 'food' } as any) : null
+  );
 });
 
 describe('computeShippingFloorCents (settings-based, matches /api/shipping-options)', () => {
@@ -116,25 +120,26 @@ describe('resolveShippingOptions', () => {
 describe('computeExpectedTaxCents', () => {
   it('uses Stripe Tax when the address is usable, returning its cents verbatim', async () => {
     vi.mocked(calculateTax).mockResolvedValue({ tax_amount_exclusive: 219 } as any);
-    const res = await computeExpectedTaxCents({ lineCents: [2500], shippingAddress: caAddress, shippingCents: 999 });
+    const res = await computeExpectedTaxCents({ lineCents: [2500], taxCodes: [TEA_TAX_CODE], shippingAddress: caAddress, shippingCents: 999 });
     expect(res).toEqual({ taxCents: 219, calculatedBy: 'stripe' });
     // Stripe Tax line item is the catalog cents; shipping is passed as shipping_cost.
     const params = vi.mocked(calculateTax).mock.calls[0][0] as any;
     expect(params.line_items[0].amount).toBe(2500);
+    expect(params.line_items[0].tax_code).toBe(TEA_TAX_CODE);
     expect(params.shipping_cost.amount).toBe(999);
   });
 
-  it('falls back to the flat rate (no_address) with no usable address, taxing goods + shipping', async () => {
-    const res = await computeExpectedTaxCents({ lineCents: [2500], shippingAddress: undefined, shippingCents: 999 });
+  it('falls back to zero outside Colorado and excludes shipping', async () => {
+    const res = await computeExpectedTaxCents({ lineCents: [2500], taxCodes: [TEA_TAX_CODE], shippingAddress: undefined, shippingCents: 999 });
     expect(res.calculatedBy).toBe('fallback');
     expect(res.fallbackReason).toBe('no_address');
-    expect(res.taxCents).toBe(Math.round((2500 + 999) * FALLBACK_TAX_RATE)); // 245
+    expect(res.taxCents).toBe(0);
     expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
   });
 
   it('falls back (not_configured) without calling Stripe when Stripe is unconfigured', async () => {
     vi.mocked(isStripeConfigured).mockReturnValue(false);
-    const res = await computeExpectedTaxCents({ lineCents: [2500], shippingAddress: caAddress, shippingCents: 999 });
+    const res = await computeExpectedTaxCents({ lineCents: [2500], taxCodes: [TEA_TAX_CODE], shippingAddress: caAddress, shippingCents: 999 });
     expect(res.calculatedBy).toBe('fallback');
     expect(res.fallbackReason).toBe('not_configured');
     expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
@@ -142,10 +147,11 @@ describe('computeExpectedTaxCents', () => {
 
   it('falls back (stripe_error) on a Stripe Tax failure rather than throwing', async () => {
     vi.mocked(calculateTax).mockRejectedValue(new Error('stripe down'));
-    const res = await computeExpectedTaxCents({ lineCents: [2500], shippingAddress: caAddress, shippingCents: 999 });
+    const coAddress = { ...caAddress, region: 'Colorado' };
+    const res = await computeExpectedTaxCents({ lineCents: [2500], taxCodes: [TEA_TAX_CODE], shippingAddress: coAddress, shippingCents: 999 });
     expect(res.calculatedBy).toBe('fallback');
     expect(res.fallbackReason).toBe('stripe_error');
-    expect(res.taxCents).toBe(Math.round((2500 + 999) * FALLBACK_TAX_RATE));
+    expect(res.taxCents).toBe(Math.round(2500 * COLORADO_FALLBACK_TAX_RATE));
   });
 });
 
@@ -157,6 +163,7 @@ describe('computeExpectedChargeExtras', () => {
     const extras = await computeExpectedChargeExtras([line], caAddress);
     expect(extras).toEqual({
       goodsCents: 2500,
+      discountCents: 0,
       shippingCents: 599, // cheapest settings method ($5.99), not calculateShipping
       taxCents: 200,
       taxCalculatedBy: 'stripe',
@@ -175,5 +182,13 @@ describe('computeExpectedChargeExtras', () => {
     expect(extras.priceable).toBe(false);
     expect(extras.taxCents).toBe(0);
     expect(vi.mocked(calculateTax)).not.toHaveBeenCalled();
+  });
+});
+
+describe('allocateDiscountAcrossLines', () => {
+  it('allocates fixed discounts exactly without rounding drift', () => {
+    const net = allocateDiscountAcrossLines([1001, 2002, 3003], 1000);
+    expect(net.reduce((sum, cents) => sum + cents, 0)).toBe(5006);
+    expect(net).toEqual([834, 1669, 2503]);
   });
 });

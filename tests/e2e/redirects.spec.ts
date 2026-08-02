@@ -26,7 +26,9 @@ test.describe('Shopify redirect map', () => {
   test('root path is not redirected away', async ({ page }) => {
     const response = await page.goto('/');
     expect(response?.status()).toBe(200);
-    expect(response?.url()).toMatch(/localhost:3000\/?$/);
+    const finalUrl = new URL(response!.url());
+    expect(finalUrl.hostname).toBe('localhost');
+    expect(finalUrl.pathname).toBe('/');
   });
 
   if (KNOWN_REDIRECTS.length > 0) {

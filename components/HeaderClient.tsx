@@ -74,6 +74,7 @@ import type { MACHCategory } from '@/lib/types/mach';
  */
 interface HeaderClientProps {
   categories: MACHCategory[];
+  giftCardPurchasesEnabled: boolean;
 }
 
 /**
@@ -132,6 +133,7 @@ const getCategorySlug = (category: MACHCategory): string => {
  */
 export default function HeaderClient({
   categories,
+  giftCardPurchasesEnabled,
 }: HeaderClientProps) {
   const { name: brandName } = useBrand();
   const { isSignedIn } = useAuth();
@@ -349,7 +351,7 @@ export default function HeaderClient({
   );
 
   return (
-    <div className="flex justify-between items-center px-4 sm:px-6 py-4 bg-surface-dark text-text-primary">
+    <header className="flex justify-between items-center px-4 sm:px-6 py-4 bg-surface-dark text-text-primary">
       <Link href="/" className="shrink-0 transition-opacity hover:opacity-80" aria-label={brandName}>
         <Image
           src="/logo.png"
@@ -411,14 +413,16 @@ export default function HeaderClient({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Link
-          href="/gift-cards"
-          prefetch={true}
-          className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
-        >
-          <Gift className="h-4 w-4" />
-          Gift Cards
-        </Link>
+        {giftCardPurchasesEnabled && (
+          <Link
+            href="/gift-cards"
+            prefetch={true}
+            className="flex items-center gap-2 px-4 py-2 text-text-primary hover:bg-text-primary hover:text-primary-500 rounded-md transition-colors"
+          >
+            <Gift className="h-4 w-4" />
+            Gift Cards
+          </Link>
+        )}
 
 
         <ClientOnly>
@@ -488,15 +492,17 @@ export default function HeaderClient({
                 <SimpleMobileCategoryList categories={categories} onCategorySelect={() => setIsMobileMenuOpen(false)} />
               </div>
 
-              <Link
-                href="/gift-cards"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
-                prefetch={true}
-              >
-                <Gift className="h-5 w-5" />
-                <span>Gift Cards</span>
-              </Link>
+              {giftCardPurchasesEnabled && (
+                <Link
+                  href="/gift-cards"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-3 text-text-primary hover:text-primary-500 py-3 px-4 rounded-lg hover:bg-surface-lighter"
+                  prefetch={true}
+                >
+                  <Gift className="h-5 w-5" />
+                  <span>Gift Cards</span>
+                </Link>
+              )}
 
               <div className="border-t border-border-default pt-6 space-y-3">
                 <button 
@@ -536,6 +542,6 @@ export default function HeaderClient({
           </SheetContent>
         </Sheet>
       </div>
-    </div>
+    </header>
   );
 }

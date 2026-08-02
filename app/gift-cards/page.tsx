@@ -8,6 +8,8 @@
 
 import type { Metadata } from "next";
 import GiftCardPurchaseForm from "@/components/gift-card/GiftCardPurchaseForm";
+import { notFound } from "next/navigation";
+import { giftCardPurchasesEnabled } from "@/lib/config/commerce";
 
 export const metadata: Metadata = {
   title: "Gift Cards",
@@ -16,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 export default function GiftCardsPage() {
+  if (!giftCardPurchasesEnabled()) notFound();
   return (
     <div className="min-h-screen px-4 py-12 sm:px-6 lg:px-12">
       <div className="mx-auto max-w-2xl">

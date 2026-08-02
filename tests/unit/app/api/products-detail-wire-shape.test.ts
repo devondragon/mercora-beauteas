@@ -27,6 +27,7 @@ vi.mock('@/lib/models/mach/products', () => ({
 import { NextRequest } from 'next/server';
 import { GET, PUT } from '@/app/api/products/[id]/route';
 import { getProduct, updateProduct } from '@/lib/models/mach/products';
+import { checkAdminPermissions } from '@/lib/auth/admin-middleware';
 
 const params = { params: Promise.resolve({ id: 'prod_1' }) };
 
@@ -64,6 +65,19 @@ describe('GET /api/products/[id] emits MACH wire-shaped money (BMC-164 review Fi
     expect(variant.price).toEqual({ amount: 29.99, currency: 'USD', precision: 2 });
     expect(variant.compare_at_price).toEqual({ amount: 34.99, currency: 'USD', precision: 2 });
     expect(variant.cost).toEqual({ amount: 9, currency: 'USD', precision: 2 });
+  });
+
+  it('returns 404 for a launch-disabled gift card to a public caller', async () => {
+    vi.mocked(checkAdminPermissions).mockResolvedValueOnce({ success: false, error: 'Authentication required' });
+    vi.mocked(getProduct).mockResolvedValue({
+      ...fakeCentsProduct,
+      id: 'gift-card',
+      slug: 'gift-card',
+      type: 'gift-card',
+    } as any);
+    const giftParams = { params: Promise.resolve({ id: 'gift-card' }) };
+    const res = await GET(new NextRequest('http://localhost/api/products/gift-card'), giftParams);
+    expect(res.status).toBe(404);
   });
 });
 

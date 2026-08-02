@@ -35,6 +35,7 @@ import {
 } from "@/lib/utils/order-update-guards";
 import { MAX_CAS_ATTEMPTS, updatedAtGuard } from "@/lib/payments/refund-ledger-store";
 import { logCritical } from "@/lib/utils/observe";
+import { validateUsShippingAddress } from "@/lib/utils/address";
 
 
 
@@ -157,6 +158,20 @@ export async function POST(request: NextRequest) {
         error: 'Validation failed',
         details: ['request body must be a JSON object']
       }, { status: 400 });
+    }
+
+    // All launch products are physical and US-only. Standard checkout already
+    // persists a validated pending-order address at PaymentIntent creation;
+    // this guard closes the legacy/fresh-insert API path for direct non-US or
+    // malformed state/ZIP submissions.
+    if (body.shipping_address) {
+      const addressErrors = validateUsShippingAddress(body.shipping_address);
+      if (addressErrors.length) {
+        return NextResponse.json({
+          error: 'Validation failed',
+          details: addressErrors,
+        }, { status: 400 });
+      }
     }
 
     // Validate required fields
@@ -361,7 +376,16 @@ export async function POST(request: NextRequest) {
           variant_id: it?.variant_id ?? it?.variantId,
           quantity: it?.quantity,
         }));
-        const extras = await computeExpectedChargeExtras(draftLines, body.shipping_address ?? null);
+        const rawCodes = (body.extensions as any)?.discount_codes;
+        const discountCodes = Array.isArray(rawCodes)
+          ? rawCodes.filter((code: unknown): code is string => typeof code === 'string')
+          : undefined;
+        const extras = await computeExpectedChargeExtras(
+          draftLines,
+          body.shipping_address ?? null,
+          discountCodes,
+          orderId
+        );
         if (extras.priceable) {
           sanitizedExtensions = { ...(sanitizedExtensions ?? {}) };
           sanitizedExtensions.expected_shipping_cents = extras.shippingCents;
@@ -797,4 +821,3 @@ function hydrateOrder(dbOrder: typeof orders.$inferSelect): Order {
     updated_at: dbOrder.updated_at ?? undefined
   };
 }
-
