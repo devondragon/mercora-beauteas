@@ -54,23 +54,27 @@
 
 // middleware.ts
 import { clerkMiddleware } from "@clerk/nextjs/server";
-import { NextRequest, NextResponse } from "next/server";
+import { NextFetchEvent, NextRequest, NextResponse } from "next/server";
 import { getSettings } from "@/lib/utils/settings";
 import { getDbAsync } from "@/lib/db";
 import { redirect_map } from "@/lib/db/schema/redirect-map";
 import { eq } from "drizzle-orm";
+import { shouldBypassClerkForLocalE2E } from "@/lib/auth/local-e2e";
 
 /**
  * Custom middleware that combines Clerk authentication with maintenance mode checking
  */
-export default clerkMiddleware(async (auth, req: NextRequest) => {
+const applicationMiddleware = async (
+  req: NextRequest,
+  continuation = NextResponse.next()
+) => {
   const { pathname } = req.nextUrl;
   
   // Skip maintenance check for static assets and Next.js internals
   if (pathname.includes('/_next') || 
       pathname.includes('/favicon') || 
       pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf)$/)) {
-    return NextResponse.next();
+    return continuation;
   }
   
   // Skip maintenance check for admin routes, MCP API, and inbound webhooks —
@@ -85,7 +89,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
       pathname.startsWith('/api/admin') ||
       pathname.startsWith('/api/mcp') ||
       pathname.startsWith('/api/webhooks')) {
-    return NextResponse.next();
+    return continuation;
   }
   
   try {
@@ -240,8 +244,28 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   }
 
   // Continue with normal Clerk authentication
-  return NextResponse.next();
-});
+  return continuation;
+};
+
+const authenticatedMiddleware = clerkMiddleware(async (_auth, req) => applicationMiddleware(req));
+
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  // Browser CI runs a hermetic local Worker and cannot safely use a real Clerk
+  // secret. The bypass requires both an explicit test-only marker and the exact
+  // localhost hostname, so a deployed marker cannot disable Clerk for public
+  // traffic. Protected API routes still enforce their own authorization and
+  // are exercised by the E2E suite.
+  if (shouldBypassClerkForLocalE2E(process.env.E2E_AUTH_BYPASS, req.nextUrl.hostname)) {
+    const requestHeaders = new Headers(req.headers);
+    // Match Clerk's keyless signed-out middleware context so server-side
+    // `auth()` calls continue to work without accepting a session.
+    requestHeaders.set('x-clerk-auth-status', 'signed-out');
+    const signedOutContinuation = NextResponse.next({ request: { headers: requestHeaders } });
+    return applicationMiddleware(req, signedOutContinuation);
+  }
+
+  return authenticatedMiddleware(req, event);
+}
 
 /**
  * Middleware configuration defining which routes should be processed
