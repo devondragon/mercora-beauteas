@@ -38,6 +38,7 @@
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import { getProductsByCategory } from "@/lib/models/mach/products";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 /**
  * Home page component - main landing page for the application
@@ -54,6 +55,7 @@ export default async function HomePage() {
     return (typeof value === "string" ? value : "").toLowerCase();
   };
   const featuredProducts = (await getProductsByCategory("cat_clearly_calendula"))
+    .filter(isPubliclyPurchasableProduct)
     .map((product) => ({ product, rank: TIME_OF_DAY_ORDER.findIndex((t) => productKey(product).includes(t)) }))
     .filter(({ rank }) => rank !== -1)
     .sort((a, b) => a.rank - b.rank)

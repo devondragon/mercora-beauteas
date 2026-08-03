@@ -84,7 +84,7 @@ beforeEach(() => {
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
-  vi.mocked(getProduct).mockResolvedValue(null as any);
+  vi.mocked(getProduct).mockResolvedValue({ id: 'tea-1', type: 'Tea Bags', tax_category: 'food' } as any);
   // Default: no cart discount unless a test opts in.
   vi.mocked(resolveCartDiscountCents).mockResolvedValue(0);
 });

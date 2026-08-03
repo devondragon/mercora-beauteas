@@ -10,7 +10,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is [`PRODUCTION-CUTOV
 
 SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhooks, UI, admin) · Shopify ETL pipeline · customer account pages · admin enhancements · pre-launch polish. P0 auth re-enabled and fail-closed.
 
-**Shipped since the original plan (no longer deferred):** gift cards (BMC-72/125 — schema live, redeem path tested against real D1), blog tables (BMC-121), and an automated test framework (BMC-69 — Vitest unit + `@cloudflare/vitest-pool-workers` integration + Playwright E2E).
+**Shipped since the original plan (no longer deferred):** gift-card redemption/admin (BMC-72/125 — new-card purchasing is launch-disabled), blog tables (BMC-121), and an automated test framework (BMC-69 — Vitest unit + `@cloudflare/vitest-pool-workers` integration + Playwright E2E).
 
 **Still deferred (post-launch, not blockers):** Klaviyo, wishlist, search autocomplete, broader test coverage.
 

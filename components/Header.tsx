@@ -32,6 +32,7 @@
 import { listCategories } from "@/lib/models";
 import HeaderClient from "./HeaderClient";
 import { unstable_cache } from "next/cache";
+import { giftCardPurchasesEnabled } from "@/lib/config/commerce";
 
 // Cache categories for better performance
 const getCachedCategories = unstable_cache(
@@ -50,5 +51,10 @@ export default async function Header() {
   const categories = await getCachedCategories();
   
   // Pass data to client component for interactive functionality
-  return <HeaderClient categories={categories} />;
+  return (
+    <HeaderClient
+      categories={categories}
+      giftCardPurchasesEnabled={giftCardPurchasesEnabled()}
+    />
+  );
 }

@@ -1,11 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// NOTE: E2E is intentionally NOT wired into the CI workflow (.github/workflows/ci.yml)
-// yet — it needs a running dev server with local Cloudflare bindings plus test
-// Clerk/Stripe keys. The `process.env.CI` branches below are for when it is added.
-// When wiring E2E into CI, do NOT upload `test-results/` traces as artifacts: on
-// retry they capture Clerk session cookies and Stripe tokens. Traces are disabled
-// under CI for that reason (see `trace` below).
+// The checkout browser suite is part of the launch-readiness CI gate. Do not
+// upload `test-results/` traces as artifacts: retries can capture Clerk session
+// cookies and Stripe tokens. Traces are disabled under CI for that reason.
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
@@ -16,7 +13,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? 'github' : 'html',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3217',
     // Off in CI to avoid capturing session cookies / auth tokens in trace zips.
     trace: process.env.CI ? 'off' : 'on-first-retry',
     screenshot: 'only-on-failure',
@@ -28,9 +25,17 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // Run the actual Worker with local D1/R2 bindings. Workers AI and
+    // Vectorize have no local simulation, so the E2E preview deliberately
+    // disables remote bindings instead of requiring Cloudflare credentials in
+    // the release gate. The checkout suite does not exercise those bindings.
+    command: 'npm run preview:e2e',
+    url: 'http://localhost:3217',
+    // A different app on the checkout port must never satisfy the release gate.
+    reuseExistingServer: false,
+    // Fresh GitHub runners compile both Next.js and the OpenNext Worker from a
+    // cold cache. Keep local feedback fast, but give CI enough time to finish
+    // that startup before Playwright decides the server is unavailable.
+    timeout: process.env.CI ? 240_000 : 120_000,
   },
 });

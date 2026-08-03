@@ -11,6 +11,8 @@
 import type { MetadataRoute } from "next";
 import { listProducts, listCategories, getPublishedPages, getPublishedBlogPosts } from "@/lib/models";
 import { BASE_URL } from "@/lib/seo/metadata";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
+import { cmsTimestampToDate } from "@/lib/utils/date";
 
 export const dynamic = "force-dynamic";
 
@@ -51,16 +53,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.9,
   }));
 
-  const productUrls: MetadataRoute.Sitemap = products.map((p) => ({
+  const productUrls: MetadataRoute.Sitemap = products.filter(isPubliclyPurchasableProduct).map((p) => ({
     url: `${BASE_URL}/product/${typeof p.slug === "string" ? p.slug : p.id}`,
-    lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+    lastModified: cmsTimestampToDate(p.updated_at),
     changeFrequency: "weekly" as const,
     priority: 0.8,
   }));
 
   const pageUrls: MetadataRoute.Sitemap = pages.map((page) => ({
     url: `${BASE_URL}/${page.slug}`,
-    lastModified: page.updated_at ? new Date(page.updated_at) : new Date(),
+    lastModified: cmsTimestampToDate(page.updated_at),
     changeFrequency: "monthly" as const,
     priority: 0.6,
   }));
@@ -74,7 +76,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const blogPostUrls: MetadataRoute.Sitemap = blogPosts.map((post) => ({
     url: `${BASE_URL}/blog/${post.slug}`,
-    lastModified: new Date(post.updated_at * 1000),
+    lastModified: cmsTimestampToDate(post.updated_at),
     changeFrequency: "monthly" as const,
     priority: 0.6,
   }));

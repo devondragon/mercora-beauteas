@@ -2,6 +2,7 @@ import { searchProducts } from '../../models/mach/products';
 import { SearchRequest, MCPToolResponse } from '../types';
 import { enhanceUserContext } from '../context';
 import { Product } from '../../types';
+import { isPubliclyPurchasableProduct } from '../../config/commerce';
 
 export async function searchProductsWithContext(
   request: SearchRequest,
@@ -20,7 +21,7 @@ export async function searchProductsWithContext(
     }
 
     // Search products
-    const products = await searchProducts(request.query);
+    const products = (await searchProducts(request.query)).filter(isPubliclyPurchasableProduct);
     
     // Filter by user preferences if provided
     let filteredProducts = products;

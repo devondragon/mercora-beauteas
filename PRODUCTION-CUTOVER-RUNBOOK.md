@@ -8,7 +8,7 @@
 
 ## Read this first
 
-**All development is done.** Every launch-blocking code ticket is merged and audited — auth (fail-closed), inventory decrement/oversell, refund idempotency, server-side tax with charge floors, coupon redemption tracking, order-status gating, and observability. There is **no code left to write** to launch. There is also now an automated test suite (Vitest + Playwright, gated in CI).
+**PUBLIC DNS IS ON HOLD.** The 2026-08-01 launch-readiness remediation must be deployed to `shop.beauteas.com` and revalidated before canonical URLs or DNS move to `www`. The remediation corrects discounted tax lines and tea tax codes, disables new gift-card purchasing for launch, makes checkout US-only, patches production dependencies, and makes the full test matrix a deploy prerequisite.
 
 **Everything below is operational** — standing up live services, flipping to live keys, **promoting the curated catalog from dev to prod**, and switching DNS. None of it has been exercised end-to-end against live Stripe/Clerk yet, so the manual verification steps (Phases 9 and 11) are the safety net.
 
@@ -26,7 +26,7 @@
 
 **⚠️ Still untested: the gift-card, subscription, and review email paths.** Explicitly **not** launch blockers (see the critical path below) — but they have still never rendered, and they are server-rendered templates that fail on undefined fields.
 
-**Next up: Phase 10 — the cutover itself. Nothing is blocking it.** Leaving `shop.` public and ungated is an accepted risk given the <48h window (Phase 9). `redirect_map` is now populated (51 rows in prod, verified 2026-08-01) — the remaining pre-DNS nice-to-have is the Apple Pay domain-association file (Phase 9); everything else on the open list is post-launch.
+**Next up: redeploy and repeat the Phase 9 validation. Do not begin Phase 10 yet.** Complete one low-value test-mode checkout and one controlled live purchase/refund on `shop.`, then confirm the order, email, inventory change, webhook completion, and fulfillment queue. Only after that evidence is clean should canonical URLs and DNS move to `www`.
 
 **☑ DECIDED 2026-07-27 — hostnames.**
 
@@ -49,8 +49,9 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 | 3 | **Promote catalog + images dev → prod** (Phase 8) | ☑ | done 2026-07-27 — 10 products / 6 categories / 13 pages / 47 images / **18 vectors** indexed |
 | 4 | **Verify on `shop.`**: one real order end-to-end + order-confirmation email renders (Phase 9) | ☑ | done 2026-07-27 — order `WEB-GUEST-1785194376707`, `calculated_by: stripe`, webhook OK, inventory 250→249, email delivered |
 | ~~5~~ | ~~Gate `shop.` behind Cloudflare Access~~ | ⊘ | **accepted risk, decided 2026-07-28** — cutover is inside 48h; see Phase 9 |
-| 6 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | **← next. Nothing is blocking it.** |
-| 7 | **Post-cutover checks** (Phase 11) | ☐ | #6 |
+| 6 | **Deploy launch-readiness remediation to `shop.` and repeat controlled checkout/refund validation** | ☐ | required before DNS |
+| 7 | **DNS switch + rebuild with `www` canonical** (Phase 10) | ☐ | blocked by #6 |
+| 8 | **Post-cutover checks** (Phase 11) | ☐ | #7 |
 
 > ✅ **Footer page design (PR #98) shipped 2026-07-30.** Dev and production are both deployed and migrated (`0019` + `0020`), in the required order: `images:pages` → `deploy` → `migrations apply`. Verified on `shop.beauteas.com`: all 9 footer pages 200 with the right template, `/about` → 308 → `/about-us`, `/pages/about` → 301 → `/about` (chains correctly), real 404s on `/totally-missing`, `/product/nope`, `/category/nope`, `/blog/nope`, live blend prices rendering, page images served from `img.beauteas.com`, and `static.cloudflareinsights.com` present in the live `script-src`.
 >
@@ -66,7 +67,7 @@ Everything genuinely blocking go-live, in order. Anything not on this list is op
 >
 > ⚠️ The old pre-flight check here said Brewing Directions should be 2748 chars. That figure was measured against **dev**; production legitimately held 3339 chars (same four headings, same prose, different markup). Compare *content*, not length — and note `0019` snapshots the row before rewriting it either way.
 
-**Explicitly NOT blocking launch:** subscriptions (not sold at launch — no coupon, no recurring prices, no subscription tests) · the recommendations cron (strategy is `deterministic`) · [BMC-212](https://linear.app/blackmagicconsulting/issue/BMC-212/retire-cloudflarestripe-live-paymentintent-path-still-runs-on-stripe) CloudflareStripe · [BMC-213](https://linear.app/blackmagicconsulting/issue/BMC-213/stripe-dashboard-refunds-are-invisible-to-the-app-over-refund-vector) refund reconciliation · [BMC-214](https://linear.app/blackmagicconsulting/issue/BMC-214/no-chargebackdispute-handling-chargedispute-events-unobserved) disputes · gift-card and review email paths (only the order-confirmation path is on the launch critical path).
+**Explicitly NOT sold at launch:** new gift cards. Purchase routes and catalog discovery are disabled fail-closed in production; redemption and administration of already-issued cards remain available. Post-launch work must add digital-only checkout, no shipping requirement/charge, correct tax treatment, recipient-email verification, boolean `shipping_required` normalization, and stable cart line IDs before purchasing is enabled.
 
 ---
 
@@ -83,7 +84,7 @@ You can't do anything else until these exist. None of it is code — it's accoun
 - ☑ **Cloudflare** account on the Workers **paid** plan; note the Account ID. *(Done 2026-07-27 — account `e230c667ec437820d64caf703df479b6`.)*
 - ☑ **Clerk production instance** (separate from the `pk_test…` dev instance). Get `pk_live_…` + `sk_live_…`. *(Done 2026-07-27.)*
 - ☑ **Stripe** business verification complete, **Live mode** available. *(Done 2026-07-27.)*
-- ☑ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). *(Done 2026-07-27 — still verify at first live checkout that `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)* **This is a hard gate, not just "enable Stripe Tax."** `/api/tax` uses nexus-aware Stripe Tax but **falls back to a flat 7% rate** whenever Stripe Tax errors or `STRIPE_SECRET_KEY` is missing. If your live nexus isn't registered, **every order mischarges tax.** Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction you have nexus in is registered. (Confirmed working later when a live checkout's `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)
+- ☑ ⚠️ **Stripe Tax registrations / nexus configured in the LIVE account** (BMC-187). *(Done 2026-07-27 — still verify at first live checkout that `/api/tax` returns `"calculated_by": "stripe"`, not `"fallback"`.)* **This is a hard gate, not just "enable Stripe Tax."** Stripe Tax receives discounted catalog line amounts and the tea code `txcd_41050008`. On failure, the launch fallback is exactly **3.25% of discounted merchandise for Colorado and 0% elsewhere, with shipping excluded**. Verify in **Stripe Dashboard → Tax → Registrations** that each jurisdiction with nexus is registered.
 - ⊘ **NOT NEEDED — verified 2026-07-27.** The runbook previously claimed an R2 API token (Access Key ID + Secret) was required for the dev→prod image copy via "S3 API / rclone". It isn't: `scripts/sync-images.mjs` shells out to `wrangler r2 object put/get` (`:86`, `:130`), so it inherits the existing `CLOUDFLARE_API_TOKEN`. Confirmed by writing a test object to the prod `beauteas-images` bucket and deleting it — both succeeded.
 - ☐ *(Shopify Admin API + Judge.me creds were used for the already-completed dev ETL and are **not** needed again — prod is populated by copying the curated dev catalog, not a fresh Shopify pull. Only revisit if you later decide to migrate order/customer history.)*
 - ☐ Decide **subscription economics**: frequencies (e.g. every 2 weeks / monthly / every 2 months) + discount % (e.g. 10%).

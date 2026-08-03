@@ -54,6 +54,7 @@ import {
   JsonLdScript,
   buildBreadcrumbJsonLd,
 } from "@/lib/seo/json-ld";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 /**
  * Generate SEO metadata for a category page including Open Graph tags
@@ -120,7 +121,7 @@ export default async function CategoryPage({
   let error: string | null = null;
 
   try {
-    products = await getProductsByCategory(category.id as string);
+    products = (await getProductsByCategory(category.id as string)).filter(isPubliclyPurchasableProduct);
   } catch (e: any) {
     // The category itself resolved, so the page is still worth rendering — but
     // the operator needs the real error, and the customer must not be shown it

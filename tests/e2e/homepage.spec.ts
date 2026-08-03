@@ -14,7 +14,7 @@ test.describe('Homepage', () => {
 
   test('navigation header is visible', async ({ page }) => {
     await page.goto('/');
-    const header = page.locator('header');
+    const header = page.locator('header:visible').first();
     await expect(header).toBeVisible();
   });
 

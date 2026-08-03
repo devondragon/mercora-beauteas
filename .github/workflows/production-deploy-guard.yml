@@ -3,6 +3,10 @@ name: Deploy to Production
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  checks: read
+
 # Two overlapping dispatches would each see the same migrations pending, each
 # take their own backup, and then both run `d1 migrations apply` against the
 # same production D1 — and afterwards there is no way to tell which of the two
@@ -18,7 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+
+      - name: Require successful CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" --jq '[.check_runs[] | select(.name == "Launch readiness gate")] | sort_by(.completed_at) | last | .conclusion')"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::Launch readiness gate has not succeeded for ${GITHUB_SHA}."
+            exit 1
+          fi
 
       - name: Check for REPLACE_WITH_ placeholders
         run: |
@@ -30,9 +44,9 @@ jobs:
           echo "No REPLACE_WITH_ placeholders found. Proceeding with production deploy."
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies
@@ -57,12 +71,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies

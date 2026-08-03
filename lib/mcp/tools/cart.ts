@@ -4,6 +4,7 @@ import { CartRequest, CartResponse, MCPToolResponse } from '../types';
 import { CartItem } from '../../types/cartitem';
 import { ritualBundleSuggestions } from '../catalog';
 import { Money, toWireMoney } from '../../money';
+import { isPubliclyPurchasableProduct } from '../../config/commerce';
 
 // Wire-shaped zero total, reused for every failure/empty-cart response
 // (BMC-164) — CartResponse.estimated_total is MACH { amount, currency,
@@ -55,7 +56,7 @@ export async function addToCart(
 
     // Get product details
     const product = await getProductBySlug(request.productId.toString());
-    if (!product) {
+    if (!product || !isPubliclyPurchasableProduct(product)) {
       throw new Error('Product not found');
     }
 

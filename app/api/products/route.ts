@@ -12,6 +12,7 @@ import { toPublicProduct, toWireProduct } from "@/lib/models/mach/product-serial
 import type { WireProduct } from "@/lib/models/mach/product-serializer";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import type { ApiResponse, Product } from "@/lib/types";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 const PRODUCT_STATUSES = ['active', 'inactive', 'draft', 'archived'] as const;
 type ProductStatus = (typeof PRODUCT_STATUSES)[number];
@@ -72,16 +73,23 @@ export async function GET(request: NextRequest) {
       // getProductsByCategory isn't status-/pagination-aware, so fetch once,
       // apply the status filter, then slice for the page. total/links derive
       // from the full filtered list so pagination stays consistent.
-      const filtered = filterByStatus(await getProductsByCategory(category.trim()));
+      const visible = filterByStatus(await getProductsByCategory(category.trim()));
+      const filtered = isAdmin ? visible : visible.filter(isPubliclyPurchasableProduct);
       total = filtered.length;
       products = filtered.slice(offset, offset + limit);
     } else {
-      const [all, page] = await Promise.all([
-        listProducts({ status: statusFilter }),
-        listProducts({ status: statusFilter, limit, offset })
-      ]);
-      total = all.length;
-      products = page;
+      if (isAdmin) {
+        const [all, page] = await Promise.all([
+          listProducts({ status: statusFilter }),
+          listProducts({ status: statusFilter, limit, offset })
+        ]);
+        total = all.length;
+        products = page;
+      } else {
+        const visible = (await listProducts({ status: statusFilter })).filter(isPubliclyPurchasableProduct);
+        total = visible.length;
+        products = visible.slice(offset, offset + limit);
+      }
     }
 
     // BMC-164: emit MACH wire-shaped money ({amount, currency, precision} in

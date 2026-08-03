@@ -10,8 +10,7 @@ import { test, expect } from '@playwright/test';
  * 320px is the narrowest viewport worth supporting; 360 and 375 cover the common
  * small phones (Galaxy S8/S20, iPhone SE/6/7/8) that were also affected.
  *
- * NOTE: E2E is not wired into CI (see playwright.config.ts), so this does not
- * gate merges — it documents the invariant and is runnable with `npm run test:e2e`.
+ * This suite runs inside the launch-readiness CI gate via `npm run test:e2e`.
  */
 const NARROW_VIEWPORTS = [
   { name: 'iPhone SE / 6 / 7 / 8', width: 375, height: 667 },
@@ -46,6 +45,8 @@ test.describe('Header responsive layout', () => {
     const logo = page.locator('header img').first();
     const controls = page.locator('header div.md\\:hidden').first();
 
+    await expect(logo).toBeVisible();
+    await expect(controls).toBeVisible();
     const logoBox = await logo.boundingBox();
     const controlsBox = await controls.boundingBox();
 

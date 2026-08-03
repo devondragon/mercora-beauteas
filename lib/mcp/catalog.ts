@@ -13,6 +13,7 @@ import { listProducts } from '../models/mach/products';
 import { CapabilitiesResponse } from './types';
 import type { Product } from '../types';
 import { Money } from '../money';
+import { isPubliclyPurchasableProduct } from '../config/commerce';
 
 /**
  * Merchandising/collection categories that describe how products are grouped
@@ -29,7 +30,7 @@ const MERCHANDISING_CATEGORIES = new Set([
 ]);
 
 /** Shipping regions BeauTeas serves (not catalog-dependent). */
-const SHIPPING_REGIONS = ['Continental US', 'Alaska & Hawaii', 'Canada'];
+const SHIPPING_REGIONS = ['United States and supported US territories'];
 
 /** Brand-appropriate fallbacks used only when the catalog is empty. */
 const FALLBACK_CATEGORIES = ['Skincare Teas', 'Black Tea', 'Green Tea', 'Herbal Tea'];
@@ -56,7 +57,7 @@ function productCategoryIds(product: Product): string[] {
 export async function getCatalogCapabilities(): Promise<CapabilitiesResponse> {
   const [categories, products] = await Promise.all([
     listCategories(),
-    listProducts({ status: ['active'] }),
+    listProducts({ status: ['active'] }).then((items) => items.filter(isPubliclyPurchasableProduct)),
   ]);
 
   const categoryNames = categories

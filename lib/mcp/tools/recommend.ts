@@ -5,6 +5,7 @@ import { enhanceUserContext } from '../context';
 import { distinctCategoryCount, ritualBundleSuggestions } from '../catalog';
 import { Product } from '../../types';
 import { Money } from '../../money';
+import { isPubliclyPurchasableProduct } from '../../config/commerce';
 
 export async function getRecommendations(
   request: RecommendRequest,
@@ -49,6 +50,8 @@ export async function getRecommendations(
         return price.lte(budgetMoney);
       });
     }
+
+    recommendations = recommendations.filter(isPubliclyPurchasableProduct);
     
     // Sort by relevance and quality
     recommendations = sortRecommendations(recommendations, userContext);
@@ -137,7 +140,9 @@ async function getRelatedProductRecommendations(product: Product, userContext: a
   const categoryIds = Array.isArray(product.categories) ? product.categories : [];
   for (const categoryId of categoryIds) {
     const related = await getProductsByCategory(categoryId);
-    const filtered = related.filter((p) => String(p.id) !== String(product.id));
+    const filtered = related.filter(
+      (p) => String(p.id) !== String(product.id) && isPubliclyPurchasableProduct(p)
+    );
     if (filtered.length > 0) return filtered;
   }
 
@@ -154,7 +159,7 @@ async function getGeneralRecommendations(userContext: any): Promise<Product[]> {
 
   // listProducts loads variants (unlike getActiveProducts), so downstream
   // budget filtering and cost recommendations have prices to work with.
-  return listProducts({ status: ['active'] });
+  return (await listProducts({ status: ['active'] })).filter(isPubliclyPurchasableProduct);
 }
 
 function sortRecommendations(products: Product[], userContext: any): Product[] {

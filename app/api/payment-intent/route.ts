@@ -41,7 +41,7 @@ import {
   canonicalizeOrderItemsDisplay,
 } from '@/lib/services/order-pricing';
 import { computeExpectedChargeExtras } from '@/lib/services/checkout-charges';
-import { resolveCartDiscountCents, normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
+import { normalizeDiscountCodes, MAX_DISCOUNT_CODES, MAX_RAW_DISCOUNT_CODES } from '@/lib/services/discount-pricing';
 import { createOrder } from '@/lib/models/mach/orders';
 import { checkStockAvailability } from '@/lib/services/inventory-adjustment';
 import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
@@ -50,6 +50,7 @@ import { Money } from '@/lib/money';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 import type { Address } from '@/lib/types';
 import { logCritical } from '@/lib/utils/observe';
+import { validateUsShippingAddress } from '@/lib/utils/address';
 
 // Minimal shape of a cart line needed to price it from the catalog. Accepts
 // both the cart-store shape (productId/variantId) and the MACH order shape.
@@ -178,7 +179,13 @@ async function persistPendingOrder(
         variant_id: it?.variant_id ?? it?.variantId,
         quantity: it?.quantity,
       }));
-      const extras = await computeExpectedChargeExtras(draftLines, draft.shipping_address ?? null);
+      const draftDiscountCodes = normalizeDiscountCodes(draft.extensions?.discount_codes);
+      const extras = await computeExpectedChargeExtras(
+        draftLines,
+        draft.shipping_address ?? null,
+        draftDiscountCodes,
+        orderId
+      );
       // Only stamp when the draft is fully priceable; an unpriceable draft is
       // rejected by the goods charge gate at finalization anyway.
       if (extras.priceable) {
@@ -292,6 +299,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const addressErrors = validateUsShippingAddress(shippingAddress);
+    if (addressErrors.length) {
+      return NextResponse.json(
+        { error: addressErrors[0], code: 'invalid_shipping_address', details: addressErrors },
+        { status: 400 }
+      );
+    }
+
     if (!orderId) {
       return NextResponse.json(
         { error: 'Order ID is required' },
@@ -401,7 +416,12 @@ export async function POST(req: NextRequest) {
       // comes from the shared `checkout-charges` seam — the same Stripe-Tax path
       // `/api/tax` quoted the shopper — so an honest amount clears the floor and a
       // tax-omitting one is rejected.
-      const extras = await computeExpectedChargeExtras(normalized, shippingAddress);
+      const extras = await computeExpectedChargeExtras(
+        normalized,
+        shippingAddress,
+        normalizedDiscountCodes,
+        orderId
+      );
       if (!extras.priceable) {
         console.warn(`[payment-intent] order ${orderId}: catalog pricing errors while computing charge floor`);
         return NextResponse.json(
@@ -427,7 +447,7 @@ export async function POST(req: NextRequest) {
       // (never the client number) and credit it toward the floor, so a valid
       // promo checkout isn't rejected (BMC-177). `normalized` lets a category-gated
       // promotion verify against catalog-derived categories.
-      const discountCents = await resolveCartDiscountCents(normalizedDiscountCodes, subtotalCents, normalized);
+      const discountCents = extras.discountCents;
       // Floor now includes server-computed shipping + tax (BMC-201): a client can
       // no longer create a PaymentIntent that covers only goods and omits tax.
       const requiredCashCents = Math.max(
@@ -528,7 +548,12 @@ export async function POST(req: NextRequest) {
         // customer_id is derived from the session, never the client draft, so a
         // caller can't stamp another user's id onto the order.
         const { userId } = await auth();
-        await persistPendingOrder(order, orderId, paymentIntentId, userId ?? null, chargedAmountCents, {
+        await persistPendingOrder({
+          ...order,
+          // The top-level address was validated and is the address attached to
+          // Stripe. Never persist a second, client-controlled draft address.
+          shipping_address: shippingAddress,
+        }, orderId, paymentIntentId, userId ?? null, chargedAmountCents, {
           expectedShippingCents,
           expectedTaxCents,
         });
@@ -606,4 +631,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

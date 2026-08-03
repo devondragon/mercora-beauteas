@@ -60,6 +60,7 @@ import {
   buildProductJsonLd,
   buildBreadcrumbJsonLd,
 } from "@/lib/seo/json-ld";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 export const revalidate = 0;
 
@@ -75,7 +76,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
-  if (!product) return { title: "Product Not Found" };
+  if (!product || !isPubliclyPurchasableProduct(product)) return { title: "Product Not Found" };
 
   const name = resolveLocalizedField(product.name);
   const description = resolveLocalizedField(product.description);
@@ -118,7 +119,7 @@ export default async function ProductPage({
   const { slug } = await params;
   const { userId } = await auth();
   const product = await getProductBySlug(slug);
-  if (!product) return notFound();
+  if (!product || !isPubliclyPurchasableProduct(product)) return notFound();
 
   const userContext = await buildServerUserContext(userId);
 

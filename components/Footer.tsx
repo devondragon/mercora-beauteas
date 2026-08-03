@@ -3,6 +3,7 @@ import Image from "next/image";
 import { getNavigationPages } from "@/lib/models/pages";
 import { getSocialMediaSettings } from "@/lib/utils/settings";
 import { brand } from "@/lib/brand";
+import { giftCardPurchasesEnabled } from "@/lib/config/commerce";
 
 type FooterLink = { label: string; href: string; external?: boolean };
 
@@ -22,6 +23,7 @@ const GRID_COLS: Record<number, string> = {
 };
 
 export default async function Footer() {
+  const allowGiftCardPurchases = giftCardPurchasesEnabled();
   const [navigationPages, socialMedia] = await Promise.all([
     getNavigationPages(),
     getSocialMediaSettings()
@@ -50,7 +52,9 @@ export default async function Footer() {
   // Curated columns first, then CMS pages (legal), then social — anything empty
   // is dropped so the remaining columns stay evenly distributed.
   const columns: FooterLink[][] = [
-    brand.footerLinks.column2.map((l) => ({ label: l.label, href: l.href })),
+    brand.footerLinks.column2
+      .filter((l) => allowGiftCardPurchases || l.href !== "/gift-cards")
+      .map((l) => ({ label: l.label, href: l.href })),
     brand.footerLinks.column3.map((l) => ({ label: l.label, href: l.href })),
     primaryNavPages.map((page) => ({
       label: page.nav_title || page.title,

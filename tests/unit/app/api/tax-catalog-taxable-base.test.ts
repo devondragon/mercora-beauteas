@@ -57,16 +57,18 @@ beforeEach(() => {
   vi.mocked(getProductVariant).mockImplementation(async (id: string) =>
     id === VARIANT_TEA.id ? (VARIANT_TEA as any) : null
   );
-  vi.mocked(getProduct).mockResolvedValue(null as any);
+  vi.mocked(getProduct).mockResolvedValue({ id: 'tea-1', type: 'Tea Bags', tax_category: 'food' } as any);
 });
 
 describe('POST /api/tax taxable base (BMC-200)', () => {
   it('taxes the CATALOG subtotal on the fallback path, ignoring a tampered client price', async () => {
     // Client claims $999 each; catalog is $25 for a single unit. No shipping
-    // address → fallback path (7%). Tax must be on $25, not $999.
+    // Colorado with an incomplete address → 3.25% fallback. Tax must be on
+    // catalog goods only, not the client price or shipping.
     const res = await POST(
       postRequest({
         items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 1, price: 999 }],
+        shippingAddress: { region: 'CO' },
       })
     );
     expect(res.status).toBe(200);
@@ -78,19 +80,20 @@ describe('POST /api/tax taxable base (BMC-200)', () => {
     expect(body.calculated_by).toBe('fallback');
     expect(body.breakdown.subtotal).toBe(25); // catalog dollars, not 999
     expect(body.breakdown.taxableAmount).toBe(25);
-    expect(body.amount).toBe(1.75); // 25 * 0.07
+    expect(body.amount).toBe(0.81); // round(2500 * 3.25%) = 81 cents
   });
 
   it('applies catalog quantity/price to the subtotal (3 × $25 = $75)', async () => {
     const res = await POST(
       postRequest({
         items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 3, price: 1 }],
+        shippingAddress: { region: 'Colorado' },
       })
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { amount: number; breakdown: { subtotal: number } };
     expect(body.breakdown.subtotal).toBe(75);
-    expect(body.amount).toBe(5.25); // 75 * 0.07
+    expect(body.amount).toBe(2.44); // round(7500 * 3.25%)
   });
 
   it('builds Stripe Tax line items from catalog cents, not the client price', async () => {
@@ -187,12 +190,13 @@ describe('POST /api/tax taxable base (BMC-200)', () => {
       postRequest({
         items: [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 1, price: 25 }],
         shippingCost: -100000,
+        shippingAddress: { region: 'CO' },
       })
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { amount: number; breakdown: { taxableAmount: number } };
     expect(body.breakdown.taxableAmount).toBe(25); // clamped shipping (0) + $25 catalog
-    expect(body.amount).toBe(1.75);
+    expect(body.amount).toBe(0.81);
   });
 
   it('rejects an unreasonably large items array before pricing it', async () => {

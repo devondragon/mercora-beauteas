@@ -203,8 +203,6 @@ export const stripeTaxConfig = {
   },
   // Tax behavior for different scenarios
   taxBehavior: 'exclusive' as const, // Tax calculated separately from item prices
-  // Tax code for general products
-  defaultTaxCode: 'txcd_99999999', // General - Tangible Goods
 };
 
 /**
