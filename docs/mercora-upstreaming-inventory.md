@@ -719,8 +719,8 @@ Update this table as Mercora issues and PRs are created.
 
 | ID | Status | Mercora issue | Mercora PR(s) | Notes |
 | --- | --- | --- | --- | --- |
-| `U00` | In review | — | `#8` | GitHub CI passed; investigate failing Cloudflare build check |
-| `U01` | Pending `U00` | — | — | Production-vs-development audit triage first |
+| `U00` | Merged | — | `#8` | Merged to Mercora `main` as `ac4bd57` |
+| `U01` | In review | — | `#9` | Draft PR; all critical findings removed and two Next 15 exceptions documented |
 | `U02` | Ready to plan | — | — | Vitest only in first PR |
 | `U03` | Research complete | — | — | Likely split config/theme from deploy/migrations |
 | `U04` | Research complete | — | — | Fold mandatory `#47/#57–#59/#98` corrections |
@@ -737,12 +737,11 @@ Update this table as Mercora issues and PRs are created.
 
 ## Immediate Next Planning Actions
 
-1. Resolve or classify the Cloudflare build failure on Mercora PR `#8`.
-2. Merge `U00`, then complete the `U01` production dependency audit.
-3. Write an implementation-ready scope for `U02` with the smallest neutral
+1. Review the CI and Cloudflare checks on Mercora PR `#9`, then merge `U01`.
+2. Write an implementation-ready scope for `U02` with the smallest neutral
    Vitest setup and representative tests.
-4. Create a Mercora tracking issue containing the core group checklist.
-5. Maintain a migration reservation ledger before opening any schema PR.
-6. Decide Mercora's authoritative inventory model before `U09`.
-7. Define capability interfaces for optional gift cards/subscriptions before
+3. Create a Mercora tracking issue containing the core group checklist.
+4. Maintain a migration reservation ledger before opening any schema PR.
+5. Decide Mercora's authoritative inventory model before `U09`.
+6. Define capability interfaces for optional gift cards/subscriptions before
    checkout finalization is ported.
