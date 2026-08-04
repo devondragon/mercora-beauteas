@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; dependency-security PR in review
+**Status:** Active; dependency-security and Vitest PRs in review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
