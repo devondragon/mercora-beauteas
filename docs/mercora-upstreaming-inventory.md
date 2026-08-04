@@ -151,7 +151,7 @@ dependency and test review.
 | 2 | Dependency security, Mercora PR `#9` | `U01` | Merged |
 | 3 | Vitest foundation, Mercora PRs `#10` and recovery `#21` | `U02` | Merged via recovery PR `#21` |
 | 4 | Runtime configuration and deployment safety, Mercora PRs `#23` and `#32` | `U03` | Merged |
-| 5 | Shared security and catalog trust boundary | `U04 + U05` | Planned |
+| 5 | Shared security and catalog trust boundary, Mercora draft PR `#35` | `U04 + U05` | In review |
 | 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
 | 7 | Order trust and server-authoritative checkout | `U06 + U08` | Planned |
 | 8 | Webhook, inventory, and refund correctness | `U09` | Planned |

@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; dependency security merged and Vitest recovery PR `#21` in review
+**Status:** Active; shared security and catalog trust-boundary PR `#35` in review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -209,7 +209,7 @@ finding does not block further upstream work.
 | Remaining sequence | Consolidated scope | Inventory units | Prerequisites |
 | ---: | --- | --- | --- |
 | 1 | Runtime configuration and deployment safety (merged via `#23` and `#32`) | `U03` | Vitest recovery PR `#21` |
-| 2 | Shared security and catalog trust boundary | `U04 + U05` | `U03` |
+| 2 | Shared security and catalog trust boundary (draft PR `#35`) | `U04 + U05` | `U03` |
 | 3 | MACH Money boundary (merged via `#24`) | `U07` | PR `#10`; prepared in parallel with sequence 2 |
 | 4 | Order trust and server-authoritative checkout | `U06 + U08` | `U04 + U05`, `U07` |
 | 5 | Webhook, inventory, and refund correctness | `U09` | `U06 + U08` |
