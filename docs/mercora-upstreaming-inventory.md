@@ -149,10 +149,10 @@ dependency and test review.
 | ---: | --- | --- | --- |
 | 1 | Project foundation, Mercora PR `#8` | `U00` | Merged |
 | 2 | Dependency security, Mercora PR `#9` | `U01` | Merged |
-| 3 | Vitest foundation, Mercora PRs `#10` and recovery `#21` | `U02` | Recovery in review |
-| 4 | Runtime configuration and deployment safety | `U03` | Planned |
+| 3 | Vitest foundation, Mercora PRs `#10` and recovery `#21` | `U02` | Merged via recovery PR `#21` |
+| 4 | Runtime configuration and deployment safety, Mercora PRs `#23` and `#32` | `U03` | Merged |
 | 5 | Shared security and catalog trust boundary | `U04 + U05` | Planned |
-| 6 | MACH Money boundary | `U07` | Planned |
+| 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
 | 7 | Order trust and server-authoritative checkout | `U06 + U08` | Planned |
 | 8 | Webhook, inventory, and refund correctness | `U09` | Planned |
 | 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
@@ -739,10 +739,10 @@ Update this table as Mercora issues and PRs are created.
 | --- | --- | --- | --- | --- |
 | `U00` | Merged | — | `#8` | Merged to Mercora `main` as `ac4bd57` |
 | `U01` | Merged | — | `#9` | Merged to Mercora `main` as `afa3723` |
-| `U02` | In review | — | `#10`, `#21` | `#10` missed `main`; recovery `#21` replays the reviewed commit on current `main` |
-| `U03` | Research complete | — | — | One PR; runtime/config commits precede deploy/migration commits |
+| `U02` | Merged | — | `#10`, `#21` | `#10` missed `main`; recovery `#21` landed the reviewed commit on `main` as `7fa82a4` |
+| `U03` | Merged | — | `#23`, `#32` | Runtime/config and deploy/migration safety landed via `#23`; `#32` completed review fixes |
 | `U04 + U05` | Research complete | — | — | One security/catalog PR; fold mandatory `#47/#57–#59/#98` corrections |
-| `U07` | Research complete | — | — | Standalone broad contract migration |
+| `U07` | Merged | — | `#24` | Canonical Money migration landed on `main` as `243ebfd` after independent completion review |
 | `U06 + U08` | Research complete | — | — | One order/checkout trust-boundary PR; precedes refunds and fulfillment |
 | `U09` | Research complete | — | — | Requires standalone webhook migration and real-D1 tests |
 | `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
@@ -751,16 +751,13 @@ Update this table as Mercora issues and PRs are created.
 
 ## Immediate Next Planning Actions
 
-1. Review and merge Vitest recovery PR `#21`, then verify the test commit is
-   present on Mercora `main`.
-2. Resolve or explicitly classify the failing Cloudflare Workers Build on the
-   post-`#9` `main` commit before declaring the foundation fully green.
-3. Create a Mercora tracking issue containing the core group checklist.
-4. Write the implementation-ready plan for one `U03` PR: runtime/theme
-   configuration commits first, then deployment and migration safety commits.
-5. Maintain a migration reservation ledger before opening any schema PR.
-6. Decide Mercora's authoritative inventory model before `U09`.
-7. Define capability interfaces for optional gift cards/subscriptions before
+1. Implement and independently review the combined `U04 + U05` shared
+   security/catalog trust-boundary PR on current Mercora `main`.
+2. Create or refresh the Mercora tracking issue containing the remaining core
+   group checklist.
+3. Maintain a migration reservation ledger before opening any schema PR.
+4. Decide Mercora's authoritative inventory model before `U09`.
+5. Define capability interfaces for optional gift cards/subscriptions before
    checkout finalization is ported.
-8. Reserve one reviewer map for the `U13 + U14` fulfillment PR, organized by
+6. Reserve one reviewer map for the `U13 + U14` fulfillment PR, organized by
    its eight schema-to-surface commits rather than by BeauTeas chronology.
