@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Research complete; execution inventory proposed
+**Status:** Research complete; consolidated execution plan active
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -76,9 +76,10 @@ Mercora after reconciling the current upstream source and all later fixes.
 7. **Playwright comes later.** Current E2E tests assume BeauTeas products,
    copy, storage keys, and URLs. Vitest can land immediately; browser tests
    require neutral seed fixtures and configurable namespaces.
-8. **The original 10–15 PR estimate was optimistic.** There are 15 coherent
-   core groups, but several should split for review and migration safety. Plan
-   on approximately 18–24 actual core PRs, followed by optional feature trains.
+8. **Inventory groups are not one-to-one with PRs.** Consolidation maps the 15
+   core groups to 11 contribution units: three foundations plus eight remaining
+   PRs. PR `#10` did not reach `main`, so recovery PR `#21` adds one unavoidable
+   GitHub PR to the ledger. `U12` can be deferred independently.
 
 ## Dependency Graph
 
@@ -104,8 +105,9 @@ Project foundation (Mercora PR #8)
             ├── Inventory CAS
             │   └── Refund restocking
             └── Refund ledger/lifecycle
-                └── Fulfillment shipment CAS
-                    └── Fulfillment admin/customer/email surfaces
+                └── Fulfillment vertical slice
+                    ├── Schema, domain, shipment CAS, and guarded APIs
+                    └── Admin, customer, guest, MCP, and email surfaces
 ```
 
 Separate feature dependency:
@@ -120,25 +122,42 @@ Admin authorization + HTML sanitization
 ## Core Contribution Groups
 
 These are inventory groups, not a promise that each group is exactly one PR.
-The split guidance column identifies groups that should become multiple PRs.
+The delivery guidance records the consolidated PR boundary selected after the
+dependency and test review.
 
-| ID | Contribution group | Primary source | Prerequisites | Risk | Split guidance |
+| ID | Contribution group | Primary source | Prerequisites | Risk | Delivery guidance |
 | --- | --- | --- | --- | --- | --- |
 | `U00` | Project foundation | BeauTeas `#20`; final CI concepts from `#122` | None | Low | Already opened as Mercora PR `#8` |
 | `U01` | Dependency security remediation | Current Mercora audit; `bb6d01e` only as history | `U00` | High | Separate safe upgrades from breaking modernization |
 | `U02` | Vitest foundation | `#26`, current test config, neutral pure-unit tests | `U00`, preferably `U01` | Low | Playwright explicitly deferred |
-| `U03` | Runtime extensibility, environments, and deploy safety | `#3`, `#8`, `#18`, `#19`, `#111`, `33b0333`, `951c5be`, `eaa1245` | `U00`, `U02` | High | Likely theme/config PR plus deploy/migration PR |
-| `U04` | Shared web/admin security primitives | `#32`, `#34`, `#38`, `#43–#47`, `#53–#59`, `#80`, `#90` | `U02`, config seam from `U03` | High | Split browser/content security from admin primitives if large |
-| `U05` | Catalog authorization and public projection | `#30`, `#31`, `#33`, `#40`, corrections in `#47/#122` | `U02`, `U04` | Medium | Mutation authorization and public serializer may be two PRs |
-| `U06` | Order authorization and server-owned state | `a691e4d`, `0b92a20`, `#41`, `#48`, `#65`, `#89`, `#115/#116` | `U02`, `U04` | Critical | Land complete extension allowlist before refunds/fulfillment |
-| `U07` | MACH Money foundation and wire boundaries | `#61` plus later wire-shape corrections | `U02` | High | Core type first, adoption second if review size requires |
-| `U08` | Server-authoritative checkout and pricing | `#49`, `#62`, `#73`, `#79`, `#85–#88`, `#95`, `#101`, applicable `#122` | `U06`, `U07` | Critical | Split pricing/tax/shipping from pending-order finalization |
-| `U09` | Webhook, refund, and inventory correctness | `#37`, `#42`, final `#66`, `#78`, `#93`, `#102`, `#121` | `U06`, `U08` | Critical | Standalone webhook migration, then inventory/refund series |
-| `U10` | MCP identity, keys, ownership, and scopes | `#35`, `#36`, `#45`, `#47`, `#50`, `#52`, `#92` | `U02`, `U04` | High | Use expand/rotate/contract key migration |
-| `U11` | MCP commerce and payment integrity | `#51`, `#55`, `#56`, `#60`, `#81` | `U07`, `U08`, `U10`; fulfillment for final tracking | High | Tracking portion may land with fulfillment |
-| `U12` | Recommendation pipeline resilience | `#63`, `#91` | `U02`, config seam from `U03` | High | Neutralize products, tags, worker names, and settings |
-| `U13` | Fulfillment domain, schema, and guarded APIs | `#104`, `#105`, `#112`, `#117`, `#119`, refund hold from `#121` | `U06`, `U07`, `U09` | Critical | Schema/domain then service/API |
-| `U14` | Fulfillment admin/customer/email surfaces | `#107`, `#109`, `#110`, `#114–#116`, `#118` | `U13`; timestamp normalization first | High | Admin queue and customer/email surfaces may split |
+| `U03` | Runtime extensibility, environments, and deploy safety | `#3`, `#8`, `#18`, `#19`, `#111`, `33b0333`, `951c5be`, `eaa1245` | `U00`, `U02` | High | One PR; ordered runtime/config then deploy/migration commits |
+| `U04` | Shared web/admin security primitives | `#32`, `#34`, `#38`, `#43–#47`, `#53–#59`, `#80`, `#90` | `U02`, config seam from `U03` | High | Combine with `U05`; defer CMS-only controls if needed |
+| `U05` | Catalog authorization and public projection | `#30`, `#31`, `#33`, `#40`, corrections in `#47/#122` | `U02`, `U04` | Medium | Combine with `U04` as the first complete security consumer |
+| `U06` | Order authorization and server-owned state | `a691e4d`, `0b92a20`, `#41`, `#48`, `#65`, `#89`, `#115/#116` | `U02`, `U04` | Critical | Combine with `U08`; keep inventory/refunds out |
+| `U07` | MACH Money foundation and wire boundaries | `#61` plus later wire-shape corrections | `U02` | High | Standalone PR because adoption has a broad blast radius |
+| `U08` | Server-authoritative checkout and pricing | `#49`, `#62`, `#73`, `#79`, `#85–#88`, `#95`, `#101`, applicable `#122` | `U06`, `U07` | Critical | Combine with `U06` as one order/checkout trust boundary |
+| `U09` | Webhook, refund, and inventory correctness | `#37`, `#42`, final `#66`, `#78`, `#93`, `#102`, `#121` | `U06`, `U08` | Critical | One consolidated webhook/inventory/refund correctness PR |
+| `U10` | MCP identity, keys, ownership, and scopes | `#35`, `#36`, `#45`, `#47`, `#50`, `#52`, `#92` | `U02`, `U04` | High | Combine with `U11`; use expand/rotate/contract credentials |
+| `U11` | MCP commerce and payment integrity | `#51`, `#55`, `#56`, `#60`, `#81` | `U07`, `U08`, `U10`; fulfillment for final tracking | High | Combine with `U10`; tracking remains with fulfillment |
+| `U12` | Recommendation pipeline resilience | `#63`, `#91` | `U02`, config seam from `U03` | High | Standalone PR or defer without blocking the core flow |
+| `U13` | Fulfillment domain, schema, and guarded APIs | `#104`, `#105`, `#112`, `#117`, `#119`, refund hold from `#121` | `U06`, `U07`, `U09` | Critical | Combine with `U14` in one ordered vertical-slice PR |
+| `U14` | Fulfillment admin/customer/email surfaces | `#107`, `#109`, `#110`, `#114–#116`, `#118` | `U13` commits in the combined PR; timestamp normalization first | High | Combine with `U13`; schema-first commits preserve reviewability |
+
+### Consolidated Core PR Sequence
+
+| Sequence | PR / scope | Inventory units | State |
+| ---: | --- | --- | --- |
+| 1 | Project foundation, Mercora PR `#8` | `U00` | Merged |
+| 2 | Dependency security, Mercora PR `#9` | `U01` | Merged |
+| 3 | Vitest foundation, Mercora PRs `#10` and recovery `#21` | `U02` | Recovery in review |
+| 4 | Runtime configuration and deployment safety | `U03` | Planned |
+| 5 | Shared security and catalog trust boundary | `U04 + U05` | Planned |
+| 6 | MACH Money boundary | `U07` | Planned |
+| 7 | Order trust and server-authoritative checkout | `U06 + U08` | Planned |
+| 8 | Webhook, inventory, and refund correctness | `U09` | Planned |
+| 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
+| 10 | Recommendations | `U12` | Planned; independently deferrable |
+| 11 | Fulfillment vertical slice | `U13 + U14` | Planned |
 
 ## Group Dossiers
 
@@ -341,7 +360,8 @@ After Money and checkout integrity land, port:
 - Agent-scoped status and tracking projections
 
 The final order-tracking wire shape depends on fulfillment domain data and may
-remain in `U13/U14` rather than forcing an early coupling.
+remain in the combined `U13 + U14` fulfillment PR rather than forcing an early
+coupling.
 
 ### U12 — Recommendation pipeline resilience
 
@@ -352,34 +372,32 @@ guards, and cron error propagation.
 Replace tea product names/tags with neutral fixtures and configure worker names,
 URLs, datasets, and observability bindings.
 
-### U13 — Fulfillment domain, schema, and guarded APIs
+### U13 + U14 — Fulfillment vertical slice
 
-Do not port fulfillment PRs independently. Build final behavior from:
+Port fulfillment as one feature PR after `U03`, `U07`, `U06 + U08`, and `U09`
+are available. Build the final behavior from domain/schema foundation `#104`,
+service/API `#105`, customer status `#107`, email `#109`, admin queue `#110`,
+and mandatory corrections `#112`, `#114–#119`, and `#121`.
 
-- Domain/schema foundation `#104`
-- Service/API `#105`
-- Tracking allowlist `#112`
-- Shared shipment projection `#117`
-- Money wire conversion `#119`
-- Pending-refund shipment guard from `#121`
+Keep the PR reviewable through this ordered commit stack:
 
-Timestamp normalization must precede SQL queue ordering. Carrier support must
-be a registry/configuration decision rather than hardcoded BeauTeas assumptions.
-Schema and physical D1 migrations must deploy before code that queries the new
-columns/tables.
+1. Carrier, order-event, and timestamp migrations.
+2. Domain types and a configuration-driven carrier registry.
+3. Shipment service, compare-and-swap transitions, and unsettled-refund holds.
+4. Guarded fulfillment APIs and shared shipment projections.
+5. Account and signed guest order-status views, plus final MCP tracking shape.
+6. SQL-backed admin fulfillment queue with ISO pagination and stale-response
+   protection.
+7. Shipping confirmation, retry/resend, and hardened idempotency.
+8. Real D1 queue/concurrency tests, signed-guest browser coverage, and operator
+   documentation.
 
-### U14 — Fulfillment admin/customer/email surfaces
-
-Build on `U13` with:
-
-- Account and signed guest order-status views
-- Shipping confirmation, retry/resend, and hardened idempotency
-- SQL-backed admin fulfillment queue
-- ISO timestamp pagination and stale-response protection
-- Merchant-configured sender, email copy, URLs, and branding
-- Legacy order PUT restrictions from final `#115/#116`
-
-Add a signed-guest E2E flow and at least one real-D1 queue/concurrency test.
+Schema must deploy before code queries it. Timestamp writers and their repair
+path must land together before SQL queue ordering. Guest tracking requires a
+signed access token, not a guessable order identifier. Carrier support, sender
+identity, copy, URLs, and branding must be merchant configuration rather than
+BeauTeas assumptions. Keep unrelated email compliance and general UI polish out
+of this PR.
 
 ## Optional Feature Trains
 
@@ -446,9 +464,9 @@ Mercora and BeauTeas migrations compare as follows:
 | `0019_restructure_footer_pages.sql` | Mostly BeauTeas content; port only generic CMS structures |
 | `0020_seed_page_templates.sql` | Neutralize and include with generic CMS templates |
 | `0021_add_external_refund_restock_setting.sql` | `U09`; prefer generic refund capability settings |
-| `0022_add_shipping_carrier.sql` | `U13`; align with generic carrier registry |
-| `0023_add_order_events.sql` | `U13`; deploy before shipment service |
-| `0024_normalize_order_timestamps.sql` | Before `U14` queue; port writer and repair together |
+| `0022_add_shipping_carrier.sql` | `U13 + U14` fulfillment PR; align with generic carrier registry |
+| `0023_add_order_events.sql` | `U13 + U14` fulfillment PR; deploy before shipment service |
+| `0024_normalize_order_timestamps.sql` | `U13 + U14` fulfillment PR; port writer and repair before queue code |
 | `migrations/data/*` | BeauTeas-only imported content/data |
 
 ## Test Assets and Gaps
@@ -644,7 +662,7 @@ tables.
 | `#116` | `a5a4e26` | `D` | `U06/U14` | Protect every server-read extension key and CAS-guard metadata merge |
 | `#117` | `9ffb917` | `D` | `U13` | Shared shipment-view projection |
 | `#118` | `6beb201` | `D` | `U14` | Shipping-email idempotency/event-read hardening |
-| `#119` | `5bed0eb` | `D` | `U13/U14` | Fulfillment Money wire conversion |
+| `#119` | `5bed0eb` | `D` | `U13 + U14` | Fulfillment Money wire conversion |
 | `#120` | `8306a06` | `G` | AI/config | Configured deterministic shipping facts |
 | `#121` | `9fd0959` | `D` | `U09/U13` | Final refund lifecycle and unsettled-refund fulfillment hold |
 | `#122` | `1fa7c81` | `S` | Multiple | Mixed launch bundle; distribute CI, pricing, address, product, date, hydration, and gift-card hunks to owners |
@@ -720,31 +738,29 @@ Update this table as Mercora issues and PRs are created.
 | ID | Status | Mercora issue | Mercora PR(s) | Notes |
 | --- | --- | --- | --- | --- |
 | `U00` | Merged | — | `#8` | Merged to Mercora `main` as `ac4bd57` |
-| `U01` | In review | — | `#9` | Draft PR; all critical findings removed and two Next 15 exceptions documented |
-| `U02` | In review | — | `#10` | Stacked draft on `U01`; Vitest plus seven neutral utility tests |
-| `U03` | Research complete | — | — | Likely split config/theme from deploy/migrations |
-| `U04` | Research complete | — | — | Fold mandatory `#47/#57–#59/#98` corrections |
-| `U05` | Research complete | — | — | Strong reusable tests |
-| `U06` | Research complete | — | — | Precedes refund and fulfillment |
-| `U07` | Research complete | — | — | Broad contract migration |
-| `U08` | Research complete | — | — | Critical money path; reconstruct final state |
+| `U01` | Merged | — | `#9` | Merged to Mercora `main` as `afa3723` |
+| `U02` | In review | — | `#10`, `#21` | `#10` missed `main`; recovery `#21` replays the reviewed commit on current `main` |
+| `U03` | Research complete | — | — | One PR; runtime/config commits precede deploy/migration commits |
+| `U04 + U05` | Research complete | — | — | One security/catalog PR; fold mandatory `#47/#57–#59/#98` corrections |
+| `U07` | Research complete | — | — | Standalone broad contract migration |
+| `U06 + U08` | Research complete | — | — | One order/checkout trust-boundary PR; precedes refunds and fulfillment |
 | `U09` | Research complete | — | — | Requires standalone webhook migration and real-D1 tests |
-| `U10` | Research complete | — | — | Redesign destructive key migration |
-| `U11` | Research complete | — | — | Requires Money/checkout; tracking waits for fulfillment |
-| `U12` | Research complete | — | — | Neutralize recommendation fixtures/resources |
-| `U13` | Research complete | — | — | Schema/domain then service/API |
-| `U14` | Research complete | — | — | Timestamp repair before queue |
+| `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
+| `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
+| `U13 + U14` | Research complete | — | — | One fulfillment vertical-slice PR with schema-first ordered commits |
 
 ## Immediate Next Planning Actions
 
-1. Review and merge Mercora PR `#9`, resolving or classifying the Cloudflare
-   non-production branch build failure.
-2. Retarget Mercora PR `#10` from `agent/dependency-security` to `main`, then
-   review and merge `U02`.
+1. Review and merge Vitest recovery PR `#21`, then verify the test commit is
+   present on Mercora `main`.
+2. Resolve or explicitly classify the failing Cloudflare Workers Build on the
+   post-`#9` `main` commit before declaring the foundation fully green.
 3. Create a Mercora tracking issue containing the core group checklist.
-4. Write the implementation-ready split for `U03`: runtime/theme configuration
-   first, then deployment and migration safety.
+4. Write the implementation-ready plan for one `U03` PR: runtime/theme
+   configuration commits first, then deployment and migration safety commits.
 5. Maintain a migration reservation ledger before opening any schema PR.
 6. Decide Mercora's authoritative inventory model before `U09`.
 7. Define capability interfaces for optional gift cards/subscriptions before
    checkout finalization is ported.
+8. Reserve one reviewer map for the `U13 + U14` fulfillment PR, organized by
+   its eight schema-to-surface commits rather than by BeauTeas chronology.

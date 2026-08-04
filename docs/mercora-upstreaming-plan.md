@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; dependency-security and Vitest PRs in review
+**Status:** Active; dependency security merged and Vitest recovery PR `#21` in review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -193,103 +193,143 @@ Use one Mercora tracking issue for the overall initiative and separate issues or
 ## Phase 4: Contribution Sequence
 
 Do not submit one giant pull request or replay all 122 BeauTeas pull requests
-individually. Research identified 15 coherent core contribution groups, several
-of which must split for review, migration, or deployment safety. Plan on
-approximately 18–24 actual core Mercora pull requests, followed by separately
-approved optional feature trains.
+individually. Research identified 15 coherent core contribution groups, but
+the consolidation review found that several form stronger, end-to-end review
+units when combined. The current target is 11 core contribution units: the
+three foundations (`U00`-`U02`) plus eight remaining PRs. Because PR `#10` was
+merged into an already-merged branch and did not reach `main`, recovery PR
+`#21` adds one unavoidable GitHub PR to the ledger. `U12` recommendations can
+be deferred independently, leaving seven immediate feature PRs.
 
 Before beginning the feature sequence below, complete the dependency-security
 follow-up from Phase 1 or explicitly document why any remaining production
 finding does not block further upstream work.
 
+| Remaining sequence | Consolidated scope | Inventory units | Prerequisites |
+| ---: | --- | --- | --- |
+| 1 | Runtime configuration and deployment safety | `U03` | Vitest recovery PR `#21` |
+| 2 | Shared security and catalog trust boundary | `U04 + U05` | `U03` |
+| 3 | MACH Money boundary | `U07` | PR `#10`; may be prepared in parallel with sequence 2 |
+| 4 | Order trust and server-authoritative checkout | `U06 + U08` | `U04 + U05`, `U07` |
+| 5 | Webhook, inventory, and refund correctness | `U09` | `U06 + U08` |
+| 6 | MCP trust and commerce integrity | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
+| 7 | Recommendations | `U12` | `U03`; independently deferrable |
+| 8 | Fulfillment vertical slice | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09` |
+
 ### 4.1 Testing foundation
 
-Add Vitest configuration and a small representative test set. Introduce Playwright only when the first meaningful browser workflow is ready.
+PR `#10` reviewed the Vitest configuration and representative test set but was
+merged into a branch that had already landed. Recovery PR `#21` replays that
+commit on current `main`. Introduce Playwright only when the first meaningful
+browser workflow is ready.
 
 Do not transfer all BeauTeas tests in one pull request. Tests should normally travel with the behavior they cover.
 
-### 4.2 Admin mutation authorization
+### 4.2 Runtime configuration and deployment safety (`U03`)
 
-Protect product, category, and promotion mutations using these BeauTeas commits as source material:
+Deliver one PR with two reviewable commit groups:
 
-- `7e30f60` — product mutation authorization
-- `9ffaa06` — category mutation authorization
-- `636b9d6` — promotion mutation authorization
+1. Runtime-safe store configuration, theme primitives, and replacement of
+   import-time environment assumptions.
+2. Deployment and migration safety, including preview-safe behavior that
+   cannot apply production migrations accidentally.
 
-Include focused regression tests for each route group.
+This establishes the configuration and schema-delivery boundary used by later
+feature PRs. Mercora should retain neutral or Volt demo defaults; BeauTeas
+values remain downstream.
 
-### 4.3 Public product serialization
+### 4.3 Shared security and catalog trust boundary (`U04 + U05`)
 
-Use `0c0438d` as source material to:
+Combine reusable security primitives with the first complete consumer of them:
 
-- Return only active products from public endpoints.
-- Remove internal cost, barcode, and inventory fields from public payloads.
-- Establish a reusable public product serializer.
+- Shared admin and service-token authentication.
+- Timing-safe comparisons and normalized production errors.
+- Upload validation, randomized object keys, and rich-content sanitization.
+- Security headers, CSRF/same-origin protection, and rate limiting.
+- Catalog mutation authorization and validation.
+- A public product serializer that excludes internal and admin-only fields.
 
-### 4.4 Order authorization and payment-state protection
+Include focused route tests. Keep CMS-only JavaScript controls out if they
+materially broaden review; those can travel with the optional CMS feature
+train.
 
-Begin with `f55d1d6` and related BeauTeas work to:
+### 4.4 MACH Money boundary (`U07`)
 
-- Require the customer owner or an administrator to read an order.
-- Prevent clients from asserting server-owned payment state.
-- Require server-side verification before marking orders paid.
-- Protect server-owned order extension fields.
+Keep Money standalone because it changes a broad set of call sites and creates
+an invariant shared by checkout, refunds, MCP, and fulfillment:
 
-### 4.5 Web and content security
+- Canonical currency-aware Money values.
+- Explicit rounding and serialization rules.
+- Mixed-currency rejection.
+- Focused compatibility tests at storage and API boundaries.
 
-Port the reusable portions of:
+### 4.5 Order trust and server-authoritative checkout (`U06 + U08`)
 
-- Safe production error responses
-- Constant-time secret comparison
-- Authorization-header token transport
-- Upload MIME and magic-byte validation
-- Stored-HTML sanitization
-- CSP, HSTS, `nosniff`, and frame protections
-- Public API rate limiting
+Present order authorization and checkout finalization as one end-to-end trust
+boundary:
 
-Avoid publishing detailed exploit instructions before the corresponding fixes are ready to merge.
+- Explicit order write allowlists and customer-to-order linkage.
+- Owner-only order history and receipt access.
+- Server-owned product, variant, discount, tax, and shipping calculations.
+- Durable pending-order creation.
+- Verified paid-order transitions and idempotent finalization.
+- No-op framework defaults for optional commerce capabilities.
 
-### 4.6 MCP hardening
+Inventory consumption, refund execution, and fulfillment remain out of this PR
+so its transaction boundary stays reviewable.
 
-Port and generalize:
+### 4.6 Webhook, inventory, and refund correctness (`U09`)
 
-- Session ownership enforcement
-- Cryptographically secure identifiers
-- Hashed API keys
-- Permission scopes
-- Header-only authentication
-- Rate limiting
-- Server-canonical product names, prices, and totals
-- Order line-item limits
+Deliver the correctness mechanisms that follow checkout:
 
-### 4.7 Commerce integrity
+- Provider-neutral, persistent webhook deduplication.
+- Independent subscribers instead of one monolithic webhook handler.
+- One documented source of truth for inventory.
+- Actual D1-compatible compare-and-swap inventory mutations.
+- Idempotent refund state transitions with real D1 integration coverage.
 
-Port in dependency order:
+### 4.7 MCP trust and commerce integrity (`U10 + U11`)
 
-- MACH-aligned Money value object
-- Server-authoritative pricing, discounts, tax, and shipping
-- Pending-order creation before payment completion
-- Stripe payment verification
-- Idempotent payment and webhook handling
-- Refund ledger correctness and concurrency controls
-- Race-safe inventory decrement and refund restocking
+Combine MCP identity with the commerce tools that consume it:
 
-### 4.8 Framework extensibility
+- An expand/dual-read credential migration before plaintext contraction.
+- Scoped, expiring API keys and secure verification.
+- Middleware identity propagation, per-tool scopes, and ownership checks.
+- Public serialization of MCP resources.
+- Canonical Money, variant-aware pricing, server-authoritative totals, and
+  verified payment state.
+- HTTP-first authentication, authorization, and commerce integration tests.
 
-Generalize:
+Fulfillment tracking tools remain in the fulfillment vertical slice so this PR
+does not invent a second shipment model.
 
-- Brand and theme configuration
-- Merchant contact and sender configuration
-- Environment-aware Cloudflare configuration
-- Dynamic robots and metadata
-- Image/CDN abstraction
-- Database migration tooling
-- Local development bootstrap
-- Deployment safeguards
+### 4.8 Recommendations (`U12`)
 
-Mercora should retain neutral or Volt demo defaults. BeauTeas values should remain downstream.
+Keep recommendations as a standalone PR because the capability is useful but
+not required for the order-to-fulfillment path. It may be deferred without
+blocking the remainder of the contribution train.
 
-### 4.9 Optional platform features
+### 4.9 Fulfillment vertical slice (`U13 + U14`)
+
+Submit fulfillment as one large but coherent feature PR, covering schema
+through customer and admin surfaces. Keep its commits ordered and independently
+reviewable:
+
+1. Carrier, order-event, and timestamp migrations.
+2. Domain types and the configurable carrier registry.
+3. Shipment service, compare-and-swap transitions, and refund holds.
+4. Guarded fulfillment APIs.
+5. Authenticated customer and signed guest tracking.
+6. The admin fulfillment queue.
+7. Shipping email, retry, and idempotency behavior.
+8. Real D1 integration tests, focused browser coverage, and operator docs.
+
+Migration commits must precede code that uses their schema, timestamp writers
+must ship with a repair path, and guest tracking must use signed access rather
+than order identifiers alone. Keep unrelated email compliance work and general
+UI polish outside this PR.
+
+### 4.10 Optional platform features
 
 Port these only after their foundations have landed and Russell confirms the intended Mercora scope:
 
@@ -299,7 +339,7 @@ Port these only after their foundations have landed and Russell confirms the int
 4. Blog and CMS enhancements
 5. Shopify migration tooling
 6. Observability
-7. Fulfillment, order management, and shipping notifications
+7. Recommendation engines beyond the core `U12` capability
 
 Each large feature may require its own multi-PR series.
 
