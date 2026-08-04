@@ -1,8 +1,12 @@
 # Mercora Upstreaming Plan
 
-**Status:** Proposed  
+**Status:** Active; project-foundation PR in review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
+
+See [mercora-upstreaming-inventory.md](mercora-upstreaming-inventory.md) for
+the complete PR/commit ledger, dependency research, test assets, supersession
+chains, and execution tracker.
 
 ## Objective
 
@@ -43,7 +47,7 @@ Current repository state when this plan was written:
 cd ~/git/mercora
 git switch main
 git pull --ff-only
-git switch -c devon/project-foundation
+git switch -c agent/project-foundation
 ```
 
 ### 1.2 Repair upstream CI
@@ -90,6 +94,49 @@ Russell should:
 - Require pull requests and passing CI.
 - Prefer review by the other maintainer before merging.
 - Enable private vulnerability reporting or document a private reporting channel in `SECURITY.md`.
+
+### 1.5 Dependency security follow-up
+
+During validation of the project-foundation pull request, `npm ci` reported 62
+known vulnerabilities across the full dependency tree: 2 low, 35 moderate, 21
+high, and 4 critical. These findings predate the foundation work and must be
+handled in a dedicated follow-up rather than mixed into the CI and governance
+change.
+
+After the foundation pull request merges:
+
+1. Create an `agent/dependency-security` branch from the latest Mercora `main`.
+2. Capture both the complete audit and the production-only audit:
+
+   ```bash
+   npm audit
+   npm audit --omit=dev
+   ```
+
+3. Classify every high or critical finding as:
+   - Production runtime or development/build-only
+   - Direct or transitive dependency
+   - Fixable without a breaking upgrade
+   - Requiring a breaking upgrade or application change
+   - Not applicable to Mercora's actual execution path
+4. Apply compatible upgrades first and verify lint, type checking, build, and
+   relevant application behavior after each coherent upgrade group.
+5. Do not run `npm audit fix --force` blindly. Review every major-version or
+   dependency-tree change before accepting it.
+6. Document any temporarily accepted finding with its package path, exposure
+   analysis, compensating control, owner, and review date.
+7. Enable Dependabot security updates and a reasonable scheduled dependency
+   update cadence.
+8. Once the production audit is clean or documented exceptions are enforced,
+   add this CI gate:
+
+   ```bash
+   npm audit --omit=dev --audit-level=high
+   ```
+
+Keep broad dependency modernization separate from security remediation so the
+security pull request remains reviewable and does not introduce unrelated
+framework changes.
 
 ## Phase 2: Connect the Downstream Repository
 
@@ -145,7 +192,15 @@ Use one Mercora tracking issue for the overall initiative and separate issues or
 
 ## Phase 4: Contribution Sequence
 
-Do not submit one giant pull request or replay all 122 BeauTeas pull requests individually. Target approximately 10–15 coherent Mercora pull requests, splitting further only when reviewability or dependencies require it.
+Do not submit one giant pull request or replay all 122 BeauTeas pull requests
+individually. Research identified 15 coherent core contribution groups, several
+of which must split for review, migration, or deployment safety. Plan on
+approximately 18–24 actual core Mercora pull requests, followed by separately
+approved optional feature trains.
+
+Before beginning the feature sequence below, complete the dependency-security
+follow-up from Phase 1 or explicitly document why any remaining production
+finding does not block further upstream work.
 
 ### 4.1 Testing foundation
 
@@ -332,6 +387,8 @@ This optional convergence would restore shared Git ancestry and make future upst
 The initiative is successful when:
 
 - Mercora has a valid license, contribution policy, security policy, and green CI.
+- Mercora has no unaddressed high or critical production dependency findings;
+  any temporary exception is documented, owned, and time-bounded.
 - High-risk security and commerce-integrity fixes have landed upstream with tests.
 - Mercora can be configured for a store without editing Volt-specific application logic.
 - BeauTeas-specific content and infrastructure remain isolated downstream.
