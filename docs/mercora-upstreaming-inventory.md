@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Research complete; consolidated execution plan active
+**Status:** Research complete; `U06 + U08` is the next contribution unit
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -151,9 +151,9 @@ dependency and test review.
 | 2 | Dependency security, Mercora PR `#9` | `U01` | Merged |
 | 3 | Vitest foundation, Mercora PRs `#10` and recovery `#21` | `U02` | Merged via recovery PR `#21` |
 | 4 | Runtime configuration and deployment safety, Mercora PRs `#23` and `#32` | `U03` | Merged |
-| 5 | Shared security and catalog trust boundary, Mercora draft PR `#35` | `U04 + U05` | In review |
+| 5 | Shared security and catalog trust boundary, Mercora PR `#35` | `U04 + U05` | Merged |
 | 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
-| 7 | Order trust and server-authoritative checkout | `U06 + U08` | Planned |
+| 7 | Order trust and server-authoritative checkout | `U06 + U08` | Next |
 | 8 | Webhook, inventory, and refund correctness | `U09` | Planned |
 | 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
 | 10 | Recommendations | `U12` | Planned; independently deferrable |
@@ -163,7 +163,7 @@ dependency and test review.
 
 ### U00 — Project foundation
 
-**Status:** In review as Mercora PR `#8`.
+**Status:** Merged via Mercora PR `#8` as `ac4bd57`.
 
 Includes working lint/typecheck/build CI, the MIT license, contribution and
 security policies, package metadata, and a development-only guard around the
@@ -741,9 +741,9 @@ Update this table as Mercora issues and PRs are created.
 | `U01` | Merged | — | `#9` | Merged to Mercora `main` as `afa3723` |
 | `U02` | Merged | — | `#10`, `#21` | `#10` missed `main`; recovery `#21` landed the reviewed commit on `main` as `7fa82a4` |
 | `U03` | Merged | — | `#23`, `#32` | Runtime/config and deploy/migration safety landed via `#23`; `#32` completed review fixes |
-| `U04 + U05` | Research complete | — | — | One security/catalog PR; fold mandatory `#47/#57–#59/#98` corrections |
+| `U04 + U05` | Merged | — | `#35` | Security/catalog trust boundary merged to Mercora `main` as `f6a2cca` |
 | `U07` | Merged | — | `#24` | Canonical Money migration landed on `main` as `243ebfd` after independent completion review |
-| `U06 + U08` | Research complete | — | — | One order/checkout trust-boundary PR; precedes refunds and fulfillment |
+| `U06 + U08` | Ready to implement | — | — | One order/checkout trust-boundary PR; precedes refunds and fulfillment |
 | `U09` | Research complete | — | — | Requires standalone webhook migration and real-D1 tests |
 | `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
 | `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
@@ -751,8 +751,8 @@ Update this table as Mercora issues and PRs are created.
 
 ## Immediate Next Planning Actions
 
-1. Implement and independently review the combined `U04 + U05` shared
-   security/catalog trust-boundary PR on current Mercora `main`.
+1. Implement and independently review the combined `U06 + U08` order trust
+   and server-authoritative checkout PR on current Mercora `main`.
 2. Create or refresh the Mercora tracking issue containing the remaining core
    group checklist.
 3. Maintain a migration reservation ledger before opening any schema PR.

@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; shared security and catalog trust-boundary PR `#35` in review
+**Status:** Active; order trust and server-authoritative checkout (`U06 + U08`) is next
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -198,9 +198,10 @@ the consolidation review found that several form stronger, end-to-end review
 units when combined. The current target is 11 core contribution units: the
 three foundations (`U00`-`U02`) plus eight remaining PRs. Because PR `#10` was
 merged into an already-merged branch and did not reach `main`, recovery PR
-`#21` adds one unavoidable GitHub PR to the ledger. `U03` and `U07` have now
-landed; `U12` recommendations can still be deferred independently, leaving
-five immediate feature PRs on the core order-to-fulfillment path.
+`#21` adds one unavoidable GitHub PR to the ledger. `U03`, `U04 + U05`, and
+`U07` have now landed; `U12` recommendations can still be deferred
+independently, leaving four immediate feature PRs on the core
+order-to-fulfillment path.
 
 Before beginning the feature sequence below, complete the dependency-security
 follow-up from Phase 1 or explicitly document why any remaining production
@@ -209,7 +210,7 @@ finding does not block further upstream work.
 | Remaining sequence | Consolidated scope | Inventory units | Prerequisites |
 | ---: | --- | --- | --- |
 | 1 | Runtime configuration and deployment safety (merged via `#23` and `#32`) | `U03` | Vitest recovery PR `#21` |
-| 2 | Shared security and catalog trust boundary (draft PR `#35`) | `U04 + U05` | `U03` |
+| 2 | Shared security and catalog trust boundary (merged via `#35`) | `U04 + U05` | `U03` |
 | 3 | MACH Money boundary (merged via `#24`) | `U07` | PR `#10`; prepared in parallel with sequence 2 |
 | 4 | Order trust and server-authoritative checkout | `U06 + U08` | `U04 + U05`, `U07` |
 | 5 | Webhook, inventory, and refund correctness | `U09` | `U06 + U08` |
