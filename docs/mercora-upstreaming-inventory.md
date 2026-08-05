@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** `U06 + U08` is in review as Mercora PR `#39`; `U09` is next
+**Status:** `U06 + U08` merged via Mercora PR `#39`; `U09` planning is active
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -153,7 +153,7 @@ dependency and test review.
 | 4 | Runtime configuration and deployment safety, Mercora PRs `#23` and `#32` | `U03` | Merged |
 | 5 | Shared security and catalog trust boundary, Mercora PR `#35` | `U04 + U05` | Merged |
 | 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
-| 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | In review; independently reviewed and all hosted checks green |
+| 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | Merged |
 | 8 | Webhook, inventory, and refund correctness | `U09` | Planned |
 | 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
 | 10 | Recommendations | `U12` | Planned; independently deferrable |
@@ -262,7 +262,7 @@ that belongs to the optional gift-card capability.
 
 ### U06 — Order authorization and server-owned state
 
-**Status:** In review with `U08` in Mercora PR `#39`.
+**Status:** Merged with `U08` via Mercora PR `#39` as `7a020d3`.
 
 Establish one order trust boundary before adding later commerce systems:
 
@@ -298,7 +298,7 @@ that were present in the original PR history.
 
 ### U08 — Server-authoritative checkout and pricing
 
-**Status:** In review with `U06` in Mercora PR `#39`.
+**Status:** Merged with `U06` via Mercora PR `#39` as `7a020d3`.
 
 Reconstruct the final pipeline rather than replaying `#49`, `#73`, and later
 patches individually:
@@ -747,17 +747,17 @@ Update this table as Mercora issues and PRs are created.
 | `U03` | Merged | — | `#23`, `#32` | Runtime/config and deploy/migration safety landed via `#23`; `#32` completed review fixes |
 | `U04 + U05` | Merged | — | `#35` | Security/catalog trust boundary merged to Mercora `main` as `f6a2cca` |
 | `U07` | Merged | — | `#24` | Canonical Money migration landed on `main` as `243ebfd` after independent completion review |
-| `U06 + U08` | In review; all checks green | — | `#39` | Order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams; assigned to Russell |
-| `U09` | Research complete | — | — | Requires standalone webhook migration and real-D1 tests |
+| `U06 + U08` | Merged | — | `#39` | Merged to Mercora `main` as `7a020d3`; order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams |
+| `U09` | Research and planning active | — | — | Worktree is based on merged PR `#39`; requires standalone webhook migration and real-D1 tests |
 | `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
 | `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
 | `U13 + U14` | Research complete | — | — | One fulfillment vertical-slice PR with schema-first ordered commits |
 
 ## Immediate Next Planning Actions
 
-1. Support Russell's review of green Mercora PR `#39` and record its eventual
-   merge commit.
-2. Decide Mercora's authoritative inventory model and prepare the consolidated
+1. Review the U09 research plan and fast-forward its worktree to merged Mercora
+   `main` at `7a020d3`.
+2. Decide Mercora's authoritative inventory model and implement the consolidated
    `U09` webhook, inventory, and refund-correctness work.
 3. Create or refresh the Mercora tracking issue containing the remaining core
    group checklist.
