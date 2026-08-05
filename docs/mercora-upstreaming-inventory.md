@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Research complete; `U06 + U08` is the next contribution unit
+**Status:** `U06 + U08` is in review as Mercora PR `#39`; `U09` is next
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -153,7 +153,7 @@ dependency and test review.
 | 4 | Runtime configuration and deployment safety, Mercora PRs `#23` and `#32` | `U03` | Merged |
 | 5 | Shared security and catalog trust boundary, Mercora PR `#35` | `U04 + U05` | Merged |
 | 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
-| 7 | Order trust and server-authoritative checkout | `U06 + U08` | Next |
+| 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | In review; independently reviewed and all hosted checks green |
 | 8 | Webhook, inventory, and refund correctness | `U09` | Planned |
 | 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
 | 10 | Recommendations | `U12` | Planned; independently deferrable |
@@ -262,6 +262,8 @@ that belongs to the optional gift-card capability.
 
 ### U06 — Order authorization and server-owned state
 
+**Status:** In review with `U08` in Mercora PR `#39`.
+
 Establish one order trust boundary before adding later commerce systems:
 
 - Owner-or-admin order reads
@@ -295,6 +297,8 @@ deprecation plan. Exclude the accidental swap file and BeauTeas planning docs
 that were present in the original PR history.
 
 ### U08 — Server-authoritative checkout and pricing
+
+**Status:** In review with `U06` in Mercora PR `#39`.
 
 Reconstruct the final pipeline rather than replaying `#49`, `#73`, and later
 patches individually:
@@ -743,7 +747,7 @@ Update this table as Mercora issues and PRs are created.
 | `U03` | Merged | — | `#23`, `#32` | Runtime/config and deploy/migration safety landed via `#23`; `#32` completed review fixes |
 | `U04 + U05` | Merged | — | `#35` | Security/catalog trust boundary merged to Mercora `main` as `f6a2cca` |
 | `U07` | Merged | — | `#24` | Canonical Money migration landed on `main` as `243ebfd` after independent completion review |
-| `U06 + U08` | Ready to implement | — | — | One order/checkout trust-boundary PR; precedes refunds and fulfillment |
+| `U06 + U08` | In review; all checks green | — | `#39` | Order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams; assigned to Russell |
 | `U09` | Research complete | — | — | Requires standalone webhook migration and real-D1 tests |
 | `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
 | `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
@@ -751,13 +755,15 @@ Update this table as Mercora issues and PRs are created.
 
 ## Immediate Next Planning Actions
 
-1. Implement and independently review the combined `U06 + U08` order trust
-   and server-authoritative checkout PR on current Mercora `main`.
-2. Create or refresh the Mercora tracking issue containing the remaining core
+1. Support Russell's review of green Mercora PR `#39` and record its eventual
+   merge commit.
+2. Decide Mercora's authoritative inventory model and prepare the consolidated
+   `U09` webhook, inventory, and refund-correctness work.
+3. Create or refresh the Mercora tracking issue containing the remaining core
    group checklist.
-3. Maintain a migration reservation ledger before opening any schema PR.
-4. Decide Mercora's authoritative inventory model before `U09`.
-5. Define capability interfaces for optional gift cards/subscriptions before
-   checkout finalization is ported.
+4. Maintain a migration reservation ledger before opening the schema-bearing
+   `U09` PR.
+5. Carry PR `#39`'s deliberately deferred confirmation-email effect retry and
+   exact per-line targeted-discount refund allocation into `U09` planning.
 6. Reserve one reviewer map for the `U13 + U14` fulfillment PR, organized by
    its eight schema-to-surface commits rather than by BeauTeas chronology.
