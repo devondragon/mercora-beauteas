@@ -324,7 +324,7 @@ export async function POST(req: NextRequest) {
       const easterEgg = `Eee, the secret's out${
         userName !== "Guest" ? `, ${userName}` : ""
       }! Chai's Signature Brewing Ritual 💕:
-        1. Fresh water just off the boil, not scorching, we're being gentle with our botanicals.
+        1. Fresh water just off the boil, not scorching. We're being gentle with our botanicals.
         2. Steep a full five minutes. Good things take a little time (and so does your glow ✨).
         3. Skip the milk and let those pretty flowers shine.
         Bonus: take one slow, cozy breath over the cup before your first sip. That's the self-care magic.`;
