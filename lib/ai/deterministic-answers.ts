@@ -147,9 +147,30 @@ const RULES: CategoryRule[] = [
       // is generic enough to also match "minimum number of reviews" or "of
       // characters", neither of which is an order-size question. "quantity"
       // stays: nobody asks about a minimum review quantity.
-      /\bminimum (order|purchase|quantity|boxes|spend|cart)\b/i,
+      //
+      // "spend" and "cart" were tried here and dropped again: the sale's
+      // minimum is denominated in BOXES (`sale.minimum_boxes`), never
+      // dollars, and "minimum spend" / "minimum cart value" phrasing
+      // overlaps almost entirely with the free-shipping threshold and
+      // coupon/discount framing that `shipping_rates` (or retrieval) owns —
+      // "what's the minimum spend for free shipping?" was answering the box
+      // minimum instead of the rate card. Excluding every dollar-shaped
+      // framing ("for shipping", "for the coupon", "for the discount code",
+      // ...) would be an ever-growing list; dropping the two nouns removes
+      // the hijack at the source and loses nothing, since this store has no
+      // dollar-denominated minimum to describe.
+      /\bminimum (order|purchase|quantity|boxes)\b/i,
       /\b(order|buy|purchase) minimum\b/i,
-      /\bhow many (boxes|tins|do i have to|must i)\b.{0,25}\b(buy|order|purchase)\b/i,
+      // Requires an OBLIGATION shape ("do i have to", "must i", "should i",
+      // "am i required to") between the noun and the verb. The earlier
+      // version matched on bare co-occurrence of a quantity noun and an
+      // order verb anywhere in the sentence, which is why present-tense and
+      // past-tense self-reference ("how many boxes ARE IN MY order?", "...
+      // DID I order?") had to be enumerated one phrasing at a time in an
+      // `exclude` list — and still missed some. An obligation/modal shape
+      // structurally excludes every self-reference construction at once,
+      // because none of them ask what the shopper is REQUIRED to do.
+      /\bhow many (boxes|tins)\s+(do i have to|must i|should i|am i required to)\s+(buy|order|purchase)\b/i,
       /\bdo i have to buy\b.{0,20}\b(minimum|at least)\b/i,
       // The subject word must sit IMMEDIATELY after "a minimum" (whitespace
       // only, no `.{0,N}` gap). A gap let "is there a minimum AGE TO BUY
@@ -157,15 +178,21 @@ const RULES: CategoryRule[] = [
       // order-size one. Zero gap means only the actual subject of "minimum"
       // qualifies, which also makes this redundant with the pattern above
       // for "minimum order" — kept for the nouns that pattern doesn't cover
-      // ("spend", "cart", a bare "buy").
-      /\bis there a minimum\b\s+(order|purchase|buy|boxes|spend|cart)\b/i,
+      // (a bare "buy").
+      /\bis there a minimum\b\s+(order|purchase|buy|boxes)\b/i,
+      // The fully bare form ("is there a minimum?", no subject at all) is a
+      // real, common phrasing on a store with a hard minimum — losing it to
+      // retrieval is the same class of failure as an invented email address.
+      // Anchored to the WHOLE (trimmed) question so it can never widen into
+      // a substring match on a longer sentence with unrelated trailing text.
+      /^is there a minimum\s*\?*$/i,
     ],
     exclude: [
       // Past-tense self-reference ("how many boxes DID I order/buy") is a
-      // question about THIS shopper's order history, not the box minimum —
-      // `order_status` doesn't have a quantity-shaped pattern of its own, so
-      // without this the "how many boxes...buy/order" pattern above swallows
-      // it. Falls through to retrieval instead.
+      // question about THIS shopper's order history, not the box minimum.
+      // The obligation-shaped pattern above no longer needs this to stay
+      // narrow, but it's cheap insurance against a future positive pattern
+      // reintroducing the same gap.
       /\b(did|have|has) i (order|buy|bought|purchase|purchased)\b/i,
       /\bi (ordered|bought|purchased)\b/i,
     ],

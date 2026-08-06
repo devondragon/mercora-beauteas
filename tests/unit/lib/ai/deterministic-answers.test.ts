@@ -626,13 +626,80 @@ describe('minimum order answer (GOOB)', () => {
   });
 
   it.each([
+    // The fully bare form, with no subject at all, is a real and common
+    // phrasing on a store with a hard minimum — it must still match, or the
+    // model gets to invent an answer to the exact question the deterministic
+    // layer exists to pin. Distinct from the cases above: there is no
+    // trailing subject text for the anchor to reject.
+    'is there a minimum?',
+    'Is there a minimum?',
+    'is there a minimum',
+    'is there a minimum???',
+  ])('still answers the fully bare form: %s', async (question) => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery(question);
+    expect(category).toBe('minimum_order');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+  });
+
+  it.each([
     // Past-tense self-reference belongs to order history, not the box
     // minimum, even though it shares the "how many boxes...buy/order" shape.
     'how many boxes did i order?',
     'how many boxes have i ordered?',
     'how many boxes did i buy last time?',
-  ])('does not hijack past-tense order history: %s', (question) => {
+    // Present-tense self-reference is the same shape and was still hijacked
+    // by a first attempt that only excluded past tense — "are in my order"
+    // matches no `did/have/has i order` phrasing, so an exclude list would
+    // have had to enumerate this too. The obligation-shaped positive pattern
+    // ("do i have to" / "must i" / "should i" / "am i required to") rules it
+    // out structurally instead.
+    'how many boxes are in my order?',
+    'how many boxes were in my last order?',
+    'how many boxes have i purchased this year?',
+  ])('does not hijack self-referential order history: %s', (question) => {
     expect(classifyQuery(question)).not.toBe('minimum_order');
+  });
+
+  it.each([
+    // Obligation-shaped phrasings beyond the brief's original "do i have to
+    // buy" — confirms the narrower positive pattern didn't just move the
+    // false negative from "how many boxes ... buy/order" to only that one
+    // exact modal.
+    'how many boxes must i order?',
+    'how many boxes should i order?',
+    'how many boxes am i required to purchase?',
+  ])('still answers other obligation phrasings: %s', (question) => {
+    expect(classifyQuery(question)).toBe('minimum_order');
+  });
+
+  it.each([
+    // "spend" and "cart" were dropped from the noun list entirely: the
+    // sale's minimum is denominated in BOXES (`sale.minimum_boxes`), never
+    // dollars, and this phrasing belongs to `shipping_rates` (the free-
+    // shipping threshold) or retrieval (coupon/discount code minimums) —
+    // neither of which this store even has a dollar-based order minimum for.
+    // "minimum spend for shipping" containing the literal "free shipping"
+    // phrase now correctly reaches `shipping_rates` instead of being
+    // hijacked into the box-minimum answer.
+    ['minimum spend for free shipping?', 'shipping_rates'],
+    ['whats the minimum spend to get free shipping?', 'shipping_rates'],
+    // No "free" in this one, so it isn't in `shipping_rates`'s vocabulary
+    // either — it falls through to retrieval rather than to either canned
+    // answer, which is the safe outcome: retrieval has the VERIFIED FACTS
+    // block and can honestly say free shipping is off for the sale.
+    ['is there a minimum spend for shipping?', null],
+    ['whats the minimum cart total for the coupon code to work?', null],
+    ['is there a minimum cart value for the discount code?', null],
+  ])('does not let "spend"/"cart" hijack shipping or coupon questions: %s -> %s', (question, expected) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+    expect(classifyQuery(question)).toBe(expected);
   });
 });
 
