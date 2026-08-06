@@ -91,6 +91,7 @@ import { requireAuth, PERMISSIONS } from "@/lib/auth/unified-auth";
 import { classifyQuery, resolveDeterministicAnswer } from "@/lib/ai/deterministic-answers";
 import { guardAssistantReply } from "@/lib/ai/response-guard";
 import { CONTACT_EMAIL, ORDER_HISTORY_URL, SUPPORT_HOURS } from "@/lib/ai/canonical-facts";
+import { getSaleRules } from "@/lib/sale/settings";
 
 // === Input bounds (BMC-180 / BMC-139) ===
 // The paid AI pipeline runs on attacker-controlled input, so every free-text
@@ -343,6 +344,30 @@ export async function POST(req: NextRequest) {
       )
       .map((m: any) => ({ role: m.role, content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
 
+    // Minimum-order fact for VERIFIED FACTS (GOOB). `minimum_order` in
+    // `lib/ai/deterministic-answers.ts` is deliberately narrow — three rounds
+    // of review found paraphrase after paraphrase of "is there a minimum?"
+    // that no regex table can enumerate — so it only ever short-circuits the
+    // phrasings it recognizes. Every OTHER phrasing reaches here, past that
+    // classifier's miss, and without a fact in context the model is free to
+    // invent a box count the way it once invented a support email address.
+    // Read alongside the other VERIFIED FACTS, from the same `getSaleRules()`
+    // seam `minimumOrderAnswer` uses, so this can never drift from either the
+    // deterministic answer or `sale.minimum_boxes` in D1. Only reached on a
+    // classifier MISS (a HIT already returned above), so this costs one more
+    // D1 read on a request about to pay for an embedding + a generation call
+    // anyway — not on the cheap path classification protects.
+    let minimumBoxesFact = "";
+    try {
+      const { minimumBoxes } = await getSaleRules();
+      minimumBoxesFact = `\n- Minimum order: ${minimumBoxes} boxes (mix and match Morning/Afternoon/Evening — it all counts toward the total)`;
+    } catch (error) {
+      // Same discipline as the deterministic answer: never state a guessed
+      // number. Omit the fact rather than risk a wrong one — the model still
+      // has the "don't invent" instruction below, just without this backstop.
+      console.error("[chai] sale rules lookup failed for VERIFIED FACTS:", error);
+    }
+
     // Enhanced selective recommendation system prompt
     const systemPrompt = `You are Chai, BeauTeas' warm and bubbly beauty bestie — obsessed with skincare, glow, and helping people feel pretty from the inside out. You really know your organic botanicals and what they do for skin, and you share that like a hype-friend who happens to be a total skincare nerd. Your job is to analyze available products and recommend ONLY the most relevant ones based on the user's specific needs and context.
 
@@ -391,9 +416,11 @@ These come from BeauTeas' configuration, not from retrieval. They are correct ev
 when the product context below is empty or unhelpful:
 - Support/contact email: ${CONTACT_EMAIL}
 - Support hours: ${SUPPORT_HOURS}
-- Order tracking: ${ORDER_HISTORY_URL}
+- Order tracking: ${ORDER_HISTORY_URL}${minimumBoxesFact}
 NEVER invent an email address, domain, or link. If you need one and it is not
 listed above, say you're not sure and point them at ${CONTACT_EMAIL}.
+NEVER invent a minimum order size. If a minimum is not listed above, say
+you're not sure and point them at ${CONTACT_EMAIL}.
 
 === AVAILABLE PRODUCTS ===
 ${contextSnippets || "No specific product information available for this query."}

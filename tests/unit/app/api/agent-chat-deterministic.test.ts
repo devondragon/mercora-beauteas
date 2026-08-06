@@ -260,4 +260,46 @@ describe('/api/agent-chat verified-facts prompt block (BMC-215)', () => {
     expect(systemPrompt).toContain(CONTACT_EMAIL);
     expect(systemPrompt).toContain(ORDER_HISTORY_URL);
   });
+
+  it('injects the configured box minimum (GOOB) — not a hardcoded number', async () => {
+    // Pinned to a NON-default value (10 is both the seeded default and the
+    // `minimum_order` unit-test fixture elsewhere) so this only passes if the
+    // prompt is genuinely reading `getSaleRules()` rather than echoing a
+    // literal `10` typed into the route.
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 17,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+    getCloudflareContext.mockResolvedValue({ env: { AI: {} } });
+    vi.mocked(runAI).mockResolvedValue({});
+    vi.mocked(extractAIResponse).mockReturnValue('ok');
+
+    // A question the `minimum_order` classifier does NOT recognize — this is
+    // the whole point of the backstop: an unmatched phrasing still reaches
+    // the model with the real number in context instead of inventing one.
+    await post({ question: 'whats the smallest amount i can order?' });
+
+    const opts = vi.mocked(runAI).mock.calls[0][2] as { messages: Array<{ content: string }> };
+    const systemPrompt = opts.messages[0].content;
+    expect(systemPrompt).toContain('Minimum order: 17 boxes');
+    expect(systemPrompt).not.toContain('Minimum order: 10 boxes');
+  });
+
+  it('omits the minimum-order fact rather than guessing when the sale-rules read fails', async () => {
+    getSaleRules.mockRejectedValue(new Error('D1 unavailable'));
+    getCloudflareContext.mockResolvedValue({ env: { AI: {} } });
+    vi.mocked(runAI).mockResolvedValue({});
+    vi.mocked(extractAIResponse).mockReturnValue('ok');
+
+    await post({ question: 'whats the smallest amount i can order?' });
+
+    const opts = vi.mocked(runAI).mock.calls[0][2] as { messages: Array<{ content: string }> };
+    const systemPrompt = opts.messages[0].content;
+    expect(systemPrompt).toContain('VERIFIED FACTS');
+    expect(systemPrompt).not.toMatch(/Minimum order: \d+ boxes/);
+    // The rest of the block (unrelated facts) still comes through.
+    expect(systemPrompt).toContain(CONTACT_EMAIL);
+  });
 });

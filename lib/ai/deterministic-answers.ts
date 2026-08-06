@@ -161,16 +161,22 @@ const RULES: CategoryRule[] = [
       // dollar-denominated minimum to describe.
       /\bminimum (order|purchase|quantity|boxes)\b/i,
       /\b(order|buy|purchase) minimum\b/i,
-      // Requires an OBLIGATION shape ("do i have to", "must i", "should i",
-      // "am i required to") between the noun and the verb. The earlier
-      // version matched on bare co-occurrence of a quantity noun and an
-      // order verb anywhere in the sentence, which is why present-tense and
-      // past-tense self-reference ("how many boxes ARE IN MY order?", "...
-      // DID I order?") had to be enumerated one phrasing at a time in an
-      // `exclude` list — and still missed some. An obligation/modal shape
-      // structurally excludes every self-reference construction at once,
-      // because none of them ask what the shopper is REQUIRED to do.
-      /\bhow many (boxes|tins)\s+(do i have to|must i|should i|am i required to)\s+(buy|order|purchase)\b/i,
+      // Requires an OBLIGATION shape ("do i/we have to", "must i/we",
+      // "should i/we", "am i/are we required to") between the noun and the
+      // verb. The earlier version matched on bare co-occurrence of a
+      // quantity noun and an order verb anywhere in the sentence, which is
+      // why present-tense and past-tense self-reference ("how many boxes ARE
+      // IN MY order?", "...DID I order?") had to be enumerated one phrasing
+      // at a time in an `exclude` list — and still missed some. An
+      // obligation/modal shape structurally excludes every self-reference
+      // construction at once, because none of them ask what the shopper is
+      // REQUIRED to do. The first-person-plural forms ("do WE have to",
+      // "should WE") are the same obligation shape a couple shopping
+      // together would type, and are included for the same reason as the
+      // singular ones — narrowing the modal alternation doesn't touch the
+      // noun list (the round-1 hijack vector) or widen the match gap (the
+      // round-2 hijack vector), so it can't reopen either.
+      /\bhow many (boxes|tins)\s+(do (i|we) have to|must (i|we)|should (i|we)|(am i|are we) required to)\s+(buy|order|purchase)\b/i,
       /\bdo i have to buy\b.{0,20}\b(minimum|at least)\b/i,
       // The subject word must sit IMMEDIATELY after "a minimum" (whitespace
       // only, no `.{0,N}` gap). A gap let "is there a minimum AGE TO BUY

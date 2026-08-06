@@ -663,6 +663,12 @@ describe('minimum order answer (GOOB)', () => {
     'how many boxes are in my order?',
     'how many boxes were in my last order?',
     'how many boxes have i purchased this year?',
+    // First-person-plural self-reference is the same shape — added alongside
+    // the "we"/"us" obligation modals below, so it must not reopen either
+    // prior hijack.
+    'how many boxes did we order?',
+    'how many boxes have we ordered?',
+    'how many boxes are in our order?',
   ])('does not hijack self-referential order history: %s', (question) => {
     expect(classifyQuery(question)).not.toBe('minimum_order');
   });
@@ -675,6 +681,15 @@ describe('minimum order answer (GOOB)', () => {
     'how many boxes must i order?',
     'how many boxes should i order?',
     'how many boxes am i required to purchase?',
+    // First-person-plural forms — the same obligation shape a couple
+    // shopping together would type. Widening the modal alternation only
+    // touches the modal group itself, not the noun list (round 1's hijack
+    // vector) or the gap tolerance (round 2's), so the negatives above stay
+    // covered.
+    'how many boxes must we order?',
+    'how many boxes should we order?',
+    'how many boxes do we have to buy?',
+    'how many boxes are we required to purchase?',
   ])('still answers other obligation phrasings: %s', (question) => {
     expect(classifyQuery(question)).toBe('minimum_order');
   });
