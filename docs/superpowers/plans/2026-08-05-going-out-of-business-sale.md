@@ -367,7 +367,9 @@ Missing status reads as active so a NULL row cannot dark the catalog."
 
 Every sale number lives in `admin_settings` so it can be changed without a deploy. `defaultSettings` in `lib/db/schema/settings.ts` only seeds fresh installs, so existing databases need these rows written explicitly.
 
-Tier costs seed at `0` — you set the real values in admin after weighing boxes (Task 8 builds that editor). A `0` tier is visibly wrong in the storefront rather than silently plausible, which is the failure mode you want if the step is missed.
+**`shipping.tiers` seeds EMPTY, and that is a safety property, not a placeholder.** Task 4 treats any non-empty tier array as "tiers configured" and lets it override the per-method cost. Seeding three bands at `cost: 0` would therefore make every order ship free the moment this migration applies to production — which is taking live orders today — and it would stay free until someone opened the admin editor and typed real prices. An empty array means "not configured", so the existing flat `shipping.methods` rates stay in force until you deliberately enter tiers in the Task 8 editor. There is no window in which shipping is free.
+
+Free shipping over $75 does go away immediately on deploy, via the `free_methods` update below. That direction is safe — it charges more, not less.
 
 **Files:**
 - Create: `migrations/0025_seed_goob_sale_settings.sql`
@@ -397,9 +399,15 @@ Create `migrations/0025_seed_goob_sale_settings.sql`:
 -- `shipping.free_methods`, which makes the `freeMethods.includes(m.id)` test
 -- false for all methods regardless of the threshold.
 --
--- Tier costs seed at 0 and are set in the admin Shipping tab once boxes have been
--- weighed. A 0 tier reads as obviously unset in the storefront; a guessed number
--- would read as intentional.
+-- WHY shipping.tiers SEEDS EMPTY
+-- resolveShippingOptions treats a NON-EMPTY tiers array as "tiers configured" and
+-- lets it override each method's own cost. Seeding three bands at cost 0 would
+-- therefore make every order ship free the moment this migration applied to
+-- production — which is taking live orders — and it would stay free until someone
+-- opened the admin Shipping tab and typed real prices. Empty means "not
+-- configured", so the existing flat shipping.methods rates stay in force until
+-- tiers are entered deliberately. Free shipping over $75 still goes away below,
+-- which is the safe direction: it charges more, not less.
 
 INSERT OR IGNORE INTO admin_settings (key, value, category, description, data_type)
 VALUES
@@ -426,9 +434,9 @@ VALUES
   ),
   (
     'shipping.tiers',
-    '[{"max_boxes":20,"cost":0},{"max_boxes":40,"cost":0},{"max_boxes":null,"cost":0}]',
+    '[]',
     'shipping',
-    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above',
+    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
     'object'
   ),
   (
@@ -481,13 +489,11 @@ In `lib/db/schema/settings.ts`, append to the `defaultSettings` array so a brand
   },
   {
     key: 'shipping.tiers',
-    value: JSON.stringify([
-      { max_boxes: 20, cost: 0 },
-      { max_boxes: 40, cost: 0 },
-      { max_boxes: null, cost: 0 }
-    ]),
+    // EMPTY on purpose — a non-empty array means "configured" and overrides the
+    // per-method cost, so seeded placeholder bands would ship everything free.
+    value: JSON.stringify([]),
     category: 'shipping',
-    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above',
+    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
     data_type: 'object'
   },
   {
@@ -2480,7 +2486,9 @@ Never pipe a deploy through `head` or `grep` — a SIGPIPE has previously killed
 
 - [ ] **Step 6: Set the tier prices**
 
-In `/admin/settings` → Shipping, enter the three tier costs from your box weighing. Save, then reload to confirm they persisted.
+In `/admin/settings` → Shipping, add the three tiers and enter the costs from your box weighing. Save, then reload to confirm they persisted.
+
+`shipping.tiers` ships empty, so until this step is done the storefront quotes the existing flat rates rather than free shipping. Verify a real cart quotes the tier price before moving on — an empty tier list is the "not configured" state, and it is silent by design.
 
 - [ ] **Step 7: Withdraw the bundles and reprice**
 
