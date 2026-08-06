@@ -23,8 +23,13 @@ from the then-current Mercora `main`.
 
 ## Source of Truth: Tag `v1.0.0`, Not `main`
 
-Read BeauTeas source at tag `v1.0.0` (`c9b135d`). Do not reconstruct from
-`main`.
+Read BeauTeas source at tag `v1.0.0` (`c9b135d`), from the read-only worktree
+at `~/git/mercora-beauteas-v1.0.0`. Do not reconstruct from `main`.
+
+Sale work happens on branch `goob` in `~/git/mercora-beauteas-goob` and is held
+unmerged while upstreaming runs, so `main` should stay free of sale behavior on
+its own. The tag pin is what keeps this safe once that stops being true —
+either because the sale ships first, or because the branch merges early.
 
 `v1.0.0` marks the launch-ready storefront as it stood on 2026-08-05, before
 any going-out-of-business sale work. `main` now also carries sale-specific

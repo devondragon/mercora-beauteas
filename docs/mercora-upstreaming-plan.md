@@ -19,7 +19,9 @@ BeauTeas will remain a public downstream/reference implementation of Mercora. Me
 | Repository | Local path | Purpose |
 | --- | --- | --- |
 | Mercora | `~/git/mercora` | Clean upstream framework development and pull requests |
-| BeauTeas | `~/git/mercora-beauteas` | Production storefront, brand, content, catalog, and operations |
+| BeauTeas | `~/git/mercora-beauteas` | Production storefront, brand, content, catalog, and operations; upstreaming status is tracked here on `main` |
+| BeauTeas baseline | `~/git/mercora-beauteas-v1.0.0` | Read-only worktree detached at tag `v1.0.0`. **Read BeauTeas source here.** No install needed |
+| BeauTeas sale | `~/git/mercora-beauteas-goob` | Going-out-of-business sale work on branch `goob`. Never a source for upstreaming |
 
 Current repository state when this plan was written:
 
