@@ -92,6 +92,7 @@ import { classifyQuery, resolveDeterministicAnswer } from "@/lib/ai/deterministi
 import { guardAssistantReply } from "@/lib/ai/response-guard";
 import { CONTACT_EMAIL, ORDER_HISTORY_URL, SUPPORT_HOURS } from "@/lib/ai/canonical-facts";
 import { getSaleRules } from "@/lib/sale/settings";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 // === Input bounds (BMC-180 / BMC-139) ===
 // The paid AI pipeline runs on attacker-controlled input, so every free-text
@@ -653,10 +654,19 @@ Generate complete content based on the user's specifications.`;
     if (finalProductIds.length > 0) {
       try {
         const db = await getDbAsync();
-        const productResults = await db
-          .select()
-          .from(products)
-          .where(inArray(products.id, finalProductIds));
+        const productResults = (
+          await db
+            .select()
+            .from(products)
+            .where(inArray(products.id, finalProductIds))
+        )
+          // A withdrawn/archived product (e.g. the GOOB-sale-archived
+          // bundles) must never be recommended — unlike the homepage,
+          // category pages, the sitemap, and /api/products, this route had
+          // no status filter, so Chai could recommend an archived product at
+          // its old price with a card whose click lands on /thank-you. Same
+          // seam every other public product surface filters through.
+          .filter(isPubliclyPurchasableProduct);
 
         // Fetch variants for each product and build complete Product objects
         relatedProducts = await Promise.all(productResults.map(async (productRecord) => {
