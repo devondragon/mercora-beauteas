@@ -35,13 +35,14 @@ npm run db:migrate:status:production
 ```
 
 This is read-only (`--dry-run`, no writes). As of this writing it will report
-three pending migrations, in this order:
+four pending migrations, in this order:
 
 | Migration | What it does |
 |---|---|
 | `0025_seed_goob_sale_settings.sql` | Seeds `sale.minimum_boxes`, `sale.final_sale`, `sale.subscriptions_enabled`, `shipping.tiers` (empty — see Phase 2), `promotions.banner_link`; turns off free shipping (`shipping.free_methods`). |
 | `0026_goob_closing_content.sql` | Adds the `/thank-you` page, rewrites `shipping-policy`, `contact`, `faq`, `refund-policy`, archives `/subscriptions` and the empty `clearly-calendula-sample-pack-on-sale` stub. |
 | `0027_remove_em_dashes_from_content.sql` | Sweeps em dashes out of live `pages`, `categories`, and `blog_posts` rows (customer-facing content only). |
+| `0028_withdraw_box_variants_and_single_shipping_method.sql` | Discontinues the three-box variants (`BTCCM3`/`BTCCA3`/`BTCCE3` — the owner's call: one blend, one SKU, one box); disables `express`/`overnight` in `shipping.methods` so only Standard is sold, without deleting them. |
 
 `npm run deploy:production` backs up and applies pending migrations
 automatically, *before* the build (see `docs/database-migrations.md` §
@@ -50,7 +51,74 @@ know what's coming before you commit to the deploy.
 
 ---
 
+## Phase 0.5 — Merge to `main` and let CI gate the SHA before deploying
+
+This runbook was written and tested on a feature branch. Production deploys
+are only supposed to happen for a commit that CI has verified — and running
+the command in Phase 1 from your own machine does **not** enforce that on its
+own:
+
+- `.github/workflows/ci.yml` ("Launch readiness gate": lint, typecheck,
+  dependency audit, unit tests, Workers integration tests, a production
+  OpenNext build, and the checkout browser suite) runs on push/PR to `main`.
+- `.github/workflows/production-deploy-guard.yml` is a separate, manually
+  dispatched workflow that checks the Launch readiness gate's result for the
+  exact commit SHA *before* it runs `npm run deploy:production` — but only
+  when it is *that workflow* doing the deploying.
+- **`npm run deploy:production` run locally, as Phase 1 below shows it, does
+  not go through the guard at all.** It builds and deploys whatever is
+  currently checked out on your machine, gated by nothing but your own
+  judgment.
+
+So, before Phase 1:
+
+1. Merge this branch to `main` (PR or direct merge, whichever this repo's
+   convention is) and push.
+2. Watch the "Launch readiness gate" run on `main` for that commit to
+   completion and confirm it is green:
+   ```bash
+   gh run list --branch main --workflow ci.yml --limit 1
+   ```
+3. Check out that exact `main` commit locally before running Phase 1's deploy
+   command — a local deploy from a different commit (including this branch,
+   pre-merge) ships code CI never verified.
+
+If you would rather have the guard enforce this for you mechanically instead
+of trusting step 3, dispatch `production-deploy-guard.yml` from the Actions
+tab (or `gh workflow run production-deploy-guard.yml`) instead of running
+`npm run deploy:production` locally in Phase 1 — it re-checks the gate for
+the SHA on `main` and refuses to deploy if it did not pass. Either path is
+fine; picking neither is the gap this phase exists to close.
+
+---
+
 ## Phase 1 — Deploy
+
+**Read Phase 0.5 first if you have not merged to `main` yet — this command
+does not check CI status on its own.**
+
+**This deploy alone puts the store in a state that looks like a clearance
+sale but is not yet priced like one.** The homepage hero ("We're Closing
+BeauTeas For Good ... priced to clear," hardcoded in `app/page.tsx`) ships as
+part of this same code deploy, and the 10-box minimum plus free shipping
+being switched off land from the `0025` migration in this same deploy. But
+the actual sale price per box does not exist until Phase 4, which is gated on
+physically weighing boxes and cannot be rushed. In between, a customer sees
+"going out of business, priced to clear," and the only way to check out is
+**10 boxes at the pre-sale $14.99 each — $149.90 minimum, all sales final**,
+with no return path (`sale.final_sale` is on from this same deploy). That is
+a real, live window, not a theoretical one — there is nothing else in the
+system that closes it until Phase 4 finishes. Pick one before you run this:
+
+- **Compress Phases 1–4 into one sitting.** Have the real per-box rate and
+  the recounted inventory ready *before* you start Phase 1, so Phase 4 runs
+  within minutes of Phase 1, not hours or days later.
+- **Or hold the hero/banner copy out of this deploy until pricing is live.**
+  If you want to ship the box-minimum/shipping changes on their own schedule,
+  temporarily revert the `app/page.tsx` hero copy (and don't enable the
+  Phase 6 banner) in the commit you deploy for Phase 1, so nothing advertises
+  a "priced to clear" sale that isn't priced yet; restore the hero copy in a
+  follow-up deploy once Phase 4 has run.
 
 ```bash
 npm run deploy:production > /tmp/goob-deploy-production.log 2>&1
@@ -82,10 +150,10 @@ before telling anyone the sale is on.
 ## Phase 2 — Set the shipping tiers (nothing ships correctly until this is done)
 
 Until you enter real tier costs, `shipping.tiers` stays empty, which means the
-storefront quotes the **old flat per-method rates** (`$5.99` / `$9.99` /
-`$19.99`) regardless of box count. That is safe (nothing overcharges or
-undercharges silently) but it is *not* the tiered pricing this sale is built
-around.
+storefront quotes the **flat Standard rate ($5.99)** regardless of box count —
+`0028` disabled Express and Overnight, so Standard is the only enabled method
+during the sale. That is safe (nothing overcharges or undercharges silently)
+but it is *not* the tiered pricing this sale is built around.
 
 1. Weigh a representative box (or a few, if weight varies enough to matter)
    and work out real shipping costs per tier.
@@ -104,7 +172,7 @@ around.
 5. Save, then **reload the page** and confirm the tiers you entered are still
    there.
 6. Spot-check: add 10 boxes to a cart and confirm checkout quotes your new
-   tier price, not $5.99/$9.99/$19.99.
+   tier price, not the flat $5.99.
 
 ---
 
@@ -207,7 +275,28 @@ whole phase for whenever you decide to pull them from the sale.
    what it would become. Confirm the count of affected variants looks right
    (it should be every active, physical, tea variant — not the gift card).
 
-3. Once the dry-run output looks correct, run it for real, same rate:
+3. **Back up production before running it for real.** The script has no
+   restore mode: it writes one `UPDATE` per variant as its own separate
+   `wrangler d1 execute` call (not one atomic transaction), and only writes
+   `data/goob/price-baseline.json` after the *entire* loop finishes. A failure
+   partway through — a dropped connection, a killed process, a bad SKU further
+   down the list — leaves prices half old / half new in production **and no
+   baseline file at all** to recover the true pre-sale prices from. Take a
+   fresh export first, using the same command shape `scripts/d1-migrate.mjs`
+   uses for its own pre-flight backups:
+
+   ```bash
+   npx wrangler d1 export beauteas-db --remote --env production \
+     --skip-confirmation --output ".backups/pre-reprice-$(date +%Y%m%dT%H%M%S).sql"
+   ```
+
+   Confirm the output file is non-empty before proceeding. If the reprice run
+   below fails partway through, this export is what lets you restore the
+   original prices and re-run cleanly, rather than reconstructing them by hand
+   from whatever `compare_at_price` values happen to still be intact.
+
+4. Once the dry-run output looks correct and the backup above exists, run it
+   for real, same rate:
 
    ```bash
    D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00
@@ -217,7 +306,7 @@ whole phase for whenever you decide to pull them from the sale.
    `compare_at_price` to the real pre-sale price (so the storefront strikethrough
    is accurate), and writes `data/goob/price-baseline.json`.
 
-4. **Commit `data/goob/price-baseline.json` and back it up somewhere outside
+5. **Commit `data/goob/price-baseline.json` and back it up somewhere outside
    git** (a second copy, not just the commit).
 
    Why this matters: the baseline file is the only record of each variant's
@@ -231,6 +320,26 @@ whole phase for whenever you decide to pull them from the sale.
    — understating the discount shown to customers. Losing the file is
    recoverable only as long as `compare_at_price` in the DB is still correct;
    don't let both go missing at once.
+
+6. **The homepage can show stale prices linking to the new ones for up to an
+   hour.** `app/page.tsx` sets `export const revalidate = 3600`; the product
+   page (`app/product/[slug]/page.tsx`) sets `revalidate = 0`. This reprice is
+   a pure D1 write with no deploy, so the PDP reflects the new price the
+   instant step 4 finishes, while the homepage's cached catalog cards can keep
+   showing the pre-sale price for up to an hour afterward — a customer
+   clicking a card from the homepage can land on a PDP quoting a different
+   (lower) price than the card they clicked. There is no admin "purge the
+   homepage now" control in this codebase today (the only `revalidatePath`
+   call is in the settings-save route, and it targets CMS `[slug]` pages, not
+   `/`). Two honest options, neither of which is "nothing":
+   - Do nothing and let the hour pass — mention the mismatch window to
+     whoever's watching the storefront so a screenshot of it doesn't turn
+     into a support fire drill.
+   - Force a fresh homepage render sooner by redeploying
+     (`npm run deploy:production` again, no code changes needed) after the
+     reprice — a new deploy serves fresh renders, so this clears the stale
+     cache without waiting out the hour. Confirm the "Uploaded" +
+     "Current Version ID" pair as in Phase 1 before considering it done.
 
 ---
 
@@ -275,7 +384,22 @@ npx wrangler secret list --env dev
 ```
 
 (`wrangler secret list` only confirms a secret *name* is set, never its
-value — that's expected, not a partial check.) Then call each environment:
+value — that's expected, not a partial check.)
+
+**Do not assume `$ADMIN_VECTORIZE_TOKEN` is already exported in your shell —
+it almost certainly isn't.** It lives in Cloudflare secrets (deployed
+environments) and in this repo's `.dev.vars` (local value, same secret). If
+you run the `curl` commands below without exporting it first, the shell
+substitutes an empty string, the Bearer header comes through as
+`Authorization: Bearer ` with nothing after it, and you get a 401 that looks
+like a bad or expired token rather than what it actually is — a missing
+export. Read it from `.dev.vars` and export it into this shell session first:
+
+```bash
+export ADMIN_VECTORIZE_TOKEN=$(grep '^ADMIN_VECTORIZE_TOKEN=' .dev.vars | cut -d= -f2-)
+```
+
+Then call each environment:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_VECTORIZE_TOKEN" \
@@ -351,6 +475,20 @@ in order.
    completes, inventory decrements, and the confirmation email arrives with
    the final-sale line in its intro paragraph, rendering cleanly (no broken
    apostrophes) in your mail client.
+
+   **This is real money and real inventory — clean it up immediately after
+   confirming the checks above, before moving on to step 9:**
+   - **Refund the charge in the Stripe Dashboard** (live mode). This is a real
+     PaymentIntent against a real card; nothing in this runbook or the app
+     reverses it automatically.
+   - **Restock the boxes you just bought** in `/admin/products` — the
+     inventory decrement from this test order is indistinguishable from a
+     real sale, so the count Phase 4 just recounted is now off by however
+     many boxes this order used unless you add them back by hand.
+   - If `sale.final_sale` policy or your own conscience says a test order
+     shouldn't sit in the order list as a normal completed sale, note that in
+     the order record (e.g. an admin note) so it isn't mistaken for a genuine
+     customer order later.
 
 **Chai**
 9. Ask Chai each of the following and confirm every answer agrees with the
