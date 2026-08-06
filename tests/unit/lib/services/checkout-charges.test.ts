@@ -51,6 +51,14 @@ import { getSettings } from '@/lib/utils/settings';
 const VARIANT_TEA = { id: 'var-tea-1', product_id: 'tea-1', price: { amount: 2500, currency: 'USD' } };
 const caAddress = { line1: '1 St', city: 'Town', region: 'CA', postal_code: '90210' } as any;
 
+/** `{}` for every category → the module's built-in defaults. Copied verbatim
+ * from tests/unit/lib/services/shipping-options.test.ts. */
+function withSettings(shipping: Record<string, unknown>, store: Record<string, unknown> = {}) {
+  vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+    category === 'shipping' ? shipping : store
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isStripeConfigured).mockReturnValue(true);
@@ -190,5 +198,23 @@ describe('allocateDiscountAcrossLines', () => {
     const net = allocateDiscountAcrossLines([1001, 2002, 3003], 1000);
     expect(net.reduce((sum, cents) => sum + cents, 0)).toBe(5006);
     expect(net).toEqual([834, 1669, 2503]);
+  });
+});
+
+describe('computeShippingFloorCents — box-count tiers (GOOB)', () => {
+  it('floors at the tier matching the box count, not the cheapest tier', async () => {
+    withSettings({
+      'shipping.tiers': [
+        { max_boxes: 20, cost: 8 },
+        { max_boxes: null, cost: 22 },
+      ],
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+      'shipping.free_methods': [],
+    });
+
+    expect(await computeShippingFloorCents(2000, 10)).toBe(800);
+    expect(await computeShippingFloorCents(8000, 40)).toBe(2200);
   });
 });
