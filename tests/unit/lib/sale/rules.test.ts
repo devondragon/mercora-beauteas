@@ -132,6 +132,31 @@ describe('resolveShippingTier', () => {
 
     expect(resolveShippingTier(unordered, 15)).toEqual({ max_boxes: 20, cost: 8 });
   });
+
+  // Regression: the sort comparator used to return `1` whenever EITHER side
+  // was null, which is not a valid strict-weak-order for a null/null pair.
+  // With two open-ended tiers, that made the result depend on which one
+  // happened to be first in the input array, so the same cart could silently
+  // resolve to two different prices depending on storage order alone. The
+  // admin editor makes two null rows reachable in principle (Task 8), so this
+  // can't be treated as an input invariant — the resolver itself must be
+  // deterministic no matter what array it's handed, and must not just be
+  // "stable per-array" but agree across two arrays holding the same tiers in
+  // different order.
+  it('resolves two open-ended tiers to the same (lower-cost) tier regardless of input order', () => {
+    const cheapFirst: ShippingTier[] = [
+      { max_boxes: null, cost: 22 },
+      { max_boxes: null, cost: 999 },
+    ];
+    const expensiveFirst: ShippingTier[] = [
+      { max_boxes: null, cost: 999 },
+      { max_boxes: null, cost: 22 },
+    ];
+
+    const expected = { max_boxes: null, cost: 22 };
+    expect(resolveShippingTier(cheapFirst, 50)).toEqual(expected);
+    expect(resolveShippingTier(expensiveFirst, 50)).toEqual(expected);
+  });
 });
 
 describe('minimumOrderMessage', () => {

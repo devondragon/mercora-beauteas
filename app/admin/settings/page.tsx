@@ -67,7 +67,7 @@ import {
   Share2, Plus, Trash2
 } from "lucide-react";
 import type { ShippingTier } from "@/lib/sale/rules";
-import { addTierRow, removeTierRow, hasZeroCostTier } from "@/lib/sale/tier-editor";
+import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier } from "@/lib/sale/tier-editor";
 
 interface SystemSettings {
   maintenance_mode: boolean;
@@ -802,9 +802,13 @@ export default function AdminSettingsPage() {
                           type="checkbox"
                           checked={tier.max_boxes === null}
                           onChange={(e) => {
-                            const tiers = [...shippingSettings.tiers];
-                            tiers[i] = { ...tiers[i], max_boxes: e.target.checked ? null : 1 };
-                            setShippingSettings(prev => ({ ...prev, tiers }));
+                            // At most one tier can be open-ended — checking this
+                            // clears max_boxes on any other row that was too, so
+                            // resolveShippingTier is never handed an ambiguous set.
+                            setShippingSettings(prev => ({
+                              ...prev,
+                              tiers: setOpenEndedTier(prev.tiers, i, e.target.checked)
+                            }));
                           }}
                         />
                         No upper bound
@@ -818,7 +822,11 @@ export default function AdminSettingsPage() {
                           value={tier.cost}
                           onChange={(e) => {
                             const tiers = [...shippingSettings.tiers];
-                            tiers[i] = { ...tiers[i], cost: parseFloat(e.target.value) || 0 };
+                            // `min={0}` is HTML-only — it doesn't stop `-5` from
+                            // being typed, and `parseFloat("-5") || 0` keeps -5
+                            // since it's truthy. Clamp so a negative cost can
+                            // never reach the customer-facing quote.
+                            tiers[i] = { ...tiers[i], cost: Math.max(0, parseFloat(e.target.value) || 0) };
                             setShippingSettings(prev => ({ ...prev, tiers }));
                           }}
                           className="w-24 admin-input"

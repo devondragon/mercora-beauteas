@@ -83,6 +83,19 @@ export function resolveShippingTier(tiers: ShippingTier[], boxes: number): Shipp
   if (!Array.isArray(tiers) || tiers.length === 0) return null;
 
   const sorted = [...tiers].sort((a, b) => {
+    // Two open-ended tiers used to both compare as "greater than" the other
+    // (`1` in both directions), which is not a valid strict-weak-order — the
+    // tier that won depended on Array.prototype.sort's internal tie-breaking
+    // for an inconsistent comparator, which is order-of-input-dependent, not
+    // just engine-dependent. Break the tie on COST instead of position, so
+    // the same set of tiers resolves to the same tier regardless of the
+    // order they happen to be stored in. Lower cost wins: this mirrors the
+    // "unknown box count resolves to the lowest tier" bias below and in
+    // resolveShippingOptions — ambiguous data should never invent a higher
+    // charge. The admin editor now also prevents saving more than one
+    // open-ended row (app/admin/settings/page.tsx), but this resolver can't
+    // assume every caller enforces that.
+    if (a.max_boxes === null && b.max_boxes === null) return a.cost - b.cost;
     if (a.max_boxes === null) return 1;
     if (b.max_boxes === null) return -1;
     return a.max_boxes - b.max_boxes;
