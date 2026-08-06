@@ -13,9 +13,14 @@
 -- `shipping.free_methods`, which makes the `freeMethods.includes(m.id)` test
 -- false for all methods regardless of the threshold.
 --
--- Tier costs seed at 0 and are set in the admin Shipping tab once boxes have been
--- weighed. A 0 tier reads as obviously unset in the storefront; a guessed number
--- would read as intentional.
+-- WHY shipping.tiers SEEDS EMPTY RATHER THAN WITH PLACEHOLDER BANDS
+-- resolveShippingOptions (lib/services/shipping-options.ts, line 99) checks
+-- `tiers.length > 0` to decide if tiers are configured. Any non-empty array
+-- means "configured" and overrides the per-method cost, even if each tier has
+-- cost: 0 as a placeholder. So seeded placeholder bands would ship every live
+-- order free between the deploy and an admin entering real prices. Empty array
+-- keeps the flat rates in force ($5.99, $9.99, $19.99) until tiers are entered
+-- deliberately in the admin editor.
 
 INSERT OR IGNORE INTO admin_settings (key, value, category, description, data_type)
 VALUES
@@ -42,9 +47,9 @@ VALUES
   ),
   (
     'shipping.tiers',
-    '[{"max_boxes":20,"cost":0},{"max_boxes":40,"cost":0},{"max_boxes":null,"cost":0}]',
+    '[]',
     'shipping',
-    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above',
+    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
     'object'
   ),
   (

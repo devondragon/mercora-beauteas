@@ -236,13 +236,13 @@ export const defaultSettings = [
   },
   {
     key: 'shipping.tiers',
-    value: JSON.stringify([
-      { max_boxes: 20, cost: 0 },
-      { max_boxes: 40, cost: 0 },
-      { max_boxes: null, cost: 0 }
-    ]),
+    // EMPTY is intentional: resolveShippingOptions (shipping-options.ts:99) treats
+    // any non-empty array as "configured" and overrides per-method costs. Placeholder
+    // bands with cost: 0 would ship every order free until an admin enters real prices.
+    // Empty array keeps flat rates ($5.99/$9.99/$19.99) in force.
+    value: JSON.stringify([]),
     category: 'shipping',
-    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above',
+    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
     data_type: 'object'
   },
   {
