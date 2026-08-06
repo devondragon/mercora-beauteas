@@ -31,7 +31,8 @@
 
 | Path | Responsibility |
 | --- | --- |
-| `lib/sale/rules.ts` | Sale rule resolution: settings read, box counting, minimum check, tier selection. Pure except for one settings read. |
+| `lib/sale/rules.ts` | **Pure** sale rules: box counting, minimum check, tier selection, prompt copy. No imports beyond types — safe in a client bundle. |
+| `lib/sale/settings.ts` | `getSaleRules()` — the one settings read. Server-only; imports `@/lib/utils/settings`. |
 | `app/api/sale-rules/route.ts` | Public read of `{ minimumBoxes, finalSale }` for client-side prompts. |
 | `components/checkout/FinalSaleNotice.tsx` | The checkout disclosure block. |
 | `scripts/goob-reprice.mjs` | Repricing with a persisted pre-sale baseline. |
@@ -515,22 +516,28 @@ git commit -m "goob: seed sale settings (minimum, tiers, final-sale, banner link
 
 ## Task 3: The sale rules module
 
-One module owns box counting, the minimum check, and tier selection. Everything else — the shipping quote, the charge floor, both API gates, the cart UI, Chai — resolves through it, so the rule cannot drift between call sites the way the shipping rates did before BMC-242.
+One place owns box counting, the minimum check, and tier selection. Everything else — the shipping quote, the charge floor, both API gates, the cart UI, Chai — resolves through it, so the rule cannot drift between call sites the way the shipping rates did before BMC-242.
+
+**Split across two files, and the split is load-bearing.** The cart drawer and checkout page are client components, and `getSettings` reaches `lib/db` → `getCloudflareContext` plus the entire Drizzle schema barrel. A single module would drag D1 into the browser bundle. `rules.ts` is pure and importable anywhere; `settings.ts` holds the one server-side read. This is the same split, for the same reason, that moved `resolveShippingOptions` out of `checkout-charges.ts` to keep the Stripe SDK off the chat route (BMC-242).
 
 **Files:**
-- Create: `lib/sale/rules.ts`
+- Create: `lib/sale/rules.ts` (pure — must import nothing but types)
+- Create: `lib/sale/settings.ts` (server-only)
 - Test: `tests/unit/lib/sale/rules.test.ts`
+- Test: `tests/unit/lib/sale/settings.test.ts`
 
 **Interfaces:**
-- Consumes: `getSettings` from `@/lib/utils/settings` (already exists).
-- Produces:
+- Consumes: `getSettings` from `@/lib/utils/settings` (already exists), in `settings.ts` only.
+- Produces from `@/lib/sale/rules` (pure):
   - `interface ShippingTier { max_boxes: number | null; cost: number }` — `cost` in **major units**.
   - `interface SaleRules { minimumBoxes: number; finalSale: boolean; subscriptionsEnabled: boolean; tiers: ShippingTier[] }`
-  - `getSaleRules(): Promise<SaleRules>`
   - `countBoxes(items: Array<{ quantity?: unknown }>): number`
   - `checkMinimumOrder(boxes: number, minimumBoxes: number): { ok: boolean; short: number }`
   - `resolveShippingTier(tiers: ShippingTier[], boxes: number): ShippingTier | null`
   - `minimumOrderMessage(short: number, minimumBoxes: number): string`
+  - `DEFAULT_MINIMUM_BOXES: number` (10)
+- Produces from `@/lib/sale/settings` (server-only):
+  - `getSaleRules(): Promise<SaleRules>`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -545,72 +552,15 @@ Create `tests/unit/lib/sale/rules.test.ts`:
  * is pinned directly here rather than only through its callers, for the same
  * reason `shipping-options.test.ts` exists.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('@/lib/utils/settings', () => ({ getSettings: vi.fn() }));
+import { describe, it, expect } from 'vitest';
 
 import {
-  getSaleRules,
   countBoxes,
   checkMinimumOrder,
   resolveShippingTier,
   minimumOrderMessage,
   type ShippingTier,
 } from '@/lib/sale/rules';
-import { getSettings } from '@/lib/utils/settings';
-
-function withSettings(sale: Record<string, unknown>, shipping: Record<string, unknown> = {}) {
-  vi.mocked(getSettings).mockImplementation(async (category?: string) =>
-    category === 'sale' ? sale : shipping
-  );
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  withSettings({}, {});
-});
-
-describe('getSaleRules', () => {
-  it('falls back to a 10-box final sale when nothing is configured', async () => {
-    const rules = await getSaleRules();
-
-    expect(rules.minimumBoxes).toBe(10);
-    expect(rules.finalSale).toBe(true);
-    expect(rules.subscriptionsEnabled).toBe(false);
-  });
-
-  it('reads the configured values', async () => {
-    withSettings({
-      'sale.minimum_boxes': 6,
-      'sale.final_sale': false,
-      'sale.subscriptions_enabled': true,
-    });
-
-    const rules = await getSaleRules();
-
-    expect(rules.minimumBoxes).toBe(6);
-    expect(rules.finalSale).toBe(false);
-    expect(rules.subscriptionsEnabled).toBe(true);
-  });
-
-  it('coerces a numeric-string minimum, as settings values can arrive quoted', async () => {
-    withSettings({ 'sale.minimum_boxes': '12' });
-
-    expect((await getSaleRules()).minimumBoxes).toBe(12);
-  });
-
-  it('ignores a nonsensical minimum rather than blocking every checkout', async () => {
-    withSettings({ 'sale.minimum_boxes': 'lots' });
-
-    expect((await getSaleRules()).minimumBoxes).toBe(10);
-  });
-
-  it('reads tiers from the shipping category', async () => {
-    withSettings({}, { 'shipping.tiers': [{ max_boxes: null, cost: 12 }] });
-
-    expect((await getSaleRules()).tiers).toEqual([{ max_boxes: null, cost: 12 }]);
-  });
-});
 
 describe('countBoxes', () => {
   it('sums line quantities', () => {
@@ -705,18 +655,99 @@ describe('minimumOrderMessage', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Write the failing tests for the settings read**
 
-Run: `npx vitest run tests/unit/lib/sale/rules.test.ts`
-Expected: FAIL — cannot resolve `@/lib/sale/rules`.
-
-- [ ] **Step 3: Implement the module**
-
-Create `lib/sale/rules.ts`:
+Create `tests/unit/lib/sale/settings.test.ts`:
 
 ```ts
 /**
- * === Going-out-of-business sale rules ===
+ * `getSaleRules` is the ONE settings read behind the sale. It lives apart from
+ * `lib/sale/rules.ts` because the cart drawer and checkout page import the pure
+ * rules into a client bundle, and `getSettings` reaches lib/db →
+ * getCloudflareContext plus the whole Drizzle schema barrel.
+ *
+ * Both booleans default to the SALE posture. A settings outage must never render
+ * a storefront that implies returns are accepted or subscriptions still sold.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@/lib/utils/settings', () => ({ getSettings: vi.fn() }));
+
+import { getSaleRules } from '@/lib/sale/settings';
+import { getSettings } from '@/lib/utils/settings';
+
+function withSettings(sale: Record<string, unknown>, shipping: Record<string, unknown> = {}) {
+  vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+    category === 'sale' ? sale : shipping
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  withSettings({}, {});
+});
+
+describe('getSaleRules', () => {
+  it('falls back to a 10-box final sale when nothing is configured', async () => {
+    const rules = await getSaleRules();
+
+    expect(rules.minimumBoxes).toBe(10);
+    expect(rules.finalSale).toBe(true);
+    expect(rules.subscriptionsEnabled).toBe(false);
+  });
+
+  it('reads the configured values', async () => {
+    withSettings({
+      'sale.minimum_boxes': 6,
+      'sale.final_sale': false,
+      'sale.subscriptions_enabled': true,
+    });
+
+    const rules = await getSaleRules();
+
+    expect(rules.minimumBoxes).toBe(6);
+    expect(rules.finalSale).toBe(false);
+    expect(rules.subscriptionsEnabled).toBe(true);
+  });
+
+  it('coerces a numeric-string minimum, as settings values can arrive quoted', async () => {
+    withSettings({ 'sale.minimum_boxes': '12' });
+
+    expect((await getSaleRules()).minimumBoxes).toBe(12);
+  });
+
+  it('ignores a nonsensical minimum rather than blocking every checkout', async () => {
+    withSettings({ 'sale.minimum_boxes': 'lots' });
+
+    expect((await getSaleRules()).minimumBoxes).toBe(10);
+  });
+
+  it('reads tiers from the shipping category', async () => {
+    withSettings({}, { 'shipping.tiers': [{ max_boxes: null, cost: 12 }] });
+
+    expect((await getSaleRules()).tiers).toEqual([{ max_boxes: null, cost: 12 }]);
+  });
+
+  it('returns no tiers when the setting is malformed', async () => {
+    withSettings({}, { 'shipping.tiers': 'nonsense' });
+
+    expect((await getSaleRules()).tiers).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 3: Run both test files to verify they fail**
+
+Run: `npx vitest run tests/unit/lib/sale/`
+Expected: FAIL — cannot resolve `@/lib/sale/rules` or `@/lib/sale/settings`.
+
+- [ ] **Step 4: Implement the pure rules**
+
+Create `lib/sale/rules.ts`. **It must import nothing but types** — it is imported into client components, and a runtime import of `@/lib/utils/settings` here would pull D1 into the browser bundle.
+
+```ts
+/**
+ * === Going-out-of-business sale rules (pure) ===
  *
  * The SINGLE source for the sale's purchase rules: the box minimum, the
  * quantity-tiered shipping bands, and whether the store is in final-sale mode.
@@ -731,9 +762,14 @@ Create `lib/sale/rules.ts`:
  * Every remaining SKU is a single box, so a cart's box count is its quantity
  * total. The bundle SKUs that were not one box are withdrawn (see
  * `isPubliclyPurchasableProduct`).
+ *
+ * PURE ON PURPOSE — do not add a runtime import here. The cart drawer and
+ * checkout page import this module into a client bundle, and the settings read
+ * reaches lib/db → getCloudflareContext plus the whole Drizzle schema barrel.
+ * The settings read lives in `lib/sale/settings.ts` for exactly that reason,
+ * mirroring why `resolveShippingOptions` was split out of `checkout-charges.ts`
+ * to keep the Stripe SDK off the chat route (BMC-242).
  */
-
-import { getSettings } from '@/lib/utils/settings';
 
 /** A shipping band. `cost` is MAJOR units (dollars), matching `shipping.methods[].cost`. */
 export interface ShippingTier {
@@ -749,30 +785,7 @@ export interface SaleRules {
   tiers: ShippingTier[];
 }
 
-const DEFAULT_MINIMUM_BOXES = 10;
-
-/** Settings values arrive JSON-parsed, but a quoted number stays a string. */
-function toPositiveInt(raw: unknown, fallback: number): number {
-  const n = typeof raw === 'string' ? Number(raw) : raw;
-  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return fallback;
-  return Math.floor(n);
-}
-
-export async function getSaleRules(): Promise<SaleRules> {
-  const [sale, shipping] = await Promise.all([getSettings('sale'), getSettings('shipping')]);
-
-  return {
-    minimumBoxes: toPositiveInt(sale['sale.minimum_boxes'], DEFAULT_MINIMUM_BOXES),
-    // Both default to the SALE posture, not the pre-sale one: if the settings
-    // read comes back empty the store must behave as closing, never as if
-    // returns were still accepted or subscriptions still sold.
-    finalSale: sale['sale.final_sale'] !== false,
-    subscriptionsEnabled: sale['sale.subscriptions_enabled'] === true,
-    tiers: Array.isArray(shipping['shipping.tiers'])
-      ? (shipping['shipping.tiers'] as ShippingTier[])
-      : [],
-  };
-}
+export const DEFAULT_MINIMUM_BOXES = 10;
 
 /**
  * Total boxes in a cart. A line with an unusable quantity contributes 0 — the
@@ -821,17 +834,66 @@ export function minimumOrderMessage(short: number, minimumBoxes: number): string
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 5: Implement the settings read**
 
-Run: `npx vitest run tests/unit/lib/sale/rules.test.ts`
-Expected: PASS, 22 tests.
+Create `lib/sale/settings.ts`:
 
-- [ ] **Step 5: Lint and commit**
+```ts
+/**
+ * The one settings read behind the sale.
+ *
+ * Separate from `lib/sale/rules.ts` so the pure rules stay importable from
+ * client components — `getSettings` reaches lib/db → getCloudflareContext and
+ * the Drizzle schema barrel, none of which belongs in a browser bundle.
+ */
+
+import { getSettings } from '@/lib/utils/settings';
+import { DEFAULT_MINIMUM_BOXES, type SaleRules, type ShippingTier } from '@/lib/sale/rules';
+
+/** Settings values arrive JSON-parsed, but a quoted number stays a string. */
+function toPositiveInt(raw: unknown, fallback: number): number {
+  const n = typeof raw === 'string' ? Number(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return fallback;
+  return Math.floor(n);
+}
+
+export async function getSaleRules(): Promise<SaleRules> {
+  const [sale, shipping] = await Promise.all([getSettings('sale'), getSettings('shipping')]);
+
+  return {
+    minimumBoxes: toPositiveInt(sale['sale.minimum_boxes'], DEFAULT_MINIMUM_BOXES),
+    // Both booleans default to the SALE posture, not the pre-sale one: if the
+    // settings read comes back empty the store must behave as closing, never as
+    // if returns were still accepted or subscriptions still sold.
+    finalSale: sale['sale.final_sale'] !== false,
+    subscriptionsEnabled: sale['sale.subscriptions_enabled'] === true,
+    tiers: Array.isArray(shipping['shipping.tiers'])
+      ? (shipping['shipping.tiers'] as ShippingTier[])
+      : [],
+  };
+}
+```
+
+- [ ] **Step 6: Run both test files to verify they pass**
+
+Run: `npx vitest run tests/unit/lib/sale/`
+Expected: PASS — 17 in `rules.test.ts`, 6 in `settings.test.ts`.
+
+- [ ] **Step 7: Prove the pure module stays client-safe**
+
+Run: `grep -n "^import" lib/sale/rules.ts`
+Expected: no output, or only `import type` lines. A runtime import in this file is the defect the split exists to prevent.
+
+- [ ] **Step 8: Lint and commit**
 
 ```bash
 npm run lint
-git add lib/sale/rules.ts tests/unit/lib/sale/rules.test.ts
-git commit -m "goob: add the sale rules module (minimum, box count, shipping tiers)"
+git add lib/sale/rules.ts lib/sale/settings.ts \
+  tests/unit/lib/sale/rules.test.ts tests/unit/lib/sale/settings.test.ts
+git commit -m "goob: add the sale rules module (minimum, box count, shipping tiers)
+
+Pure rules and the settings read are split so the cart drawer and checkout
+page can import the rules without pulling D1 into the client bundle."
 ```
 
 ---
@@ -1139,7 +1201,7 @@ The client prompt (Task 7) is advisory. These two endpoints are the gates that a
 - Test: `tests/unit/app/api/sale-minimum-order.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `getSaleRules`, `countBoxes`, `checkMinimumOrder`, `minimumOrderMessage` from `@/lib/sale/rules`.
+- Consumes: `countBoxes`, `checkMinimumOrder`, `minimumOrderMessage` from `@/lib/sale/rules`; `getSaleRules` from `@/lib/sale/settings`.
 - Produces: both endpoints return `400` with `{ error: <minimumOrderMessage output> }` for an under-minimum cart.
 
 - [ ] **Step 1: Write the failing test**
@@ -1170,11 +1232,12 @@ vi.mock('@/lib/rate-limit', () => ({
 vi.mock('@opennextjs/cloudflare', () => ({ getCloudflareContext: vi.fn() }));
 vi.mock('@/lib/db', () => ({ getDbAsync: vi.fn() }));
 
+// Only the settings read is mocked; the pure rules run for real, so the test
+// exercises the same box counting production uses.
 const getSaleRules = vi.fn();
-vi.mock('@/lib/sale/rules', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/sale/rules')>();
-  return { ...actual, getSaleRules: (...args: unknown[]) => getSaleRules(...args) };
-});
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: (...args: unknown[]) => getSaleRules(...args),
+}));
 
 import { NextRequest } from 'next/server';
 import { POST as paymentIntentPost } from '@/app/api/payment-intent/route';
@@ -1245,7 +1308,8 @@ Expected: FAIL — the under-minimum cart is not rejected with that message.
 In `app/api/payment-intent/route.ts`, add the import:
 
 ```ts
-import { getSaleRules, countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { getSaleRules } from '@/lib/sale/settings';
 ```
 
 Immediately after the request body is parsed and `items` is resolved — and **before** any Stripe call or catalog pricing work — insert:
@@ -1298,7 +1362,7 @@ The cart and checkout need the minimum to render the prompt. A small public endp
 - Test: `tests/unit/app/api/sale-rules-route.test.ts` (create)
 
 **Interfaces:**
-- Consumes: `getSaleRules`, `countBoxes`, `checkMinimumOrder`, `minimumOrderMessage` from `@/lib/sale/rules`; `useCartStore` from `@/lib/stores/cart-store`.
+- Consumes: `countBoxes`, `checkMinimumOrder`, `minimumOrderMessage` from `@/lib/sale/rules` (the client components import from here and **only** here); `getSaleRules` from `@/lib/sale/settings` (the route only); `useCartStore` from `@/lib/stores/cart-store`.
 - Produces: `GET /api/sale-rules` → `{ minimumBoxes: number; finalSale: boolean }`.
 
 - [ ] **Step 1: Write the failing test for the endpoint**
@@ -1324,7 +1388,7 @@ vi.mock('@opennextjs/cloudflare', () => ({ getCloudflareContext: vi.fn() }));
 vi.mock('@/lib/db', () => ({ getDbAsync: vi.fn() }));
 
 const getSaleRules = vi.fn();
-vi.mock('@/lib/sale/rules', () => ({ getSaleRules: (...a: unknown[]) => getSaleRules(...a) }));
+vi.mock('@/lib/sale/settings', () => ({ getSaleRules: (...a: unknown[]) => getSaleRules(...a) }));
 
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/sale-rules/route';
@@ -1399,7 +1463,7 @@ Create `app/api/sale-rules/route.ts`:
  */
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSaleRules } from '@/lib/sale/rules';
+import { getSaleRules } from '@/lib/sale/settings';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest) {
@@ -1628,12 +1692,12 @@ Gate, don't delete. Subscriptions are a named Mercora upstreaming target and the
 - Modify: `app/product/[slug]/ProductDisplay.tsx:401` (conditional render)
 
 **Interfaces:**
-- Consumes: `getSaleRules` from `@/lib/sale/rules`.
+- Consumes: `getSaleRules` from `@/lib/sale/settings` (the server component only — `ProductDisplay` receives a plain boolean prop and must not import it).
 - Produces: `ProductDisplay` accepts a new `subscriptionsEnabled?: boolean` prop, defaulting to `false`.
 
 - [ ] **Step 1: Pass the flag from the server component**
 
-In `app/product/[slug]/page.tsx`, add `import { getSaleRules } from '@/lib/sale/rules';`, resolve it alongside the existing product fetch, and pass it down:
+In `app/product/[slug]/page.tsx`, add `import { getSaleRules } from '@/lib/sale/settings';`, resolve it alongside the existing product fetch, and pass it down:
 
 ```tsx
   const { subscriptionsEnabled } = await getSaleRules();
@@ -1967,7 +2031,7 @@ Watch the regex design. This file carries scars from over-broad matching: the `f
 - Test: `tests/unit/lib/ai/deterministic-answers.test.ts` (extend)
 
 **Interfaces:**
-- Consumes: `getSaleRules` from `@/lib/sale/rules`; `resolveShippingOptions` (already imported there).
+- Consumes: `getSaleRules` from `@/lib/sale/settings`; `resolveShippingOptions` (already imported there).
 - Produces: three new categories in the `DeterministicCategory` union — `"minimum_order"`, `"store_closing"`, `"tea_freshness"`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2056,7 +2120,7 @@ describe('tiered shipping answer (GOOB)', () => {
 });
 ```
 
-Add a `getSaleRules` mock to the file's existing `vi.mock` block for `@/lib/sale/rules`, matching the shape already used there for `@/lib/utils/settings`.
+Add a `vi.mock('@/lib/sale/settings', ...)` block exposing a `getSaleRules` spy, matching the shape the file already uses for `@/lib/utils/settings`. Do not mock `@/lib/sale/rules` — it is pure and should run for real.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -2065,7 +2129,7 @@ Expected: FAIL — the returns answer still quotes a day count and the new categ
 
 - [ ] **Step 3: Add the final-sale branch**
 
-In `lib/ai/deterministic-answers.ts`, add `import { getSaleRules } from '@/lib/sale/rules';` and rewrite `refundWindowAnswer`:
+In `lib/ai/deterministic-answers.ts`, add `import { getSaleRules } from '@/lib/sale/settings';` and rewrite `refundWindowAnswer`:
 
 ```ts
 async function refundWindowAnswer(): Promise<string> {
@@ -2456,5 +2520,7 @@ Proceed to runbook Phase 10.
 **Two items carry deliberate judgment calls rather than fixed content:**
 - Task 13 Step 1 requires owner review of the `/thank-you` copy before the migration is written. This is not a placeholder — the surrounding constraints (order of sections, required phrasings, voice) are specified; only the prose itself is authored in the task.
 - Task 2 seeds tier costs at `0` by design, set in admin at Task 14 Step 6. Documented as a decision, with the reasoning.
+
+**Client/server boundary.** `lib/sale/rules.ts` is pure and is the only sale module the cart drawer and checkout page import; `getSaleRules` lives in `lib/sale/settings.ts` because `getSettings` reaches `lib/db` → `getCloudflareContext` and the Drizzle schema barrel. Task 3 Step 7 asserts the pure module has no runtime imports. Tasks 5, 6, 9, and 11 import `getSaleRules` from `@/lib/sale/settings`; Task 7's client components import only from `@/lib/sale/rules`.
 
 **Type consistency.** `countBoxes`, `checkMinimumOrder`, `resolveShippingTier`, `minimumOrderMessage`, `getSaleRules`, `ShippingTier`, and `SaleRules` are defined in Task 3 and used with identical names and signatures in Tasks 4, 5, 6, 7, 9, and 11. `isActiveStatus` / `isSellableVariant` / `isPubliclyPurchasableProduct` are defined in Task 1 and used in Task 10's SQL predicate. `resolveShippingOptions`'s new `boxes` option (Task 4) matches its consumers in Task 5. `planReprice`'s return shape matches its test.
