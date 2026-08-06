@@ -1,29 +1,24 @@
 ---
 id: faq-returns
-title: Returns & Satisfaction Guarantee
+title: Returns & Refunds (Closing Sale)
 category: support
-tags: [returns, refunds, guarantee, faq]
+tags: [returns, refunds, final sale, faq]
 ---
 
-**AI NOTES:** Use this to explain the return window, conditions, and refunds. BeauTeas teas are a consumable product, so returns differ from typical retail. Do not promise refunds outside this policy. Direct edge cases to the support team.
+**AI NOTES:** BeauTeas is closing for good and every order is final sale. Do not describe a return window, and do not promise a refund except for a damaged, lost, or incorrect order. Direct edge cases to the support team.
 
-## Our Happiness Guarantee
+## All Sales Are Final
 
-Your glow is our goal. If you're not happy with your BeauTeas order, reach out within 30 days of delivery and we'll make it right.
+BeauTeas is closing for good. Every order placed during our closing sale is final: we are not able to accept returns or exchanges, because our team will not be here afterward to process them.
 
-## Returns
+## Damaged, Lost, or Incorrect Orders
 
-- Unopened, unused items in their original packaging can be returned within 30 days of delivery for a refund.
-- Because our teas are consumable, we're unable to accept returns of opened or used products, but if something arrived damaged or defective, or just isn't working for you, contact us and we'll help.
+Final sale does not mean you are on your own. If your order arrives damaged, never turns up, or is not what you ordered, contact us and we will make it right with a replacement or a refund.
 
-## How to Start a Return
+## How to Reach Us
 
-Email us at info@beauteas.com with your order number and we'll send return instructions.
+Email us at info@beauteas.com with your order number and we will help.
 
-## Refunds
+## Subscriptions
 
-Approved refunds are issued to your original payment method within 5–7 business days after we receive your return or resolve your claim.
-
-## Exclusions
-
-Final sale items and gift cards are not eligible for return.
+Subscriptions are switched off for the closing sale. Every order is a one-time purchase.

@@ -90,6 +90,24 @@ const nextConfig: NextConfig = {
         destination: "/about-us",
         permanent: true,
       },
+      // /subscriptions → /thank-you closes the loop after migration 0026 archives
+      // the subscriptions page for the closing sale (GOOB). A bare /subscriptions
+      // matches none of the five redirect_map prefixes middleware.ts checks
+      // (/products/, /collections/, /pages/, /blogs/, /policies/), so a
+      // redirect_map row here would never fire — same reasoning as /about above.
+      {
+        source: "/subscriptions",
+        destination: "/thank-you",
+        permanent: true,
+      },
+      // Same reasoning: /clearly-calendula-sample-pack-on-sale is a `pages` row
+      // (Shopify ETL leftover, not a catalog product) archived by 0026 for the
+      // closing sale.
+      {
+        source: "/clearly-calendula-sample-pack-on-sale",
+        destination: "/thank-you",
+        permanent: true,
+      },
     ];
   },
   // Shopify URL redirects are handled entirely in middleware.ts so that

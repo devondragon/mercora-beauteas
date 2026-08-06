@@ -17,7 +17,7 @@
  * paired with a `page_templates` INSERT, or admins cannot choose it and re-saving
  * such a page through the editor resets it to the story fallback.
  */
-export const TEMPLATE_KINDS = ["guide", "faq", "contact", "legal", "story"] as const;
+export const TEMPLATE_KINDS = ["guide", "faq", "contact", "legal", "story", "closing"] as const;
 
 export type PageTemplateKind = (typeof TEMPLATE_KINDS)[number];
 
@@ -125,10 +125,25 @@ const TEMPLATES: Record<PageTemplateKind, PageTemplateConfig> = deepFreeze({
     showRail: false,
     cta: {
       heading: "Build your beauty from within.",
+      // GOOB: the second action used to be "See subscriptions" -> /subscriptions.
+      // Subscriptions are switched off for the closing sale (migration 0026
+      // archives that page and redirects it to /thank-you), so a shared,
+      // hardcoded CTA pointing there would put a subscriptions pitch on every
+      // story-template page, including this one right after the sale message.
       body: "",
-      actions: [SHOP, { label: "See subscriptions", href: "/subscriptions", variant: "secondary" }],
+      actions: [SHOP],
       showPolicyLinks: false,
     },
+  },
+  closing: {
+    kind: "closing",
+    eyebrow: "THANK YOU",
+    showRail: false,
+    // No CTA: the page's own body already tells shoppers everything left is
+    // priced to clear, so a bolted-on "Shop the teas" band would repeat itself,
+    // and every other CTA this system knows how to render (subscriptions, "Ask
+    // Chai" as if support is unlimited) would be actively wrong on this page.
+    cta: null,
   },
 });
 
