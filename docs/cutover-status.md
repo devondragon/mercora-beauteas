@@ -2,7 +2,9 @@
 
 Migration is tracked under `.planning/` (GSD); the runbook is [`PRODUCTION-CUTOVER-RUNBOOK.md`](../PRODUCTION-CUTOVER-RUNBOOK.md) (original scope: [`MIGRATION-PLAN.md`](../MIGRATION-PLAN.md)).
 
-**Status as of 2026-08-01:** all launch-blocking code is built and audited; prod is deployed, fully migrated, and taking live orders on `shop.beauteas.com`. The remaining work is Phase 10 of the runbook (DNS switch to `www`) plus post-cutover verification.
+**Status as of 2026-08-06:** the Shopify→Mercora cutover itself is done; prod is deployed and taking live orders on `shop.beauteas.com`. The store is now winding down — BeauTeas is closing and running a terminal going-out-of-business sale rather than continuing as an ongoing concern. All sale-specific code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built, reviewed, and gated by the same green CI suite; migrations `0025`–`0027` carry it. None of that code has touched dev or prod yet — see [`goob-rollout-runbook.md`](goob-rollout-runbook.md) for the deploy-and-verify sequence.
+
+The DNS switch (runbook Phase 10, `www`) now follows the sale going live rather than preceding it: there is no reason to move the canonical domain before the store customers land on actually reflects the closing sale. What remains is entirely owner-only — weighing boxes to set real shipping-tier costs, recounting inventory, deciding the reprice rate, archiving the two bundle SKUs, and running the deploy itself. The runbook covers all of it in order.
 
 ---
 
@@ -19,6 +21,8 @@ SEO foundations + Shopify redirects · Stripe subscriptions (schema, API, webhoo
 ## Migration status
 
 **All three remote databases are fully migrated through `0024`** — prod (`beauteas-db`), remote dev, and dev preview all report up to date (verified 2026-08-01 via `npm run db:migrate:status:{dev,production}`). `0022`–`0024` were applied 2026-08-01 by the BMC-239 deploy auto-apply, with pre-flight backups (`backup-prod-pre-0022-20260801.sql`, `backup-dev-pre-0024-20260801.sql`). The former deploy-ordering blocker (BMC-231) is resolved — see [`database-migrations.md`](database-migrations.md).
+
+**`0025`–`0027` (the sale settings, closing content, and em-dash sweep) are pending everywhere** — confirmed 2026-08-06 via `npm run db:migrate:status:dev` (3 pending on both `beauteas-db-dev` and the dev preview DB). They apply automatically on the next `npm run deploy:*`, per the standing auto-apply policy. See [`goob-rollout-runbook.md`](goob-rollout-runbook.md) for what each one does and the order to deploy in.
 
 `0019`+`0020` were applied 2026-07-30 after deploying the app, with a pre-flight `d1 export` backup and post-apply verification of effects (templates set on all 9 footer pages, `about` archived, images repointed to `img.beauteas.com`, `page_templates` seeded with the five render kinds, 8 `page_versions` snapshots).
 
@@ -52,7 +56,8 @@ npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-d
 - ✅ **Prod catalog populated by promoting the curated dev catalog** (`scripts/promote-dev-to-prod.mjs`, 2026-07-27) — NOT by re-running the Shopify ETL against prod; dev is the golden source. 10 products / 6 categories / 13 pages / 47 images / 18 Vectorize vectors.
 - ✅ Prod build deployed (latest 2026-08-01), smoke tested, live order placed end-to-end on `shop.beauteas.com` with real Stripe tax, webhook, inventory decrement, and confirmation email.
 - ✅ **Apple Pay live** (BMC-81, 2026-08-01) — domain-association file deployed and serving, both domains registered in Stripe, and a real production Apple Pay order placed successfully.
-- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11.
+- ☐ **Deploy the going-out-of-business sale** — code-complete and gated, not yet deployed. Owner-only steps (weighing boxes for real shipping-tier costs, recounting inventory, choosing the reprice rate, archiving the two bundle SKUs with their redirect, rebuilding Chai's knowledge base) are all in [`goob-rollout-runbook.md`](goob-rollout-runbook.md).
+- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11. Now sequenced *after* the sale deploy above, not before it.
 
 ---
 

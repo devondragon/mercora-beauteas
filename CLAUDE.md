@@ -2,13 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** Final stretch of the Shopify→Mercora cutover. All launch-blocking code is built and audited; prod is deployed and taking live orders on `shop.beauteas.com`. What's left is Phase 10 of the runbook — the DNS switch to `www` — plus post-cutover verification. See [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
+> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0027` carry it and are pending everywhere. Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## ☑ Migrations: all environments up to date (verified 2026-08-01)
+## ☑ Migrations: all environments up to date through `0024`; `0025`–`0027` pending (verified 2026-08-06)
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
+
+`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, and `0027_remove_em_dashes_from_content.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0028_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -61,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0025_*`** (`0011`–`0024` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0028_*`** (`0011`–`0027` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
@@ -101,6 +103,13 @@ Everything else is discoverable by reading the tree; these four encode decisions
 
 Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/fulfillment/types.ts`, `buildTrackingUrl`, `normalizeLegacyCarrier`, and the `LIKE` patterns in migration `0022`.
 
+**Going-out-of-business sale settings** (migration `0025`, `admin_settings` table, read via `lib/sale/settings.ts`'s `getSaleRules()`):
+- `sale.minimum_boxes` — cart minimum in boxes; enforced server-side (checkout, MCP order tools) and reflected client-side in the drawer/checkout copy.
+- `sale.final_sale` — gates the final-sale notice at checkout, the confirmation email line, and Chai's refund answer.
+- `sale.subscriptions_enabled` — the single flag the storefront checks to hide subscribe UI; the subscription code/routes themselves are untouched (kept as Mercora upstreaming source material).
+- `shipping.tiers` — quantity-tiered shipping cost by box count. **Empty (`[]`) means "not configured"** and leaves the flat per-method rates (`$5.99`/`$9.99`/`$19.99`) in force — a deliberate safety property, not a bug: seeding this with placeholder bands would have shipped every order free until an admin entered real prices (see Task 4's fix in the SDD ledger). Configure via `/admin/settings` → Shipping.
+- `promotions.banner_link` — URL the storefront promo banner links to.
+
 ---
 
 ## Development Guidelines
@@ -129,6 +138,7 @@ Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/
 - [`docs/money.md`](docs/money.md) · [`docs/observability.md`](docs/observability.md) · [`docs/mcp-server-specification.md`](docs/mcp-server-specification.md) · [`docs/THEMING.md`](docs/THEMING.md)
 
 **Runbooks:**
+- [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md) — the owner's step-by-step for deploying the going-out-of-business sale
 - `PRODUCTION-CUTOVER-RUNBOOK.md` — go-live runbook
 - `SHOPIFY-ETL.md` — Shopify→Mercora ETL steps & gotchas
 - `MIGRATION-PLAN.md` — original scope
