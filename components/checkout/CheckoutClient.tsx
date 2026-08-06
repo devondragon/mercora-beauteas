@@ -28,9 +28,11 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useCartStore } from '@/lib/stores/cart-store';
+import { Button } from '@/components/ui/button';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
 import StripeProvider from './StripeProvider';
 import PaymentForm from './PaymentForm';
 import ShippingForm from './ShippingForm';
@@ -107,6 +109,26 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const [orderId, setOrderId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+
+  const [minimumBoxes, setMinimumBoxes] = useState(10);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/sale-rules')
+      .then((r) => r.json() as Promise<{ minimumBoxes: number }>)
+      .then((r) => {
+        if (!cancelled) setMinimumBoxes(r.minimumBoxes);
+      })
+      .catch(() => {
+        /* keep the default — the server gate is authoritative either way */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const boxes = countBoxes(items);
+  const minimum = checkMinimumOrder(boxes, minimumBoxes);
 
   // Handle address form changes
   const handleAddressChange = (
@@ -385,6 +407,27 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       <div className="text-center py-12">
         <h2 className="text-2xl font-bold text-text-primary mb-4">Your cart is empty</h2>
         <p className="text-text-secondary">Add some items to your cart to continue.</p>
+      </div>
+    );
+  }
+
+  // Block the entire step flow (not just the payment step's button) so the
+  // payment step can't be reached by navigating back after the cart drops
+  // below the minimum — see the module comment on why this gate lives here
+  // rather than per-step.
+  if (!minimum.ok && currentStep !== 'confirmation') {
+    return (
+      <div className="mx-auto max-w-xl rounded-xl bg-white p-8 text-center">
+        <h2 className="mb-2 text-lg font-semibold text-text-primary">
+          Just a few more boxes
+        </h2>
+        <p className="mb-6 text-sm text-text-muted">
+          {minimumOrderMessage(minimum.short, minimumBoxes)} We&rsquo;re shipping the
+          last of our stock, so orders go out in batches of at least {minimumBoxes}.
+        </p>
+        <Button asChild>
+          <Link href="/category/clearly-calendula">Back to the teas</Link>
+        </Button>
       </div>
     );
   }

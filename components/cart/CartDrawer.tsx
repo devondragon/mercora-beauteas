@@ -49,6 +49,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Money } from "@/lib/money";
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from "@/lib/sale/rules";
 
 /**
  * CartDrawer component providing shopping cart functionality
@@ -66,6 +67,26 @@ export default function CartDrawer() {
     useCartStore.persist.rehydrate();
     setHasMounted(true);
   }, []);
+
+  const [minimumBoxes, setMinimumBoxes] = useState(10);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/sale-rules')
+      .then((r) => r.json() as Promise<{ minimumBoxes: number }>)
+      .then((r) => {
+        if (!cancelled) setMinimumBoxes(r.minimumBoxes);
+      })
+      .catch(() => {
+        /* keep the default — the server gate is authoritative either way */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const boxes = countBoxes(items);
+  const minimum = checkMinimumOrder(boxes, minimumBoxes);
 
   // Calculate total price for all items in cart with safety checks (integer minor units)
   const total = items.reduce(
@@ -143,13 +164,23 @@ export default function CartDrawer() {
                   <span>Total: {Money.fromMinor(total, "USD").format()}</span>
                 </div>
 
+                {!minimum.ok && (
+                  <p className="mt-4 text-sm text-state-warning">
+                    {minimumOrderMessage(minimum.short, minimumBoxes)}
+                  </p>
+                )}
                 <Button
-                  asChild
-                  className="w-full bg-primary-500 hover:bg-primary-600 mt-4"
+                  asChild={minimum.ok}
+                  disabled={!minimum.ok}
+                  className={`w-full bg-primary-500 hover:bg-primary-600 ${minimum.ok ? 'mt-4' : 'mt-2'}`}
                 >
-                  <Link href="/checkout" onClick={() => setCartOpen(false)}>
-                    Proceed to Checkout
-                  </Link>
+                  {minimum.ok ? (
+                    <Link href="/checkout" onClick={() => setCartOpen(false)}>
+                      Proceed to Checkout
+                    </Link>
+                  ) : (
+                    <span>Proceed to Checkout</span>
+                  )}
                 </Button>
               </div>
             </div>
