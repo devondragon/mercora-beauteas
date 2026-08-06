@@ -63,6 +63,50 @@ function formatMinor(minor) {
 }
 
 /**
+ * The SELECT that sources variants to reprice. Exported (and used verbatim by
+ * `main()`) so a regression test can assert on its guardrails directly rather
+ * than duplicating the query — this string, not a copy of it, is what runs
+ * against production.
+ *
+ * Three guardrails, each protecting real money:
+ *  - `COALESCE(v.status, 'active') = 'active'` — a NULL variant status reads
+ *    as active, matching Task 1's `isActiveStatus()` (lib/config/commerce.ts),
+ *    which deliberately fails open on NULL so a NULL row can't dark the whole
+ *    catalog. A NULL-status variant is sellable everywhere else in the app;
+ *    excluding it here would just leave it un-discounted, not withdrawn.
+ *  - `COALESCE(p.status, 'active') = 'active'` — same reasoning, product level.
+ *  - `p.fulfillment_type = 'physical'` — excludes the digital gift-card
+ *    product. "Every remaining SKU is one box" only describes physical tea;
+ *    a gift card's `price` is stored-credit face value, not something a flat
+ *    per-box rate can touch (repricing a $100 gift card to $2 would sell $100
+ *    of credit for $2 — confirmed against seeded data during Step 5).
+ */
+export const ACTIVE_PHYSICAL_VARIANTS_SQL = `
+  SELECT v.id, v.sku, p.name AS product_name, v.price, v.compare_at_price
+  FROM product_variants v
+  JOIN products p ON p.id = v.product_id
+  WHERE COALESCE(v.status, 'active') = 'active'
+    AND COALESCE(p.status, 'active') = 'active'
+    AND p.fulfillment_type = 'physical'
+`;
+
+/**
+ * Build the UPDATE for one row of the plan. Exported so a regression test can
+ * assert the id is actually escaped: `wrangler d1 execute --command` has no
+ * parameterized query support, so hand-interpolating `id` here is a real SQL
+ * injection surface if `sqlString()` is ever dropped or bypassed.
+ */
+export function buildUpdateStatement({ id, priceMinor, compareAtMinor }) {
+  const priceJson = JSON.stringify({ amount: priceMinor, currency: 'USD' });
+  const compareAtJson = JSON.stringify({ amount: compareAtMinor, currency: 'USD' });
+  return `UPDATE product_variants
+       SET price = ${sqlString(priceJson)},
+           compare_at_price = ${sqlString(compareAtJson)},
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ${sqlString(id)}`;
+}
+
+/**
  * Pure planner — exported for unit testing.
  *
  * @param {{ variants: Array<{id: string, price: any, compare_at_price: any}>, rate: number, baseline: Record<string, number> }} args
@@ -136,16 +180,7 @@ function main() {
       `${dryRun ? ' — DRY RUN, no writes' : ''}`,
   );
 
-  // fulfillment_type = 'physical' excludes the digital gift-card product: "every
-  // remaining SKU is one box" only describes physical tea, and a gift card's
-  // `price` is stored credit face value, not something a flat per-box rate can
-  // touch (repricing a $100 gift card to $2 would sell $100 of credit for $2).
-  const rows = d1(
-    `SELECT v.id, v.sku, p.name AS product_name, v.price, v.compare_at_price
-     FROM product_variants v
-     JOIN products p ON p.id = v.product_id
-     WHERE v.status = 'active' AND p.status = 'active' AND p.fulfillment_type = 'physical'`,
-  );
+  const rows = d1(ACTIVE_PHYSICAL_VARIANTS_SQL);
   const results = rows[0]?.results ?? [];
   const variants = results.map((r) => ({
     id: r.id,
@@ -186,15 +221,7 @@ function main() {
   }
 
   for (const row of result.plan) {
-    const priceJson = JSON.stringify({ amount: row.priceMinor, currency: 'USD' });
-    const compareAtJson = JSON.stringify({ amount: row.compareAtMinor, currency: 'USD' });
-    d1(
-      `UPDATE product_variants
-       SET price = ${sqlString(priceJson)},
-           compare_at_price = ${sqlString(compareAtJson)},
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ${sqlString(row.id)}`,
-    );
+    d1(buildUpdateStatement(row));
   }
 
   mkdirSync(dirname(BASELINE_PATH), { recursive: true });
