@@ -132,3 +132,105 @@ describe('resolveShippingOptions — admin-configured methods', () => {
     expect((await resolveShippingOptions(0)).options).toEqual([]);
   });
 });
+
+describe('resolveShippingOptions — quantity tiers (GOOB)', () => {
+  const TIERS = [
+    { max_boxes: 20, cost: 8 },
+    { max_boxes: 40, cost: 14 },
+    { max_boxes: null, cost: 22 },
+  ];
+
+  it('prices the method from the tier matching the box count', async () => {
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    const { options } = await resolveShippingOptions(2000, { boxes: 10 });
+
+    expect(options).toEqual([{ id: 'standard', label: 'Standard', cost: 8, estimatedDays: 5 }]);
+  });
+
+  it('crosses tiers at the inclusive bound', async () => {
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 20 })).options[0].cost).toBe(8);
+    expect((await resolveShippingOptions(2000, { boxes: 21 })).options[0].cost).toBe(14);
+    expect((await resolveShippingOptions(2000, { boxes: 41 })).options[0].cost).toBe(22);
+  });
+
+  it('ignores the per-method cost entirely once tiers are configured', async () => {
+    withSettings({
+      'shipping.tiers': [{ max_boxes: null, cost: 22 }],
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(22);
+  });
+
+  it('keeps the flat per-method cost when no tiers are configured', async () => {
+    withSettings({
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(5.99);
+  });
+
+  it('charges the lowest tier when the box count is unknown', async () => {
+    // The floor is a MINIMUM the charge must clear, so an unknown count must
+    // never invent a higher one and reject an honest order. Callers that can
+    // price a cart always know the count; an unpriceable cart is rejected before
+    // this is reached.
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000)).options[0].cost).toBe(8);
+  });
+
+  it('charges nothing for a method still listed as free', async () => {
+    // Free shipping is switched off in production by emptying free_methods; the
+    // mechanic itself stays intact and must keep working if it is ever re-enabled.
+    withSettings(
+      {
+        'shipping.tiers': TIERS,
+        'shipping.methods': [
+          { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+        ],
+        'shipping.free_methods': ['standard'],
+      },
+      { 'store.free_shipping_threshold': 20 }
+    );
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(0);
+  });
+
+  it('charges the tier when free_methods is empty, whatever the threshold says', async () => {
+    withSettings(
+      {
+        'shipping.tiers': TIERS,
+        'shipping.methods': [
+          { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+        ],
+        'shipping.free_methods': [],
+      },
+      { 'store.free_shipping_threshold': 1 }
+    );
+
+    expect((await resolveShippingOptions(999999, { boxes: 10 })).options[0].cost).toBe(8);
+  });
+});
