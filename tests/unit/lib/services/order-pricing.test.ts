@@ -37,6 +37,7 @@ vi.mock('@/lib/services/discount-pricing', () => ({
 
 import {
   computeCatalogSubtotalCents,
+  computeCatalogLineCents,
   verifyOrderChargeSufficient,
   resolveGiftCardTenderCents,
   canonicalizeOrderItemsDisplay,
@@ -110,7 +111,12 @@ describe('computeCatalogSubtotalCents (BMC-131)', () => {
       { product_id: 'tea-1', variant_id: 'does-not-exist', quantity: 1 },
     ]);
     expect(errors.length).toBe(1);
-    expect(errors[0]).toContain('no catalog price');
+    // GOOB: the withdrawal guard (isSellableVariant) now runs before
+    // catalogUnitPriceCents and treats an unresolvable variant as not
+    // sellable, so the line fails closed with a "withdrawn" reason rather
+    // than the later "no catalog price" message. Still exactly one error —
+    // the line is still unpriceable either way.
+    expect(errors[0]).toContain('withdrawn');
   });
 
   it('rejects a variant that does not belong to the claimed product', async () => {
@@ -451,5 +457,69 @@ describe('resolveGiftCardTenderCents guard clauses (L3)', () => {
       balance: 5000,
     } as any);
     expect(await resolveGiftCardTenderCents({ gift_card: { code: 'GC-DISABLED', amount: 5000 } })).toBe(0);
+  });
+});
+
+describe('computeCatalogLineCents — withdrawn catalog entries (GOOB)', () => {
+  it('refuses to price a line whose product is archived', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'var-bundle',
+      product_id: 'bundle-1',
+      status: 'active',
+      price: { amount: 4500, currency: 'USD' },
+    } as any);
+    vi.mocked(getProduct).mockResolvedValue({
+      id: 'bundle-1',
+      slug: 'clearly-calendula-sample-pack',
+      status: 'archived',
+    } as any);
+
+    const [line] = await computeCatalogLineCents([
+      { product_id: 'bundle-1', variant_id: 'var-bundle', quantity: 1 },
+    ]);
+
+    expect(line).toHaveProperty('error');
+    expect((line as { error: string }).error).toMatch(/withdrawn/i);
+  });
+
+  it('refuses to price a line whose variant is discontinued', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'var-old',
+      product_id: 'tea-1',
+      status: 'discontinued',
+      price: { amount: 2500, currency: 'USD' },
+    } as any);
+    vi.mocked(getProduct).mockResolvedValue({
+      id: 'tea-1',
+      slug: 'morning',
+      status: 'active',
+    } as any);
+
+    const [line] = await computeCatalogLineCents([
+      { product_id: 'tea-1', variant_id: 'var-old', quantity: 1 },
+    ]);
+
+    expect(line).toHaveProperty('error');
+    expect((line as { error: string }).error).toMatch(/withdrawn/i);
+  });
+
+  it('still prices an active product and variant', async () => {
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'var-tea-1',
+      product_id: 'tea-1',
+      status: 'active',
+      price: { amount: 200, currency: 'USD' },
+    } as any);
+    vi.mocked(getProduct).mockResolvedValue({
+      id: 'tea-1',
+      slug: 'morning',
+      status: 'active',
+    } as any);
+
+    const [line] = await computeCatalogLineCents([
+      { product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 10 },
+    ]);
+
+    expect(line).toEqual({ cents: 2000 });
   });
 });

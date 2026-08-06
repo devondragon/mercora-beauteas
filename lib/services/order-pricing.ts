@@ -54,6 +54,8 @@ import {
   GIFT_CARD_PRODUCT_ID,
   giftCardPurchasesEnabled,
   isGiftCardPurchaseProduct,
+  isPubliclyPurchasableProduct,
+  isSellableVariant,
 } from '@/lib/config/commerce';
 
 // A few cents of slack for cent/dollar rounding across the checkout math. This
@@ -229,6 +231,27 @@ export async function computeCatalogLineCents(
           : null;
         if (productId === GIFT_CARD_PRODUCT_ID || isGiftCardPurchaseProduct(product)) {
           return { error: `line ${i} contains a launch-disabled gift-card purchase` };
+        }
+      }
+
+      // GOOB: a withdrawn catalog entry must not be priceable. `status` is the
+      // merchant's withdrawal control (the PDP and sitemap already honour it via
+      // isPubliclyPurchasableProduct); before this check, archiving a product
+      // hid it from browsing while leaving it buyable by direct request.
+      const withdrawalVariant = item.variant_id
+        ? await getProductVariant(item.variant_id)
+        : null;
+      if (item.variant_id && !isSellableVariant(withdrawalVariant)) {
+        return { error: `line ${i} references a withdrawn variant` };
+      }
+
+      const withdrawalProductId = item.product_id ?? withdrawalVariant?.product_id;
+      if (withdrawalProductId) {
+        const withdrawalProduct = await getProduct(withdrawalProductId);
+        // A product that does not resolve is left to the pricing step below,
+        // which already fails it closed with a more precise reason.
+        if (withdrawalProduct && !isPubliclyPurchasableProduct(withdrawalProduct)) {
+          return { error: `line ${i} references a withdrawn product` };
         }
       }
 
