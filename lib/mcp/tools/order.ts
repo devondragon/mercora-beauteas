@@ -468,7 +468,7 @@ export async function placeOrder(
         processing_time_ms: processingTime
       },
       recommendations: {
-        bundling_opportunities: generatePostOrderRecommendations(cart),
+        bundling_opportunities: generatePostOrderRecommendations(cart, saleRules.subscriptionsEnabled),
         cost_optimization: [`Order saved $${(userContext.budget || totalMajor) - totalMajor} vs budget`]
       },
       metadata: {
@@ -611,7 +611,7 @@ function formatAddressForDB(address: Address): string {
   });
 }
 
-function generatePostOrderRecommendations(cart: CartItem[]): string[] {
+function generatePostOrderRecommendations(cart: CartItem[], subscriptionsEnabled: boolean): string[] {
   const recommendations: string[] = [];
 
   if (cart.length === 0) return recommendations;
@@ -621,8 +621,11 @@ function generatePostOrderRecommendations(cart: CartItem[]): string[] {
     recommendations.push('Build your daily ritual: add our Morning, Afternoon, and Evening blends for full-day skin support.');
   }
 
-  // Subscriptions are a first-class BeauTeas feature — encourage recurring delivery.
-  recommendations.push('Subscribe & save: set up a recurring delivery so you never run out of your blend.');
+  // GOOB: subscriptions are gated off for the closing sale (sale.subscriptions_enabled) —
+  // don't pitch a recurring delivery the storefront won't let anyone set up.
+  if (subscriptionsEnabled) {
+    recommendations.push('Subscribe & save: set up a recurring delivery so you never run out of your blend.');
+  }
 
   return recommendations;
 }
