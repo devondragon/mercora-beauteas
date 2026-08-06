@@ -507,7 +507,7 @@ export default function ProductDisplay({
                     Add to Cart
                   </button>
                 ) : (
-                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Coming soon</p>
+                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Sold out</p>
                 )}
               </>
             )}

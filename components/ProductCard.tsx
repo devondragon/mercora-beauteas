@@ -203,7 +203,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
                 : stateStyles.outOfStock
             }`}
           >
-            {availability === "available" ? "In Stock" : "Coming Soon"}
+            {availability === "available" ? "In Stock" : "Sold out"}
           </p>
 
           {/*

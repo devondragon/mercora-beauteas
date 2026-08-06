@@ -195,7 +195,7 @@ export default function SubscriptionToggle({
         )
       ) : (
         <p className="text-lg font-semibold text-primary-600 sm:text-xl">
-          Coming soon
+          Sold out
         </p>
       )}
     </div>

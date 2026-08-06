@@ -40,6 +40,7 @@ import ShippingOptions from './ShippingOptions';
 import OrderSummary from './OrderSummary';
 import ProgressBar from './ProgressBar';
 import OrderConfirmationModal from './OrderConfirmationModal';
+import FinalSaleNotice from './FinalSaleNotice';
 import type { Address, ShippingOption } from '@/lib/types';
 import type { CartItem } from '@/lib/types/cartitem';
 import { Money } from '@/lib/money';
@@ -537,6 +538,9 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           {currentStep === 'payment' && clientSecret && (
             <div className="bg-white p-4 sm:p-6 rounded-xl w-full min-h-[400px]">
               <h3 className="text-lg font-semibold mb-4 text-text-primary">Payment Information</h3>
+              <div className="mb-4">
+                <FinalSaleNotice />
+              </div>
               <div className="w-full">
                 <StripeProvider clientSecret={clientSecret}>
                   <PaymentForm
