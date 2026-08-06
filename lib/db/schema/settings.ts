@@ -210,5 +210,46 @@ export const defaultSettings = [
     category: 'recommendations',
     description: 'Hide products the customer already purchased',
     data_type: 'boolean'
+  },
+
+  // Going-out-of-business sale (0025)
+  {
+    key: 'sale.minimum_boxes',
+    value: JSON.stringify(10),
+    category: 'sale',
+    description: 'Minimum number of boxes required to check out',
+    data_type: 'number'
+  },
+  {
+    key: 'sale.final_sale',
+    value: JSON.stringify(true),
+    category: 'sale',
+    description: 'All sales are final (no returns); damaged or lost shipments are still made right',
+    data_type: 'boolean'
+  },
+  {
+    key: 'sale.subscriptions_enabled',
+    value: JSON.stringify(false),
+    category: 'sale',
+    description: 'Show subscription options on the storefront',
+    data_type: 'boolean'
+  },
+  {
+    key: 'shipping.tiers',
+    value: JSON.stringify([
+      { max_boxes: 20, cost: 0 },
+      { max_boxes: 40, cost: 0 },
+      { max_boxes: null, cost: 0 }
+    ]),
+    category: 'shipping',
+    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above',
+    data_type: 'object'
+  },
+  {
+    key: 'promotions.banner_link',
+    value: JSON.stringify('/thank-you'),
+    category: 'promotions',
+    description: 'URL the promotional banner links to',
+    data_type: 'string'
   }
 ];
