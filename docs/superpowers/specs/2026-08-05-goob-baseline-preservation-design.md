@@ -11,7 +11,9 @@ orders, with subscriptions, Stripe payments, fulfillment, and Chai all working.
 This is the most complete working state of the platform that exists.
 
 The store is about to run a going-out-of-business sale. That will change
-storefront copy, purchase rules, and how subscriptions work. The sale is
+storefront copy and purchase rules, and subscriptions get disabled before
+cutover. No subscriptions have ever been sold on this platform, so there is
+nothing to wind down. The sale is
 terminal — the store winds down for good afterward. So today's state matters as
 a clean, working ecommerce baseline for Mercora upstreaming and for any future
 brand, not as a state this site will ever return to.
@@ -105,18 +107,19 @@ branch"*) early, for a different reason than it was written for.
 - Consistent commit scope (`goob:`) so extraction can filter mechanically
   rather than by re-reading diffs.
 - **Disable or gate, do not delete** — specifically for subscriptions and any
-  purchase-rule paths. Two reasons: subscriptions are the most valuable and
-  hardest-to-reconstruct part of the preserved baseline, and a store wind-down
-  capability is itself plausibly upstreamable to Mercora, which deletion is
-  not.
+  purchase-rule paths. Subscriptions are the most valuable and
+  hardest-to-reconstruct part of the preserved baseline, and they are a named
+  upstreaming target in the inventory (capability seams, and the
+  `processed_webhook_events` table that must be extracted from the
+  subscription migration). Deleting the code would destroy source material the
+  upstreaming program still needs; turning it off costs nothing.
 
-### 4. Subscription Wind-Down as a Separate Track
+### 4. Subscriptions
 
-There are live Stripe subscriptions with real customers. Winding them down is a
-customer-notification and billing operation with its own sequencing — notify,
-stop new signups, decide whether cycles run out or cancel immediately, set
-refund policy — with legal and support implications. It is planned as its own
-workstream, not folded into the copy changes.
+No subscriptions have been sold on this platform and none will be — they are
+disabled before cutover. There is no customer wind-down, no billing
+cancellation sequence, and no refund policy to set. This is purely a
+storefront/checkout change made under the gate-don't-delete rule above.
 
 ## Out of Scope
 

@@ -28,10 +28,24 @@ Current repository state when this plan was written:
 - Both working trees were clean and synchronized with their respective `origin/main` branches.
 - The repositories have related source history but no shared Git commit ancestry because the upstream history was rewritten. Do not directly merge or rebase their `main` branches.
 
+### BeauTeas Source Is Read at Tag `v1.0.0`
+
+As of 2026-08-05, BeauTeas `main` is diverging into going-out-of-business sale
+behavior — changed copy, restricted purchase rules, disabled subscriptions —
+and the store winds down permanently afterward. Tag `v1.0.0` (`c9b135d`)
+preserves the launch-ready state as it stood before that work began.
+
+Read BeauTeas source at `v1.0.0`. Track upstreaming status on `main` — this
+plan and the inventory are updated as each unit lands, so pinning them to the
+tag would freeze the ledger. Platform fixes made after the tag are recorded in
+the inventory's post-baseline table and reconstructed from `main`.
+
+Rationale and the full decision: [`docs/superpowers/specs/2026-08-05-goob-baseline-preservation-design.md`](superpowers/specs/2026-08-05-goob-baseline-preservation-design.md).
+
 ## Guiding Principles
 
 1. Create all upstream contribution branches from the current Mercora `main`.
-2. Treat BeauTeas commits as source material, not automatically as clean cherry-pick candidates.
+2. Treat BeauTeas commits as source material, not automatically as clean cherry-pick candidates. Read BeauTeas source at tag `v1.0.0`, not `main`.
 3. Keep every upstream pull request focused on one coherent capability or invariant.
 4. Include focused tests, migrations, and generic documentation with the change they support.
 5. Keep Mercora's default store neutral or retain the existing Volt/Mercora demo defaults.

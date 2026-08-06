@@ -4,6 +4,7 @@
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
+**BeauTeas source of truth:** tag `v1.0.0` (`c9b135d`) — read source here, not `main`
 **Mercora baseline:** `ed04264`
 **Related plan:** [mercora-upstreaming-plan.md](mercora-upstreaming-plan.md)
 
@@ -19,6 +20,42 @@ This is not a cherry-pick manifest. Mercora and BeauTeas have no shared commit
 ancestry, and important upstream files have evolved through multiple BeauTeas
 review/fix cycles. Every contribution must be reconstructed on a fresh branch
 from the then-current Mercora `main`.
+
+## Source of Truth: Tag `v1.0.0`, Not `main`
+
+Read BeauTeas source at tag `v1.0.0` (`c9b135d`). Do not reconstruct from
+`main`.
+
+`v1.0.0` marks the launch-ready storefront as it stood on 2026-08-05, before
+any going-out-of-business sale work. `main` now also carries sale-specific
+behavior — changed copy, restricted purchase rules, disabled subscriptions.
+Because this inventory reconstructs from the *final source state* of a file
+rather than from diffs, reading `main` would silently pull wind-down logic into
+Mercora as if it were generic commerce behavior.
+
+Status tracking is the exception and stays on `main`. This file and
+[mercora-upstreaming-plan.md](mercora-upstreaming-plan.md) are updated as each
+unit lands; pinning them to the tag would freeze the ledger. **Read source at
+the tag, write status on `main`.**
+
+Most sale copy lives in CMS/D1 rows rather than code, and disposition `B`
+already excludes brand, content, and store-specific compliance copy. The
+contamination that matters is behavioral code in files that are themselves
+upstream targets — checkout, cart and purchase rules, subscriptions.
+
+### Post-Baseline Platform Fixes
+
+Genuine platform bugs fixed after `v1.0.0` are not in the tag, and are more
+valuable upstream than anything that is. Record each one here and reconstruct
+it from `main` rather than the tag.
+
+| BeauTeas commit | Area | Summary | Upstream status |
+| --- | --- | --- | --- |
+| _(none yet)_ | | | |
+
+If this table grows beyond a handful of rows, the tag has stopped being a
+usable source and the project should move to a maintained sale-free branch
+instead.
 
 ## Research Basis
 
