@@ -350,6 +350,112 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     expect(answer).not.toMatch(/free/i);
   });
 
+  // Final-review fix wave, item 4: with a 10-box minimum, carts above tier 1
+  // are common, so `resolveShippingOptions(0)` resolving only the lowest tier
+  // must not be stated as THE rate. When shipping.tiers is configured, the
+  // answer renders the whole table instead.
+  describe('quantity-tiered shipping (final-review fix, item 4)', () => {
+    it('renders one ascending line per configured tier instead of a single rate', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [
+          { max_boxes: 20, cost: 5.99 },
+          { max_boxes: 40, cost: 4.99 },
+          { max_boxes: null, cost: 2.99 },
+        ],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('1–20 boxes: $5.99');
+      expect(answer).toContain('21–40 boxes: $4.99');
+      expect(answer).toContain('41+ boxes: $2.99');
+      expect(answer).toContain(SHIPPING_POLICY_URL);
+      // Not the flat per-method rate card line (the free-shipping sentence
+      // still names the eligible method by label, which is correct — this
+      // only pins that the per-method cost line itself is gone).
+      expect(answer).not.toContain('Standard (5–7 days): $5.99');
+    });
+
+    it('sorts tiers ascending regardless of storage order, open-ended last', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        // Stored out of order, mirroring resolveShippingTier's own test.
+        tiers: [
+          { max_boxes: null, cost: 2.99 },
+          { max_boxes: 20, cost: 5.99 },
+          { max_boxes: 40, cost: 4.99 },
+        ],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+      const first = answer.indexOf('1–20 boxes');
+      const second = answer.indexOf('21–40 boxes');
+      const third = answer.indexOf('41+ boxes');
+
+      expect(first).toBeGreaterThan(-1);
+      expect(second).toBeGreaterThan(first);
+      expect(third).toBeGreaterThan(second);
+    });
+
+    it('still suppresses the free-shipping sentence when shipping.free_methods is empty', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 5.99 }],
+      });
+      getSettings.mockImplementation(async (category: string) =>
+        category === 'shipping' ? { 'shipping.free_methods': [] } : {}
+      );
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).not.toMatch(/free/i);
+    });
+
+    it('renders a genuinely zero-cost tier as free', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 0 }],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('1+ boxes: free');
+    });
+
+    it('states NO rate rather than "free" when a tier cost is unusable', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 'abc' as unknown as number }],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).not.toMatch(/free/i);
+      expect(answer).not.toMatch(/\$\s*\d/);
+      expect(answer).toContain(SHIPPING_POLICY_URL);
+    });
+
+    it('keeps today\'s flat-method behavior when shipping.tiers is empty', async () => {
+      // The default beforeEach mock already sets tiers: [] — this pins that
+      // the empty-tiers path is unchanged rather than relying on the default.
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('Standard (5–7 days): $5.99');
+      expect(answer).not.toMatch(/boxes:/);
+    });
+  });
+
   // `shipping.methods` is admin-edited JSON, so a cost field can arrive cleared
   // or the wrong type. EVERY one of these coerces to 0 under `Number(raw)` and
   // would render as "free" — advertising a rate we don't charge, the same

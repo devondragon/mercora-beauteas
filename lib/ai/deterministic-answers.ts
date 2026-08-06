@@ -37,6 +37,7 @@ import {
 } from "@/lib/ai/canonical-facts";
 import { Money } from "@/lib/money";
 import { getSaleRules } from "@/lib/sale/settings";
+import type { ShippingTier } from "@/lib/sale/rules";
 import { resolveShippingOptions } from "@/lib/services/shipping-options";
 import type { ShippingOption } from "@/lib/types/shipping";
 import { getRefundPolicy } from "@/lib/utils/settings";
@@ -376,9 +377,19 @@ async function minimumOrderAnswer(): Promise<string> {
 /**
  * Shipping rates + delivery estimates, read from the storefront shipping model
  * (`lib/services/shipping-options.ts`) — the SAME seam `/api/shipping-options`
- * quotes and the charge floor enforces (BMC-242).
+ * quotes and the charge floor enforces (BMC-242) — plus the quantity tiers
+ * (`shipping.tiers`, via `getSaleRules`, the same seam `resolveShippingOptions`
+ * itself resolves tiers through).
  *
- * Two things this answer is careful about:
+ * GOOB: with a 10-box minimum, most real carts sit above the lowest tier, so
+ * quoting only tier 1 (what a $0, boxless lookup resolves to) states the
+ * cheapest possible rate as though it were THE rate. When tiers are configured
+ * this renders the whole table — one line per band, ascending by box count —
+ * so a customer can see what their own order size will cost instead of being
+ * told a number that only applies to the smallest carts. When `shipping.tiers`
+ * is empty (not configured), behavior is unchanged: the enabled flat methods.
+ *
+ * Three things this answer is careful about:
  *
  * 1. **It never says the shopper qualifies for free shipping.** A chat message
  *    carries no cart, so the subtotal passed here is `0` and the quoted costs are
@@ -389,6 +400,8 @@ async function minimumOrderAnswer(): Promise<string> {
  * 2. **On a settings-read failure it states no numbers.** The response guard
  *    rewrites invented emails and URLs but has nothing to say about an invented
  *    price — so a degraded read points at the policy page instead of guessing.
+ * 3. **A tier with an unusable cost fails the whole answer closed**, the same
+ *    way a broken flat-method cost does — see `describeTierTable`.
  */
 async function shippingRatesAnswer(): Promise<string> {
   try {
@@ -396,14 +409,54 @@ async function shippingRatesAnswer(): Promise<string> {
       await resolveShippingOptions(0);
     if (options.length === 0) throw new Error("no enabled shipping methods configured");
 
-    const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
+    const { tiers } = await getSaleRules();
     const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
+
+    if (tiers.length > 0) {
+      const table = describeTierTable(tiers).join("\n");
+      return `Here's how shipping is priced during the closing sale 💕\n\n${table}\n\n${freeShipping}I can't see how many boxes are in your cart from here, so that's the full price table by order size. Checkout applies the right tier and shows the exact cost before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
+    }
+
+    const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
 
     return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates. Checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
   } catch (error) {
     console.error("[chai] shipping rate lookup failed:", error);
     return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL}, and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
   }
+}
+
+/**
+ * One line per configured shipping tier, ascending by box count, e.g.
+ * "1–20 boxes: $5.99" / "21+ boxes: $2.99". Sorted the same way
+ * `resolveShippingTier` (lib/sale/rules.ts) sorts them — open-ended (`null`)
+ * last, ties broken on cost — so the table and the tier checkout actually
+ * charges can never disagree about ordering.
+ *
+ * THROWS on a tier with an unusable cost, same reasoning as
+ * `describeShippingOption`: `shipping.tiers` is admin-edited JSON, and a
+ * missing or non-numeric cost must degrade the whole answer rather than
+ * render as "free".
+ */
+function describeTierTable(tiers: ShippingTier[]): string[] {
+  const sorted = [...tiers].sort((a, b) => {
+    if (a.max_boxes === null && b.max_boxes === null) return a.cost - b.cost;
+    if (a.max_boxes === null) return 1;
+    if (b.max_boxes === null) return -1;
+    return a.max_boxes - b.max_boxes;
+  });
+
+  let lowerBound = 1;
+  return sorted.map((tier) => {
+    const cost = rateMajor(tier.cost);
+    if (!Number.isFinite(cost) || cost < 0) {
+      throw new Error(`shipping tier (max_boxes=${tier.max_boxes}) has an unusable cost: ${tier.cost}`);
+    }
+    const price = cost > 0 ? Money.fromMajor(cost).format() : "free";
+    const label = tier.max_boxes === null ? `${lowerBound}+ boxes` : `${lowerBound}–${tier.max_boxes} boxes`;
+    if (tier.max_boxes !== null) lowerBound = tier.max_boxes + 1;
+    return `• ${label}: ${price}`;
+  });
 }
 
 /**
