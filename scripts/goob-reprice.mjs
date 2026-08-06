@@ -2,12 +2,21 @@
 /**
  * Reprice the catalog for the going-out-of-business sale.
  *
- *   node scripts/goob-reprice.mjs --rate 2.00 [--dry-run]
- *   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00
+ *   node scripts/goob-reprice.mjs --rate 2.00 --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
+ *   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 --expect-skus BTCCM1,BTCCA1,BTCCE1
  *
  * Every remaining SKU is one box, so every active variant is set to the flat
  * per-box rate, with its genuine PRE-SALE price kept as compare_at_price so the
  * strikethrough on the PDP, the catalog cards, and Chai's product cards is true.
+ *
+ * --expect-skus <SKU,SKU,...> or --expect-count <N> is REQUIRED (one or both).
+ * `ACTIVE_PHYSICAL_VARIANTS_SQL` matches every active, physical variant —
+ * including bundle SKUs (e.g. a 9-box "Full Package") if they haven't been
+ * archived yet, per the runbook's Phase 3. Without stating what you expect to
+ * reprice, this script cannot tell "every active physical variant, correctly"
+ * from "every active physical variant, including a bundle that should have
+ * been withdrawn first" — both look identical to a dry-run eyeball check.
+ * Checked BEFORE any write, including --dry-run.
  *
  * `data/goob/price-baseline.json` is written on first run and read on every run
  * after. Re-running at a different rate therefore reprices from the ORIGINAL
@@ -107,6 +116,74 @@ export function buildUpdateStatement({ id, priceMinor, compareAtMinor }) {
 }
 
 /**
+ * Guard against a human ordering error silently repricing the wrong catalog.
+ *
+ * The runbook's Phase 3 (withdraw the bundle SKUs) and Phase 4 (reprice) are
+ * written as independently sequenceable, and Phase 3 is explicitly
+ * deferrable ("Do not start this phase today if the bundles are still meant
+ * to be actively for sale"). If Phase 4 runs first, `BTCCFP` (Full Package,
+ * 9 boxes) and `BTCCSP` (Sample Pack, 3 boxes) are still `active` + `physical`
+ * and match `ACTIVE_PHYSICAL_VARIANTS_SQL` exactly like the three single-box
+ * blends — "every active, physical, tea variant" is precisely what a dry run
+ * shows either way, so eyeballing the printed plan does not catch this. A
+ * 9-box bundle silently reprices to the same $2.00 flat per-box rate as a
+ * single box.
+ *
+ * The caller must state what they expect (SKU set or count); this is a HARD
+ * exit on mismatch, not a warning, and is checked before any write — dry-run
+ * included, since the dry run is what a human reads before committing to the
+ * real run. Returns `{ ok, message }` rather than throwing so `main()` can
+ * still print the full plan (useful for diagnosing the mismatch) before
+ * exiting.
+ *
+ * @param {{ plan: Array<{id: string}>, skuById: Map<string, string>, expectSkus?: string[], expectCount?: number }} args
+ * @returns {{ ok: boolean, message?: string }}
+ */
+export function checkExpectation({ plan, skuById, expectSkus, expectCount }) {
+  if ((!expectSkus || expectSkus.length === 0) && expectCount == null) {
+    return {
+      ok: false,
+      message:
+        'refusing to run without --expect-skus <SKU,SKU,...> or --expect-count <N> — ' +
+        'state what you expect to reprice so an ordering mistake (e.g. running this ' +
+        'before archiving the bundle SKUs) cannot silently reprice the wrong catalog.',
+    };
+  }
+
+  const actualSkus = plan.map((row) => skuById.get(row.id) ?? row.id).sort();
+
+  if (expectSkus && expectSkus.length > 0) {
+    const expectedSorted = [...expectSkus].sort();
+    const expectedSet = new Set(expectedSorted);
+    const actualSet = new Set(actualSkus);
+    const missing = expectedSorted.filter((sku) => !actualSet.has(sku));
+    const unexpected = actualSkus.filter((sku) => !expectedSet.has(sku));
+
+    if (missing.length > 0 || unexpected.length > 0) {
+      return {
+        ok: false,
+        message:
+          `--expect-skus mismatch: expected [${expectedSorted.join(', ')}], ` +
+          `plan would reprice [${actualSkus.join(', ')}].` +
+          (missing.length > 0 ? ` Missing: ${missing.join(', ')}.` : '') +
+          (unexpected.length > 0 ? ` Unexpected: ${unexpected.join(', ')}.` : ''),
+      };
+    }
+  }
+
+  if (expectCount != null && plan.length !== expectCount) {
+    return {
+      ok: false,
+      message:
+        `--expect-count mismatch: expected ${expectCount}, plan has ${plan.length} ` +
+        `variant(s) (skus: ${actualSkus.join(', ')}).`,
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
  * Pure planner — exported for unit testing.
  *
  * @param {{ variants: Array<{id: string, price: any, compare_at_price: any}>, rate: number, baseline: Record<string, number> }} args
@@ -168,12 +245,40 @@ function main() {
   const argv = process.argv;
   const rateIndex = argv.indexOf('--rate');
   if (rateIndex === -1 || argv[rateIndex + 1] === undefined) {
-    console.error(`${tag} usage: node scripts/goob-reprice.mjs --rate <dollars> [--dry-run]`);
+    console.error(
+      `${tag} usage: node scripts/goob-reprice.mjs --rate <dollars> ` +
+        `(--expect-skus <SKU,SKU,...> | --expect-count <N>) [--dry-run]`,
+    );
     process.exit(1);
   }
   const rate = Number(argv[rateIndex + 1]);
   const dryRun = argv.includes('--dry-run');
   const remote = process.env.D1_REMOTE === 'true';
+
+  const expectSkusIndex = argv.indexOf('--expect-skus');
+  const expectSkus =
+    expectSkusIndex !== -1 && argv[expectSkusIndex + 1] !== undefined
+      ? argv[expectSkusIndex + 1].split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+  const expectCountIndex = argv.indexOf('--expect-count');
+  const expectCount =
+    expectCountIndex !== -1 && argv[expectCountIndex + 1] !== undefined
+      ? Number(argv[expectCountIndex + 1])
+      : undefined;
+
+  // Fail fast, before the D1 read: same reasoning as checkExpectation below,
+  // just checked here so a missing flag doesn't cost a network round trip
+  // first. checkExpectation still re-derives this failure on its own (it has
+  // no way to know main() already checked), which is what the unit tests
+  // exercise directly.
+  if ((!expectSkus || expectSkus.length === 0) && expectCount == null) {
+    console.error(
+      `${tag} refusing to run without --expect-skus <SKU,SKU,...> or --expect-count <N> — ` +
+        `state what you expect to reprice so an ordering mistake (e.g. running this before ` +
+        `archiving the bundle SKUs) cannot silently reprice the wrong catalog.`,
+    );
+    process.exit(1);
+  }
 
   console.log(
     `${tag} target: ${remote ? 'beauteas-db (PRODUCTION, remote)' : 'beauteas-db-dev (local)'}` +
@@ -214,6 +319,18 @@ function main() {
         ? ` (${variants.length - result.plan.length} skipped — no usable price).`
         : '.'),
   );
+
+  // Hard guard (checked for --dry-run too — see checkExpectation's doc
+  // comment): a human ordering error must not be able to silently reprice
+  // the wrong catalog, e.g. running this before Phase 3 archives the bundle
+  // SKUs, which would reprice a 9-box bundle to the same flat per-box rate
+  // as a single box.
+  const skuById = new Map(Array.from(meta.entries()).map(([id, m]) => [id, m.sku]));
+  const expectation = checkExpectation({ plan: result.plan, skuById, expectSkus, expectCount });
+  if (!expectation.ok) {
+    console.error(`${tag} ${expectation.message}`);
+    process.exit(1);
+  }
 
   if (dryRun) {
     console.log(`${tag} [dry-run] Nothing written — no D1 updates, no baseline file.`);

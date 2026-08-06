@@ -90,6 +90,14 @@ tab (or `gh workflow run production-deploy-guard.yml`) instead of running
 the SHA on `main` and refuses to deploy if it did not pass. Either path is
 fine; picking neither is the gap this phase exists to close.
 
+**If you dispatch the workflow, the branch/ref picker must be `main`, not
+`goob`.** The workflow's `deploy` job carries `if: github.ref ==
+'refs/heads/main'`; `pre-deploy-check` has no such condition and runs either
+way. Pick `goob` in the branch selector and the run finishes green —
+`pre-deploy-check` passes, `deploy` is silently *skipped* (not failed) by
+that `if`, and a green workflow run looks exactly like a successful deploy
+that never happened.
+
 ---
 
 ## Phase 1 — Deploy
@@ -257,9 +265,26 @@ for sale** — step 2 alone starts pulling their PDP out of reach the moment it
 deploys, regardless of whether you've archived anything yet. Sequence the
 whole phase for whenever you decide to pull them from the sale.
 
+**Phase 4 is blocked on this phase being fully complete (step 4 done, both
+bundles archived) — see the warning at the top of Phase 4 for why.**
+
 ---
 
 ## Phase 4 — Recount inventory and reprice
+
+**Blocked on Phase 3 being fully complete.** `clearly-calendula-full-package`
+(`BTCCFP`, a 9-box "Mega Month") and `clearly-calendula-sample-pack`
+(`BTCCSP`, a 3-box pack) are `active` + physical fulfillment right now, same
+as the three real single-box blends, and the reprice script's SELECT
+(`ACTIVE_PHYSICAL_VARIANTS_SQL`) has no way to tell a bundle apart from a
+blend — both are "every active, physical, tea variant." Run this phase
+before Phase 3 finishes archiving both bundles and the reprice sets a 9-box
+bundle to the same flat per-box rate as a single box (confirmed against
+production: as of this writing both bundles are still `active`). The script
+now refuses to run at all without `--expect-skus` or `--expect-count` (see
+step 2) specifically so this can't happen silently — but do not rely on the
+guard instead of doing Phase 3 first; it exists to catch a mistake, not to
+license skipping the ordering.
 
 1. Recount physical stock per blend (Morning / Afternoon / Evening) and enter
    the real numbers wherever inventory is tracked in `/admin/products`.
@@ -267,13 +292,17 @@ whole phase for whenever you decide to pull them from the sale.
    first:
 
    ```bash
-   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 --dry-run
+   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
    ```
 
-   `--dry-run` writes nothing — no D1 updates, no baseline file. Read the
-   printed plan carefully: it lists every variant, its current price, and
-   what it would become. Confirm the count of affected variants looks right
-   (it should be every active, physical, tea variant — not the gift card).
+   `--dry-run` writes nothing — no D1 updates, no baseline file.
+   `--expect-skus` is required (or `--expect-count`) and is a HARD failure on
+   mismatch, checked before the dry-run's own "nothing written" message: the
+   script now refuses to proceed, print or not, unless the plan is *exactly*
+   `BTCCM1`, `BTCCA1`, `BTCCE1` — no more, no fewer. **If the error output
+   mentions `BTCCFP` or `BTCCSP`, stop — go back and finish Phase 3 first.**
+   Do not loosen `--expect-skus` to make the error go away.
 
 3. **Back up production before running it for real.** The script has no
    restore mode: it writes one `UPDATE` per variant as its own separate
@@ -296,10 +325,11 @@ whole phase for whenever you decide to pull them from the sale.
    from whatever `compare_at_price` values happen to still be intact.
 
 4. Once the dry-run output looks correct and the backup above exists, run it
-   for real, same rate:
+   for real, same rate and same `--expect-skus`:
 
    ```bash
-   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00
+   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1
    ```
 
    This writes the new sale price to every qualifying variant, sets
@@ -417,9 +447,20 @@ successful response is JSON with counts, not an error.
 
 ## Phase 6 — Turn on the banner
 
+**Production's current `promotions.banner_text` is actively wrong for this
+sale** (verified read-only against production, 2026-08-06):
+`"🎉 Free shipping on orders over $75!"` — this store has free shipping
+switched off entirely for the sale (item 3 of the final review; `0025`
+empties `shipping.free_methods`). `banner_enabled` is currently `false`, so
+nothing has shipped yet, but do not flip it on before step 2 below replaces
+the text — enabling the banner as-is would advertise free shipping on a
+store that has none.
+
 1. `/admin/settings` → **Promotions** tab.
-2. Enable the promotional banner, set its text, and confirm the link field is
-   `/thank-you`.
+2. **Replace the banner text first** — it is not a placeholder to leave and
+   fill in later, it is currently set to the wrong claim above. Enable the
+   promotional banner, set its text to something accurate for the closing
+   sale, and confirm the link field is `/thank-you`.
 3. Load the homepage and confirm the banner is visible, underlined, and
    clicking through lands on `/thank-you`.
 4. Optional, but worth doing once: the `0025` seed already sets

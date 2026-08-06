@@ -10,7 +10,12 @@
  * Pure-function test with no D1: same shape as `d1-migrate-plan.test.ts`.
  */
 import { describe, it, expect } from 'vitest';
-import { planReprice, ACTIVE_PHYSICAL_VARIANTS_SQL, buildUpdateStatement } from '../../../scripts/goob-reprice.mjs';
+import {
+  planReprice,
+  ACTIVE_PHYSICAL_VARIANTS_SQL,
+  buildUpdateStatement,
+  checkExpectation,
+} from '../../../scripts/goob-reprice.mjs';
 
 const VARIANTS = [
   { id: 'var-morning', price: { amount: 2400, currency: 'USD' }, compare_at_price: null },
@@ -127,6 +132,81 @@ describe('ACTIVE_PHYSICAL_VARIANTS_SQL', () => {
 
   it('excludes non-physical fulfillment types, e.g. the digital gift-card product', () => {
     expect(ACTIVE_PHYSICAL_VARIANTS_SQL).toMatch(/p\.fulfillment_type\s*=\s*'physical'/);
+  });
+});
+
+// Final-review re-review fix: a human ordering error (running Phase 4 before
+// Phase 3 archives the bundle SKUs) makes BTCCFP/BTCCSP still match
+// ACTIVE_PHYSICAL_VARIANTS_SQL alongside the three real single-box blends —
+// exactly what the runbook's OWN dry-run sanity check ("every active,
+// physical, tea variant") would see with the bundles included, so it can't
+// catch this. checkExpectation is the hard guard: the caller must state what
+// they expect, and any mismatch is a hard failure, not a warning.
+describe('checkExpectation', () => {
+  const skuById = new Map([
+    ['var-morning', 'BTCCM1'],
+    ['var-afternoon', 'BTCCA1'],
+    ['var-evening', 'BTCCE1'],
+  ]);
+  const threeBoxPlan = [{ id: 'var-morning' }, { id: 'var-afternoon' }, { id: 'var-evening' }];
+
+  it('refuses to run when neither --expect-skus nor --expect-count is given', () => {
+    const result = checkExpectation({ plan: threeBoxPlan, skuById });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/--expect-skus|--expect-count/);
+  });
+
+  it('passes when --expect-skus matches the plan exactly, order-independent', () => {
+    const result = checkExpectation({
+      plan: threeBoxPlan,
+      skuById,
+      expectSkus: ['BTCCE1', 'BTCCM1', 'BTCCA1'],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('passes when --expect-count matches the plan size', () => {
+    const result = checkExpectation({ plan: threeBoxPlan, skuById, expectCount: 3 });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('fails --expect-skus when a bundle SKU (not yet archived by Phase 3) is in the plan', () => {
+    const skuByIdWithBundles = new Map([...skuById, ['var-full-package', 'BTCCFP'], ['var-sample-pack', 'BTCCSP']]);
+    const planWithBundles = [...threeBoxPlan, { id: 'var-full-package' }, { id: 'var-sample-pack' }];
+
+    const result = checkExpectation({
+      plan: planWithBundles,
+      skuById: skuByIdWithBundles,
+      expectSkus: ['BTCCM1', 'BTCCA1', 'BTCCE1'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('BTCCFP');
+    expect(result.message).toContain('BTCCSP');
+  });
+
+  it('fails --expect-count when a bundle SKU inflates the plan size', () => {
+    const planWithBundles = [...threeBoxPlan, { id: 'var-full-package' }];
+
+    const result = checkExpectation({ plan: planWithBundles, skuById, expectCount: 3 });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('expected 3');
+    expect(result.message).toContain('has 4');
+  });
+
+  it('fails --expect-skus when the plan is missing an expected SKU', () => {
+    const result = checkExpectation({
+      plan: [{ id: 'var-morning' }, { id: 'var-afternoon' }],
+      skuById,
+      expectSkus: ['BTCCM1', 'BTCCA1', 'BTCCE1'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('BTCCE1');
   });
 });
 
