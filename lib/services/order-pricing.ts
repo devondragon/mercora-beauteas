@@ -579,7 +579,6 @@ export type OrderTotalsOptions = Record<string, unknown>;
 
 const STANDARD_SHIPPING_MAJOR = 9.99;
 const AK_HI_SHIPPING_MAJOR = 19.99;
-const FREE_SHIPPING_THRESHOLD_MAJOR = 100;
 
 // Simple tax calculation - in production, use proper tax service
 const TAX_RATES: Record<string, number> = {
@@ -591,17 +590,38 @@ const TAX_RATES: Record<string, number> = {
 const DEFAULT_TAX_RATE = 0.05;
 
 /**
- * Shipping for a goods subtotal + destination. `subtotal` is a `Money`, so the
- * free-shipping threshold compares like-for-like (both minor units of the same
+ * Shipping for a goods subtotal + destination. `subtotal` is a `Money`, so
+ * every comparison here is like-for-like (both minor units of the same
  * currency) rather than a bare number that could be either cents or dollars
  * depending on the caller (BMC-161).
+ *
+ * GOOB fix (final-review fix wave, item 5) — NO free shipping, ever. This
+ * used to zero shipping once `subtotal.gte($100)`: a pre-sale "free over $100"
+ * rule with no relationship to the sale's ACTUAL shipping model
+ * (`shipping.tiers` / `shipping.methods`, resolved through
+ * `resolveShippingOptions` in lib/services/shipping-options.ts, the SAME seam
+ * the storefront charge floor and Chai read). Combined with the sale's ~$2/box
+ * pricing, a 50-box MCP order cleared $100 of goods and shipped FREE on this
+ * path alone, even though every other money surface has free shipping
+ * switched off for the sale (`shipping.free_methods = []`, migration 0025).
+ *
+ * The correct fix is routing this through `resolveShippingOptions` with the
+ * cart's box count, the same way `computeShippingFloorCents`
+ * (lib/services/checkout-charges.ts) does for the storefront floor. That is
+ * NOT done here: this module is deliberately free of Cloudflare/DB imports
+ * (see the file header — "pure ... unit-testable from tests/unit/**") so
+ * `resolveShippingOptions`, which reads settings from D1, cannot be called
+ * from inside it without giving up that isolation, and every MCP call site
+ * plus the pure test suite in tests/unit/lib/money/order-pricing-money.test.ts
+ * and tests/unit/lib/mcp/normalize-address.test.ts is built on that contract.
+ * That is a wider refactor than this fix wave covers, so this fails CLOSED
+ * instead: the flat rates below are deliberately >= the live sale rate
+ * (currently $5.99 standard, no tiers configured), so an MCP order is never
+ * undercharged relative to what the storefront would collect for the same
+ * cart — it may be OVERcharged during the sale, which is the safe direction.
+ * Routing this through `resolveShippingOptions` is a fast-follow.
  */
 export function calculateShipping(address: Address, subtotal: Money): Money {
-  // Free shipping over $100
-  if (subtotal.gte(Money.fromMajor(FREE_SHIPPING_THRESHOLD_MAJOR, subtotal.currency))) {
-    return Money.zero(subtotal.currency);
-  }
-
   // Alaska/Hawaii surcharge
   if (address?.region === 'AK' || address?.region === 'HI') {
     return Money.fromMajor(AK_HI_SHIPPING_MAJOR, subtotal.currency);
