@@ -13,6 +13,8 @@ import {
   formatAmountForStripe,
   isStripeConfigured,
 } from '../../stripe';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '../../sale/rules';
+import { getSaleRules } from '../../sale/settings';
 
 export interface PaymentMethod {
   id: string;
@@ -185,6 +187,24 @@ export async function createAgentPaymentIntent(
       return fail('TOO_MANY_LINE_ITEMS',
         `Cart has too many distinct items (max ${MAX_ORDER_LINE_ITEMS}).`,
         ['Reduce the number of distinct items in the cart']);
+    }
+
+    // GOOB: the box minimum is a purchase rule enforced identically at every
+    // money surface — POST /api/payment-intent, POST /api/orders, and here.
+    // An authenticated agent (a hashed X-Agent-API-Key holder) must not be
+    // able to mint a PaymentIntent for a cart the storefront itself would
+    // refuse. Runs before Stripe is even checked for configuration, let alone
+    // charged, so a rejected agent cart costs nothing. Uses the identical
+    // lib/sale/rules seam as the HTTP gates, so the threshold and message
+    // can't drift between surfaces.
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(cart), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return fail(
+        'BELOW_MINIMUM_ORDER',
+        minimumOrderMessage(minimum.short, saleRules.minimumBoxes),
+        ['Add more items to the cart', 'Retry create_payment_intent once the cart meets the minimum']
+      );
     }
 
     if (!isStripeConfigured()) {

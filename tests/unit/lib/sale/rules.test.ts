@@ -65,7 +65,10 @@ describe('countBoxes', () => {
     // so resolveShippingTier picked the lowest configured tier instead of the
     // one matching 100 boxes. The quote and the floor agreed with each other
     // on a wrong, too-low tier because they disagreed about the cart.
-    const items = Array.from({ length: 100 }, () => ({ product_id: 'tea-1', variant_id: 'var-tea-1' }));
+    const items: Array<{ product_id: string; variant_id: string; quantity?: unknown }> = Array.from(
+      { length: 100 },
+      () => ({ product_id: 'tea-1', variant_id: 'var-tea-1' })
+    );
     expect(countBoxes(items)).toBe(100);
   });
 });
