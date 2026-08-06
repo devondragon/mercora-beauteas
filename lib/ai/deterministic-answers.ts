@@ -32,9 +32,11 @@ import {
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
   SHIPPING_POLICY_URL,
+  SITE_URL,
   SUPPORT_HOURS,
 } from "@/lib/ai/canonical-facts";
 import { Money } from "@/lib/money";
+import { getSaleRules } from "@/lib/sale/settings";
 import { resolveShippingOptions } from "@/lib/services/shipping-options";
 import type { ShippingOption } from "@/lib/types/shipping";
 import { getRefundPolicy } from "@/lib/utils/settings";
@@ -45,6 +47,9 @@ export type DeterministicCategory =
   | "order_status"
   | "business_address"
   | "refund_window"
+  | "minimum_order"
+  | "store_closing"
+  | "tea_freshness"
   | "shipping_rates";
 
 interface CategoryRule {
@@ -135,6 +140,44 @@ const RULES: CategoryRule[] = [
     ],
   },
   {
+    category: "minimum_order",
+    // Answered from `sale.minimum_boxes` in D1, so no sync `answer`.
+    patterns: [
+      /\bminimum (order|purchase|quantity|number)\b/i,
+      /\b(order|buy|purchase) minimum\b/i,
+      /\bhow many (boxes|tins|do i have to|must i)\b.{0,25}\b(buy|order|purchase)\b/i,
+      /\bdo i have to buy\b.{0,20}\b(minimum|at least)\b/i,
+      /\bis there a minimum\b/i,
+    ],
+  },
+  {
+    category: "store_closing",
+    patterns: [
+      /\b(going out of business|shutting down|shutting up shop|closing down|winding down)\b/i,
+      /\bwhy (are|is)\b.{0,20}\b(you|beauteas)\b.{0,15}\bclos(ing|e)\b/i,
+      /\b(are|is)\b.{0,15}\b(you|beauteas)\b.{0,15}\bclos(ing|ed)\b/i,
+      /\b(last|final) chance\b.{0,20}\b(buy|order)\b/i,
+    ],
+    answer: () =>
+      `We are, yes 💕 After a lot of thought we're closing BeauTeas for good, and everything left is going out at clearance prices. The whole story — and a very big thank-you — is here: ${SITE_URL}/thank-you`,
+  },
+  {
+    category: "tea_freshness",
+    // DELIBERATELY NARROW. The subject must be age, freshness, or expiry — an
+    // earlier draft matching a bare /\bfresh\b/ swallowed "is this freshly
+    // blended?" and "what's the freshest thing you have?", which retrieval and
+    // the catalog answer far better than a canned line about storage.
+    patterns: [
+      /\bhow (old|fresh)\b.{0,20}\b(is|are)\b.{0,20}\b(the |this |your )?(tea|teas|blend|blends|stock)\b/i,
+      /\b(tea|teas|blend|blends|stock)\b.{0,20}\b(expired?|expiry|expiration|out of date|past its date)\b/i,
+      /\b(is|are)\b.{0,20}\b(the |this |your )?(tea|teas|blend|blends)\b.{0,20}\bstill (good|fresh|drinkable|ok|okay)\b/i,
+      /\bshelf life\b/i,
+      /\bwhen does\b.{0,25}\bexpire\b/i,
+    ],
+    answer: () =>
+      `Honest answer: our remaining stock has been in sealed, airtight storage for several years 💕 It's been kept carefully and it's still lovely to drink — the aroma is a little gentler than a fresh harvest, which is part of why everything is priced the way it is. More on that here: ${SITE_URL}/thank-you`,
+  },
+  {
     category: "shipping_rates",
     // Answered from the storefront shipping model in D1 (`shipping.methods` +
     // `store.free_shipping_threshold`), so no sync `answer` — see
@@ -216,6 +259,7 @@ export async function resolveDeterministicAnswer(
   if (rule?.answer) return rule.answer();
 
   if (category === "refund_window") return refundWindowAnswer();
+  if (category === "minimum_order") return minimumOrderAnswer();
   if (category === "shipping_rates") return shippingRatesAnswer();
 
   // Unreachable while every category has either a sync answer or a branch
@@ -224,7 +268,9 @@ export async function resolveDeterministicAnswer(
 }
 
 /**
- * Return-window answer, read from `refund.return_window_days` (BMC-243).
+ * Return-window answer, read from `refund.return_window_days` (BMC-243) — unless
+ * the store is in final-sale mode (`sale.final_sale`, GOOB), in which case there
+ * is no return window to state at all.
  *
  * On a settings-read failure this answers WITHOUT a number rather than guessing
  * one. Stating a wrong return window is the same class of failure as the invented
@@ -233,11 +279,30 @@ export async function resolveDeterministicAnswer(
  */
 async function refundWindowAnswer(): Promise<string> {
   try {
+    const { finalSale } = await getSaleRules();
+    if (finalSale) {
+      // Driven by the same setting the policy page reflects, so Chai and the
+      // site cannot drift. Stating a return window that no longer exists is the
+      // same class of failure as inventing one.
+      return `We're closing up shop, so every order is final sale — no returns or exchanges on the teas 💕 That said, if your order arrives damaged or never turns up, we'll absolutely make it right. Just email ${CONTACT_EMAIL} and we'll sort it out. Full details: ${REFUND_POLICY_URL}`;
+    }
+
     const { returnWindowDays } = await getRefundPolicy();
     return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}) — and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
   } catch (error) {
-    console.error("[chai] refund window lookup failed:", error);
-    return `Our full return policy is here: ${REFUND_POLICY_URL} — it has the current return window and how to start one. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+    console.error("[chai] refund policy lookup failed:", error);
+    return `Our full return policy is here: ${REFUND_POLICY_URL} — and if you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+  }
+}
+
+/** Minimum-order answer, read from `sale.minimum_boxes` so it cannot drift. */
+async function minimumOrderAnswer(): Promise<string> {
+  try {
+    const { minimumBoxes } = await getSaleRules();
+    return `There's a ${minimumBoxes} boxes minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends — it all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
+  } catch (error) {
+    console.error("[chai] minimum order lookup failed:", error);
+    return `There's a minimum order while we clear the last of our stock — your cart will tell you exactly how many more boxes you need 💕`;
   }
 }
 
@@ -326,6 +391,8 @@ function freeShippingSentence(
   thresholdMajor: number,
   freeMethodIds: string[]
 ): string {
+  if (!freeMethodIds || freeMethodIds.length === 0) return "";
+
   const eligible = options.filter((option) => freeMethodIds.includes(option.id));
   if (eligible.length === 0) return "";
   if (!Number.isFinite(thresholdMajor) || thresholdMajor <= 0) return "";

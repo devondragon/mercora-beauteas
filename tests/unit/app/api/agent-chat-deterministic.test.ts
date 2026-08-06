@@ -42,6 +42,10 @@ const getRefundPolicy = vi.fn();
 vi.mock('@/lib/utils/settings', () => ({
   getRefundPolicy: (...args: unknown[]) => getRefundPolicy(...args),
 }));
+const getSaleRules = vi.fn();
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: (...args: unknown[]) => getSaleRules(...args),
+}));
 vi.mock('@/lib/ai/config', () => ({
   runAI: vi.fn(),
   getCurrentEmbeddingModel: vi.fn(() => '@cf/baai/bge-base-en-v1.5'),
@@ -75,6 +79,14 @@ beforeEach(() => {
   // threshold so the flair never fires and the assertions stay deterministic.
   vi.spyOn(Math, 'random').mockReturnValue(0.99);
   getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  // Pre-sale posture so this route-level suite (predates the GOOB sale) keeps
+  // exercising the return-window path it was written for.
+  getSaleRules.mockResolvedValue({
+    minimumBoxes: 10,
+    finalSale: false,
+    subscriptionsEnabled: false,
+    tiers: [],
+  });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});

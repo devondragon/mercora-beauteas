@@ -28,6 +28,14 @@ vi.mock('@/lib/utils/settings', () => ({
   getSettings: (...args: unknown[]) => getSettings(...args),
 }));
 
+// `@/lib/sale/rules` is intentionally NOT mocked — it's pure and should run for
+// real. Only the D1 read (`getSaleRules`, in `@/lib/sale/settings`) is mocked,
+// matching how `@/lib/utils/settings` is handled above.
+const getSaleRules = vi.fn();
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: (...args: unknown[]) => getSaleRules(...args),
+}));
+
 import {
   classifyQuery,
   resolveDeterministicAnswer,
@@ -39,11 +47,22 @@ import {
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
   SHIPPING_POLICY_URL,
+  SITE_URL,
 } from '@/lib/ai/canonical-facts';
 
 beforeEach(() => {
   vi.clearAllMocks();
   getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  // Pre-sale posture by default so every pre-existing test below (written
+  // before the GOOB sale existed) keeps asserting the return-window answer
+  // without having to know about `getSaleRules`. GOOB-specific tests override
+  // this per-case.
+  getSaleRules.mockResolvedValue({
+    minimumBoxes: 10,
+    finalSale: false,
+    subscriptionsEnabled: false,
+    tiers: [],
+  });
   // `{}` → the storefront defaults baked into `shipping-options.ts`
   // (standard $5.99 / express $9.99 / overnight $19.99, free ≥ $75 on standard).
   getSettings.mockResolvedValue({});
@@ -516,7 +535,140 @@ describe('deterministic category table (BMC-215)', () => {
       'order_status',
       'business_address',
       'refund_window',
+      'minimum_order',
+      'store_closing',
+      'tea_freshness',
       'shipping_rates',
     ]);
+  });
+});
+
+describe('final-sale returns answer (GOOB)', () => {
+  it('states that sales are final instead of quoting a return window', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery('what is your return policy?');
+    expect(category).toBe('refund_window');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).toMatch(/final/i);
+    expect(answer).not.toMatch(/\d+ days/);
+  });
+
+  it('still names the damaged-or-lost exception so the policy reads as fair', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery('can i return this?');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).toMatch(/damaged|arrives? broken|never arrives/i);
+  });
+
+  it('falls back to the return window when final sale is off', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: false,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+    getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+
+    const category = classifyQuery('what is your return policy?');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/30 days/);
+  });
+});
+
+describe('minimum order answer (GOOB)', () => {
+  it.each([
+    'is there a minimum order?',
+    'what is the minimum order?',
+    'do i have to buy a minimum?',
+    'how many boxes do i have to buy?',
+  ])('answers %s with the configured minimum', async (question) => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery(question);
+    expect(category).toBe('minimum_order');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+  });
+
+  it('does not hijack an unrelated question about order status', () => {
+    expect(classifyQuery('where is my order?')).not.toBe('minimum_order');
+    expect(classifyQuery('where is my order?')).toBe('order_status');
+  });
+});
+
+describe('tea freshness answer (GOOB)', () => {
+  it.each([
+    'how old is the tea?',
+    'is the tea still fresh?',
+    'is this tea expired?',
+    'when does this tea expire?',
+  ])('answers %s honestly about age and storage', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('tea_freshness');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/sealed|airtight/i);
+  });
+
+  it('does not hijack an ordinary product question', () => {
+    // The freshness rule must be narrow. These are questions the catalog and
+    // retrieval answer far better than a canned line about storage.
+    expect(classifyQuery('what is in the morning blend?')).not.toBe('tea_freshness');
+    expect(classifyQuery('how do i brew this?')).not.toBe('tea_freshness');
+    expect(classifyQuery('how much caffeine is in it?')).not.toBe('tea_freshness');
+  });
+});
+
+describe('store closing answer (GOOB)', () => {
+  it.each([
+    'are you going out of business?',
+    'why are you closing?',
+    'is beauteas shutting down?',
+  ])('answers %s and points at the closing page', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('store_closing');
+
+    const answer = await resolveDeterministicAnswer(category!);
+    expect(answer).toMatch(/thank-you/);
+    expect(answer).toContain(`${SITE_URL}/thank-you`);
+  });
+});
+
+describe('tiered shipping answer (GOOB)', () => {
+  it('states the tiers and drops the free-shipping sentence when nothing is free', async () => {
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+            ],
+            'shipping.free_methods': [],
+          }
+        : {}
+    );
+
+    const category = classifyQuery('how much is shipping?');
+    expect(category).toBe('shipping_rates');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).not.toMatch(/free shipping/i);
+    // Still a complete, natural rate card — not a fragment with a dangling join.
+    expect(answer).toContain('Standard — $5.99');
+    expect(answer).toMatch(/i can'?t see your cart from here/i);
   });
 });
