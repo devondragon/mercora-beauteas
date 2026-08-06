@@ -322,9 +322,10 @@ export async function computeExpectedChargeExtras(
   // was actually charged; tax is computed on goods + that minimum shipping so the
   // tax floor never exceeds what an honest customer paid (BMC-201).
   // The tier is resolved from the SAME items list that produced the goods total,
-  // so the quote and the floor cannot disagree. Quantity is client-supplied, but
-  // under-reporting it to reach a cheaper tier also shrinks the goods subtotal,
-  // and both are recomputed here from one list — so the two stay consistent.
+  // using the SAME quantity normalization `computeCatalogLineCents` used to
+  // price it (`countBoxes` mirrors `normalizeQuantity`, including the omitted
+  // → 1 default) — so the box count and the goods total can't disagree about
+  // what a line's quantity is, and the quote and the floor can't drift apart.
   const shippingCents = await computeShippingFloorCents(goodsCents, countBoxes(items));
   const tax = await computeExpectedTaxCents({ lineCents, taxCodes: taxLines.taxCodes, shippingAddress, shippingCents, orderId });
   return {

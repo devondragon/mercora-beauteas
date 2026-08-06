@@ -40,8 +40,18 @@ export interface SaleRules {
 export const DEFAULT_MINIMUM_BOXES = 10;
 
 /**
- * Total boxes in a cart. A line with an unusable quantity contributes 0 — the
- * catalog pricing path fails that same line closed, so the cart is rejected
+ * Total boxes in a cart. Coercion MIRRORS `normalizeQuantity` in
+ * `lib/services/order-pricing.ts` line for line, because this count and the
+ * goods subtotal that `computeCatalogLineCents` derives from that function
+ * must agree on what each line's quantity is — otherwise the box count and
+ * the priced goods can disagree about the very same cart (the omitted-
+ * quantity gap that made `resolveShippingTier` pick the wrong tier while the
+ * catalog priced every line as quantity 1; see GOOB shipping-tier review).
+ * An omitted (`null`/`undefined`) quantity defaults to 1, matching the
+ * historical "omitted means a single unit" default; any other raw value is
+ * coerced with `Number(raw)`, not just strings. A line with an unusable
+ * quantity (non-finite or `<= 0`) contributes 0 — the catalog pricing path
+ * independently fails that same line closed, so the cart is rejected
  * regardless, and this must never produce NaN.
  */
 export function countBoxes(items: Array<{ quantity?: unknown }>): number {
@@ -49,9 +59,10 @@ export function countBoxes(items: Array<{ quantity?: unknown }>): number {
 
   return items.reduce<number>((total, item) => {
     const raw = item?.quantity;
-    const n = typeof raw === 'string' ? Number(raw) : raw;
-    if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return total;
-    return total + Math.floor(n);
+    if (raw == null) return total + 1; // omitted → default to a single unit
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return total;
+    return total + Math.max(1, Math.floor(n));
   }, 0);
 }
 

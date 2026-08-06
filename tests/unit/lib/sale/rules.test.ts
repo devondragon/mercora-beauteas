@@ -35,6 +35,39 @@ describe('countBoxes', () => {
     expect(countBoxes([])).toBe(0);
     expect(countBoxes(null as never)).toBe(0);
   });
+
+  // GOOB shipping-tier review: countBoxes must agree with normalizeQuantity
+  // (lib/services/order-pricing.ts) about what an omitted quantity means, or
+  // the box count and the priced goods total disagree about the same cart.
+  it('counts a line with no quantity key as 1 box, matching normalizeQuantity\'s omitted-quantity default', () => {
+    expect(countBoxes([{}])).toBe(1);
+  });
+
+  it('counts an explicit null or undefined quantity as 1', () => {
+    expect(countBoxes([{ quantity: null }, { quantity: undefined }])).toBe(2);
+  });
+
+  it('still coerces a numeric string (existing behavior)', () => {
+    expect(countBoxes([{ quantity: '3' }])).toBe(3);
+  });
+
+  it('coerces any raw type via Number(), not just strings', () => {
+    // Number([5]) === 5, same coercion normalizeQuantity applies.
+    expect(countBoxes([{ quantity: [5] }])).toBe(5);
+  });
+
+  it('REGRESSION (GOOB): a 100-line cart with every line omitting quantity counts as 100, not 0', () => {
+    // The exploit this closes: POST /api/payment-intent or /api/orders with up
+    // to MAX_ORDER_LINE_ITEMS lines shaped { product_id, variant_id } and no
+    // quantity field. computeCatalogLineCents / normalizeQuantity price every
+    // such line as 1 unit (omitted → 1), so the goods subtotal is for 100
+    // units — but the old countBoxes treated the same omission as 0 boxes,
+    // so resolveShippingTier picked the lowest configured tier instead of the
+    // one matching 100 boxes. The quote and the floor agreed with each other
+    // on a wrong, too-low tier because they disagreed about the cart.
+    const items = Array.from({ length: 100 }, () => ({ product_id: 'tea-1', variant_id: 'var-tea-1' }));
+    expect(countBoxes(items)).toBe(100);
+  });
 });
 
 describe('checkMinimumOrder', () => {
