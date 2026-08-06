@@ -90,8 +90,8 @@ around.
 1. Weigh a representative box (or a few, if weight varies enough to matter)
    and work out real shipping costs per tier.
 2. Go to `/admin/settings` → **Shipping** tab. Before you add anything, it
-   should read "Not configured — the flat per-method rates below are in
-   effect", not a blank list — that confirms you're looking at the empty
+   should read "Not configured. The flat per-method rates below are in
+   effect.", not a blank list — that confirms you're looking at the empty
    `0025` state, not stale data.
 3. Add three tiers with your real costs. Mark **exactly one** tier "No upper
    bound" — it must be the top tier. If you check "No upper bound" on a
@@ -108,28 +108,34 @@ around.
 
 ---
 
-## Phase 3 — Withdraw the bundle SKUs (redirect must land in the same change)
+## Phase 3 — Withdraw the bundle SKUs (redirect lands, and goes live, before the archive)
 
 Two bundle products need to come off sale: `clearly-calendula-sample-pack`
-and `clearly-calendula-full-package`. **Do not archive them without also
-adding their redirects in the same deploy** — doing one without the other
-will 404 real URLs.
+and `clearly-calendula-full-package`.
 
-### Why the redirect can't wait
+### Why the redirect has to go live first, not "in the same change"
 
 - `middleware.ts` only consults the `redirect_map` table for paths starting
   `/products/`, `/collections/`, `/pages/`, `/blogs/`, or `/policies/`. It
   **never** looks at the singular `/product/<slug>` path the live PDP
   actually uses.
 - `app/product/[slug]/page.tsx` calls `notFound()` the moment a product fails
-  `isPubliclyPurchasableProduct` — which an archived product does immediately.
+  `isPubliclyPurchasableProduct` — which an archived product does
+  immediately, and the page has `export const revalidate = 0`, so that
+  failure is live the instant the admin write commits, with no caching delay
+  to hide behind.
 
-So archiving these two products without a redirect turns
-`/product/clearly-calendula-sample-pack` and
-`/product/clearly-calendula-full-package` into real 404s the instant you
-archive, for anyone who has the URL bookmarked, linked, or indexed.
+Archiving is a D1 write that takes effect the moment you click it in
+`/admin/products`. The `next.config.ts` redirect only exists once a deploy
+finishes building and shipping it. **Bundling them as "one change, then
+deploy" still leaves a real gap**: from the moment you archive to the moment
+that deploy's "Uploaded" + "Current Version ID" lines appear, the redirect
+doesn't exist yet and the product already returns `notFound()` — a genuine
+404 on a real URL, which is exactly the failure this phase exists to prevent.
+So the order below puts the redirect live *before* the archive, not merely
+committed alongside it.
 
-### The change
+### The change, in order
 
 1. In `next.config.ts`, add two entries to the `redirects()` array, following
    the exact pattern already used for `/subscriptions` and
@@ -148,17 +154,40 @@ archive, for anyone who has the URL bookmarked, linked, or indexed.
    },
    ```
 
-2. In `/admin/products`, archive both `clearly-calendula-sample-pack` and
-   `clearly-calendula-full-package`.
-3. Commit both the `next.config.ts` change and confirm the archiving is saved,
-   then deploy (Phase 1's deploy command) — a `next.config.ts` redirect is
-   baked into the build, so it only takes effect after a redeploy.
-4. After deploying, visit both old PDP URLs in a browser and confirm they
-   redirect to `/thank-you` instead of 404ing.
+   Commit that change on its own.
 
-**Do not do this today if the bundles are still meant to be actively for
-sale** — archiving disables purchase immediately. Sequence it for whenever you
-decide to pull them from the sale.
+2. Deploy (Phase 1's deploy command). **Read this before you run it:** the
+   redirect is unconditional and has nothing to do with product status, so
+   the moment this deploy finishes, both URLs stop showing the product page
+   and start sending every visitor straight to `/thank-you` — even though
+   both products are still `active` and still purchasable everywhere else
+   (category page, search, cart, direct add-to-cart) until step 4. In
+   practice, this step *is* the withdrawal going live for anyone who reaches
+   these products by their PDP URL; the database status change a few minutes
+   later is bookkeeping that catches up to it. Only proceed if you are fine
+   with that: it converts "still for sale, PDP reachable" into "still for
+   sale everywhere except its own product page" for the few minutes until you
+   archive.
+3. Confirm the redirect responded before touching product status:
+
+   ```bash
+   curl -sI https://shop.beauteas.com/product/clearly-calendula-sample-pack | head -1
+   curl -sI https://shop.beauteas.com/product/clearly-calendula-full-package | head -1
+   ```
+
+   Both should return `HTTP/2 308` (Next.js serves `permanent: true` redirects
+   as 308, not 301 — the browser-visible destination is still `/thank-you`
+   either way). If either is not a redirect, stop — do not archive until it
+   is.
+4. Only now, in `/admin/products`, archive both `clearly-calendula-sample-pack`
+   and `clearly-calendula-full-package`. From this point the redirect and the
+   product status agree, and the property that matters — no customer ever
+   hits a 404 on these two URLs — held throughout.
+
+**Do not start this phase today if the bundles are still meant to be actively
+for sale** — step 2 alone starts pulling their PDP out of reach the moment it
+deploys, regardless of whether you've archived anything yet. Sequence the
+whole phase for whenever you decide to pull them from the sale.
 
 ---
 
@@ -234,8 +263,19 @@ under `data/r2/knowledge_md/`.
 
 ### 2. Rebuild the index
 
-Requires the `ADMIN_VECTORIZE_TOKEN` secret (already set on both Workers per
-`docs/cutover-status.md`) as a Bearer token:
+Requires the `ADMIN_VECTORIZE_TOKEN` secret as a Bearer token. **Production**
+is documented as re-verified present (`docs/cutover-status.md`, via `wrangler
+secret list --env production` on 2026-08-01). **Dev's is not separately
+documented as re-verified** — check it exists before relying on it, so a
+missing secret shows up as "not set" rather than a confusing 401 partway
+through this step:
+
+```bash
+npx wrangler secret list --env dev
+```
+
+(`wrangler secret list` only confirms a secret *name* is set, never its
+value — that's expected, not a partial check.) Then call each environment:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_VECTORIZE_TOKEN" \
@@ -255,10 +295,15 @@ successful response is JSON with counts, not an error.
 
 1. `/admin/settings` → **Promotions** tab.
 2. Enable the promotional banner, set its text, and confirm the link field is
-   `/thank-you` (or blank — with no link set, the banner falls back to plain,
-   non-clickable text, which is also fine).
-3. Load the homepage and confirm the banner is visible and, if linked,
-   underlined and clicking through lands on `/thank-you`.
+   `/thank-you`.
+3. Load the homepage and confirm the banner is visible, underlined, and
+   clicking through lands on `/thank-you`.
+4. Optional, but worth doing once: the `0025` seed already sets
+   `promotions.banner_link` to `/thank-you`, so production may never actually
+   exercise the *blank*-link fallback on its own. To confirm that path still
+   works rather than assume it, temporarily clear the link field, save, and
+   confirm the banner renders as plain, non-clickable text instead of a
+   broken link — then restore the `/thank-you` link before moving on.
 
 ---
 
