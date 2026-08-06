@@ -48,6 +48,8 @@ import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { getSaleRules } from '@/lib/sale/settings';
 import type { Address } from '@/lib/types';
 import { logCritical } from '@/lib/utils/observe';
 import { validateUsShippingAddress } from '@/lib/utils/address';
@@ -273,6 +275,27 @@ export async function POST(req: NextRequest) {
       order,
       discountCodes,
     }: PaymentIntentRequest = await req.json();
+
+    // GOOB: the box minimum is a purchase rule, so it is enforced here rather
+    // than only in the cart UI (Task 7) — a crafted request bypasses the UI
+    // entirely. Runs immediately once `items`/`order` are resolved from the
+    // body, before any other validation, Stripe work, or catalog pricing, so a
+    // rejected cart costs nothing. Prefers the top-level `items` field (the
+    // same list the catalog floor below prices) and falls back to the order
+    // draft's items, so a request that supplies only `order` (no top-level
+    // `items`) is still gated. Uses the identical message POST /api/orders
+    // returns, so the two money endpoints can never disagree.
+    const gateItems = Array.isArray(items) && items.length > 0
+      ? items
+      : (Array.isArray(order?.items) ? (order!.items as any[]) : []);
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(gateItems), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return NextResponse.json(
+        { error: minimumOrderMessage(minimum.short, saleRules.minimumBoxes) },
+        { status: 400 }
+      );
+    }
 
     // Validate required fields
     if (!amount || amount <= 0) {

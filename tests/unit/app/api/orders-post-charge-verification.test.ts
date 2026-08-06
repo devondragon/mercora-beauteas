@@ -55,6 +55,19 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/utils/observe', () => ({ logCritical: vi.fn() }));
 
+// GOOB: this suite pins the client-fast-path promotion logic with single-item,
+// single-quantity fixtures — it isn't about the box minimum (that has its own
+// dedicated test, sale-minimum-order.test.ts). Pin minimumBoxes to 0 so the new
+// gate never trips here.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn().mockResolvedValue({
+    minimumBoxes: 0,
+    finalSale: true,
+    subscriptionsEnabled: false,
+    tiers: [],
+  }),
+}));
+
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { POST } from '@/app/api/orders/route';

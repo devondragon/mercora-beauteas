@@ -36,6 +36,8 @@ import {
 import { MAX_CAS_ATTEMPTS, updatedAtGuard } from "@/lib/payments/refund-ledger-store";
 import { logCritical } from "@/lib/utils/observe";
 import { validateUsShippingAddress } from "@/lib/utils/address";
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from "@/lib/sale/rules";
+import { getSaleRules } from "@/lib/sale/settings";
 
 
 
@@ -191,6 +193,22 @@ export async function POST(request: NextRequest) {
         details: [`items array must not exceed ${MAX_ORDER_LINE_ITEMS} lines`]
       }, { status: 400 });
     }
+
+    // GOOB: the box minimum is a purchase rule, so it is enforced here rather
+    // than only in the cart UI (Task 7) — a crafted request bypasses the UI
+    // entirely. Runs immediately after items are validated above and before
+    // any charge verification / Stripe work below, so a rejected cart never
+    // reaches PaymentIntent retrieval or order persistence. Uses the identical
+    // message POST /api/payment-intent returns, so the two money endpoints can
+    // never disagree.
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(body.items), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return NextResponse.json({
+        error: minimumOrderMessage(minimum.short, saleRules.minimumBoxes)
+      }, { status: 400 });
+    }
+
     // Bound the persisted cart-discount codes the same way /api/payment-intent
     // does — this route is reachable pre-auth, so an unbounded `discount_codes`
     // array would otherwise be stored verbatim into the D1 `extensions` JSON and
