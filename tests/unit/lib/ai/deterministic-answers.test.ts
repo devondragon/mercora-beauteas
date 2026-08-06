@@ -611,6 +611,29 @@ describe('minimum order answer (GOOB)', () => {
     expect(classifyQuery('where is my order?')).not.toBe('minimum_order');
     expect(classifyQuery('where is my order?')).toBe('order_status');
   });
+
+  it.each([
+    // The bare "is there a minimum" pattern must co-occur with an
+    // order-shaped subject. Without that, it matched ANY "is there a
+    // minimum X" regardless of subject.
+    'is there a minimum steep time for the tea?',
+    'is there a minimum brew temperature?',
+    // "buy" appears in this sentence, but not as the subject of "minimum" —
+    // this is an age-restriction question, not an order-size one.
+    'is there a minimum age to buy tea?',
+  ])('does not hijack %s (bare "minimum" needs an order-shaped subject)', (question) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+  });
+
+  it.each([
+    // Past-tense self-reference belongs to order history, not the box
+    // minimum, even though it shares the "how many boxes...buy/order" shape.
+    'how many boxes did i order?',
+    'how many boxes have i ordered?',
+    'how many boxes did i buy last time?',
+  ])('does not hijack past-tense order history: %s', (question) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+  });
 });
 
 describe('tea freshness answer (GOOB)', () => {
@@ -646,6 +669,18 @@ describe('store closing answer (GOOB)', () => {
     const answer = await resolveDeterministicAnswer(category!);
     expect(answer).toMatch(/thank-you/);
     expect(answer).toContain(`${SITE_URL}/thank-you`);
+  });
+
+  it.each([
+    // Store-HOURS phrasing shares "closed"/"closing" vocabulary with
+    // permanent closure but asks a different question. A customer asking
+    // about Sunday hours must not get the going-out-of-business announcement.
+    'are you closed today?',
+    'are you closed for the holiday?',
+    'is beauteas closed on sundays?',
+    'why are you closing early today?',
+  ])('does not hijack a store-hours question: %s', (question) => {
+    expect(classifyQuery(question)).not.toBe('store_closing');
   });
 });
 

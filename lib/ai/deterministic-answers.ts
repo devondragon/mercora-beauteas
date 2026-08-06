@@ -143,11 +143,31 @@ const RULES: CategoryRule[] = [
     category: "minimum_order",
     // Answered from `sale.minimum_boxes` in D1, so no sync `answer`.
     patterns: [
-      /\bminimum (order|purchase|quantity|number)\b/i,
+      // "number" was deliberately dropped from this list — "minimum number"
+      // is generic enough to also match "minimum number of reviews" or "of
+      // characters", neither of which is an order-size question. "quantity"
+      // stays: nobody asks about a minimum review quantity.
+      /\bminimum (order|purchase|quantity|boxes|spend|cart)\b/i,
       /\b(order|buy|purchase) minimum\b/i,
       /\bhow many (boxes|tins|do i have to|must i)\b.{0,25}\b(buy|order|purchase)\b/i,
       /\bdo i have to buy\b.{0,20}\b(minimum|at least)\b/i,
-      /\bis there a minimum\b/i,
+      // The subject word must sit IMMEDIATELY after "a minimum" (whitespace
+      // only, no `.{0,N}` gap). A gap let "is there a minimum AGE TO BUY
+      // tea?" match on the trailing "buy" — a legal-age question, not an
+      // order-size one. Zero gap means only the actual subject of "minimum"
+      // qualifies, which also makes this redundant with the pattern above
+      // for "minimum order" — kept for the nouns that pattern doesn't cover
+      // ("spend", "cart", a bare "buy").
+      /\bis there a minimum\b\s+(order|purchase|buy|boxes|spend|cart)\b/i,
+    ],
+    exclude: [
+      // Past-tense self-reference ("how many boxes DID I order/buy") is a
+      // question about THIS shopper's order history, not the box minimum —
+      // `order_status` doesn't have a quantity-shaped pattern of its own, so
+      // without this the "how many boxes...buy/order" pattern above swallows
+      // it. Falls through to retrieval instead.
+      /\b(did|have|has) i (order|buy|bought|purchase|purchased)\b/i,
+      /\bi (ordered|bought|purchased)\b/i,
     ],
   },
   {
@@ -157,6 +177,20 @@ const RULES: CategoryRule[] = [
       /\bwhy (are|is)\b.{0,20}\b(you|beauteas)\b.{0,15}\bclos(ing|e)\b/i,
       /\b(are|is)\b.{0,15}\b(you|beauteas)\b.{0,15}\bclos(ing|ed)\b/i,
       /\b(last|final) chance\b.{0,20}\b(buy|order)\b/i,
+    ],
+    exclude: [
+      // Store-HOURS phrasing ("closed today", "closed on Sundays", "closing
+      // early") shares the closing/closed vocabulary with permanent closure
+      // but asks a different question — the same "topic mismatch dressed as
+      // a fact" shape as "plastic-free shipping" matching the rate card. A
+      // relative day, a weekday name, "for the holiday/weekend", or
+      // "early/late" all signal HOURS, not going-out-of-business.
+      /\bclos(ing|ed)\b.{0,20}\b(today|tonight|tomorrow|this (morning|afternoon|evening|weekend)|early|late|right now)\b/i,
+      /\bclos(ing|ed)\b.{0,20}\b(on\s+)?(mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|weekends?|holidays?)\b/i,
+      /\bclos(ing|ed)\b.{0,20}\bfor the (holiday|weekend|day|night)\b/i,
+      // Temporary operational closures ("closed for maintenance") are also
+      // not the going-out-of-business question.
+      /\bclos(ing|ed)\b.{0,20}\bfor (maintenance|repairs?|cleaning|restocking|inventory)\b/i,
     ],
     answer: () =>
       `We are, yes 💕 After a lot of thought we're closing BeauTeas for good, and everything left is going out at clearance prices. The whole story — and a very big thank-you — is here: ${SITE_URL}/thank-you`,
