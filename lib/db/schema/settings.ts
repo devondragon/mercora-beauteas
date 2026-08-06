@@ -78,10 +78,13 @@ export const defaultSettings = [
   // Shipping Configuration
   {
     key: 'shipping.methods',
+    // GOOB: the sale ships a single Standard method — express and overnight
+    // are disabled rather than removed so the shape survives for any future
+    // use. Migration 0028 mirrors this for already-deployed databases.
     value: JSON.stringify([
       { id: 'standard', label: 'Standard (5–7 days)', cost: 5.99, estimatedDays: 5, enabled: true },
-      { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
-      { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true }
+      { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: false },
+      { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: false }
     ]),
     category: 'shipping',
     description: 'Available shipping methods and pricing',
