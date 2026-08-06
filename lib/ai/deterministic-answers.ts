@@ -95,7 +95,7 @@ const RULES: CategoryRule[] = [
       /\b(speak|talk) to (a |someone in |the )?(human|person|support|customer service|real)\b/i,
     ],
     answer: () =>
-      `You can reach our team at ${CONTACT_EMAIL} 💕 We're around ${SUPPORT_HOURS} and usually reply within one business day — orders, products, subscriptions, anything at all.`,
+      `You can reach our team at ${CONTACT_EMAIL} 💕 We're around ${SUPPORT_HOURS} and usually reply within one business day: orders, products, subscriptions, anything at all.`,
   },
   {
     category: "order_status",
@@ -226,7 +226,7 @@ const RULES: CategoryRule[] = [
       /\bclos(ing|ed)\b.{0,20}\bfor (maintenance|repairs?|cleaning|restocking|inventory)\b/i,
     ],
     answer: () =>
-      `We are, yes 💕 After a lot of thought we're closing BeauTeas for good, and everything left is going out at clearance prices. The whole story — and a very big thank-you — is here: ${SITE_URL}/thank-you`,
+      `We are, yes 💕 After a lot of thought we're closing BeauTeas for good, and everything left is going out at clearance prices. The whole story, and a very big thank-you, is here: ${SITE_URL}/thank-you`,
   },
   {
     category: "tea_freshness",
@@ -242,7 +242,7 @@ const RULES: CategoryRule[] = [
       /\bwhen does\b.{0,25}\bexpire\b/i,
     ],
     answer: () =>
-      `Honest answer: our remaining stock has been in sealed, airtight storage for several years 💕 It's been kept carefully and it's still lovely to drink — the aroma is a little gentler than a fresh harvest, which is part of why everything is priced the way it is. More on that here: ${SITE_URL}/thank-you`,
+      `Honest answer: our remaining stock has been in sealed, airtight storage for several years 💕 It's been kept carefully and it's still lovely to drink. The aroma is a little gentler than a fresh harvest, which is part of why everything is priced the way it is. More on that here: ${SITE_URL}/thank-you`,
   },
   {
     category: "shipping_rates",
@@ -351,14 +351,14 @@ async function refundWindowAnswer(): Promise<string> {
       // Driven by the same setting the policy page reflects, so Chai and the
       // site cannot drift. Stating a return window that no longer exists is the
       // same class of failure as inventing one.
-      return `We're closing up shop, so every order is final sale — no returns or exchanges on the teas 💕 That said, if your order arrives damaged or never turns up, we'll absolutely make it right. Just email ${CONTACT_EMAIL} and we'll sort it out. Full details: ${REFUND_POLICY_URL}`;
+      return `We're closing up shop, so every order is final sale. No returns or exchanges on the teas 💕 That said, if your order arrives damaged or never turns up, we'll absolutely make it right. Just email ${CONTACT_EMAIL} and we'll sort it out. Full details: ${REFUND_POLICY_URL}`;
     }
 
     const { returnWindowDays } = await getRefundPolicy();
-    return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}) — and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
+    return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}), and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
   } catch (error) {
     console.error("[chai] refund policy lookup failed:", error);
-    return `Our full return policy is here: ${REFUND_POLICY_URL} — and if you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+    return `Our full return policy is here: ${REFUND_POLICY_URL}, and if you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
   }
 }
 
@@ -366,10 +366,10 @@ async function refundWindowAnswer(): Promise<string> {
 async function minimumOrderAnswer(): Promise<string> {
   try {
     const { minimumBoxes } = await getSaleRules();
-    return `There's a ${minimumBoxes} boxes minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends — it all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
+    return `There's a ${minimumBoxes} boxes minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends. It all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
   } catch (error) {
     console.error("[chai] minimum order lookup failed:", error);
-    return `There's a minimum order while we clear the last of our stock — your cart will tell you exactly how many more boxes you need 💕`;
+    return `There's a minimum order while we clear the last of our stock. Your cart will tell you exactly how many more boxes you need 💕`;
   }
 }
 
@@ -399,10 +399,10 @@ async function shippingRatesAnswer(): Promise<string> {
     const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
     const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
 
-    return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates — checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
+    return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates. Checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
   } catch (error) {
     console.error("[chai] shipping rate lookup failed:", error);
-    return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL} — and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+    return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL}, and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
   }
 }
 
@@ -426,7 +426,7 @@ function describeShippingOption(option: ShippingOption): string {
     !/\d/.test(option.label) && Number.isFinite(option.estimatedDays) && option.estimatedDays > 0
       ? ` (about ${option.estimatedDays} business ${option.estimatedDays === 1 ? "day" : "days"})`
       : "";
-  return `${option.label} — ${price}${days}`;
+  return `${option.label}: ${price}${days}`;
 }
 
 /**

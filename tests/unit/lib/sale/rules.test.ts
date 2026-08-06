@@ -161,10 +161,10 @@ describe('resolveShippingTier', () => {
 
 describe('minimumOrderMessage', () => {
   it('uses the singular for one box short', () => {
-    expect(minimumOrderMessage(1, 10)).toBe('Add 1 more box to check out — 10 box minimum.');
+    expect(minimumOrderMessage(1, 10)).toBe('Add 1 more box to check out. 10 box minimum.');
   });
 
   it('uses the plural for more than one', () => {
-    expect(minimumOrderMessage(4, 10)).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(minimumOrderMessage(4, 10)).toBe('Add 4 more boxes to check out. 10 box minimum.');
   });
 });

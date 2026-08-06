@@ -168,7 +168,7 @@ function generateAlternativeSiteRecommendations(cannotFulfill: string[]): string
   // our organic skincare-tea catalog so the agent can set expectations.
   if (cannotFulfill.length === 0) return [];
 
-  return ['Some requested items are outside our catalog — BeauTeas specialises in USDA-certified organic calendula tea blends.'];
+  return ['Some requested items are outside our catalog. BeauTeas specialises in USDA-certified organic calendula tea blends.'];
 }
 
 function generateBundlingOpportunities(results: Array<{item: string, products: any[]}>): string[] {

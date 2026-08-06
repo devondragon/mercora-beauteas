@@ -74,7 +74,7 @@ export default function MarkShippedModal({
         <DialogHeader>
           <DialogTitle>Mark order #{orderId} shipped</DialogTitle>
           <DialogDescription>
-            Recording the shipment for {recipient}. Carrier and tracking are optional — leave both
+            Recording the shipment for {recipient}. Carrier and tracking are optional; leave both
             blank to ship without tracking.
           </DialogDescription>
         </DialogHeader>
@@ -129,7 +129,7 @@ export default function MarkShippedModal({
               <p>
                 {chosenCarrier === "other"
                   ? "Other carriers show the tracking number with no link."
-                  : "No tracking link — the customer will see the shipment without a carrier link."}
+                  : "No tracking link. The customer will see the shipment without a carrier link."}
               </p>
             )}
           </div>

@@ -61,7 +61,7 @@ describe('POST /api/payment-intent — box minimum', () => {
 
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(body.error).toBe('Add 4 more boxes to check out. 10 box minimum.');
   });
 
   it('does not reject a cart at the minimum for this reason', async () => {
@@ -105,7 +105,7 @@ describe('POST /api/payment-intent — box minimum', () => {
 
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(body.error).toBe('Add 4 more boxes to check out. 10 box minimum.');
   });
 });
 
@@ -119,7 +119,7 @@ describe('POST /api/orders — box minimum', () => {
 
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(body.error).toBe('Add 4 more boxes to check out. 10 box minimum.');
   });
 
   it('does not reject a cart at the minimum for this reason', async () => {

@@ -757,12 +757,12 @@ export default function AdminSettingsPage() {
               Cost in dollars for an order up to and including that many boxes. Bounds
               are inclusive; a row with no upper bound covers everything above the
               rest. When this list is non-empty it REPLACES the per-method cost below
-              entirely — leave it empty to keep the flat rates in force.
+              entirely. Leave it empty to keep the flat rates in force.
             </p>
 
             {shippingSettings.tiers.length === 0 ? (
               <p className="text-sm text-text-muted italic mb-4">
-                Not configured — the flat per-method rates below are in effect.
+                Not configured. The flat per-method rates below are in effect.
               </p>
             ) : (
               <>
@@ -1011,7 +1011,7 @@ export default function AdminSettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm font-medium text-text-secondary">Restock on Stripe Dashboard Refunds</label>
-                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock — Stripe refunds an amount, not items.</p>
+                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock, since Stripe refunds an amount, not items.</p>
                 </div>
                 <Switch
                   checked={refundSettings.restock_on_external_refund}
@@ -1144,7 +1144,7 @@ export default function AdminSettingsPage() {
                 </select>
                 <p className="text-xs text-text-muted mt-1">
                   {recommendationSettings.strategy === 'ai_batch'
-                    ? 'Uses the precomputed product_recommendations table — rebuild after catalog changes.'
+                    ? 'Uses the precomputed product_recommendations table. Rebuild after catalog changes.'
                     : 'Computed on-the-fly from category, price, and attribute similarity.'}
                 </p>
               </div>
@@ -1194,7 +1194,7 @@ export default function AdminSettingsPage() {
 
             <div className="space-y-4">
               <p className="text-sm text-text-secondary leading-relaxed">
-                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch — rebuild after significant catalog changes.
+                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch. Rebuild after significant catalog changes.
               </p>
 
               {recRebuildSummary && (

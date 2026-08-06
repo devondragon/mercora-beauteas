@@ -114,7 +114,7 @@ export default function CheckoutSuccessPage() {
         // accidental re-payment.
         setPhase('received');
         setMessage(
-          'Your payment was received and your order is being finalized. A confirmation email will follow shortly — if you don’t see it, contact support with your payment reference below.'
+          'Your payment was received and your order is being finalized. A confirmation email will follow shortly. If you don’t see it, contact support with your payment reference below.'
         );
         await clearCartSafely();
         return;
@@ -140,7 +140,7 @@ export default function CheckoutSuccessPage() {
         // refresh retries, and the webhook still reconciles payment server-side.
         setPhase('error');
         setMessage(
-          'Your payment was received, but we hit a snag saving your order. Please refresh this page; if it persists, contact support — you will not be charged twice.'
+          'Your payment was received, but we hit a snag saving your order. Please refresh this page; if it persists, contact support. You will not be charged twice.'
         );
       }
     };
@@ -175,7 +175,7 @@ export default function CheckoutSuccessPage() {
       <CenteredCard>
         <h1 className="text-2xl font-bold text-text-primary mb-2">Payment not completed</h1>
         <p className="text-text-secondary mb-6">
-          Your payment wasn’t completed and you haven’t been charged. Your cart is still saved — you can try again.
+          Your payment wasn’t completed and you haven’t been charged. Your cart is still saved, so you can try again.
         </p>
         <Button asChild className="bg-primary-500 text-text-inverse hover:bg-primary-600">
           <Link href="/checkout">Return to checkout</Link>

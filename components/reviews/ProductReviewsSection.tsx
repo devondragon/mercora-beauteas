@@ -149,7 +149,7 @@ export function ProductReviewsSection({
             <div>
               <h2 className="text-base font-semibold text-text-primary">Share your experience</h2>
               <p className="text-sm text-text-secondary">
-                Reviews are limited to verified purchases—head to your order history to add yours.
+                Reviews are limited to verified purchases. Head to your order history to add yours.
               </p>
             </div>
             <Link
@@ -203,7 +203,7 @@ export function ProductReviewsSection({
         </section>
       ) : (
         <p className="text-sm text-text-muted">
-          No reviews yet — be the first to share your experience after delivery.
+          No reviews yet. Be the first to share your experience after delivery.
         </p>
       )}
 

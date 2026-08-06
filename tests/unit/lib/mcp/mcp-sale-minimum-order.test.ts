@@ -112,7 +112,7 @@ describe('create_payment_intent — box minimum', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('BELOW_MINIMUM_ORDER');
-    expect(result.error?.message).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(result.error?.message).toBe('Add 4 more boxes to check out. 10 box minimum.');
     expect(vi.mocked(computeCatalogSubtotalCents)).not.toHaveBeenCalled();
     expect(vi.mocked(createPaymentIntent)).not.toHaveBeenCalled();
   });
@@ -151,7 +151,7 @@ describe('place_order — box minimum', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('BELOW_MINIMUM_ORDER');
-    expect(result.error?.message).toBe('Add 4 more boxes to check out — 10 box minimum.');
+    expect(result.error?.message).toBe('Add 4 more boxes to check out. 10 box minimum.');
     // Gate runs before Stripe verification and before the order is persisted.
     expect(vi.mocked(retrievePaymentIntent)).not.toHaveBeenCalled();
     expect(vi.mocked(createOrderPaid)).not.toHaveBeenCalled();

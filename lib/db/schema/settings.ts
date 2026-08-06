@@ -242,7 +242,7 @@ export const defaultSettings = [
     // Empty array keeps flat rates ($5.99/$9.99/$19.99) in force.
     value: JSON.stringify([]),
     category: 'shipping',
-    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
+    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured: the flat shipping.methods rates stay in force.',
     data_type: 'object'
   },
   {

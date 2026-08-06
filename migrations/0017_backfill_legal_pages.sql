@@ -22,13 +22,13 @@ INSERT OR IGNORE INTO pages (title, slug, content, status, template, meta_descri
     '<p><strong>Last Updated:</strong> ' || date('now') || '</p>' ||
     '<p>This Privacy Policy explains how BeauTeas ("we," "us," or "our") collects, uses, and shares personal information when you visit beauteas.com, create an account, place an order, subscribe, or chat with our AI assistant. We are committed to handling your information responsibly and giving you meaningful control over it.</p>' ||
     '<h2>1. Information We Collect</h2><p>We collect the following categories of personal information:</p><ul>' ||
-    '<li><strong>Account information</strong> — your name, email address, and login credentials, managed on our behalf by our authentication provider.</li>' ||
-    '<li><strong>Order and transaction information</strong> — the products you buy, your order history, and your shipping and billing addresses.</li>' ||
-    '<li><strong>Payment information</strong> — your card details are collected and processed directly by our payment processor. We do not store full card numbers on our systems; we retain only limited details such as the card brand, the last four digits, and a payment reference.</li>' ||
-    '<li><strong>Subscription information</strong> — the plans you enroll in and their status and renewal schedule.</li>' ||
-    '<li><strong>AI assistant interactions</strong> — the messages you send to Chai, our shopping assistant, which are processed to generate responses and recommendations.</li>' ||
-    '<li><strong>Approximate location</strong> — a coarse, city-level location derived from your network connection, used to tailor content such as shipping estimates.</li>' ||
-    '<li><strong>Technical and usage data</strong> — information such as your browser type, device, and how you interact with the site, collected to operate and secure the service.</li>' ||
+    '<li><strong>Account information</strong>: your name, email address, and login credentials, managed on our behalf by our authentication provider.</li>' ||
+    '<li><strong>Order and transaction information</strong>: the products you buy, your order history, and your shipping and billing addresses.</li>' ||
+    '<li><strong>Payment information</strong>: your card details are collected and processed directly by our payment processor. We do not store full card numbers on our systems; we retain only limited details such as the card brand, the last four digits, and a payment reference.</li>' ||
+    '<li><strong>Subscription information</strong>: the plans you enroll in and their status and renewal schedule.</li>' ||
+    '<li><strong>AI assistant interactions</strong>: the messages you send to Chai, our shopping assistant, which are processed to generate responses and recommendations.</li>' ||
+    '<li><strong>Approximate location</strong>: a coarse, city-level location derived from your network connection, used to tailor content such as shipping estimates.</li>' ||
+    '<li><strong>Technical and usage data</strong>: information such as your browser type, device, and how you interact with the site, collected to operate and secure the service.</li>' ||
     '</ul>' ||
     '<h2>2. How We Use Your Information</h2><p>We use personal information to:</p><ul>' ||
     '<li>Process and fulfill your orders and manage your subscriptions;</li>' ||
@@ -48,15 +48,15 @@ INSERT OR IGNORE INTO pages (title, slug, content, status, template, meta_descri
     '<tr><td>Cloudflare Workers AI</td><td>Powering the Chai AI assistant and search</td><td>Your chat messages and related product context</td></tr>' ||
     '</tbody></table>' ||
     '<p>We may also disclose information when required by law, to enforce our terms, or in connection with a business transfer such as a merger or acquisition.</p>' ||
-    '<h2>4. Cookies and Tracking</h2><p>We use cookies and similar technologies that are strictly necessary to operate the site — for example, to keep you signed in and to maintain your shopping cart. We do not currently use third-party advertising or marketing tracking pixels. If that changes, we will update this policy and, where required, provide a cookie consent choice.</p>' ||
+    '<h2>4. Cookies and Tracking</h2><p>We use cookies and similar technologies that are strictly necessary to operate the site, for example to keep you signed in and to maintain your shopping cart. We do not currently use third-party advertising or marketing tracking pixels. If that changes, we will update this policy and, where required, provide a cookie consent choice.</p>' ||
     '<h2>5. Data Retention</h2><p>We keep personal information only as long as necessary for the purposes described in this policy. Order and transaction records are retained for the period required by tax, accounting, and legal obligations (generally several years). Account information is retained while your account is active and is deleted or anonymized after you close your account or request deletion, unless we are required to keep it.</p>' ||
     '<h2>6. Your Privacy Rights</h2><p>Depending on where you live, you may have some or all of the following rights regarding your personal information:</p><ul>' ||
-    '<li><strong>Access / know</strong> — request a copy of the personal information we hold about you and how we use it;</li>' ||
-    '<li><strong>Correction</strong> — ask us to correct inaccurate information;</li>' ||
-    '<li><strong>Deletion</strong> — ask us to delete your personal information;</li>' ||
-    '<li><strong>Portability</strong> — receive your information in a portable format;</li>' ||
-    '<li><strong>Objection / restriction</strong> — object to or restrict certain processing; and</li>' ||
-    '<li><strong>Withdraw consent</strong> — withdraw consent where we rely on it, without affecting processing already carried out.</li>' ||
+    '<li><strong>Access / know</strong>: request a copy of the personal information we hold about you and how we use it;</li>' ||
+    '<li><strong>Correction</strong>: ask us to correct inaccurate information;</li>' ||
+    '<li><strong>Deletion</strong>: ask us to delete your personal information;</li>' ||
+    '<li><strong>Portability</strong>: receive your information in a portable format;</li>' ||
+    '<li><strong>Objection / restriction</strong>: object to or restrict certain processing; and</li>' ||
+    '<li><strong>Withdraw consent</strong>: withdraw consent where we rely on it, without affecting processing already carried out.</li>' ||
     '</ul>' ||
     '<p><strong>California residents (CCPA/CPRA):</strong> You have the right to know, delete, and correct your personal information, and the right to opt out of the sale or sharing of personal information. <strong>We do not sell or share your personal information for cross-context behavioral advertising or for monetary or other valuable consideration</strong>, so there is no such opt-out for you to exercise. We will not discriminate against you for exercising your rights.</p>' ||
     '<p><strong>EU / UK residents (GDPR / UK GDPR):</strong> In addition to the rights above, you may lodge a complaint with your local data protection authority. We process your information on the legal bases of performing our contract with you, our legitimate interests in operating and securing the store, your consent where applicable, and compliance with legal obligations.</p>' ||

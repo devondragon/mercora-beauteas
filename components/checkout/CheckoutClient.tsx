@@ -255,7 +255,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       // remainder above Stripe's $0.50 minimum.
       if (giftCardApplied > 0 && Money.fromMinor(amountDue, 'USD').lt(Money.fromMajor('0.50', 'USD'))) {
         throw new Error(
-          'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet — please reduce the gift card or add another item.'
+          'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet. Please reduce the gift card or add another item.'
         );
       }
 

@@ -88,20 +88,20 @@ const PUT_REJECTED_FIELD_MESSAGES: Record<string, string> = {
     `to create a shipment, or ${TRACKING_ENDPOINT} to correct tracking on a ` +
     `shipped order.`,
   shipped_at:
-    `"shipped_at" cannot be set via PUT /api/orders — shipment timestamps are ` +
+    `"shipped_at" cannot be set via PUT /api/orders. Shipment timestamps are ` +
     `server-owned. Use ${SHIP_ENDPOINT}.`,
   delivered_at:
-    `"delivered_at" cannot be set via PUT /api/orders — delivery timestamps are ` +
+    `"delivered_at" cannot be set via PUT /api/orders. Delivery timestamps are ` +
     `server-owned.`,
   shipping_method:
     `"shipping_method" cannot be changed via PUT /api/orders. Carrier changes ` +
     `go through ${SHIP_ENDPOINT} or ${TRACKING_ENDPOINT}.`,
   trackingUrl:
-    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `Tracking URL fields cannot be set via PUT /api/orders. Tracking URLs are ` +
     `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
     `or ${TRACKING_ENDPOINT}.`,
   tracking_url:
-    `Tracking URL fields cannot be set via PUT /api/orders — tracking URLs are ` +
+    `Tracking URL fields cannot be set via PUT /api/orders. Tracking URLs are ` +
     `derived server-side from carrier + tracking number. Use ${SHIP_ENDPOINT} ` +
     `or ${TRACKING_ENDPOINT}.`,
 };

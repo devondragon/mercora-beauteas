@@ -296,10 +296,10 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
 
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
-    expect(answer).toContain('Ground — $4.50');
+    expect(answer).toContain('Ground: $4.50');
     // The label carries no timing, so the estimate is appended from the setting.
     expect(answer).toContain('about 6 business days');
-    expect(answer).toContain('Air (1–2 days) — $24.00');
+    expect(answer).toContain('Air (1–2 days): $24.00');
     expect(answer).toContain('$120.00 or more');
     expect(answer).toContain('ship free via Ground');
     // Disabled methods are not quoted.
@@ -346,7 +346,7 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
 
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
-    expect(answer).toContain('Flat rate — $7.00');
+    expect(answer).toContain('Flat rate: $7.00');
     expect(answer).not.toMatch(/free/i);
   });
 
@@ -392,7 +392,7 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
         : {}
     );
 
-    expect(await resolveDeterministicAnswer('shipping_rates')).toContain('Standard — free');
+    expect(await resolveDeterministicAnswer('shipping_rates')).toContain('Standard: free');
   });
 
   it('states NO rate rather than "free" when the threshold is unreadable', async () => {
@@ -785,7 +785,7 @@ describe('tiered shipping answer (GOOB)', () => {
 
     expect(answer).not.toMatch(/free shipping/i);
     // Still a complete, natural rate card — not a fragment with a dangling join.
-    expect(answer).toContain('Standard — $5.99');
+    expect(answer).toContain('Standard: $5.99');
     expect(answer).toMatch(/i can'?t see your cart from here/i);
   });
 });

@@ -5,11 +5,11 @@ category: sales
 tags: [gift cards, faq]
 ---
 
-**AI NOTES:** Explain how BeauTeas digital gift cards work — denominations, delivery, and limitations. Do not offer custom amounts unless they are listed here.
+**AI NOTES:** Explain how BeauTeas digital gift cards work: denominations, delivery, and limitations. Do not offer custom amounts unless they are listed here.
 
 ## Buying a Gift Card
 
-BeauTeas digital gift cards are available in $20, $40, $50, and $100 denominations — the perfect way to share the gift of glowing skin.
+BeauTeas digital gift cards are available in $20, $40, $50, and $100 denominations: the perfect way to share the gift of glowing skin.
 
 ## Delivery
 

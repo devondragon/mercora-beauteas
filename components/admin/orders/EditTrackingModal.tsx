@@ -70,7 +70,7 @@ export default function EditTrackingModal({
           <DialogTitle>Edit tracking for order #{orderId}</DialogTitle>
           <DialogDescription>
             Corrects the carrier and tracking number on a shipped order. This does not email the
-            customer — use Resend email if they need the corrected link.
+            customer; use Resend email if they need the corrected link.
           </DialogDescription>
         </DialogHeader>
 
@@ -121,7 +121,7 @@ export default function EditTrackingModal({
                 {previewUrl}
               </a>
             ) : (
-              <p>No link for this carrier — the tracking number is shown on its own.</p>
+              <p>No link for this carrier. The tracking number is shown on its own.</p>
             )}
           </div>
 

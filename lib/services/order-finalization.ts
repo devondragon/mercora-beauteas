@@ -146,7 +146,7 @@ export async function finalizePaidOrder(args: FinalizePaidOrderArgs): Promise<Fi
       try {
         await updateOrderNotes(
           orderId,
-          `NEEDS REVIEW: captured ${paidAmountCents}c but charge re-verification failed — ${charge.reason}`
+          `NEEDS REVIEW: captured ${paidAmountCents}c but charge re-verification failed: ${charge.reason}`
         );
       } catch (noteError) {
         console.error(`[finalize] Order ${orderId}: failed to record review note`, noteError);

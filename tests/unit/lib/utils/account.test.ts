@@ -5,26 +5,26 @@
  * Regression coverage for BMC-229 review pass 2: an unparseable date string
  * previously flowed straight into `Date#toLocaleDateString`, which renders
  * the literal string "Invalid Date" to the customer instead of the shared
- * "—" placeholder every other missing-value case already uses.
+ * "–" placeholder every other missing-value case already uses.
  */
 import { describe, it, expect } from 'vitest';
 import { formatDate } from '@/lib/utils/account';
 
 describe('formatDate', () => {
-  it('returns "—" for a null/undefined/empty input', () => {
-    expect(formatDate(null)).toBe('—');
-    expect(formatDate(undefined)).toBe('—');
-    expect(formatDate('')).toBe('—');
+  it('returns "–" for a null/undefined/empty input', () => {
+    expect(formatDate(null)).toBe('–');
+    expect(formatDate(undefined)).toBe('–');
+    expect(formatDate('')).toBe('–');
   });
 
-  it('returns "—" instead of the literal "Invalid Date" for an unparseable string', () => {
-    expect(formatDate('not-a-date')).toBe('—');
+  it('returns "–" instead of the literal "Invalid Date" for an unparseable string', () => {
+    expect(formatDate('not-a-date')).toBe('–');
   });
 
-  it('returns "—" for a well-formed but out-of-range date string', () => {
+  it('returns "–" for a well-formed but out-of-range date string', () => {
     // A distinct malformed-date shape from the case above — guards against a
     // future edit that only special-cases free-text garbage.
-    expect(formatDate('2026-13-45')).toBe('—');
+    expect(formatDate('2026-13-45')).toBe('–');
   });
 
   it('formats a valid ISO date string', () => {

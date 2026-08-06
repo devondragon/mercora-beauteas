@@ -252,7 +252,7 @@ export async function createAgentPaymentIntent(
       automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
       // Binding: place_order requires BOTH to match the authenticated caller.
       metadata: { agentId, sessionId },
-      description: `BeauTeas MCP order — agent ${agentId}`,
+      description: `BeauTeas MCP order: agent ${agentId}`,
     });
 
     return {

@@ -106,5 +106,5 @@ export function resolveShippingTier(tiers: ShippingTier[], boxes: number): Shipp
 
 export function minimumOrderMessage(short: number, minimumBoxes: number): string {
   const boxes = short === 1 ? 'box' : 'boxes';
-  return `Add ${short} more ${boxes} to check out — ${minimumBoxes} box minimum.`;
+  return `Add ${short} more ${boxes} to check out. ${minimumBoxes} box minimum.`;
 }

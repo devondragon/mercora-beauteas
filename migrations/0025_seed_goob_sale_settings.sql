@@ -49,7 +49,7 @@ VALUES
     'shipping.tiers',
     '[]',
     'shipping',
-    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured — the flat shipping.methods rates stay in force.',
+    'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured: the flat shipping.methods rates stay in force.',
     'object'
   ),
   (

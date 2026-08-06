@@ -14,14 +14,14 @@ export default function FinalSaleNotice() {
         A couple of honest notes before you order
       </p>
       <p className="mb-2">
-        We&rsquo;re closing BeauTeas for good, so every order is final — no returns
+        We&rsquo;re closing BeauTeas for good, so every order is final. No returns
         or exchanges. If something arrives damaged or never turns up, we&rsquo;ll
         still make it right, always.
       </p>
       <p>
         And our remaining stock has been in sealed, airtight storage for several
-        years. It&rsquo;s been kept carefully and it&rsquo;s still lovely to drink
-        — the aroma is a little gentler than a fresh harvest, which is part of why
+        years. It&rsquo;s been kept carefully and it&rsquo;s still lovely to drink,
+        though the aroma is a little gentler than a fresh harvest, which is part of why
         it&rsquo;s priced the way it is.{" "}
         <Link href="/thank-you" className="underline hover:text-text-primary">
           More about all of this here.

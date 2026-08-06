@@ -53,9 +53,9 @@ INSERT OR IGNORE INTO pages (title, slug, content, status, template, meta_descri
     '<p><strong>Last Updated:</strong> ' || date('now') || '</p>' ||
     '<h2>Order Processing</h2><p>Orders are processed and packed within 1 to 2 business days (Monday through Friday, excluding holidays). You will receive a confirmation email with tracking as soon as your order ships.</p>' ||
     '<h2>Shipping Methods and Delivery Times</h2><p>We currently ship within the United States. At checkout you can choose from:</p><ul>' ||
-    '<li><strong>Standard</strong> — estimated 5 to 7 business days.</li>' ||
-    '<li><strong>Express</strong> — estimated 2 to 3 business days.</li>' ||
-    '<li><strong>Overnight</strong> — next business day where available.</li>' ||
+    '<li><strong>Standard</strong>: estimated 5 to 7 business days.</li>' ||
+    '<li><strong>Express</strong>: estimated 2 to 3 business days.</li>' ||
+    '<li><strong>Overnight</strong>: next business day where available.</li>' ||
     '</ul><p>Delivery estimates begin once your order leaves our facility and do not include processing time. Carrier delays, weather, and peak periods can occasionally affect delivery windows.</p>' ||
     '<h2>Shipping Rates</h2><p>Shipping is calculated at checkout based on the method you select and your destination. Any active free-shipping promotion is applied automatically to qualifying orders.</p>' ||
     '<h2>Tracking Your Order</h2><p>Once your order ships, you can track your package using the link in your shipping confirmation email or from your order history in your account.</p>' ||
@@ -74,7 +74,7 @@ INSERT OR IGNORE INTO pages (title, slug, content, status, template, meta_descri
     '<h2>Email Us</h2><p>The fastest way to reach us is by email at <a href="mailto:hello@beauteas.com">hello@beauteas.com</a>. We aim to respond to every message within 1 to 2 business days.</p>' ||
     '<h2>Customer Support Hours</h2><p>Our support team is available Monday through Friday, 9:00 AM to 5:00 PM Mountain Time, excluding public holidays.</p>' ||
     '<h2>Order and Shipping Questions</h2><p>For help with an existing order, please include your order number so we can assist you as quickly as possible. You can also review our <a href="/shipping-policy">Shipping Policy</a> and <a href="/refund-policy">Refund &amp; Return Policy</a> for quick answers to common questions.</p>' ||
-    '<h2>Frequently Asked Questions</h2><p>Many questions are answered on our <a href="/faq">FAQ page</a> — a great first stop for details about our ingredients, brewing, and subscriptions.</p>' ||
+    '<h2>Frequently Asked Questions</h2><p>Many questions are answered on our <a href="/faq">FAQ page</a>, a great first stop for details about our ingredients, brewing, and subscriptions.</p>' ||
     '<h2>Stay Connected</h2><p>Follow along for beauty tips, new blends, and special offers on Instagram, Facebook, and Pinterest.</p>',
     'published',
     'default',
