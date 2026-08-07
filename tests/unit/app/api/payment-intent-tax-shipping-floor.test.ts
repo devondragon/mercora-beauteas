@@ -187,6 +187,13 @@ describe('POST /api/payment-intent tax/shipping floor (BMC-201)', () => {
   });
 
   it('drops the shipping term when the cart qualifies for free shipping (≥ $75)', async () => {
+    // `free_methods` stated explicitly — the module default is empty now, so
+    // nothing is free unless configured. This pins the floor's free-shipping
+    // arithmetic, which has to keep working if a store re-enables it.
+    vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+      (category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}) as any
+    );
+
     // 4 × $25 = $100 goods ≥ $75 threshold → standard shipping free → floor shipping 0.
     const fourItems = [{ productId: 'tea-1', variantId: 'var-tea-1', quantity: 4 }];
     // Floor = 10000 goods + 0 shipping + 200 tax = 10200c ($102.00).

@@ -263,7 +263,26 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     expect(getSettings).toHaveBeenCalledWith('store');
   });
 
+  it('says nothing about free shipping when no method is configured as free', async () => {
+    // The default state during the closing sale — `shipping.free_methods` is
+    // emptied by migration 0025 and the module default is empty too, so
+    // `freeShippingSentence` returns "". Chai must not advertise a $75 free
+    // threshold that checkout will not honour.
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).not.toMatch(/ship free|free shipping/i);
+    expect(answer).not.toContain('$75.00 or more');
+    // The rate card itself is unaffected.
+    expect(answer).toContain('$5.99');
+  });
+
   it('states the free-shipping THRESHOLD and never that the shopper qualifies', async () => {
+    // Stated explicitly: the sentence only exists when a method is configured
+    // free, and this pins how it is PHRASED when it does.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}
+    );
+
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
     // The policy, as a condition on the order — not a claim about this person.

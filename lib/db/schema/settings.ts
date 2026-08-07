@@ -91,8 +91,15 @@ export const defaultSettings = [
     data_type: 'object'
   },
   {
+    // GOOB: empty, matching what migration 0025 sets on every existing database.
+    // This array is not just documentation — app/api/admin/settings/route.ts
+    // inserts the whole `defaultSettings` block whenever `admin_settings` has
+    // zero rows, so a freshly provisioned or reset environment seeds from HERE,
+    // not from the migration. Leaving `['standard']` would silently re-enable
+    // free shipping over $75 during the closing sale, which is the exact
+    // failure 0025 exists to prevent. Empty = no method is ever free.
     key: 'shipping.free_methods',
-    value: JSON.stringify(['standard']),
+    value: JSON.stringify([]),
     category: 'shipping',
     description: 'Which methods become free over threshold',
     data_type: 'object'

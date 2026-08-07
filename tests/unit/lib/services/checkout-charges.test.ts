@@ -77,8 +77,20 @@ describe('computeShippingFloorCents (settings-based, matches /api/shipping-optio
   });
 
   it('is 0 once the cart qualifies for free shipping on the cheapest method (≥ $75)', async () => {
+    // `free_methods` is stated rather than inherited: the module default is now
+    // empty (nothing is free unless configured), so this pins the mechanic.
+    vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+      category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}
+    );
+
     expect(await computeShippingFloorCents(7500)).toBe(0);
     expect(await computeShippingFloorCents(20000)).toBe(0);
+  });
+
+  it('is the cheapest method cost above the threshold when nothing is free', async () => {
+    // The default state during the closing sale: no free methods configured, so
+    // clearing $75 changes nothing.
+    expect(await computeShippingFloorCents(20000)).toBe(599);
   });
 
   it('honours an admin-configured methods list + free threshold', async () => {
@@ -111,6 +123,10 @@ describe('computeShippingFloorCents (settings-based, matches /api/shipping-optio
 
 describe('resolveShippingOptions', () => {
   it('zeroes the free-eligible method cost above the threshold but keeps others', async () => {
+    vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+      category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}
+    );
+
     const { options, qualifiesForFreeShipping } = await resolveShippingOptions(8000);
     expect(qualifiesForFreeShipping).toBe(true);
     const standard = options.find((o) => o.id === 'standard');

@@ -42,11 +42,25 @@ describe('resolveShippingOptions — defaults', () => {
     ]);
   });
 
-  it('reports the default $75 threshold and free method', async () => {
+  it('reports the default $75 threshold and NO free methods', async () => {
+    // The free-method default is empty on purpose. Migration 0025 turns free
+    // shipping off with a row-guarded UPDATE, so a database that never got the
+    // original seed has no `shipping.free_methods` row and falls back to this
+    // constant — which, as `['standard']`, silently re-enabled free shipping
+    // over $75 during the closing sale. The threshold is untouched: it only
+    // matters once a method is listed as free.
     const { freeShippingThresholdMajor, freeMethodIds } = await resolveShippingOptions(0);
 
     expect(freeShippingThresholdMajor).toBe(75);
-    expect(freeMethodIds).toEqual(['standard']);
+    expect(freeMethodIds).toEqual([]);
+  });
+
+  it('charges every method when no free_methods row exists, however large the cart', async () => {
+    const { options, qualifiesForFreeShipping } = await resolveShippingOptions(999999);
+
+    // The threshold is still "cleared" — there is simply nothing it can zero.
+    expect(qualifiesForFreeShipping).toBe(true);
+    expect(options.map((o) => o.cost)).toEqual([5.99, 9.99, 19.99]);
   });
 
   it('reads both the shipping and store settings categories', async () => {
@@ -66,6 +80,11 @@ describe('resolveShippingOptions — free-shipping threshold', () => {
   });
 
   it('zeroes only the free methods once the subtotal clears the threshold', async () => {
+    // `free_methods` is stated explicitly rather than relying on the module
+    // default, which is now empty: this pins the zeroing MECHANIC, which has to
+    // keep working if a store ever re-enables free shipping.
+    withSettings({ 'shipping.free_methods': ['standard'] });
+
     // Exactly at the threshold — the comparison is `gte`, and the answer Chai
     // gives says "or more", so this boundary is load-bearing.
     const { options, qualifiesForFreeShipping } = await resolveShippingOptions(7500);

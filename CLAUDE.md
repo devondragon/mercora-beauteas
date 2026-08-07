@@ -76,6 +76,8 @@ Use `db.batch()` for atomic writes.
 ### Never write raw `*100` / `/100`
 All monetary values flow through `lib/money` (`Money`). Internal unit is **integer minor units**; use `Money.fromMinor/fromMajor/fromStored`. Emit MACH `{amount, currency, precision}` via `.toMach()` ONLY at API/MCP/JSON-LD boundaries; use `.toMinorUnits()` at the Stripe boundary; persist via `.toJSON()` (minor units); display via `.format()`. See [`docs/money.md`](docs/money.md).
 
+**One accepted exception: plain-`node` scripts in `scripts/`.** `lib/money` is TypeScript with extensionless internal imports, which `node` alone cannot resolve (`ERR_MODULE_NOT_FOUND`) — and every script there is deliberately a plain-`node`-executable `.mjs` with no build step. `scripts/goob-reprice.mjs` therefore imports `big.js` directly (the same library `money.ts` uses internally) and replicates only `Money.fromMajor`'s USD algorithm, with its reasoning in the file header. This is **not** licence for bare `rate * 100` anywhere: naive float multiplication misrounds ordinary inputs (`Math.round(1.005 * 100) === 100`). Application code has no excuse — it runs under a bundler.
+
 ### Do not reintroduce a root `app/loading.tsx`
 That is what caused the soft-404s. A root `loading.tsx` wraps every route in a Suspense boundary, and with the root layout `force-dynamic` Next flushes the shell (committing a 200) before the page runs `notFound()`. You cannot have both a root Suspense boundary and a real 404 — which is why the global navigation spinner is gone. Nested loading files are fine on segments that never `notFound()` or aren't indexed (`app/account/loading.tsx` is kept — auth-gated). The trap is recorded in code at `app/layout.tsx`.
 

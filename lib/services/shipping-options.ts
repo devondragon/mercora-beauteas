@@ -42,7 +42,15 @@ const DEFAULT_SHIPPING_METHODS = [
   { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true },
 ];
 const DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR = 75;
-const DEFAULT_FREE_SHIPPING_METHODS = ['standard'];
+// Empty, i.e. nothing ships free unless an admin says so. This is the fallback
+// when the `shipping.free_methods` row is ABSENT, which is reachable: migration
+// 0025 turns free shipping off with an UPDATE that is deliberately guarded
+// against creating a row, so a database that never got the original seed keeps
+// no row at all and lands here. With `['standard']` that silently restored free
+// shipping over $75 during the closing sale — the exact thing 0025 exists to
+// prevent. Giving shipping away by default is also the wrong direction for a
+// missing setting generally: charging is recoverable, an unbilled order is not.
+const DEFAULT_FREE_SHIPPING_METHODS: string[] = [];
 
 export interface ResolvedShippingOptions {
   /** Enabled methods with free-shipping already applied. `cost` is MAJOR units. */
@@ -98,6 +106,15 @@ export async function resolveShippingOptions(
   const tiers = (shippingSettings['shipping.tiers'] as ShippingTier[] | undefined) ?? [];
   const tier = tiers.length > 0 ? resolveShippingTier(tiers, opts.boxes ?? 0) : null;
 
+  // Free shipping is checked BEFORE the tier, deliberately: a method an admin
+  // has explicitly listed in `shipping.free_methods` is free even when tiers
+  // are configured (pinned by "charges nothing for a method still listed as
+  // free" in the test suite). The risk this ordering used to carry — a
+  // repopulated `free_methods` silently zeroing an admin-entered tier price —
+  // came from `defaultSettings` seeding `['standard']` on a fresh/reset
+  // database, which no longer happens (see lib/db/schema/settings.ts). Reaching
+  // this branch now requires someone to set `free_methods` by hand, which is a
+  // deliberate instruction rather than drift.
   const options: ShippingOption[] = enabled.map((m: any) => ({
     id: m.id,
     label: m.label,
