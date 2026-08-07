@@ -99,7 +99,7 @@ Settings, all admin-editable:
 | `sale.minimum_boxes` | `sale` | `10` |
 | `sale.final_sale` | `sale` | `true` |
 | `sale.subscriptions_enabled` | `sale` | `false` |
-| `shipping.tiers` | `shipping` | Three entries shaped `{max_boxes, cost}`, the last with `max_boxes: null`. Costs are set in admin after box weighing (see Operational Items); the migration seeds them at `0`. |
+| `shipping.tiers` | `shipping` | Seeded **empty** (`[]`). Tiers are entries shaped `{max_boxes, cost}`, the last with `max_boxes: null`, entered in admin after box weighing (see Operational Items). Empty means "not configured" and leaves the flat per-method rates in force — seeding three bands at `cost: 0` would have shipped every order free from the moment the migration applied until an admin typed real prices. |
 | `shipping.free_methods` | `shipping` | `[]` |
 | `promotions.banner_link` | `promotions` | `/thank-you` |
 

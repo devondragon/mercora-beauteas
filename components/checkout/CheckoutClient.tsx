@@ -33,7 +33,7 @@ import Link from 'next/link';
 import { useCartStore } from '@/lib/stores/cart-store';
 import { Button } from '@/components/ui/button';
 import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
-import { useMinimumBoxes } from '@/lib/sale/use-minimum-boxes';
+import { useSaleRules } from '@/lib/sale/use-sale-rules';
 import StripeProvider from './StripeProvider';
 import PaymentForm from './PaymentForm';
 import ShippingForm from './ShippingForm';
@@ -112,7 +112,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const minimumBoxes = useMinimumBoxes();
+  const { minimumBoxes, finalSale } = useSaleRules();
 
   const boxes = countBoxes(items);
   const minimum = checkMinimumOrder(boxes, minimumBoxes);
@@ -524,9 +524,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           {currentStep === 'payment' && clientSecret && (
             <div className="bg-white p-4 sm:p-6 rounded-xl w-full min-h-[400px]">
               <h3 className="text-lg font-semibold mb-4 text-text-primary">Payment Information</h3>
-              <div className="mb-4">
-                <FinalSaleNotice />
-              </div>
+              <FinalSaleNotice finalSale={finalSale} />
               <div className="w-full">
                 <StripeProvider clientSecret={clientSecret}>
                   <PaymentForm

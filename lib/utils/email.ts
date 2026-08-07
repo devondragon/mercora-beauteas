@@ -50,6 +50,15 @@ export interface OrderData {
     country: string;
   };
   estimatedDelivery?: string;
+  /**
+   * Store-wide final-sale posture (`sale.final_sale`), read server-side by
+   * `lib/services/order-confirmation.ts`. Optional and defaulting to `true` on
+   * purpose: a caller that forgets it sends the disclosure rather than omitting
+   * it, and only an explicit `false` drops the line. Passed in rather than read
+   * here so this stays a leaf template module — importing `@/lib/sale/settings`
+   * would pull lib/db and the Drizzle schema barrel into every unit test.
+   */
+  finalSale?: boolean;
 }
 
 export interface EmailResult {
@@ -184,7 +193,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Order Confirmed!</h2>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${escapeHtml(orderData.customerName)},</p>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order, truly. Your teas are being prepared and will be shipped soon. As part of our closing sale this order is final sale, but if anything arrives damaged or goes missing we'll still make it right.</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order, truly. Your teas are being prepared and will be shipped soon.${orderData.finalSale !== false ? " As part of our closing sale this order is final sale, but if anything arrives damaged or goes missing we'll still make it right." : ''}</p>
 
           <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 8px;">Order #${escapeHtml(orderData.orderNumber)}</p>

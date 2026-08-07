@@ -50,7 +50,7 @@ import Link from "next/link";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Money } from "@/lib/money";
 import { countBoxes, checkMinimumOrder, minimumOrderMessage } from "@/lib/sale/rules";
-import { useMinimumBoxes } from "@/lib/sale/use-minimum-boxes";
+import { useMinimumBoxes } from "@/lib/sale/use-sale-rules";
 
 /**
  * CartDrawer component providing shopping cart functionality

@@ -4,12 +4,20 @@
  * Deliberately a notice rather than a required checkbox: the goal is that nobody
  * is surprised, not that they are made to feel they are signing something. The
  * same facts are on /thank-you, in Chai's answers, and in the refund policy.
+ *
+ * Gated on `sale.final_sale`, which reaches here from `useSaleRules()`. The prop
+ * is required and the component self-gates so the branch stays unit-testable —
+ * driving CheckoutClient to its payment step needs Stripe and a live payment
+ * intent. Callers that cannot read the flag must pass `true`: omitting the
+ * disclosure is the expensive direction (see the hook's docblock).
  */
 import Link from "next/link";
 
-export default function FinalSaleNotice() {
+export default function FinalSaleNotice({ finalSale }: { finalSale: boolean }) {
+  if (!finalSale) return null;
+
   return (
-    <div className="rounded-lg border-l-4 border-primary-500 bg-surface-light p-4 text-sm text-text-muted">
+    <div className="mb-4 rounded-lg border-l-4 border-primary-500 bg-surface-light p-4 text-sm text-text-muted">
       <p className="mb-2 font-semibold text-text-primary">
         A couple of honest notes before you order
       </p>
