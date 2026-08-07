@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** `U06 + U08` merged via Mercora PR `#39`; `U09` is draft PR `#40`
+**Status:** `U09` merged via Mercora PR `#40`; `U10 + U11` is draft PR `#41`
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -196,8 +196,8 @@ dependency and test review.
 | 5 | Shared security and catalog trust boundary, Mercora PR `#35` | `U04 + U05` | Merged |
 | 6 | MACH Money boundary, Mercora PR `#24` | `U07` | Merged |
 | 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | Merged |
-| 8 | Webhook, inventory, and refund correctness, Mercora PR `#40` | `U09` | Draft; Wave 1 implemented |
-| 9 | MCP trust and commerce integrity | `U10 + U11` | Planned |
+| 8 | Webhook, inventory, and refund correctness, Mercora PR `#40` | `U09` | Merged |
+| 9 | MCP trust and commerce integrity, Mercora PR `#41` | `U10 + U11` | Draft; implementation complete |
 | 10 | Recommendations | `U12` | Planned; independently deferrable |
 | 11 | Fulfillment vertical slice | `U13 + U14` | Planned |
 
@@ -360,8 +360,7 @@ optional gift-card feature.
 
 ### U09 — Webhook, refund, and inventory correctness
 
-**Status:** Draft Mercora PR `#40`; Wave 1 establishes the Workers-safe Stripe
-client, real-D1 CI gate, and durable webhook event claims.
+**Status:** Merged via Mercora PR `#40` as `26ff9c1`.
 
 Create `processed_webhook_events` in a standalone core migration; it currently
 lives inside BeauTeas' subscription migration even though the Stripe webhook
@@ -793,22 +792,22 @@ Update this table as Mercora issues and PRs are created.
 | `U04 + U05` | Merged | — | `#35` | Security/catalog trust boundary merged to Mercora `main` as `f6a2cca` |
 | `U07` | Merged | — | `#24` | Canonical Money migration landed on `main` as `243ebfd` after independent completion review |
 | `U06 + U08` | Merged | — | `#39` | Merged to Mercora `main` as `7a020d3`; order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams |
-| `U09` | Draft PR; Wave 1 implemented | — | `#40` | Workers-safe Stripe client, real-D1 CI gate, and migration `0008` durable webhook claims are pushed; later inventory/refund waves remain in the same draft PR |
-| `U10 + U11` | Research complete | — | — | One MCP trust/commerce PR; tracking waits for fulfillment |
+| `U09` | Merged | — | `#40` | Merged to Mercora `main` as `26ff9c1`; durable webhook claims/effects, authoritative inventory, and refund reconciliation landed together |
+| `U10 + U11` | Draft PR; implementation complete | — | `#41` | Trusted credentials, scoped ownership, catalog-neutral MCP boundaries, and authoritative PaymentIntent checkout; shipment-event history still waits for fulfillment |
 | `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
 | `U13 + U14` | Research complete | — | — | One fulfillment vertical-slice PR with schema-first ordered commits |
 
 ## Immediate Next Planning Actions
 
-1. Continue the remaining U09 implementation waves on draft Mercora PR `#40`,
-   with main-agent review between waves.
-2. Keep `product_variants.inventory` JSON authoritative for U09 and leave the
-   unused MACH inventory table as an inactive compatibility surface.
-3. Create or refresh the Mercora tracking issue containing the remaining core
-   group checklist.
-4. Maintain a migration reservation ledger before opening the schema-bearing
-   `U09` PR.
-5. Carry PR `#39`'s deliberately deferred confirmation-email effect retry and
-   exact per-line targeted-discount refund allocation into `U09` planning.
-6. Reserve one reviewer map for the `U13 + U14` fulfillment PR, organized by
-   its eight schema-to-surface commits rather than by BeauTeas chronology.
+1. Monitor draft Mercora PR `#41`, address Russell's review, and mark it ready
+   only after the branch checks are green.
+2. Begin the `U13 + U14` fulfillment vertical slice from merged Mercora
+   `main`; it does not depend on PR `#41` merging first.
+3. Reserve the fulfillment migrations before implementation and keep
+   `product_variants.inventory` JSON as the authoritative stock source.
+4. Organize the fulfillment PR by its eight schema-to-surface commits and use
+   one reviewer map for the full feature.
+5. Keep shipment-event-backed MCP tracking in fulfillment, extending PR
+   `#41`'s truthful owned-order projection instead of inventing a second model.
+6. Treat `U12` recommendations as an independent, deferrable PR that can be
+   prepared in parallel if fulfillment review becomes blocked.

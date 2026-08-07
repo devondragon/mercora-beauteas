@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; order trust and server-authoritative checkout (`U06 + U08`) is next
+**Status:** Active; MCP trust and commerce integrity is draft PR `#41`; fulfillment is next
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -215,8 +215,8 @@ units when combined. The current target is 11 core contribution units: the
 three foundations (`U00`-`U02`) plus eight remaining PRs. Because PR `#10` was
 merged into an already-merged branch and did not reach `main`, recovery PR
 `#21` adds one unavoidable GitHub PR to the ledger. `U03`, `U04 + U05`, and
-`U07` have now landed; `U12` recommendations can still be deferred
-independently, leaving four immediate feature PRs on the core
+`U07`, `U06 + U08`, and `U09` have now landed; `U12` recommendations can still
+be deferred independently, leaving two immediate feature PRs on the core
 order-to-fulfillment path.
 
 Before beginning the feature sequence below, complete the dependency-security
@@ -228,9 +228,9 @@ finding does not block further upstream work.
 | 1 | Runtime configuration and deployment safety (merged via `#23` and `#32`) | `U03` | Vitest recovery PR `#21` |
 | 2 | Shared security and catalog trust boundary (merged via `#35`) | `U04 + U05` | `U03` |
 | 3 | MACH Money boundary (merged via `#24`) | `U07` | PR `#10`; prepared in parallel with sequence 2 |
-| 4 | Order trust and server-authoritative checkout | `U06 + U08` | `U04 + U05`, `U07` |
-| 5 | Webhook, inventory, and refund correctness | `U09` | `U06 + U08` |
-| 6 | MCP trust and commerce integrity | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
+| 4 | Order trust and server-authoritative checkout (merged via `#39`) | `U06 + U08` | `U04 + U05`, `U07` |
+| 5 | Webhook, inventory, and refund correctness (merged via `#40`) | `U09` | `U06 + U08` |
+| 6 | MCP trust and commerce integrity (draft PR `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
 | 7 | Recommendations | `U12` | `U03`; independently deferrable |
 | 8 | Fulfillment vertical slice | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09` |
 
