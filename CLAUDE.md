@@ -2,15 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0028` carry it and are pending everywhere. Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
+> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0029` carry it and are pending everywhere. Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## ☑ Migrations: all environments up to date through `0024`; `0025`–`0028` pending (verified 2026-08-06)
+## ☑ Migrations: all environments up to date through `0024`; `0025`–`0029` pending (verified 2026-08-06)
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
 
-`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, `0027_remove_em_dashes_from_content.sql`, and `0028_withdraw_box_variants_and_single_shipping_method.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0029_*`.**
+`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, `0027_remove_em_dashes_from_content.sql`, `0028_withdraw_box_variants_and_single_shipping_method.sql`, and `0029_deactivate_subscription_plans_for_goob.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0030_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -63,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0029_*`** (`0011`–`0028` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0030_*`** (`0011`–`0029` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
@@ -106,7 +106,7 @@ Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/
 **Going-out-of-business sale settings** (migration `0025`, `admin_settings` table, read via `lib/sale/settings.ts`'s `getSaleRules()`):
 - `sale.minimum_boxes` — cart minimum in boxes; enforced server-side (checkout, MCP order tools) and reflected client-side in the drawer/checkout copy.
 - `sale.final_sale` — gates all three final-sale surfaces: Chai's refund answer (`lib/ai/deterministic-answers.ts`), the checkout notice (`components/checkout/FinalSaleNotice.tsx`, via `useSaleRules()` → `/api/sale-rules`), and the order-confirmation email line (`lib/utils/email.ts`, via `OrderData.finalSale`, set server-side by `lib/services/order-confirmation.ts`). Every layer defaults to **true** when the value can't be read — an unreadable setting must never produce a checkout or a receipt that omits the no-returns statement. Only an explicit `false` removes the copy. There is no admin UI for this key; changing it means a direct settings write.
-- `sale.subscriptions_enabled` — the single flag the storefront checks to hide subscribe UI; the subscription code/routes themselves are untouched (kept as Mercora upstreaming source material).
+- `sale.subscriptions_enabled` — enforced server-side by `rejectIfSubscriptionsDisabled()` (`lib/sale/subscription-gate.ts`) on every surface that STARTS recurring billing: `POST /api/subscriptions`, `POST /api/setup-intent`, and the `resume` / `skip` subroutes (`skip` schedules its own restart). Returns 403; fails closed by not catching, so a settings read failure 500s without reaching Stripe. Deliberately NOT applied to `pause`/`cancel` (never block a customer from stopping a charge), the admin plans route (the tool used to reverse this), or the Stripe webhooks (they only record what already happened in Stripe). `/subscribe/checkout` redirects too, but that is UX — the 403s are the boundary. Migration `0029` also sets `subscription_plans.is_active = 0` as a second, data-level stop; reverse from `/admin/settings` → Subscriptions, not with a migration. The subscription code itself is otherwise untouched (kept as Mercora upstreaming source material).
 - `shipping.tiers` — quantity-tiered shipping cost by box count. **Empty (`[]`) means "not configured"** and leaves the flat per-method rates (`$5.99`/`$9.99`/`$19.99`) in force — a deliberate safety property, not a bug: seeding this with placeholder bands would have shipped every order free until an admin entered real prices (see Task 4's fix in the SDD ledger). Configure via `/admin/settings` → Shipping.
 - `promotions.banner_link` — URL the storefront promo banner links to.
 

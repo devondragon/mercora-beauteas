@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getStripeForWorkers } from '@/lib/stripe';
+import { rejectIfSubscriptionsDisabled } from '@/lib/sale/subscription-gate';
 import { getSubscriptionsByCustomer } from '@/lib/models/mach/subscriptions';
 
 export async function POST(
@@ -21,6 +22,11 @@ export async function POST(
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Before the ownership lookup on purpose: a closed store shouldn't also
+    // confirm whether a given subscription id exists.
+    const disabled = await rejectIfSubscriptionsDisabled();
+    if (disabled) return disabled;
 
     const { id } = await params;
 

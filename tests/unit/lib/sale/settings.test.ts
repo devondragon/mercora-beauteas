@@ -26,6 +26,16 @@ beforeEach(() => {
 });
 
 describe('getSaleRules', () => {
+  it('propagates a settings failure rather than resolving to a default', async () => {
+    // The subscription gate (lib/sale/subscription-gate.ts) fails closed by NOT
+    // catching: the throw must reach each route's own catch so it 500s without
+    // ever calling Stripe. If this ever starts resolving to a default object,
+    // that gate silently becomes fail-open.
+    vi.mocked(getSettings).mockRejectedValue(new Error('D1 unavailable'));
+
+    await expect(getSaleRules()).rejects.toThrow('D1 unavailable');
+  });
+
   it('falls back to a 10-box final sale when nothing is configured', async () => {
     const rules = await getSaleRules();
 

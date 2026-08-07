@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getStripeForWorkers } from '@/lib/stripe';
+import { rejectIfSubscriptionsDisabled } from '@/lib/sale/subscription-gate';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +19,11 @@ export async function POST(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Sole caller is the subscribe checkout (SubscribeCheckoutClient), so this
+    // route exists only to start recurring billing — gate it with the rest.
+    const disabled = await rejectIfSubscriptionsDisabled();
+    if (disabled) return disabled;
 
     const { email, name } = (await req.json()) as {
       email: string;

@@ -126,3 +126,11 @@ export function minimumOrderMessage(short: number, minimumBoxes: number): string
   const boxes = short === 1 ? 'box' : 'boxes';
   return `Add ${short} more ${boxes} to check out. ${minimumBoxes} box minimum.`;
 }
+
+/**
+ * Stated once so the surfaces that refuse to start recurring billing cannot
+ * drift. Lives in `rules.ts` (pure) so client components can render the same
+ * string without pulling the settings read into a browser bundle.
+ */
+export const SUBSCRIPTIONS_DISABLED_MESSAGE =
+  'Subscriptions are not available. BeauTeas is closing and we are no longer starting recurring deliveries.';

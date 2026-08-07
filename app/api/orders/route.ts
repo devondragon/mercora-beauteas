@@ -196,11 +196,14 @@ export async function POST(request: NextRequest) {
 
     // GOOB: the box minimum is a purchase rule, so it is enforced here rather
     // than only in the cart UI (Task 7) — a crafted request bypasses the UI
-    // entirely. Runs immediately after items are validated above and before
-    // any charge verification / Stripe work below, so a rejected cart never
-    // reaches PaymentIntent retrieval or order persistence. Uses the identical
-    // message POST /api/payment-intent returns, so the two money endpoints can
-    // never disagree.
+    // entirely. This is the FIRST of two gates: it runs on the request body,
+    // before any charge verification / Stripe work below, so a rejected cart
+    // never reaches PaymentIntent retrieval or order persistence — which is what
+    // stops the fresh-insert path from writing an orphan sub-minimum row. The
+    // second gate re-checks the RESOLVED row just before finalization, because
+    // on the normal flow the row being promoted came from /api/payment-intent
+    // and is not this body. Uses the identical message POST /api/payment-intent
+    // returns, so the two money endpoints can never disagree.
     const saleRules = await getSaleRules();
     const minimum = checkMinimumOrder(countBoxes(body.items), saleRules.minimumBoxes);
     if (!minimum.ok) {
@@ -482,6 +485,35 @@ export async function POST(request: NextRequest) {
     // a client-first and a webhook-first arrival converge on ONE paid order with
     // side effects (email, gift cards) firing exactly once.
     const order = hydrateOrder(orderRow);
+
+    // GOOB: the gate near the top of this handler ran on the REQUEST body. Since
+    // BMC-167 the row being promoted is usually the pending order persisted at
+    // PaymentIntent creation, NOT this body — so `body.items` alone let a
+    // compliant decoy clear the gate for whatever the pending row actually held.
+    // Re-check against the items that will actually be finalized.
+    //
+    // Placed after the ownership/idempotency branches above (an already-paid
+    // order returns 200 before reaching here, so a replay is never re-gated) and
+    // before the `paymentIntentId` block below, so a rejection costs no Stripe
+    // call, no confirmation email, and no inventory decrement. Identical message
+    // to the body gate and to POST /api/payment-intent.
+    //
+    // NOTE: this runs after Stripe has already captured, so it is a fast-path
+    // stop, not a money backstop — the webhook finalizes the row regardless.
+    // Pre-capture enforcement lives in POST /api/payment-intent.
+    const persistedBoxes = countBoxes(order.items ?? []);
+    const persistedMinimum = checkMinimumOrder(persistedBoxes, saleRules.minimumBoxes);
+    if (!persistedMinimum.ok) {
+      console.warn(
+        `Order ${orderId}: persisted items are below the ${saleRules.minimumBoxes}-box minimum ` +
+          `(${persistedBoxes} boxes); refusing to finalize`
+      );
+      return NextResponse.json(
+        { error: minimumOrderMessage(persistedMinimum.short, saleRules.minimumBoxes) },
+        { status: 400 }
+      );
+    }
+
     const paymentIntentId = (body.extensions as any)?.payment_intent_id;
     if (paymentIntentId && typeof paymentIntentId === 'string') {
       try {
