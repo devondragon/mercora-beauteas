@@ -28,11 +28,12 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useCartStore } from '@/lib/stores/cart-store';
 import { Button } from '@/components/ui/button';
 import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { useMinimumBoxes } from '@/lib/sale/use-minimum-boxes';
 import StripeProvider from './StripeProvider';
 import PaymentForm from './PaymentForm';
 import ShippingForm from './ShippingForm';
@@ -111,22 +112,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const [minimumBoxes, setMinimumBoxes] = useState(10);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/sale-rules')
-      .then((r) => r.json() as Promise<{ minimumBoxes: number }>)
-      .then((r) => {
-        if (!cancelled) setMinimumBoxes(r.minimumBoxes);
-      })
-      .catch(() => {
-        /* keep the default — the server gate is authoritative either way */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const minimumBoxes = useMinimumBoxes();
 
   const boxes = countBoxes(items);
   const minimum = checkMinimumOrder(boxes, minimumBoxes);

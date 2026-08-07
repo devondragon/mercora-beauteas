@@ -66,10 +66,22 @@ export function countBoxes(items: Array<{ quantity?: unknown }>): number {
   }, 0);
 }
 
+/**
+ * How many more boxes a cart needs. Both arguments are treated as untrusted:
+ * `minimumBoxes` reaches the client surfaces from `/api/sale-rules`, and a
+ * non-finite value there used to make `short` NaN — which is never `=== 0`, so
+ * the checkout page blocked every customer behind "Add NaN more boxes" with no
+ * way to pay. An unusable minimum now means "no minimum known", which is the
+ * safe direction: this function drives COPY, while `/api/payment-intent`,
+ * `/api/orders`, and the MCP order tools are what actually enforce the gate.
+ */
 export function checkMinimumOrder(
   boxes: number,
   minimumBoxes: number
 ): { ok: boolean; short: number } {
+  if (!Number.isFinite(minimumBoxes) || !Number.isFinite(boxes)) {
+    return { ok: true, short: 0 };
+  }
   const short = Math.max(0, minimumBoxes - boxes);
   return { ok: short === 0, short };
 }
@@ -98,7 +110,13 @@ export function resolveShippingTier(tiers: ShippingTier[], boxes: number): Shipp
     if (a.max_boxes === null && b.max_boxes === null) return a.cost - b.cost;
     if (a.max_boxes === null) return 1;
     if (b.max_boxes === null) return -1;
-    return a.max_boxes - b.max_boxes;
+    // Two tiers with the SAME bound tie at 0, and `sort` is stable — so which
+    // one `find` reached first was decided by storage order, the same class of
+    // bug as the two-open-ended case above. `addTierRow` defaults a new row to
+    // `max_boxes: 1` whenever one is already open-ended, so clicking "Add tier"
+    // twice produces duplicate bounds through the normal editor flow. Break on
+    // cost, biased low, for the same reason.
+    return (a.max_boxes - b.max_boxes) || (a.cost - b.cost);
   });
 
   return sorted.find((tier) => tier.max_boxes === null || boxes <= tier.max_boxes) ?? null;

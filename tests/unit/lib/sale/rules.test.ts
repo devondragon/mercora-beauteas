@@ -89,6 +89,21 @@ describe('checkMinimumOrder', () => {
   it('accepts everything when the minimum is zero', () => {
     expect(checkMinimumOrder(1, 0)).toEqual({ ok: true, short: 0 });
   });
+
+  // A 429 from /api/sale-rules returns a JSON error body, so an unchecked
+  // read used to land `undefined` here and make `short` NaN — never `=== 0`,
+  // which blocked checkout entirely behind "Add NaN more boxes".
+  it.each([
+    ['undefined', undefined],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+  ])('treats a %s minimum as no minimum rather than blocking', (_label, minimum) => {
+    expect(checkMinimumOrder(6, minimum as unknown as number)).toEqual({ ok: true, short: 0 });
+  });
+
+  it('never reports a NaN shortfall', () => {
+    expect(checkMinimumOrder(NaN, 10).short).not.toBeNaN();
+  });
 });
 
 describe('resolveShippingTier', () => {
@@ -156,6 +171,28 @@ describe('resolveShippingTier', () => {
     const expected = { max_boxes: null, cost: 22 };
     expect(resolveShippingTier(cheapFirst, 50)).toEqual(expected);
     expect(resolveShippingTier(expensiveFirst, 50)).toEqual(expected);
+  });
+
+  // Same class of bug one line lower: two tiers sharing a numeric bound tied
+  // at 0, and `Array.prototype.sort` is stable, so `find` reached whichever
+  // the admin happened to save first. `addTierRow` defaults a new row to
+  // `max_boxes: 1` when one is already open-ended, so clicking "Add tier"
+  // twice reaches this state through the normal editor flow.
+  it('resolves two tiers sharing a bound to the same (lower-cost) tier regardless of input order', () => {
+    const cheapFirst: ShippingTier[] = [
+      { max_boxes: 20, cost: 8 },
+      { max_boxes: 20, cost: 999 },
+      { max_boxes: null, cost: 22 },
+    ];
+    const expensiveFirst: ShippingTier[] = [
+      { max_boxes: 20, cost: 999 },
+      { max_boxes: 20, cost: 8 },
+      { max_boxes: null, cost: 22 },
+    ];
+
+    const expected = { max_boxes: 20, cost: 8 };
+    expect(resolveShippingTier(cheapFirst, 15)).toEqual(expected);
+    expect(resolveShippingTier(expensiveFirst, 15)).toEqual(expected);
   });
 });
 

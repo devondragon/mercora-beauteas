@@ -2,15 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0027` carry it and are pending everywhere. Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
+> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0028` carry it and are pending everywhere. Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## ☑ Migrations: all environments up to date through `0024`; `0025`–`0027` pending (verified 2026-08-06)
+## ☑ Migrations: all environments up to date through `0024`; `0025`–`0028` pending (verified 2026-08-06)
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
 
-`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, and `0027_remove_em_dashes_from_content.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0028_*`.**
+`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, `0027_remove_em_dashes_from_content.sql`, and `0028_withdraw_box_variants_and_single_shipping_method.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0029_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -63,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0028_*`** (`0011`–`0027` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0029_*`** (`0011`–`0028` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
@@ -105,7 +105,7 @@ Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/
 
 **Going-out-of-business sale settings** (migration `0025`, `admin_settings` table, read via `lib/sale/settings.ts`'s `getSaleRules()`):
 - `sale.minimum_boxes` — cart minimum in boxes; enforced server-side (checkout, MCP order tools) and reflected client-side in the drawer/checkout copy.
-- `sale.final_sale` — gates the final-sale notice at checkout, the confirmation email line, and Chai's refund answer.
+- `sale.final_sale` — gates **Chai's refund answer only** (`lib/ai/deterministic-answers.ts`). The checkout notice (`components/checkout/FinalSaleNotice.tsx`) and the order-confirmation email line (`lib/utils/email.ts`) state the final-sale position unconditionally. That is deliberate for a closing store — the flag is never set to `false` — but it does mean turning the flag off would NOT remove that copy. Wire both surfaces through `getSaleRules()` before reusing this flag for anything else.
 - `sale.subscriptions_enabled` — the single flag the storefront checks to hide subscribe UI; the subscription code/routes themselves are untouched (kept as Mercora upstreaming source material).
 - `shipping.tiers` — quantity-tiered shipping cost by box count. **Empty (`[]`) means "not configured"** and leaves the flat per-method rates (`$5.99`/`$9.99`/`$19.99`) in force — a deliberate safety property, not a bug: seeding this with placeholder bands would have shipped every order free until an admin entered real prices (see Task 4's fix in the SDD ledger). Configure via `/admin/settings` → Shipping.
 - `promotions.banner_link` — URL the storefront promo banner links to.

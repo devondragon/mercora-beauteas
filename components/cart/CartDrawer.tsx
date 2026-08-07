@@ -50,6 +50,7 @@ import Link from "next/link";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Money } from "@/lib/money";
 import { countBoxes, checkMinimumOrder, minimumOrderMessage } from "@/lib/sale/rules";
+import { useMinimumBoxes } from "@/lib/sale/use-minimum-boxes";
 
 /**
  * CartDrawer component providing shopping cart functionality
@@ -68,22 +69,7 @@ export default function CartDrawer() {
     setHasMounted(true);
   }, []);
 
-  const [minimumBoxes, setMinimumBoxes] = useState(10);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/sale-rules')
-      .then((r) => r.json() as Promise<{ minimumBoxes: number }>)
-      .then((r) => {
-        if (!cancelled) setMinimumBoxes(r.minimumBoxes);
-      })
-      .catch(() => {
-        /* keep the default — the server gate is authoritative either way */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const minimumBoxes = useMinimumBoxes();
 
   const boxes = countBoxes(items);
   const minimum = checkMinimumOrder(boxes, minimumBoxes);

@@ -153,6 +153,31 @@ At this point the sale migrations are live on `beauteas-db`, but
 `shipping.tiers` is still `[]` (empty) from the `0025` seed — see Phase 2
 before telling anyone the sale is on.
 
+### Verify the two settings rows the migrations could not force
+
+Both `0025` and `0028` write these with **guarded** `UPDATE`s that no-op
+silently if the stored value has drifted (`0028` matches the exact prior JSON
+so it will not clobber an admin edit; `0025` deliberately cannot create a row
+that is missing). A no-op reports success, so check the result rather than
+assuming it:
+
+```bash
+npx wrangler d1 execute beauteas-db --remote --env production --json \
+  --command "SELECT key, value FROM admin_settings WHERE key IN ('shipping.methods','shipping.free_methods')"
+```
+
+- `shipping.methods` must show `"enabled":false` for **both** `express` and
+  `overnight`. If either is still `true`, `0028`'s guard did not match — every
+  order placed on that method will be charged the Standard tier rate while the
+  store pays the real carrier cost. Fix it in `/admin/settings` → Shipping
+  before continuing.
+- `shipping.free_methods` must exist and be `[]`. If the row is **absent**,
+  the code falls back to `['standard']` with a $75 threshold, and every cart
+  over $75 ships free — the charge floor accepts $0 in lockstep, so nothing
+  will alert you. Add the row (`INSERT INTO admin_settings (key, value,
+  category) VALUES ('shipping.free_methods', '[]', 'shipping')`) before
+  continuing.
+
 ---
 
 ## Phase 2 — Set the shipping tiers (nothing ships correctly until this is done)
@@ -181,6 +206,12 @@ but it is *not* the tiered pricing this sale is built around.
    there.
 6. Spot-check: add 10 boxes to a cart and confirm checkout quotes your new
    tier price, not the flat $5.99.
+7. Spot-check the **top** of the range too: put more boxes in the cart than
+   your largest bounded tier covers (e.g. 60 if your bands stop at 40) and
+   confirm the quote is your open-ended tier price, not $5.99. If no tier is
+   marked "No upper bound", every order above the last band silently falls
+   back to the flat Standard rate — and a clearance sale is exactly what
+   produces those oversized orders.
 
 ---
 
