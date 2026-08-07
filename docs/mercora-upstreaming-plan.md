@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; MCP trust and commerce integrity is draft PR `#41`; fulfillment is next
+**Status:** Active; MCP trust and commerce integrity is draft PR `#41`; fulfillment is draft PR `#42`
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -232,7 +232,7 @@ finding does not block further upstream work.
 | 5 | Webhook, inventory, and refund correctness (merged via `#40`) | `U09` | `U06 + U08` |
 | 6 | MCP trust and commerce integrity (draft PR `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
 | 7 | Recommendations | `U12` | `U03`; independently deferrable |
-| 8 | Fulfillment vertical slice | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09` |
+| 8 | Fulfillment vertical slice (draft PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`; final MCP integration follows `#41` |
 
 ### 4.1 Testing foundation
 
@@ -330,8 +330,7 @@ blocking the remainder of the contribution train.
 ### 4.9 Fulfillment vertical slice (`U13 + U14`)
 
 Submit fulfillment as one large but coherent feature PR, covering schema
-through customer and admin surfaces. Keep its commits ordered and independently
-reviewable:
+through customer and admin surfaces. Review it in this dependency order:
 
 1. Carrier, order-event, and timestamp migrations.
 2. Domain types and the configurable carrier registry.

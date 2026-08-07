@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** `U09` merged via Mercora PR `#40`; `U10 + U11` is draft PR `#41`
+**Status:** `U09` merged via Mercora PR `#40`; `U10 + U11` is draft PR `#41`; `U13 + U14` is draft PR `#42`
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -183,7 +183,7 @@ dependency and test review.
 | `U11` | MCP commerce and payment integrity | `#51`, `#55`, `#56`, `#60`, `#81` | `U07`, `U08`, `U10`; fulfillment for final tracking | High | Combine with `U10`; tracking remains with fulfillment |
 | `U12` | Recommendation pipeline resilience | `#63`, `#91` | `U02`, config seam from `U03` | High | Standalone PR or defer without blocking the core flow |
 | `U13` | Fulfillment domain, schema, and guarded APIs | `#104`, `#105`, `#112`, `#117`, `#119`, refund hold from `#121` | `U06`, `U07`, `U09` | Critical | Combine with `U14` in one ordered vertical-slice PR |
-| `U14` | Fulfillment admin/customer/email surfaces | `#107`, `#109`, `#110`, `#114–#116`, `#118` | `U13` commits in the combined PR; timestamp normalization first | High | Combine with `U13`; schema-first commits preserve reviewability |
+| `U14` | Fulfillment admin/customer/email surfaces | `#107`, `#109`, `#110`, `#114–#116`, `#118` | `U13` layers in the combined PR; timestamp normalization first | High | Combine with `U13`; use schema-first review order |
 
 ### Consolidated Core PR Sequence
 
@@ -199,7 +199,7 @@ dependency and test review.
 | 8 | Webhook, inventory, and refund correctness, Mercora PR `#40` | `U09` | Merged |
 | 9 | MCP trust and commerce integrity, Mercora PR `#41` | `U10 + U11` | Draft; implementation complete |
 | 10 | Recommendations | `U12` | Planned; independently deferrable |
-| 11 | Fulfillment vertical slice | `U13 + U14` | Planned |
+| 11 | Fulfillment vertical slice, Mercora PR `#42` | `U13 + U14` | Draft; core implementation complete, final MCP integration follows `#41` |
 
 ## Group Dossiers
 
@@ -795,19 +795,18 @@ Update this table as Mercora issues and PRs are created.
 | `U09` | Merged | — | `#40` | Merged to Mercora `main` as `26ff9c1`; durable webhook claims/effects, authoritative inventory, and refund reconciliation landed together |
 | `U10 + U11` | Draft PR; implementation complete | — | `#41` | Trusted credentials, scoped ownership, catalog-neutral MCP boundaries, and authoritative PaymentIntent checkout; shipment-event history still waits for fulfillment |
 | `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
-| `U13 + U14` | Research complete | — | — | One fulfillment vertical-slice PR with schema-first ordered commits |
+| `U13 + U14` | Draft PR; core implementation complete | — | `#42` | One fulfillment vertical slice; independently reviewed with zero remaining findings; rebase after `#41` and add the final MCP shipment projection before marking ready |
 
 ## Immediate Next Planning Actions
 
-1. Monitor draft Mercora PR `#41`, address Russell's review, and mark it ready
-   only after the branch checks are green.
-2. Begin the `U13 + U14` fulfillment vertical slice from merged Mercora
-   `main`; it does not depend on PR `#41` merging first.
-3. Reserve the fulfillment migrations before implementation and keep
-   `product_variants.inventory` JSON as the authoritative stock source.
-4. Organize the fulfillment PR by its eight schema-to-surface commits and use
-   one reviewer map for the full feature.
-5. Keep shipment-event-backed MCP tracking in fulfillment, extending PR
-   `#41`'s truthful owned-order projection instead of inventing a second model.
-6. Treat `U12` recommendations as an independent, deferrable PR that can be
+1. Monitor draft Mercora PR `#41`, address Russell's review, and merge it once
+   its branch checks and review are complete.
+2. Keep fulfillment PR `#42` in draft while `#41` is open; its schema, guarded
+   services/APIs, admin/customer surfaces, email behavior, and D1 coverage are
+   implemented and independently reviewed.
+3. After `#41` merges, rebase `#42` on `main` and connect the shared shipment
+   projection to the updated MCP owned-order status/tracking tools.
+4. Rerun the Node 24 unit, Workers/D1, typecheck, and build gates after that
+   integration, then mark `#42` ready for Russell.
+5. Treat `U12` recommendations as an independent, deferrable PR that can be
    prepared in parallel if fulfillment review becomes blocked.
