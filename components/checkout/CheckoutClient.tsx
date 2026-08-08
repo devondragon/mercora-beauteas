@@ -31,6 +31,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useCartStore } from '@/lib/stores/cart-store';
+import { Button } from '@/components/ui/button';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { useSaleRules } from '@/lib/sale/use-sale-rules';
 import StripeProvider from './StripeProvider';
 import PaymentForm from './PaymentForm';
 import ShippingForm from './ShippingForm';
@@ -38,6 +41,7 @@ import ShippingOptions from './ShippingOptions';
 import OrderSummary from './OrderSummary';
 import ProgressBar from './ProgressBar';
 import OrderConfirmationModal from './OrderConfirmationModal';
+import FinalSaleNotice from './FinalSaleNotice';
 import type { Address, ShippingOption } from '@/lib/types';
 import type { CartItem } from '@/lib/types/cartitem';
 import { Money } from '@/lib/money';
@@ -107,6 +111,16 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const [orderId, setOrderId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+
+  const { minimumBoxes, minimumKnown, finalSale } = useSaleRules();
+
+  const boxes = countBoxes(items);
+  const minimum = checkMinimumOrder(boxes, minimumBoxes);
+  // Only a SERVER-STATED minimum blocks the flow. On the fallback (fetch in
+  // flight, or a 429 from the shared PUBLIC_RATE_LIMITER) this page would
+  // otherwise lock out a cart the server would accept, with no retry — see the
+  // note in lib/sale/use-sale-rules.ts. /api/payment-intent still enforces it.
+  const blockedByMinimum = minimumKnown && !minimum.ok;
 
   // Handle address form changes
   const handleAddressChange = (
@@ -232,7 +246,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       // remainder above Stripe's $0.50 minimum.
       if (giftCardApplied > 0 && Money.fromMinor(amountDue, 'USD').lt(Money.fromMajor('0.50', 'USD'))) {
         throw new Error(
-          'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet — please reduce the gift card or add another item.'
+          'Your gift card covers the full order. Fully gift-card-funded checkout is not supported yet. Please reduce the gift card or add another item.'
         );
       }
 
@@ -389,6 +403,27 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     );
   }
 
+  // Block the entire step flow (not just the payment step's button) so the
+  // payment step can't be reached by navigating back after the cart drops
+  // below the minimum — see the module comment on why this gate lives here
+  // rather than per-step.
+  if (blockedByMinimum && currentStep !== 'confirmation') {
+    return (
+      <div className="mx-auto max-w-xl rounded-xl bg-white p-8 text-center">
+        <h2 className="mb-2 text-lg font-semibold text-text-primary">
+          Just a few more boxes
+        </h2>
+        <p className="mb-6 text-sm text-text-muted">
+          {minimumOrderMessage(minimum.short, minimumBoxes)} We&rsquo;re shipping the
+          last of our stock, so orders go out in batches of at least {minimumBoxes}.
+        </p>
+        <Button asChild>
+          <Link href="/category/clearly-calendula">Back to the teas</Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <ProgressBar step={currentStep === 'shipping' ? 0 : currentStep === 'payment' ? 2 : 3} />
@@ -494,6 +529,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           {currentStep === 'payment' && clientSecret && (
             <div className="bg-white p-4 sm:p-6 rounded-xl w-full min-h-[400px]">
               <h3 className="text-lg font-semibold mb-4 text-text-primary">Payment Information</h3>
+              <FinalSaleNotice finalSale={finalSale} />
               <div className="w-full">
                 <StripeProvider clientSecret={clientSecret}>
                   <PaymentForm

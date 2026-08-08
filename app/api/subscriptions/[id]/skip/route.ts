@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getStripeForWorkers } from '@/lib/stripe';
+import { rejectIfSubscriptionsDisabled } from '@/lib/sale/subscription-gate';
 import { getSubscriptionsByCustomer } from '@/lib/models/mach/subscriptions';
 
 export async function POST(
@@ -22,6 +23,13 @@ export async function POST(
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Skip pauses with a `resumes_at`, so it schedules its own restart of
+    // billing — it belongs with the surfaces that START recurring charges, not
+    // with pause/cancel. Before the ownership lookup for the same reason resume
+    // is: a closed store shouldn't confirm which subscription ids exist.
+    const disabled = await rejectIfSubscriptionsDisabled();
+    if (disabled) return disabled;
 
     const { id } = await params;
 

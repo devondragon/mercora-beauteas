@@ -60,12 +60,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { 
-  Settings, Store, Bot, Mail, Database, 
+import {
+  Settings, Store, Bot, Mail, Database,
   RefreshCw, Save, Globe, DollarSign,
   Shield, Zap, AlertCircle, CheckCircle,
-  Share2
+  Share2, Plus, Trash2
 } from "lucide-react";
+import type { ShippingTier } from "@/lib/sale/rules";
+import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier, hasNoOpenEndedTier } from "@/lib/sale/tier-editor";
 
 interface SystemSettings {
   maintenance_mode: boolean;
@@ -88,6 +90,10 @@ interface ShippingSettings {
     enabled: boolean;
   }>;
   free_methods: string[];
+  // GOOB: quantity-tiered shipping (lib/sale/rules). EMPTY means "not
+  // configured" — the flat per-method costs above stay in force. Any
+  // non-empty array replaces them entirely (see migrations/0025).
+  tiers: ShippingTier[];
 }
 
 interface RefundSettings {
@@ -159,7 +165,12 @@ export default function AdminSettingsPage() {
       { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
       { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true }
     ],
-    free_methods: ['standard']
+    free_methods: ['standard'],
+    // Matches the migration 0025 seed (empty = not configured). Unlike the
+    // defaults above, a non-empty placeholder here would be a live pricing
+    // change if `loadSettings` ever failed to land before a save — see
+    // lib/sale/tier-editor.ts.
+    tiers: []
   });
 
   const [refundSettings, setRefundSettings] = useState<RefundSettings>({
@@ -239,6 +250,7 @@ export default function AdminSettingsPage() {
           } else if (setting.category === 'shipping') {
             if (setting.key === 'shipping.methods') setShippingSettings(prev => ({ ...prev, methods: value }));
             if (setting.key === 'shipping.free_methods') setShippingSettings(prev => ({ ...prev, free_methods: value }));
+            if (setting.key === 'shipping.tiers') setShippingSettings(prev => ({ ...prev, tiers: value }));
           } else if (setting.category === 'refund') {
             if (setting.key === 'refund.shipping_refunded_partial') setRefundSettings(prev => ({ ...prev, shipping_refunded_partial: value }));
             if (setting.key === 'refund.shipping_refunded_full') setRefundSettings(prev => ({ ...prev, shipping_refunded_full: value }));
@@ -385,6 +397,7 @@ export default function AdminSettingsPage() {
         // Shipping settings
         { key: 'shipping.methods', value: shippingSettings.methods, category: 'shipping' },
         { key: 'shipping.free_methods', value: shippingSettings.free_methods, category: 'shipping' },
+        { key: 'shipping.tiers', value: shippingSettings.tiers, category: 'shipping' },
         
         // Refund settings
         { key: 'refund.shipping_refunded_partial', value: refundSettings.shipping_refunded_partial, category: 'refund' },
@@ -736,10 +749,135 @@ export default function AdminSettingsPage() {
         <div className="space-y-6">
           <Card className="admin-card p-6">
             <div className="flex items-center space-x-3 mb-4">
+              <DollarSign className="w-5 h-5 text-state-info" />
+              <h3 className="text-lg font-semibold text-text-primary">Shipping by Quantity</h3>
+            </div>
+
+            <p className="text-sm text-text-muted mb-4">
+              Cost in dollars for an order up to and including that many boxes. Bounds
+              are inclusive; a row with no upper bound covers everything above the
+              rest. When this list is non-empty it REPLACES the per-method cost below
+              entirely. Leave it empty to keep the flat rates in force.
+            </p>
+
+            {shippingSettings.tiers.length === 0 ? (
+              <p className="text-sm text-text-muted italic mb-4">
+                Not configured. The flat per-method rates below are in effect.
+              </p>
+            ) : (
+              <>
+                {hasZeroCostTier(shippingSettings.tiers) && (
+                  <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                      <p className="text-sm text-state-warning">
+                        A tier priced at $0.00 ships that entire band free. Confirm that&rsquo;s intentional before saving.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {hasNoOpenEndedTier(shippingSettings.tiers) && (
+                  <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                      <p className="text-sm text-state-warning">
+                        No tier has &ldquo;No upper bound&rdquo; checked. Orders larger than the
+                        biggest tier are charged that biggest tier&rsquo;s price. Add an
+                        open-ended row if bigger orders should cost more.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 mb-4">
+                  {shippingSettings.tiers.map((tier, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm w-32 text-text-secondary">
+                        {tier.max_boxes === null ? 'More than above' : `Up to ${tier.max_boxes} boxes`}
+                      </span>
+                      {tier.max_boxes !== null && (
+                        <Input
+                          type="number"
+                          min={1}
+                          value={tier.max_boxes}
+                          onChange={(e) => {
+                            const tiers = [...shippingSettings.tiers];
+                            tiers[i] = { ...tiers[i], max_boxes: parseInt(e.target.value, 10) || 1 };
+                            setShippingSettings(prev => ({ ...prev, tiers }));
+                          }}
+                          className="w-24 admin-input"
+                          aria-label={`Tier ${i + 1} maximum boxes`}
+                        />
+                      )}
+                      <label className="flex items-center gap-1 text-xs text-text-muted whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={tier.max_boxes === null}
+                          onChange={(e) => {
+                            // At most one tier can be open-ended — checking this
+                            // clears max_boxes on any other row that was too, so
+                            // resolveShippingTier is never handed an ambiguous set.
+                            setShippingSettings(prev => ({
+                              ...prev,
+                              tiers: setOpenEndedTier(prev.tiers, i, e.target.checked)
+                            }));
+                          }}
+                        />
+                        No upper bound
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-text-muted">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={tier.cost}
+                          onChange={(e) => {
+                            const tiers = [...shippingSettings.tiers];
+                            // `min={0}` is HTML-only — it doesn't stop `-5` from
+                            // being typed, and `parseFloat("-5") || 0` keeps -5
+                            // since it's truthy. Clamp so a negative cost can
+                            // never reach the customer-facing quote.
+                            tiers[i] = { ...tiers[i], cost: Math.max(0, parseFloat(e.target.value) || 0) };
+                            setShippingSettings(prev => ({ ...prev, tiers }));
+                          }}
+                          className="w-24 admin-input"
+                          aria-label={`Tier ${i + 1} cost in dollars`}
+                        />
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShippingSettings(prev => ({ ...prev, tiers: removeTierRow(prev.tiers, i) }))}
+                        className="h-7"
+                        aria-label={`Remove tier ${i + 1}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShippingSettings(prev => ({ ...prev, tiers: addTierRow(prev.tiers) }))}
+              className="border-secondary-400 text-secondary-600 hover:bg-secondary-500 hover:text-text-inverse"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Tier
+            </Button>
+          </Card>
+
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
               <Zap className="w-5 h-5 text-state-info" />
               <h3 className="text-lg font-semibold text-text-primary">Shipping Methods</h3>
             </div>
-            
+
             <div className="space-y-4">
               {shippingSettings.methods.map((method, index) => (
                 <div key={method.id} className="bg-surface border border-border-default rounded-lg p-4">
@@ -886,7 +1024,7 @@ export default function AdminSettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm font-medium text-text-secondary">Restock on Stripe Dashboard Refunds</label>
-                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock — Stripe refunds an amount, not items.</p>
+                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock, since Stripe refunds an amount, not items.</p>
                 </div>
                 <Switch
                   checked={refundSettings.restock_on_external_refund}
@@ -1019,7 +1157,7 @@ export default function AdminSettingsPage() {
                 </select>
                 <p className="text-xs text-text-muted mt-1">
                   {recommendationSettings.strategy === 'ai_batch'
-                    ? 'Uses the precomputed product_recommendations table — rebuild after catalog changes.'
+                    ? 'Uses the precomputed product_recommendations table. Rebuild after catalog changes.'
                     : 'Computed on-the-fly from category, price, and attribute similarity.'}
                 </p>
               </div>
@@ -1069,7 +1207,7 @@ export default function AdminSettingsPage() {
 
             <div className="space-y-4">
               <p className="text-sm text-text-secondary leading-relaxed">
-                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch — rebuild after significant catalog changes.
+                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch. Rebuild after significant catalog changes.
               </p>
 
               {recRebuildSummary && (

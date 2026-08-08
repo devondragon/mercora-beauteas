@@ -41,6 +41,19 @@ vi.mock('@/lib/mcp/tools/order', () => ({
   normalizeAddress: vi.fn((a) => a ?? {}),
 }));
 
+// GOOB: this suite pins the BMC-132/C5 create_payment_intent behavior with a
+// single-item, single-quantity cart — it isn't about the box minimum (that has
+// its own dedicated test, mcp-sale-minimum-order.test.ts). Pin minimumBoxes to
+// 0 so the new gate never trips here.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn().mockResolvedValue({
+    minimumBoxes: 0,
+    finalSale: true,
+    subscriptionsEnabled: false,
+    tiers: [],
+  }),
+}));
+
 import { requireOwnedSession } from '@/lib/mcp/session';
 import { computeCatalogSubtotalCents } from '@/lib/services/order-pricing';
 import { createPaymentIntent, isStripeConfigured } from '@/lib/stripe';

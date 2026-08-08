@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getStripeForWorkers } from '@/lib/stripe';
+import { rejectIfSubscriptionsDisabled } from '@/lib/sale/subscription-gate';
 import {
   getSubscriptionsByCustomer,
   getSubscriptionPlanById,
@@ -84,6 +85,11 @@ export async function POST(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Store policy, checked before the body is even parsed: nothing is created
+    // and Stripe is never touched while subscriptions are off.
+    const disabled = await rejectIfSubscriptionsDisabled();
+    if (disabled) return disabled;
 
     const { setupIntentId, planId, shippingAddress } =
       (await req.json()) as CreateSubscriptionBody;

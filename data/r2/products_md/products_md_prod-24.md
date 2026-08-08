@@ -28,7 +28,7 @@ rating_count: 31
 - **Rating**: 4.1 (31 reviews)
 
 ## Description
-The Bright Echo Kit offers utility in a small form—perfect for tactical medics, quick-access gear, or field tech tools. Durable canvas with reinforced loops and MOLLE-compatible design ensure seamless integration with packs or belts.
+The Bright Echo Kit offers utility in a small form, perfect for tactical medics, quick-access gear, or field tech tools. Durable canvas with reinforced loops and MOLLE-compatible design ensure seamless integration with packs or belts.
 
 ## Specifications
 - **material**: Durable canvas

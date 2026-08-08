@@ -9,7 +9,7 @@ tags: [contact, support, faq]
 
 ## Contact Us
 
-Email us at info@beauteas.com — we're happy to help with orders, products, subscriptions, and anything else.
+Email us at info@beauteas.com: we're happy to help with orders, products, subscriptions, and anything else.
 
 ## Support Hours
 

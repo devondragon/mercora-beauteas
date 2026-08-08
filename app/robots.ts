@@ -16,6 +16,7 @@ export default function robots(): MetadataRoute.Robots {
         "/faq",
         "/contact",
         "/subscriptions",
+        "/thank-you",
         "/testimonials",
         "/sitemap.xml",
         // MCP server endpoints available for AI agent discovery

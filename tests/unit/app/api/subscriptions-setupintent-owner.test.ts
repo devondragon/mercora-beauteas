@@ -37,6 +37,19 @@ vi.mock('@/lib/stripe', () => ({
   })),
 }));
 
+// This suite is about the SetupIntent ownership guard, not the sale gate that
+// now precedes it — pin subscriptions ON so the pre-existing behaviour is what
+// gets exercised. (Unmocked, getSaleRules reaches lib/db and 500s.) The gate
+// itself is covered by subscriptions-sale-gate.test.ts.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn().mockResolvedValue({
+    minimumBoxes: 10,
+    finalSale: true,
+    subscriptionsEnabled: true,
+    tiers: [],
+  }),
+}));
+
 vi.mock('@/lib/models/mach/subscriptions', () => ({
   getSubscriptionsByCustomer: vi.fn(),
   getSubscriptionPlanById: vi.fn().mockResolvedValue({

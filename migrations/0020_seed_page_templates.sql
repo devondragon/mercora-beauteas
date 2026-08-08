@@ -31,7 +31,7 @@ INSERT OR IGNORE INTO page_templates (name, display_name, description, fields, d
     'FAQ',
     'Questions as an accordion. Each <h2> is a question; a bold paragraph ending in a question mark is promoted to one automatically. Text before the first question renders above the list.',
     '{"title": {"type": "text", "required": true}, "content": {"type": "richtext", "required": true}, "excerpt": {"type": "textarea", "required": false}}',
-    '<h2>Are your teas organic?</h2><p>Yes — every blend is USDA-certified organic.</p><h2>How long does shipping take?</h2><p>Orders ship within two business days.</p>'
+    '<h2>Are your teas organic?</h2><p>Yes, every blend is USDA-certified organic.</p><h2>How long does shipping take?</h2><p>Orders ship within two business days.</p>'
 ),
 (
     'contact',
@@ -57,5 +57,5 @@ UPDATE page_templates SET is_active = 0 WHERE name = 'about';
 -- page created outside the admin arrives with it. Make the consequence explicit
 -- rather than leaving editors to discover it.
 UPDATE page_templates
-SET description = 'Standard content page. Renders with the Story layout — pick a specific template above for a designed page.'
+SET description = 'Standard content page. Renders with the Story layout. Pick a specific template above for a designed page.'
 WHERE name = 'default';

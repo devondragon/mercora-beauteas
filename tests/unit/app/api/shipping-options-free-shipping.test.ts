@@ -78,6 +78,12 @@ describe('POST /api/shipping-options free-shipping threshold (BMC-187)', () => {
   });
 
   it('grants free shipping when the catalog subtotal genuinely meets the threshold', async () => {
+    // `free_methods` stated explicitly — the module default is now empty, so
+    // nothing is free unless an admin configured it. This pins the mechanic.
+    vi.mocked(getSettings).mockImplementation(async (category?: string) =>
+      (category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}) as any
+    );
+
     // 3 × $25 = $75 catalog → qualifies regardless of client price.
     const res = await POST(
       postRequest({

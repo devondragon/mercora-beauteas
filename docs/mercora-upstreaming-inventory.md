@@ -56,7 +56,7 @@ it from `main` rather than the tag.
 
 | BeauTeas commit | Area | Summary | Upstream status |
 | --- | --- | --- | --- |
-| _(none yet)_ | | | |
+| `ba7557b` | `lib/config/commerce.ts`, `lib/services/order-pricing.ts` | Archiving a product did not stop it selling — status was never checked by the PDP or the server pricing path, so an archived product still rendered and was still purchasable by direct request | Not yet upstreamed |
 
 If this table grows beyond a handful of rows, the tag has stopped being a
 usable source and the project should move to a maintained sale-free branch

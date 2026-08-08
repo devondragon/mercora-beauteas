@@ -64,19 +64,23 @@ export default async function HomePage() {
 
   return (
     <div className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
-      {/* Hero Section */}
+      {/* Hero Section — GOOB: leads with the closing story, per /thank-you */}
       <section className="max-w-6xl mx-auto text-center mb-16 sm:mb-20">
-        <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-secondary-600 mb-4">USDA-Certified Organic · Skincare Teas</p>
+        <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-secondary-600 mb-4">Closing Sale · While Supplies Last</p>
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight uppercase mb-4 sm:mb-6 leading-tight">
-          This Tea Reveals Your Most Radiant Skin
+          We&rsquo;re Closing BeauTeas For Good
         </h1>
         <p className="text-text-secondary text-base sm:text-lg max-w-2xl mx-auto mb-6 sm:mb-8 px-4">
-          Organic skincare teas crafted to reveal your most radiant skin.
-          Pure botanicals. Transformative ritual. BeauTeas.
+          After a lot of thought, we&rsquo;ve decided to wind the shop down. Everything
+          left is USDA-certified organic and priced to clear, and once it&rsquo;s gone,
+          it&rsquo;s gone.{" "}
+          <Link href="/thank-you" className="underline hover:text-text-primary">
+            Read the whole story here.
+          </Link>
         </p>
         <Link href="/category/clearly-calendula" className="inline-block">
           <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse transition rounded">
-            Discover Our Teas
+            Shop While It Lasts
           </button>
         </Link>
       </section>

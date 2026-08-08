@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     const basePriceInCents = defaultVariant?.price?.amount ?? 0;
     if (basePriceInCents <= 0) {
       return NextResponse.json(
-        { success: false, error: "Product has no valid base price — cannot create Stripe price" },
+        { success: false, error: "Product has no valid base price. Cannot create Stripe price" },
         { status: 400 }
       );
     }
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
                 unit_amount: discountedPriceCents,
                 recurring: { interval, interval_count },
                 product_data: {
-                  name: `${productName} — ${plan.frequency} subscription`,
+                  name: `${productName}: ${plan.frequency} subscription`,
                 },
               },
               { idempotencyKey }
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
               unit_amount: discountedPriceCents,
               recurring: { interval, interval_count },
               product_data: {
-                name: `${productName} — ${plan.frequency} subscription`,
+                name: `${productName}: ${plan.frequency} subscription`,
               },
             },
             { idempotencyKey }

@@ -13,6 +13,8 @@ import {
   formatAmountForStripe,
   isStripeConfigured,
 } from '../../stripe';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '../../sale/rules';
+import { getSaleRules } from '../../sale/settings';
 
 export interface PaymentMethod {
   id: string;
@@ -187,6 +189,24 @@ export async function createAgentPaymentIntent(
         ['Reduce the number of distinct items in the cart']);
     }
 
+    // GOOB: the box minimum is a purchase rule enforced identically at every
+    // money surface — POST /api/payment-intent, POST /api/orders, and here.
+    // An authenticated agent (a hashed X-Agent-API-Key holder) must not be
+    // able to mint a PaymentIntent for a cart the storefront itself would
+    // refuse. Runs before Stripe is even checked for configuration, let alone
+    // charged, so a rejected agent cart costs nothing. Uses the identical
+    // lib/sale/rules seam as the HTTP gates, so the threshold and message
+    // can't drift between surfaces.
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(cart), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return fail(
+        'BELOW_MINIMUM_ORDER',
+        minimumOrderMessage(minimum.short, saleRules.minimumBoxes),
+        ['Add more items to the cart', 'Retry create_payment_intent once the cart meets the minimum']
+      );
+    }
+
     if (!isStripeConfigured()) {
       console.error('[mcp create_payment_intent] STRIPE_SECRET_KEY is not configured in this runtime.');
       return fail('STRIPE_NOT_CONFIGURED', 'Payments are temporarily unavailable. Please try again later.', ['Retry later']);
@@ -232,7 +252,7 @@ export async function createAgentPaymentIntent(
       automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
       // Binding: place_order requires BOTH to match the authenticated caller.
       metadata: { agentId, sessionId },
-      description: `BeauTeas MCP order — agent ${agentId}`,
+      description: `BeauTeas MCP order: agent ${agentId}`,
     });
 
     return {

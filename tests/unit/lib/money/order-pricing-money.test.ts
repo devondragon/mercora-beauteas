@@ -36,10 +36,14 @@ describe('Stripe boundary rounding', () => {
 describe('order totals (Money-typed)', () => {
   const addr = { line1: '1 Main St', city: 'LA', region: 'CA', country: 'US', postal_code: '90001' } as any;
 
-  it('free-shipping threshold compares correctly (no cents/dollars bug)', () => {
-    // $50 subtotal -> paid shipping; $150 -> free
+  // Final-review fix wave, item 5: this path never grants free shipping,
+  // regardless of subtotal — see calculateShipping's doc comment. A large
+  // subtotal used to zero shipping at a stale $100 threshold unrelated to the
+  // sale's real shipping model, which let a big-enough MCP order ship free.
+  it('never grants free shipping regardless of subtotal size', () => {
     expect(calculateShipping(addr, Money.fromMajor(50, 'USD')).isZero()).toBe(false);
-    expect(calculateShipping(addr, Money.fromMajor(150, 'USD')).isZero()).toBe(true);
+    expect(calculateShipping(addr, Money.fromMajor(150, 'USD')).isZero()).toBe(false);
+    expect(calculateShipping(addr, Money.fromMajor(150, 'USD')).toMinorUnits()).toBe(999);
   });
 
   it('applies the AK/HI shipping surcharge instead of standard shipping', () => {
@@ -69,8 +73,18 @@ describe('order totals (Money-typed)', () => {
     expect(r.total.toMinorUnits()).toBe(2999 + 999 + 262);
   });
 
-  it('computeOrderTotals gives free shipping at the $100 threshold', () => {
-    const r = computeOrderTotals(Money.fromMajor(100, 'USD'), addr, {});
-    expect(r.shipping.isZero()).toBe(true);
+  it('computeOrderTotals charges shipping even for a large subtotal (final-review fix, item 5)', () => {
+    const r = computeOrderTotals(Money.fromMajor(150, 'USD'), addr, {});
+    expect(r.shipping.isZero()).toBe(false);
+    expect(r.shipping.toMinorUnits()).toBe(999);
+  });
+
+  it('pins the exact finding from the final review: a 50-box, ~$2/box order no longer ships free', () => {
+    // The finding: at $2/box a 50-box agent order clears $100 of goods and
+    // shipped FREE, the one path that ignored the sale's tiers.
+    const fiftyBoxSubtotal = Money.fromMajor(100, 'USD'); // 50 * $2.00
+    const r = computeOrderTotals(fiftyBoxSubtotal, addr, {});
+    expect(r.shipping.isZero()).toBe(false);
+    expect(r.shipping.toMinorUnits()).toBe(999);
   });
 });

@@ -1,9 +1,9 @@
 import type { MACHAddress } from "@/lib/types/mach/Address";
 
 export function formatDate(dateString?: string | null, showTime = false): string {
-  if (!dateString) return "—";
+  if (!dateString) return "–";
   const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "–";
   const options: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
@@ -17,7 +17,7 @@ export function formatDate(dateString?: string | null, showTime = false): string
 }
 
 export function formatAddress(address: MACHAddress | null | undefined): string {
-  if (!address) return "—";
+  if (!address) return "–";
   const line1 = typeof address.line1 === "string" ? address.line1 : "";
   const city = typeof address.city === "string" ? address.city : "";
   return [

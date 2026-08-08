@@ -36,6 +36,16 @@ vi.mock('@/lib/models/mach/products', () => ({
   getProduct: (id: string) => getProduct(id),
 }));
 vi.mock('@/lib/utils/observe', () => ({ logCritical: vi.fn() }));
+// order-confirmation now reads sale.final_sale for the receipt's closing line.
+// Mocked so this suite doesn't pull @/lib/db and the Drizzle schema barrel in.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn(async () => ({
+    minimumBoxes: 10,
+    finalSale: true,
+    subscriptionsEnabled: false,
+    tiers: [],
+  })),
+}));
 
 const IMAGE_KEY = 'products/clearly-calendula-evening.jpg';
 

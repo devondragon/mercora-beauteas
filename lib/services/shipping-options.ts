@@ -12,6 +12,11 @@
  * | `computeShippingFloorCents` (BMC-201) | the enforced charge floor    |
  * | `lib/ai/deterministic-answers.ts`     | Chai's shipping answer       |
  *
+ * GOOB: the sale prices shipping by box-count tier (`shipping.tiers`, from
+ * `@/lib/sale/rules`) rather than a flat per-method rate — see the tier logic
+ * below. All three consumers above still resolve through this one function, so
+ * the tiered rate can't drift between the quote, the floor, and Chai either.
+ *
  * WHY IT LIVES HERE rather than in `checkout-charges.ts` (its original home):
  * `checkout-charges` imports `@/lib/stripe`, which instantiates the Stripe server
  * SDK and a SubtleCrypto provider at module load. The chat route has no business
@@ -25,6 +30,7 @@
 import type { ShippingOption } from '@/lib/types/shipping';
 import { Money } from '@/lib/money';
 import { getSettings } from '@/lib/utils/settings';
+import { resolveShippingTier, type ShippingTier } from '@/lib/sale/rules';
 
 // The storefront's shipping methods when `shipping.methods` isn't configured —
 // IDENTICAL to the `/api/shipping-options` default (kept in lockstep because both
@@ -36,7 +42,15 @@ const DEFAULT_SHIPPING_METHODS = [
   { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true },
 ];
 const DEFAULT_FREE_SHIPPING_THRESHOLD_MAJOR = 75;
-const DEFAULT_FREE_SHIPPING_METHODS = ['standard'];
+// Empty, i.e. nothing ships free unless an admin says so. This is the fallback
+// when the `shipping.free_methods` row is ABSENT, which is reachable: migration
+// 0025 turns free shipping off with an UPDATE that is deliberately guarded
+// against creating a row, so a database that never got the original seed keeps
+// no row at all and lands here. With `['standard']` that silently restored free
+// shipping over $75 during the closing sale — the exact thing 0025 exists to
+// prevent. Giving shipping away by default is also the wrong direction for a
+// missing setting generally: charging is recoverable, an unbilled order is not.
+const DEFAULT_FREE_SHIPPING_METHODS: string[] = [];
 
 export interface ResolvedShippingOptions {
   /** Enabled methods with free-shipping already applied. `cost` is MAJOR units. */
@@ -64,7 +78,7 @@ export interface ResolvedShippingOptions {
  */
 export async function resolveShippingOptions(
   goodsCents: number,
-  opts: { subtotalPriceable?: boolean } = {}
+  opts: { subtotalPriceable?: boolean; boxes?: number } = {}
 ): Promise<ResolvedShippingOptions> {
   const [shippingSettings, storeSettings] = await Promise.all([
     getSettings('shipping'),
@@ -80,10 +94,36 @@ export async function resolveShippingOptions(
     Money.fromMinor(Math.max(0, Math.round(goodsCents))).gte(Money.fromMajor(threshold));
   const freeMethods = shippingSettings['shipping.free_methods'] || DEFAULT_FREE_SHIPPING_METHODS;
 
+  // GOOB: when tiers are configured they REPLACE the per-method cost — the sale
+  // ships a single Standard method priced by quantity, so a method's own `cost`
+  // is no longer the rate anyone pays. Absent tiers, the flat per-method model
+  // is untouched.
+  //
+  // An unknown box count resolves to the LOWEST tier on purpose. This function
+  // also produces the charge floor, which is a minimum the collected amount must
+  // clear; inventing a higher tier would reject honest orders. Callers that can
+  // price a cart always know its box count.
+  const tiers = (shippingSettings['shipping.tiers'] as ShippingTier[] | undefined) ?? [];
+  const tier = tiers.length > 0 ? resolveShippingTier(tiers, opts.boxes ?? 0) : null;
+
+  // Free shipping is checked BEFORE the tier, deliberately: a method an admin
+  // has explicitly listed in `shipping.free_methods` is free even when tiers
+  // are configured (pinned by "charges nothing for a method still listed as
+  // free" in the test suite). The risk this ordering used to carry — a
+  // repopulated `free_methods` silently zeroing an admin-entered tier price —
+  // came from `defaultSettings` seeding `['standard']` on a fresh/reset
+  // database, which no longer happens (see lib/db/schema/settings.ts). Reaching
+  // this branch now requires someone to set `free_methods` by hand, which is a
+  // deliberate instruction rather than drift.
   const options: ShippingOption[] = enabled.map((m: any) => ({
     id: m.id,
     label: m.label,
-    cost: qualifiesForFreeShipping && freeMethods.includes(m.id) ? 0 : m.cost,
+    cost:
+      qualifiesForFreeShipping && freeMethods.includes(m.id)
+        ? 0
+        : tier
+          ? tier.cost
+          : m.cost,
     estimatedDays: m.estimatedDays,
   }));
 

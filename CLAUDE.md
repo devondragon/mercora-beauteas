@@ -2,13 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** Final stretch of the Shopify→Mercora cutover. All launch-blocking code is built and audited; prod is deployed and taking live orders on `shop.beauteas.com`. What's left is Phase 10 of the runbook — the DNS switch to `www` — plus post-cutover verification. See [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
+> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0029` carry it and are pending on production (dev is deployed and migrated as of 2026-08-08). **The sale ships from the `goob` branch, deployed manually — it is not being merged to `main`**, so the production-deploy-guard workflow is out of play and confirming the gate went green for the exact SHA is a manual step (runbook Phase 0.5). Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## ☑ Migrations: all environments up to date (verified 2026-08-01)
+## ☑ Migrations: all environments up to date through `0024`; `0025`–`0029` pending (verified 2026-08-06)
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
+
+`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, `0027_remove_em_dashes_from_content.sql`, `0028_withdraw_box_variants_and_single_shipping_method.sql`, and `0029_deactivate_subscription_plans_for_goob.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0030_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -61,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0025_*`** (`0011`–`0024` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0030_*`** (`0011`–`0029` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
@@ -73,6 +75,8 @@ Use `db.batch()` for atomic writes.
 
 ### Never write raw `*100` / `/100`
 All monetary values flow through `lib/money` (`Money`). Internal unit is **integer minor units**; use `Money.fromMinor/fromMajor/fromStored`. Emit MACH `{amount, currency, precision}` via `.toMach()` ONLY at API/MCP/JSON-LD boundaries; use `.toMinorUnits()` at the Stripe boundary; persist via `.toJSON()` (minor units); display via `.format()`. See [`docs/money.md`](docs/money.md).
+
+**One accepted exception: plain-`node` scripts in `scripts/`.** `lib/money` is TypeScript with extensionless internal imports, which `node` alone cannot resolve (`ERR_MODULE_NOT_FOUND`) — and every script there is deliberately a plain-`node`-executable `.mjs` with no build step. `scripts/goob-reprice.mjs` therefore imports `big.js` directly (the same library `money.ts` uses internally) and replicates only `Money.fromMajor`'s USD algorithm, with its reasoning in the file header. This is **not** licence for bare `rate * 100` anywhere: naive float multiplication misrounds ordinary inputs (`Math.round(1.005 * 100) === 100`). Application code has no excuse — it runs under a bundler.
 
 ### Do not reintroduce a root `app/loading.tsx`
 That is what caused the soft-404s. A root `loading.tsx` wraps every route in a Suspense boundary, and with the root layout `force-dynamic` Next flushes the shell (committing a 200) before the page runs `notFound()`. You cannot have both a root Suspense boundary and a real 404 — which is why the global navigation spinner is gone. Nested loading files are fine on segments that never `notFound()` or aren't indexed (`app/account/loading.tsx` is kept — auth-gated). The trap is recorded in code at `app/layout.tsx`.
@@ -100,6 +104,13 @@ Everything else is discoverable by reading the tree; these four encode decisions
 | `lib/recommendations/` | PDP recommendations — a **separate seam** from Chai, called server-side |
 
 Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/fulfillment/types.ts`, `buildTrackingUrl`, `normalizeLegacyCarrier`, and the `LIKE` patterns in migration `0022`.
+
+**Going-out-of-business sale settings** (migration `0025`, `admin_settings` table, read via `lib/sale/settings.ts`'s `getSaleRules()`):
+- `sale.minimum_boxes` — cart minimum in boxes; enforced server-side (checkout, MCP order tools) and reflected client-side in the drawer/checkout copy.
+- `sale.final_sale` — gates all three final-sale surfaces: Chai's refund answer (`lib/ai/deterministic-answers.ts`), the checkout notice (`components/checkout/FinalSaleNotice.tsx`, via `useSaleRules()` → `/api/sale-rules`), and the order-confirmation email line (`lib/utils/email.ts`, via `OrderData.finalSale`, set server-side by `lib/services/order-confirmation.ts`). Every layer defaults to **true** when the value can't be read — an unreadable setting must never produce a checkout or a receipt that omits the no-returns statement. Only an explicit `false` removes the copy. There is no admin UI for this key; changing it means a direct settings write.
+- `sale.subscriptions_enabled` — enforced server-side by `rejectIfSubscriptionsDisabled()` (`lib/sale/subscription-gate.ts`) on every surface that STARTS recurring billing: `POST /api/subscriptions`, `POST /api/setup-intent`, and the `resume` / `skip` subroutes (`skip` schedules its own restart). Returns 403; fails closed by not catching, so a settings read failure 500s without reaching Stripe. Deliberately NOT applied to `pause`/`cancel` (never block a customer from stopping a charge), the admin plans route (the tool used to reverse this), or the Stripe webhooks (they only record what already happened in Stripe). `/subscribe/checkout` redirects too, but that is UX — the 403s are the boundary. Migration `0029` also sets `subscription_plans.is_active = 0` as a second, data-level stop. Reversing takes **two** steps, neither of them a migration: flip the plans back on at `/admin/subscriptions`, and write `sale.subscriptions_enabled` directly — like `sale.final_sale`, that key has **no admin UI**. The subscription code itself is otherwise untouched (kept as Mercora upstreaming source material).
+- `shipping.tiers` — quantity-tiered shipping cost by box count. **Empty (`[]`) means "not configured"** and leaves the flat per-method rates (`$5.99`/`$9.99`/`$19.99`) in force — a deliberate safety property, not a bug: seeding this with placeholder bands would have shipped every order free until an admin entered real prices (see Task 4's fix in the SDD ledger). Configure via `/admin/settings` → Shipping. Once **non-empty** it prices the whole cart: a box count above every bounded band resolves to the **top band**, never back to the flat rate (`resolveShippingTier`) — falling back would have undercharged the largest orders, with the charge floor agreeing because it resolves through the same function. The editor warns when no row is open-ended.
+- `promotions.banner_link` — URL the storefront promo banner links to.
 
 ---
 
@@ -129,6 +140,7 @@ Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/
 - [`docs/money.md`](docs/money.md) · [`docs/observability.md`](docs/observability.md) · [`docs/mcp-server-specification.md`](docs/mcp-server-specification.md) · [`docs/THEMING.md`](docs/THEMING.md)
 
 **Runbooks:**
+- [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md) — the owner's step-by-step for deploying the going-out-of-business sale
 - `PRODUCTION-CUTOVER-RUNBOOK.md` — go-live runbook
 - `SHOPIFY-ETL.md` — Shopify→Mercora ETL steps & gotchas
 - `MIGRATION-PLAN.md` — original scope

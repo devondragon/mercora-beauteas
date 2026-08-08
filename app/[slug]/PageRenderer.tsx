@@ -82,6 +82,7 @@ export default async function PageRenderer({ page, customJsEnabled = false }: Pa
           />
         );
       case "story":
+      case "closing":
         return <StoryBody lead={parsed.lead} sections={parsed.sections} />;
     }
   })();

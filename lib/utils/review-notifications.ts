@@ -86,7 +86,7 @@ export async function sendReviewStatusNotification(input: ReviewStatusNotificati
         <p style="margin: 24px 0 0; color: #9ca3af; font-size: 14px; line-height: 22px;">
           Thanks again for taking the time to share your experience. Your feedback helps others discover their perfect skincare tea blend.
         </p>
-        <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">— The BeauTeas Team</p>
+        <p style="margin: 16px 0 0; color: #6b7280; font-size: 12px;">The BeauTeas Team</p>
         <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #1f2937;">
           ${postalAddressHtml('dark')}
         </div>

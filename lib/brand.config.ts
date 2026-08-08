@@ -142,7 +142,9 @@ export const brand = {
       // Auto-populated from published CMS navigation pages — do not hardcode.
     ],
     column2: [
-      { label: "Subscriptions", href: "/subscriptions" }, // CMS page (published)
+      // "Subscriptions" removed for the closing sale (GOOB): subscriptions are
+      // switched off and the page is archived (migration 0026). /subscriptions
+      // 301s to /thank-you (next.config.ts) so a bookmarked link still resolves.
       { label: "Gift Cards", href: "/gift-cards" },        // /gift-cards route
       { label: "Brewing Guide", href: "/brewing-directions" }, // CMS page (published)
       { label: "About Us", href: "/about-us" },            // CMS page (real founder story)

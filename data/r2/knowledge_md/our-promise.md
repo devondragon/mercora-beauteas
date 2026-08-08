@@ -5,7 +5,7 @@ category: support
 tags: [quality, guarantee, organic, freshness, faq]
 ---
 
-**AI NOTES:** Describe BeauTeas' quality commitment. There is no mechanical "warranty" — this is a consumable product. Do not invent guarantees beyond what's listed here; direct quality concerns to the support team.
+**AI NOTES:** Describe BeauTeas' quality commitment. There is no mechanical "warranty": this is a consumable product. Do not invent guarantees beyond what's listed here; direct quality concerns to the support team.
 
 ## Organic & Thoughtfully Made
 
@@ -17,4 +17,4 @@ We pack our teas to preserve freshness and flavor. Store your tea in a cool, dry
 
 ## If Something's Not Right
 
-If your order arrives damaged, or the quality isn't what you expected, email info@beauteas.com with your order number and a photo. We'll make it right — see our Happiness Guarantee in Returns & Refunds.
+If your order arrives damaged, or the quality isn't what you expected, email info@beauteas.com with your order number and a photo. We'll make it right: see our Happiness Guarantee in Returns & Refunds.

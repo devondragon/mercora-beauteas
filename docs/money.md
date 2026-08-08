@@ -126,6 +126,13 @@ the type checker.
   the one place this conversion lives, and even they now delegate to
   `Money.fromMajor(...).toMinorUnits()` / `Money.fromMinor(...).toMach().amount`
   rather than doing the arithmetic by hand.)
+  - **Accepted exception: plain-`node` scripts under `scripts/`.** They run
+    with no build step, and `lib/money`'s extensionless internal imports don't
+    resolve under bare `node`. `scripts/goob-reprice.mjs` imports `big.js`
+    directly — the library `money.ts` itself uses — and replicates only
+    `Money.fromMajor`'s USD path. Still decimal arithmetic, never raw float
+    multiplication: `Math.round(1.005 * 100)` is `100`, not `101`. If you add
+    a script that touches money, follow that pattern and say why in its header.
 - **All display goes through `Money.format()`.** Don't hand-roll
   `$${(cents / 100).toFixed(2)}` or similar anywhere in components/emails.
 - **`Order.total_amount` is the PRE-gift-card order value** — the sum of

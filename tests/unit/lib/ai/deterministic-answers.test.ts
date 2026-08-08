@@ -28,6 +28,14 @@ vi.mock('@/lib/utils/settings', () => ({
   getSettings: (...args: unknown[]) => getSettings(...args),
 }));
 
+// `@/lib/sale/rules` is intentionally NOT mocked — it's pure and should run for
+// real. Only the D1 read (`getSaleRules`, in `@/lib/sale/settings`) is mocked,
+// matching how `@/lib/utils/settings` is handled above.
+const getSaleRules = vi.fn();
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: (...args: unknown[]) => getSaleRules(...args),
+}));
+
 import {
   classifyQuery,
   resolveDeterministicAnswer,
@@ -39,11 +47,22 @@ import {
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
   SHIPPING_POLICY_URL,
+  SITE_URL,
 } from '@/lib/ai/canonical-facts';
 
 beforeEach(() => {
   vi.clearAllMocks();
   getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  // Pre-sale posture by default so every pre-existing test below (written
+  // before the GOOB sale existed) keeps asserting the return-window answer
+  // without having to know about `getSaleRules`. GOOB-specific tests override
+  // this per-case.
+  getSaleRules.mockResolvedValue({
+    minimumBoxes: 10,
+    finalSale: false,
+    subscriptionsEnabled: false,
+    tiers: [],
+  });
   // `{}` → the storefront defaults baked into `shipping-options.ts`
   // (standard $5.99 / express $9.99 / overnight $19.99, free ≥ $75 on standard).
   getSettings.mockResolvedValue({});
@@ -244,7 +263,26 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
     expect(getSettings).toHaveBeenCalledWith('store');
   });
 
+  it('says nothing about free shipping when no method is configured as free', async () => {
+    // The default state during the closing sale — `shipping.free_methods` is
+    // emptied by migration 0025 and the module default is empty too, so
+    // `freeShippingSentence` returns "". Chai must not advertise a $75 free
+    // threshold that checkout will not honour.
+    const answer = await resolveDeterministicAnswer('shipping_rates');
+
+    expect(answer).not.toMatch(/ship free|free shipping/i);
+    expect(answer).not.toContain('$75.00 or more');
+    // The rate card itself is unaffected.
+    expect(answer).toContain('$5.99');
+  });
+
   it('states the free-shipping THRESHOLD and never that the shopper qualifies', async () => {
+    // Stated explicitly: the sentence only exists when a method is configured
+    // free, and this pins how it is PHRASED when it does.
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping' ? { 'shipping.free_methods': ['standard'] } : {}
+    );
+
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
     // The policy, as a condition on the order — not a claim about this person.
@@ -277,10 +315,10 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
 
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
-    expect(answer).toContain('Ground — $4.50');
+    expect(answer).toContain('Ground: $4.50');
     // The label carries no timing, so the estimate is appended from the setting.
     expect(answer).toContain('about 6 business days');
-    expect(answer).toContain('Air (1–2 days) — $24.00');
+    expect(answer).toContain('Air (1–2 days): $24.00');
     expect(answer).toContain('$120.00 or more');
     expect(answer).toContain('ship free via Ground');
     // Disabled methods are not quoted.
@@ -327,8 +365,114 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
 
     const answer = await resolveDeterministicAnswer('shipping_rates');
 
-    expect(answer).toContain('Flat rate — $7.00');
+    expect(answer).toContain('Flat rate: $7.00');
     expect(answer).not.toMatch(/free/i);
+  });
+
+  // Final-review fix wave, item 4: with a 10-box minimum, carts above tier 1
+  // are common, so `resolveShippingOptions(0)` resolving only the lowest tier
+  // must not be stated as THE rate. When shipping.tiers is configured, the
+  // answer renders the whole table instead.
+  describe('quantity-tiered shipping (final-review fix, item 4)', () => {
+    it('renders one ascending line per configured tier instead of a single rate', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [
+          { max_boxes: 20, cost: 5.99 },
+          { max_boxes: 40, cost: 4.99 },
+          { max_boxes: null, cost: 2.99 },
+        ],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('1–20 boxes: $5.99');
+      expect(answer).toContain('21–40 boxes: $4.99');
+      expect(answer).toContain('41+ boxes: $2.99');
+      expect(answer).toContain(SHIPPING_POLICY_URL);
+      // Not the flat per-method rate card line (the free-shipping sentence
+      // still names the eligible method by label, which is correct — this
+      // only pins that the per-method cost line itself is gone).
+      expect(answer).not.toContain('Standard (5–7 days): $5.99');
+    });
+
+    it('sorts tiers ascending regardless of storage order, open-ended last', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        // Stored out of order, mirroring resolveShippingTier's own test.
+        tiers: [
+          { max_boxes: null, cost: 2.99 },
+          { max_boxes: 20, cost: 5.99 },
+          { max_boxes: 40, cost: 4.99 },
+        ],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+      const first = answer.indexOf('1–20 boxes');
+      const second = answer.indexOf('21–40 boxes');
+      const third = answer.indexOf('41+ boxes');
+
+      expect(first).toBeGreaterThan(-1);
+      expect(second).toBeGreaterThan(first);
+      expect(third).toBeGreaterThan(second);
+    });
+
+    it('still suppresses the free-shipping sentence when shipping.free_methods is empty', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 5.99 }],
+      });
+      getSettings.mockImplementation(async (category: string) =>
+        category === 'shipping' ? { 'shipping.free_methods': [] } : {}
+      );
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).not.toMatch(/free/i);
+    });
+
+    it('renders a genuinely zero-cost tier as free', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 0 }],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('1+ boxes: free');
+    });
+
+    it('states NO rate rather than "free" when a tier cost is unusable', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 'abc' as unknown as number }],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).not.toMatch(/free/i);
+      expect(answer).not.toMatch(/\$\s*\d/);
+      expect(answer).toContain(SHIPPING_POLICY_URL);
+    });
+
+    it('keeps today\'s flat-method behavior when shipping.tiers is empty', async () => {
+      // The default beforeEach mock already sets tiers: [] — this pins that
+      // the empty-tiers path is unchanged rather than relying on the default.
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('Standard (5–7 days): $5.99');
+      expect(answer).not.toMatch(/boxes:/);
+    });
   });
 
   // `shipping.methods` is admin-edited JSON, so a cost field can arrive cleared
@@ -373,7 +517,7 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
         : {}
     );
 
-    expect(await resolveDeterministicAnswer('shipping_rates')).toContain('Standard — free');
+    expect(await resolveDeterministicAnswer('shipping_rates')).toContain('Standard: free');
   });
 
   it('states NO rate rather than "free" when the threshold is unreadable', async () => {
@@ -516,7 +660,257 @@ describe('deterministic category table (BMC-215)', () => {
       'order_status',
       'business_address',
       'refund_window',
+      'minimum_order',
+      'store_closing',
+      'tea_freshness',
       'shipping_rates',
     ]);
+  });
+});
+
+describe('final-sale returns answer (GOOB)', () => {
+  it('states that sales are final instead of quoting a return window', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery('what is your return policy?');
+    expect(category).toBe('refund_window');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).toMatch(/final/i);
+    expect(answer).not.toMatch(/\d+ days/);
+  });
+
+  it('still names the damaged-or-lost exception so the policy reads as fair', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery('can i return this?');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).toMatch(/damaged|arrives? broken|never arrives/i);
+  });
+
+  it('falls back to the return window when final sale is off', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: false,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+    getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+
+    const category = classifyQuery('what is your return policy?');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/30 days/);
+  });
+});
+
+describe('minimum order answer (GOOB)', () => {
+  it.each([
+    'is there a minimum order?',
+    'what is the minimum order?',
+    'do i have to buy a minimum?',
+    'how many boxes do i have to buy?',
+  ])('answers %s with the configured minimum', async (question) => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery(question);
+    expect(category).toBe('minimum_order');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+  });
+
+  it('does not hijack an unrelated question about order status', () => {
+    expect(classifyQuery('where is my order?')).not.toBe('minimum_order');
+    expect(classifyQuery('where is my order?')).toBe('order_status');
+  });
+
+  it.each([
+    // The bare "is there a minimum" pattern must co-occur with an
+    // order-shaped subject. Without that, it matched ANY "is there a
+    // minimum X" regardless of subject.
+    'is there a minimum steep time for the tea?',
+    'is there a minimum brew temperature?',
+    // "buy" appears in this sentence, but not as the subject of "minimum" —
+    // this is an age-restriction question, not an order-size one.
+    'is there a minimum age to buy tea?',
+  ])('does not hijack %s (bare "minimum" needs an order-shaped subject)', (question) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+  });
+
+  it.each([
+    // The fully bare form, with no subject at all, is a real and common
+    // phrasing on a store with a hard minimum — it must still match, or the
+    // model gets to invent an answer to the exact question the deterministic
+    // layer exists to pin. Distinct from the cases above: there is no
+    // trailing subject text for the anchor to reject.
+    'is there a minimum?',
+    'Is there a minimum?',
+    'is there a minimum',
+    'is there a minimum???',
+  ])('still answers the fully bare form: %s', async (question) => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+
+    const category = classifyQuery(question);
+    expect(category).toBe('minimum_order');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+  });
+
+  it.each([
+    // Past-tense self-reference belongs to order history, not the box
+    // minimum, even though it shares the "how many boxes...buy/order" shape.
+    'how many boxes did i order?',
+    'how many boxes have i ordered?',
+    'how many boxes did i buy last time?',
+    // Present-tense self-reference is the same shape and was still hijacked
+    // by a first attempt that only excluded past tense — "are in my order"
+    // matches no `did/have/has i order` phrasing, so an exclude list would
+    // have had to enumerate this too. The obligation-shaped positive pattern
+    // ("do i have to" / "must i" / "should i" / "am i required to") rules it
+    // out structurally instead.
+    'how many boxes are in my order?',
+    'how many boxes were in my last order?',
+    'how many boxes have i purchased this year?',
+    // First-person-plural self-reference is the same shape — added alongside
+    // the "we"/"us" obligation modals below, so it must not reopen either
+    // prior hijack.
+    'how many boxes did we order?',
+    'how many boxes have we ordered?',
+    'how many boxes are in our order?',
+  ])('does not hijack self-referential order history: %s', (question) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+  });
+
+  it.each([
+    // Obligation-shaped phrasings beyond the brief's original "do i have to
+    // buy" — confirms the narrower positive pattern didn't just move the
+    // false negative from "how many boxes ... buy/order" to only that one
+    // exact modal.
+    'how many boxes must i order?',
+    'how many boxes should i order?',
+    'how many boxes am i required to purchase?',
+    // First-person-plural forms — the same obligation shape a couple
+    // shopping together would type. Widening the modal alternation only
+    // touches the modal group itself, not the noun list (round 1's hijack
+    // vector) or the gap tolerance (round 2's), so the negatives above stay
+    // covered.
+    'how many boxes must we order?',
+    'how many boxes should we order?',
+    'how many boxes do we have to buy?',
+    'how many boxes are we required to purchase?',
+  ])('still answers other obligation phrasings: %s', (question) => {
+    expect(classifyQuery(question)).toBe('minimum_order');
+  });
+
+  it.each([
+    // "spend" and "cart" were dropped from the noun list entirely: the
+    // sale's minimum is denominated in BOXES (`sale.minimum_boxes`), never
+    // dollars, and this phrasing belongs to `shipping_rates` (the free-
+    // shipping threshold) or retrieval (coupon/discount code minimums) —
+    // neither of which this store even has a dollar-based order minimum for.
+    // "minimum spend for shipping" containing the literal "free shipping"
+    // phrase now correctly reaches `shipping_rates` instead of being
+    // hijacked into the box-minimum answer.
+    ['minimum spend for free shipping?', 'shipping_rates'],
+    ['whats the minimum spend to get free shipping?', 'shipping_rates'],
+    // No "free" in this one, so it isn't in `shipping_rates`'s vocabulary
+    // either — it falls through to retrieval rather than to either canned
+    // answer, which is the safe outcome: retrieval has the VERIFIED FACTS
+    // block and can honestly say free shipping is off for the sale.
+    ['is there a minimum spend for shipping?', null],
+    ['whats the minimum cart total for the coupon code to work?', null],
+    ['is there a minimum cart value for the discount code?', null],
+  ])('does not let "spend"/"cart" hijack shipping or coupon questions: %s -> %s', (question, expected) => {
+    expect(classifyQuery(question)).not.toBe('minimum_order');
+    expect(classifyQuery(question)).toBe(expected);
+  });
+});
+
+describe('tea freshness answer (GOOB)', () => {
+  it.each([
+    'how old is the tea?',
+    'is the tea still fresh?',
+    'is this tea expired?',
+    'when does this tea expire?',
+  ])('answers %s honestly about age and storage', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('tea_freshness');
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/sealed|airtight/i);
+  });
+
+  it('does not hijack an ordinary product question', () => {
+    // The freshness rule must be narrow. These are questions the catalog and
+    // retrieval answer far better than a canned line about storage.
+    expect(classifyQuery('what is in the morning blend?')).not.toBe('tea_freshness');
+    expect(classifyQuery('how do i brew this?')).not.toBe('tea_freshness');
+    expect(classifyQuery('how much caffeine is in it?')).not.toBe('tea_freshness');
+  });
+});
+
+describe('store closing answer (GOOB)', () => {
+  it.each([
+    'are you going out of business?',
+    'why are you closing?',
+    'is beauteas shutting down?',
+  ])('answers %s and points at the closing page', async (question) => {
+    const category = classifyQuery(question);
+    expect(category).toBe('store_closing');
+
+    const answer = await resolveDeterministicAnswer(category!);
+    expect(answer).toMatch(/thank-you/);
+    expect(answer).toContain(`${SITE_URL}/thank-you`);
+  });
+
+  it.each([
+    // Store-HOURS phrasing shares "closed"/"closing" vocabulary with
+    // permanent closure but asks a different question. A customer asking
+    // about Sunday hours must not get the going-out-of-business announcement.
+    'are you closed today?',
+    'are you closed for the holiday?',
+    'is beauteas closed on sundays?',
+    'why are you closing early today?',
+  ])('does not hijack a store-hours question: %s', (question) => {
+    expect(classifyQuery(question)).not.toBe('store_closing');
+  });
+});
+
+describe('tiered shipping answer (GOOB)', () => {
+  it('states the tiers and drops the free-shipping sentence when nothing is free', async () => {
+    getSettings.mockImplementation(async (category: string) =>
+      category === 'shipping'
+        ? {
+            'shipping.methods': [
+              { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+            ],
+            'shipping.free_methods': [],
+          }
+        : {}
+    );
+
+    const category = classifyQuery('how much is shipping?');
+    expect(category).toBe('shipping_rates');
+    const answer = await resolveDeterministicAnswer(category!);
+
+    expect(answer).not.toMatch(/free shipping/i);
+    // Still a complete, natural rate card — not a fragment with a dangling join.
+    expect(answer).toContain('Standard: $5.99');
+    expect(answer).toMatch(/i can'?t see your cart from here/i);
   });
 });

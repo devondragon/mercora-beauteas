@@ -26,6 +26,20 @@ vi.mock('@/lib/models/mach/orders', () => ({
   getOrderByPaymentIntentId: vi.fn(),
 }));
 
+// GOOB: this suite pins the BMC-188 line-item cap with quantity-1 fixtures
+// (100 items = 100 boxes, well above any real minimum, but the second case
+// needs the gate to fall through cleanly) — it isn't about the box minimum
+// itself (that has its own dedicated test, mcp-sale-minimum-order.test.ts).
+// Pin minimumBoxes to 0 so the new gate never trips here.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn().mockResolvedValue({
+    minimumBoxes: 0,
+    finalSale: true,
+    subscriptionsEnabled: false,
+    tiers: [],
+  }),
+}));
+
 import { requireOwnedSession } from '@/lib/mcp/session';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { getOrderByPaymentIntentId } from '@/lib/models/mach/orders';

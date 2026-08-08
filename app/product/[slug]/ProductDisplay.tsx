@@ -43,6 +43,7 @@ import { ProductReviewsSection } from "@/components/reviews/ProductReviewsSectio
 import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Money } from "@/lib/money";
+import { isSellableVariant } from "@/lib/config/commerce";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -62,6 +63,9 @@ interface ProductDisplayProps {
   reviews: Review[];
   reviewEligibility?: ProductReviewEligibility;
   subscriptionPlans?: SubscriptionPlan[];
+  /** Gates the subscription toggle. Defaults to false so a caller that forgets
+   * to pass it hides the toggle rather than showing it. */
+  subscriptionsEnabled?: boolean;
   recommendations: Product[];
 }
 
@@ -137,6 +141,7 @@ export default function ProductDisplay({
   reviews,
   reviewEligibility,
   subscriptionPlans = [],
+  subscriptionsEnabled = false,
   recommendations,
 }: ProductDisplayProps) {
   const allImages = useMemo(() => {
@@ -163,8 +168,15 @@ export default function ProductDisplay({
   const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.svg");
   const [activeTab, setActiveTab] = useState<"details" | "reviews">("details");
 
-  // Variant selection state
-  const variants = product.variants || [];
+  // Variant selection state. Withdrawn (non-sellable) variants — e.g. the
+  // discontinued 3-box packs — are filtered out here rather than trusting the
+  // caller, so an unsellable variant can never become selectable or default.
+  // Server-side pricing already refuses these via isSellableVariant
+  // (computeCatalogLineCents); this is what keeps the UI from offering them
+  // in the first place. If every variant on a product is withdrawn, variants
+  // is empty, defaultVariant/selectedVariant are undefined, and the existing
+  // "Sold out" branch below (available === false) renders instead of crashing.
+  const variants = (product.variants || []).filter((variant) => isSellableVariant(variant));
   const defaultVariant = variants.find((variant) => variant.id === product.default_variant_id) || variants[0];
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(defaultVariant?.id);
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || defaultVariant;
@@ -396,7 +408,7 @@ export default function ProductDisplay({
               </div>
             )}
 
-            {subscriptionPlans.length > 0 ? (
+            {subscriptionsEnabled && subscriptionPlans.length > 0 ? (
               <>
                 <SubscriptionToggle
                   plans={subscriptionPlans}
@@ -503,7 +515,7 @@ export default function ProductDisplay({
                     Add to Cart
                   </button>
                 ) : (
-                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Coming soon</p>
+                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Sold out</p>
                 )}
               </>
             )}

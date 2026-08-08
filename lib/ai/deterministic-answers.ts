@@ -32,9 +32,12 @@ import {
   ORDER_HISTORY_URL,
   REFUND_POLICY_URL,
   SHIPPING_POLICY_URL,
+  SITE_URL,
   SUPPORT_HOURS,
 } from "@/lib/ai/canonical-facts";
 import { Money } from "@/lib/money";
+import { getSaleRules } from "@/lib/sale/settings";
+import type { ShippingTier } from "@/lib/sale/rules";
 import { resolveShippingOptions } from "@/lib/services/shipping-options";
 import type { ShippingOption } from "@/lib/types/shipping";
 import { getRefundPolicy } from "@/lib/utils/settings";
@@ -45,6 +48,9 @@ export type DeterministicCategory =
   | "order_status"
   | "business_address"
   | "refund_window"
+  | "minimum_order"
+  | "store_closing"
+  | "tea_freshness"
   | "shipping_rates";
 
 interface CategoryRule {
@@ -90,7 +96,7 @@ const RULES: CategoryRule[] = [
       /\b(speak|talk) to (a |someone in |the )?(human|person|support|customer service|real)\b/i,
     ],
     answer: () =>
-      `You can reach our team at ${CONTACT_EMAIL} 💕 We're around ${SUPPORT_HOURS} and usually reply within one business day — orders, products, subscriptions, anything at all.`,
+      `You can reach our team at ${CONTACT_EMAIL} 💕 We're around ${SUPPORT_HOURS} and usually reply within one business day: orders, products, subscriptions, anything at all.`,
   },
   {
     category: "order_status",
@@ -133,6 +139,111 @@ const RULES: CategoryRule[] = [
       /\bwhat('?s| is) your (return|refund) policy\b/i,
       /\bdo you (accept|take|do) returns\b/i,
     ],
+  },
+  {
+    category: "minimum_order",
+    // Answered from `sale.minimum_boxes` in D1, so no sync `answer`.
+    patterns: [
+      // "number" was deliberately dropped from this list — "minimum number"
+      // is generic enough to also match "minimum number of reviews" or "of
+      // characters", neither of which is an order-size question. "quantity"
+      // stays: nobody asks about a minimum review quantity.
+      //
+      // "spend" and "cart" were tried here and dropped again: the sale's
+      // minimum is denominated in BOXES (`sale.minimum_boxes`), never
+      // dollars, and "minimum spend" / "minimum cart value" phrasing
+      // overlaps almost entirely with the free-shipping threshold and
+      // coupon/discount framing that `shipping_rates` (or retrieval) owns —
+      // "what's the minimum spend for free shipping?" was answering the box
+      // minimum instead of the rate card. Excluding every dollar-shaped
+      // framing ("for shipping", "for the coupon", "for the discount code",
+      // ...) would be an ever-growing list; dropping the two nouns removes
+      // the hijack at the source and loses nothing, since this store has no
+      // dollar-denominated minimum to describe.
+      /\bminimum (order|purchase|quantity|boxes)\b/i,
+      /\b(order|buy|purchase) minimum\b/i,
+      // Requires an OBLIGATION shape ("do i/we have to", "must i/we",
+      // "should i/we", "am i/are we required to") between the noun and the
+      // verb. The earlier version matched on bare co-occurrence of a
+      // quantity noun and an order verb anywhere in the sentence, which is
+      // why present-tense and past-tense self-reference ("how many boxes ARE
+      // IN MY order?", "...DID I order?") had to be enumerated one phrasing
+      // at a time in an `exclude` list — and still missed some. An
+      // obligation/modal shape structurally excludes every self-reference
+      // construction at once, because none of them ask what the shopper is
+      // REQUIRED to do. The first-person-plural forms ("do WE have to",
+      // "should WE") are the same obligation shape a couple shopping
+      // together would type, and are included for the same reason as the
+      // singular ones — narrowing the modal alternation doesn't touch the
+      // noun list (the round-1 hijack vector) or widen the match gap (the
+      // round-2 hijack vector), so it can't reopen either.
+      /\bhow many (boxes|tins)\s+(do (i|we) have to|must (i|we)|should (i|we)|(am i|are we) required to)\s+(buy|order|purchase)\b/i,
+      /\bdo i have to buy\b.{0,20}\b(minimum|at least)\b/i,
+      // The subject word must sit IMMEDIATELY after "a minimum" (whitespace
+      // only, no `.{0,N}` gap). A gap let "is there a minimum AGE TO BUY
+      // tea?" match on the trailing "buy" — a legal-age question, not an
+      // order-size one. Zero gap means only the actual subject of "minimum"
+      // qualifies, which also makes this redundant with the pattern above
+      // for "minimum order" — kept for the nouns that pattern doesn't cover
+      // (a bare "buy").
+      /\bis there a minimum\b\s+(order|purchase|buy|boxes)\b/i,
+      // The fully bare form ("is there a minimum?", no subject at all) is a
+      // real, common phrasing on a store with a hard minimum — losing it to
+      // retrieval is the same class of failure as an invented email address.
+      // Anchored to the WHOLE (trimmed) question so it can never widen into
+      // a substring match on a longer sentence with unrelated trailing text.
+      /^is there a minimum\s*\?*$/i,
+    ],
+    exclude: [
+      // Past-tense self-reference ("how many boxes DID I order/buy") is a
+      // question about THIS shopper's order history, not the box minimum.
+      // The obligation-shaped pattern above no longer needs this to stay
+      // narrow, but it's cheap insurance against a future positive pattern
+      // reintroducing the same gap.
+      /\b(did|have|has) i (order|buy|bought|purchase|purchased)\b/i,
+      /\bi (ordered|bought|purchased)\b/i,
+    ],
+  },
+  {
+    category: "store_closing",
+    patterns: [
+      /\b(going out of business|shutting down|shutting up shop|closing down|winding down)\b/i,
+      /\bwhy (are|is)\b.{0,20}\b(you|beauteas)\b.{0,15}\bclos(ing|e)\b/i,
+      /\b(are|is)\b.{0,15}\b(you|beauteas)\b.{0,15}\bclos(ing|ed)\b/i,
+      /\b(last|final) chance\b.{0,20}\b(buy|order)\b/i,
+    ],
+    exclude: [
+      // Store-HOURS phrasing ("closed today", "closed on Sundays", "closing
+      // early") shares the closing/closed vocabulary with permanent closure
+      // but asks a different question — the same "topic mismatch dressed as
+      // a fact" shape as "plastic-free shipping" matching the rate card. A
+      // relative day, a weekday name, "for the holiday/weekend", or
+      // "early/late" all signal HOURS, not going-out-of-business.
+      /\bclos(ing|ed)\b.{0,20}\b(today|tonight|tomorrow|this (morning|afternoon|evening|weekend)|early|late|right now)\b/i,
+      /\bclos(ing|ed)\b.{0,20}\b(on\s+)?(mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|weekends?|holidays?)\b/i,
+      /\bclos(ing|ed)\b.{0,20}\bfor the (holiday|weekend|day|night)\b/i,
+      // Temporary operational closures ("closed for maintenance") are also
+      // not the going-out-of-business question.
+      /\bclos(ing|ed)\b.{0,20}\bfor (maintenance|repairs?|cleaning|restocking|inventory)\b/i,
+    ],
+    answer: () =>
+      `We are, yes 💕 After a lot of thought we're closing BeauTeas for good, and everything left is going out at clearance prices. The whole story, and a very big thank-you, is here: ${SITE_URL}/thank-you`,
+  },
+  {
+    category: "tea_freshness",
+    // DELIBERATELY NARROW. The subject must be age, freshness, or expiry — an
+    // earlier draft matching a bare /\bfresh\b/ swallowed "is this freshly
+    // blended?" and "what's the freshest thing you have?", which retrieval and
+    // the catalog answer far better than a canned line about storage.
+    patterns: [
+      /\bhow (old|fresh)\b.{0,20}\b(is|are)\b.{0,20}\b(the |this |your )?(tea|teas|blend|blends|stock)\b/i,
+      /\b(tea|teas|blend|blends|stock)\b.{0,20}\b(expired?|expiry|expiration|out of date|past its date)\b/i,
+      /\b(is|are)\b.{0,20}\b(the |this |your )?(tea|teas|blend|blends)\b.{0,20}\bstill (good|fresh|drinkable|ok|okay)\b/i,
+      /\bshelf life\b/i,
+      /\bwhen does\b.{0,25}\bexpire\b/i,
+    ],
+    answer: () =>
+      `Honest answer: our remaining stock has been in sealed, airtight storage for several years 💕 It's been kept carefully and it's still lovely to drink. The aroma is a little gentler than a fresh harvest, which is part of why everything is priced the way it is. More on that here: ${SITE_URL}/thank-you`,
   },
   {
     category: "shipping_rates",
@@ -216,6 +327,7 @@ export async function resolveDeterministicAnswer(
   if (rule?.answer) return rule.answer();
 
   if (category === "refund_window") return refundWindowAnswer();
+  if (category === "minimum_order") return minimumOrderAnswer();
   if (category === "shipping_rates") return shippingRatesAnswer();
 
   // Unreachable while every category has either a sync answer or a branch
@@ -224,7 +336,9 @@ export async function resolveDeterministicAnswer(
 }
 
 /**
- * Return-window answer, read from `refund.return_window_days` (BMC-243).
+ * Return-window answer, read from `refund.return_window_days` (BMC-243) — unless
+ * the store is in final-sale mode (`sale.final_sale`, GOOB), in which case there
+ * is no return window to state at all.
  *
  * On a settings-read failure this answers WITHOUT a number rather than guessing
  * one. Stating a wrong return window is the same class of failure as the invented
@@ -233,20 +347,49 @@ export async function resolveDeterministicAnswer(
  */
 async function refundWindowAnswer(): Promise<string> {
   try {
+    const { finalSale } = await getSaleRules();
+    if (finalSale) {
+      // Driven by the same setting the policy page reflects, so Chai and the
+      // site cannot drift. Stating a return window that no longer exists is the
+      // same class of failure as inventing one.
+      return `We're closing up shop, so every order is final sale. No returns or exchanges on the teas 💕 That said, if your order arrives damaged or never turns up, we'll absolutely make it right. Just email ${CONTACT_EMAIL} and we'll sort it out. Full details: ${REFUND_POLICY_URL}`;
+    }
+
     const { returnWindowDays } = await getRefundPolicy();
-    return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}) — and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
+    return `You've got ${returnWindowDays} days from delivery to start a return 💕 Full details live on our refund policy page (${REFUND_POLICY_URL}), and if you'd rather just ask a person, ${CONTACT_EMAIL} is the fastest way.`;
   } catch (error) {
-    console.error("[chai] refund window lookup failed:", error);
-    return `Our full return policy is here: ${REFUND_POLICY_URL} — it has the current return window and how to start one. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+    console.error("[chai] refund policy lookup failed:", error);
+    return `Our full return policy is here: ${REFUND_POLICY_URL}, and if you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+  }
+}
+
+/** Minimum-order answer, read from `sale.minimum_boxes` so it cannot drift. */
+async function minimumOrderAnswer(): Promise<string> {
+  try {
+    const { minimumBoxes } = await getSaleRules();
+    return `There's a ${minimumBoxes} boxes minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends. It all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
+  } catch (error) {
+    console.error("[chai] minimum order lookup failed:", error);
+    return `There's a minimum order while we clear the last of our stock. Your cart will tell you exactly how many more boxes you need 💕`;
   }
 }
 
 /**
  * Shipping rates + delivery estimates, read from the storefront shipping model
  * (`lib/services/shipping-options.ts`) — the SAME seam `/api/shipping-options`
- * quotes and the charge floor enforces (BMC-242).
+ * quotes and the charge floor enforces (BMC-242) — plus the quantity tiers
+ * (`shipping.tiers`, via `getSaleRules`, the same seam `resolveShippingOptions`
+ * itself resolves tiers through).
  *
- * Two things this answer is careful about:
+ * GOOB: with a 10-box minimum, most real carts sit above the lowest tier, so
+ * quoting only tier 1 (what a $0, boxless lookup resolves to) states the
+ * cheapest possible rate as though it were THE rate. When tiers are configured
+ * this renders the whole table — one line per band, ascending by box count —
+ * so a customer can see what their own order size will cost instead of being
+ * told a number that only applies to the smallest carts. When `shipping.tiers`
+ * is empty (not configured), behavior is unchanged: the enabled flat methods.
+ *
+ * Three things this answer is careful about:
  *
  * 1. **It never says the shopper qualifies for free shipping.** A chat message
  *    carries no cart, so the subtotal passed here is `0` and the quoted costs are
@@ -257,6 +400,8 @@ async function refundWindowAnswer(): Promise<string> {
  * 2. **On a settings-read failure it states no numbers.** The response guard
  *    rewrites invented emails and URLs but has nothing to say about an invented
  *    price — so a degraded read points at the policy page instead of guessing.
+ * 3. **A tier with an unusable cost fails the whole answer closed**, the same
+ *    way a broken flat-method cost does — see `describeTierTable`.
  */
 async function shippingRatesAnswer(): Promise<string> {
   try {
@@ -264,14 +409,54 @@ async function shippingRatesAnswer(): Promise<string> {
       await resolveShippingOptions(0);
     if (options.length === 0) throw new Error("no enabled shipping methods configured");
 
-    const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
+    const { tiers } = await getSaleRules();
     const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
 
-    return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates — checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
+    if (tiers.length > 0) {
+      const table = describeTierTable(tiers).join("\n");
+      return `Here's how shipping is priced during the closing sale 💕\n\n${table}\n\n${freeShipping}I can't see how many boxes are in your cart from here, so that's the full price table by order size. Checkout applies the right tier and shows the exact cost before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
+    }
+
+    const rates = options.map((option) => `• ${describeShippingOption(option)}`).join("\n");
+
+    return `Here's how we ship within the US 💕\n\n${rates}\n\n${freeShipping}I can't see your cart from here, so those are the standard US rates. Checkout shows the exact cost for your order before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
   } catch (error) {
     console.error("[chai] shipping rate lookup failed:", error);
-    return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL} — and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+    return `Our current shipping rates and delivery estimates are here: ${SHIPPING_POLICY_URL}, and checkout shows the exact cost for your order before you pay. If you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
   }
+}
+
+/**
+ * One line per configured shipping tier, ascending by box count, e.g.
+ * "1–20 boxes: $5.99" / "21+ boxes: $2.99". Sorted the same way
+ * `resolveShippingTier` (lib/sale/rules.ts) sorts them — open-ended (`null`)
+ * last, ties broken on cost — so the table and the tier checkout actually
+ * charges can never disagree about ordering.
+ *
+ * THROWS on a tier with an unusable cost, same reasoning as
+ * `describeShippingOption`: `shipping.tiers` is admin-edited JSON, and a
+ * missing or non-numeric cost must degrade the whole answer rather than
+ * render as "free".
+ */
+function describeTierTable(tiers: ShippingTier[]): string[] {
+  const sorted = [...tiers].sort((a, b) => {
+    if (a.max_boxes === null && b.max_boxes === null) return a.cost - b.cost;
+    if (a.max_boxes === null) return 1;
+    if (b.max_boxes === null) return -1;
+    return a.max_boxes - b.max_boxes;
+  });
+
+  let lowerBound = 1;
+  return sorted.map((tier) => {
+    const cost = rateMajor(tier.cost);
+    if (!Number.isFinite(cost) || cost < 0) {
+      throw new Error(`shipping tier (max_boxes=${tier.max_boxes}) has an unusable cost: ${tier.cost}`);
+    }
+    const price = cost > 0 ? Money.fromMajor(cost).format() : "free";
+    const label = tier.max_boxes === null ? `${lowerBound}+ boxes` : `${lowerBound}–${tier.max_boxes} boxes`;
+    if (tier.max_boxes !== null) lowerBound = tier.max_boxes + 1;
+    return `• ${label}: ${price}`;
+  });
 }
 
 /**
@@ -294,7 +479,7 @@ function describeShippingOption(option: ShippingOption): string {
     !/\d/.test(option.label) && Number.isFinite(option.estimatedDays) && option.estimatedDays > 0
       ? ` (about ${option.estimatedDays} business ${option.estimatedDays === 1 ? "day" : "days"})`
       : "";
-  return `${option.label} — ${price}${days}`;
+  return `${option.label}: ${price}${days}`;
 }
 
 /**
@@ -326,6 +511,8 @@ function freeShippingSentence(
   thresholdMajor: number,
   freeMethodIds: string[]
 ): string {
+  if (!freeMethodIds || freeMethodIds.length === 0) return "";
+
   const eligible = options.filter((option) => freeMethodIds.includes(option.id));
   if (eligible.length === 0) return "";
   if (!Number.isFinite(thresholdMajor) || thresholdMajor <= 0) return "";

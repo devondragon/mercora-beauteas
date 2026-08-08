@@ -424,6 +424,19 @@ Do not upstream:
 
 The reusable systems supporting these concerns may be upstreamed after configuration boundaries are introduced.
 
+## Post-Baseline Platform Fixes
+
+Genuine platform bugs fixed after tag `v1.0.0` (see "BeauTeas Source Is Read
+at Tag `v1.0.0`" above). These are not in the tag and must be reconstructed
+from `main`; see the inventory's own Post-Baseline Platform Fixes table
+([mercora-upstreaming-inventory.md](mercora-upstreaming-inventory.md)) for
+per-fix upstream tracking.
+
+- `ba7557b` — `lib/config/commerce.ts`, `lib/services/order-pricing.ts`:
+  archiving a product did not stop it selling. Status was never checked by
+  the PDP or the server pricing path, so an archived product still rendered
+  and was still purchasable by direct request.
+
 ## Future Convergence
 
 Do not rewrite BeauTeas history during the initial upstreaming work.

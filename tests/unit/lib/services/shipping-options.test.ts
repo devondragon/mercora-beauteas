@@ -42,11 +42,25 @@ describe('resolveShippingOptions — defaults', () => {
     ]);
   });
 
-  it('reports the default $75 threshold and free method', async () => {
+  it('reports the default $75 threshold and NO free methods', async () => {
+    // The free-method default is empty on purpose. Migration 0025 turns free
+    // shipping off with a row-guarded UPDATE, so a database that never got the
+    // original seed has no `shipping.free_methods` row and falls back to this
+    // constant — which, as `['standard']`, silently re-enabled free shipping
+    // over $75 during the closing sale. The threshold is untouched: it only
+    // matters once a method is listed as free.
     const { freeShippingThresholdMajor, freeMethodIds } = await resolveShippingOptions(0);
 
     expect(freeShippingThresholdMajor).toBe(75);
-    expect(freeMethodIds).toEqual(['standard']);
+    expect(freeMethodIds).toEqual([]);
+  });
+
+  it('charges every method when no free_methods row exists, however large the cart', async () => {
+    const { options, qualifiesForFreeShipping } = await resolveShippingOptions(999999);
+
+    // The threshold is still "cleared" — there is simply nothing it can zero.
+    expect(qualifiesForFreeShipping).toBe(true);
+    expect(options.map((o) => o.cost)).toEqual([5.99, 9.99, 19.99]);
   });
 
   it('reads both the shipping and store settings categories', async () => {
@@ -66,6 +80,11 @@ describe('resolveShippingOptions — free-shipping threshold', () => {
   });
 
   it('zeroes only the free methods once the subtotal clears the threshold', async () => {
+    // `free_methods` is stated explicitly rather than relying on the module
+    // default, which is now empty: this pins the zeroing MECHANIC, which has to
+    // keep working if a store ever re-enables free shipping.
+    withSettings({ 'shipping.free_methods': ['standard'] });
+
     // Exactly at the threshold — the comparison is `gte`, and the answer Chai
     // gives says "or more", so this boundary is load-bearing.
     const { options, qualifiesForFreeShipping } = await resolveShippingOptions(7500);
@@ -130,5 +149,127 @@ describe('resolveShippingOptions — admin-configured methods', () => {
     });
 
     expect((await resolveShippingOptions(0)).options).toEqual([]);
+  });
+});
+
+describe('resolveShippingOptions — quantity tiers (GOOB)', () => {
+  const TIERS = [
+    { max_boxes: 20, cost: 8 },
+    { max_boxes: 40, cost: 14 },
+    { max_boxes: null, cost: 22 },
+  ];
+
+  it('prices the method from the tier matching the box count', async () => {
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    const { options } = await resolveShippingOptions(2000, { boxes: 10 });
+
+    expect(options).toEqual([{ id: 'standard', label: 'Standard', cost: 8, estimatedDays: 5 }]);
+  });
+
+  it('crosses tiers at the inclusive bound', async () => {
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 20 })).options[0].cost).toBe(8);
+    expect((await resolveShippingOptions(2000, { boxes: 21 })).options[0].cost).toBe(14);
+    expect((await resolveShippingOptions(2000, { boxes: 41 })).options[0].cost).toBe(22);
+  });
+
+  it('ignores the per-method cost entirely once tiers are configured', async () => {
+    withSettings({
+      'shipping.tiers': [{ max_boxes: null, cost: 22 }],
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(22);
+  });
+
+  // Regression: with every tier bounded, `resolveShippingTier` returned null
+  // for a cart above the largest bound and this function read that as "no
+  // tiers configured" — so the LARGEST orders both quoted and were charged the
+  // flat $5.99. `computeShippingFloorCents` resolves through here too, so the
+  // floor agreed and nothing caught the undercharge. A configured tier set
+  // must price every cart; the editor warns about the missing open-ended row.
+  it('charges the top band above the largest bound rather than the flat rate', async () => {
+    withSettings({
+      'shipping.tiers': [
+        { max_boxes: 20, cost: 8 },
+        { max_boxes: 40, cost: 14 },
+      ],
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 60 })).options[0].cost).toBe(14);
+  });
+
+  it('keeps the flat per-method cost when no tiers are configured', async () => {
+    withSettings({
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(5.99);
+  });
+
+  it('charges the lowest tier when the box count is unknown', async () => {
+    // The floor is a MINIMUM the charge must clear, so an unknown count must
+    // never invent a higher one and reject an honest order. Callers that can
+    // price a cart always know the count; an unpriceable cart is rejected before
+    // this is reached.
+    withSettings({
+      'shipping.tiers': TIERS,
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000)).options[0].cost).toBe(8);
+  });
+
+  it('charges nothing for a method still listed as free', async () => {
+    // Free shipping is switched off in production by emptying free_methods; the
+    // mechanic itself stays intact and must keep working if it is ever re-enabled.
+    withSettings(
+      {
+        'shipping.tiers': TIERS,
+        'shipping.methods': [
+          { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+        ],
+        'shipping.free_methods': ['standard'],
+      },
+      { 'store.free_shipping_threshold': 20 }
+    );
+
+    expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(0);
+  });
+
+  it('charges the tier when free_methods is empty, whatever the threshold says', async () => {
+    withSettings(
+      {
+        'shipping.tiers': TIERS,
+        'shipping.methods': [
+          { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+        ],
+        'shipping.free_methods': [],
+      },
+      { 'store.free_shipping_threshold': 1 }
+    );
+
+    expect((await resolveShippingOptions(999999, { boxes: 10 })).options[0].cost).toBe(8);
   });
 });

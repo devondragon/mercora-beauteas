@@ -40,6 +40,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Product, ProductVariant } from "@/lib/types";
+import { isSellableVariant } from "@/lib/config/commerce";
 import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
@@ -73,8 +74,10 @@ function formatReviewDate(value?: string) {
  * @returns JSX element representing a clickable product card
  */
 export default function ProductCard({ product, priority = false }: ProductCardProps) {
-  // Get default or first variant
-  const variants = product.variants || [];
+  // Get default or first SELLABLE variant. A withdrawn variant (e.g. the
+  // discontinued 3-box packs) must never drive the card's price or
+  // availability, even if it happens to be the product's default_variant_id.
+  const variants = (product.variants || []).filter((v) => isSellableVariant(v));
   const defaultVariant: ProductVariant | undefined =
     variants.find((v) => v.id === product.default_variant_id) || variants[0];
 
@@ -203,7 +206,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
                 : stateStyles.outOfStock
             }`}
           >
-            {availability === "available" ? "In Stock" : "Coming Soon"}
+            {availability === "available" ? "In Stock" : "Sold out"}
           </p>
 
           {/*

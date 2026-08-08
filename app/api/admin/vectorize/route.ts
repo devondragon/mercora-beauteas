@@ -36,6 +36,7 @@ import { products, deserializeProduct, product_variants } from "@/lib/db/schema/
 import { eq } from "drizzle-orm";
 import { checkAdminPermissions } from "@/lib/auth/admin-middleware";
 import { errorDetails } from "@/lib/utils/error-response";
+import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
 
 export async function GET(request: NextRequest) {
   try {
@@ -106,7 +107,12 @@ export async function GET(request: NextRequest) {
     console.log("Starting product vectorization...");
     
     const db = await getDbAsync();
-    const allProducts = await db.select().from(products);
+    // Withdrawn/archived products (e.g. the GOOB-sale-archived bundles) must
+    // never re-enter the vector index on a reindex — Chai would keep
+    // recommending them at their old price with a card that 404s or lands on
+    // /thank-you. Same seam the homepage, category pages, the sitemap, and
+    // /api/products already filter through (lib/config/commerce.ts).
+    const allProducts = (await db.select().from(products)).filter(isPubliclyPurchasableProduct);
     console.log(`Found ${allProducts.length} products to process`);
 
     const productResults: string[] = [];

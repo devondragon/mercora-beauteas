@@ -14,6 +14,7 @@ describe("resolveTemplate", () => {
     expect(resolveTemplate("legal")).toMatchObject({ kind: "legal", eyebrow: "THE FINE PRINT" });
     expect(resolveTemplate("contact")).toMatchObject({ kind: "contact", eyebrow: "SAY HELLO" });
     expect(resolveTemplate("story")).toMatchObject({ kind: "story", eyebrow: "OUR STORY" });
+    expect(resolveTemplate("closing")).toMatchObject({ kind: "closing", eyebrow: "THANK YOU" });
   });
 
   it("falls back to story for unknown, legacy, null, and undefined templates", () => {
@@ -24,6 +25,15 @@ describe("resolveTemplate", () => {
 
   it("gives contact no CTA because the page is itself a CTA", () => {
     expect(resolveTemplate("contact").cta).toBeNull();
+  });
+
+  it("gives closing no CTA, and drops the subscriptions action from story's", () => {
+    // GOOB: subscriptions are off for the closing sale, so neither the
+    // dedicated closing page nor the shared story CTA should point at it.
+    expect(resolveTemplate("closing").cta).toBeNull();
+    expect(resolveTemplate("story").cta?.actions).toEqual([
+      { label: "Shop the teas", href: "/category/clearly-calendula", variant: "primary" },
+    ]);
   });
 
   it("shows policy links only on the legal CTA", () => {
@@ -47,6 +57,7 @@ describe("resolveTemplate", () => {
     expect(resolveTemplate("legal").showRail).toBe(true);
     expect(resolveTemplate("contact").showRail).toBe(false);
     expect(resolveTemplate("story").showRail).toBe(false);
+    expect(resolveTemplate("closing").showRail).toBe(false);
   });
 
   it("rejects Object.prototype keys like constructor, toString, valueOf", () => {
@@ -76,7 +87,7 @@ describe("resolveTemplate", () => {
     // The dropdown seeded by migration 0020 is built from this list; drift here
     // means an admin cannot select a template that the renderer supports.
     expect([...TEMPLATE_KINDS].sort()).toEqual(
-      ["contact", "faq", "guide", "legal", "story"],
+      ["closing", "contact", "faq", "guide", "legal", "story"],
     );
     for (const kind of TEMPLATE_KINDS) {
       expect(resolveTemplate(kind).kind).toBe(kind);

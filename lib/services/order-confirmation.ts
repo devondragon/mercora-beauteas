@@ -28,6 +28,7 @@ import {
 import { logCritical } from '@/lib/utils/observe';
 import { getProduct } from '@/lib/models/mach/products';
 import { getOrderCustomerEmail } from '@/lib/orders/customer-email';
+import { getSaleRules } from '@/lib/sale/settings';
 
 /**
  * Resolve a product-image key for each line item.
@@ -132,8 +133,20 @@ export async function sendOrderConfirmationForOrder(
       (order.items ?? []).map((i) => i.product_id).filter(Boolean) as string[],
     );
 
+    // Guarded separately from the outer catch on purpose: that handler swallows
+    // and RETURNS, so an unhandled throw here would suppress the entire
+    // confirmation email over a settings blip. Fail to the sale posture — a
+    // receipt that omits the no-returns line is the expensive direction.
+    let finalSale = true;
+    try {
+      finalSale = (await getSaleRules()).finalSale;
+    } catch (error) {
+      console.error(`[order-confirmation] sale-rules read failed for ${order.id}; assuming final sale`, error);
+    }
+
     const orderData: OrderData = {
       orderNumber: order.id || '',
+      finalSale,
       customerName,
       customerEmail,
       items: (order.items ?? []).map((item) => {

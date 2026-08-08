@@ -40,6 +40,7 @@ import { resolveShippingOptions } from '@/lib/services/shipping-options';
 import { resolveCartDiscountCents, normalizeDiscountCodes } from '@/lib/services/discount-pricing';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { normalizeUsRegion } from '@/lib/utils/address';
+import { countBoxes } from '@/lib/sale/rules';
 
 /**
  * The storefront shipping model now lives in `lib/services/shipping-options.ts`
@@ -185,8 +186,8 @@ export async function computeDiscountedCatalogTaxLines(
  * settings-based options `/api/shipping-options` quotes, so the floor can't drift
  * from what the customer was actually charged (BMC-201). No enabled method → 0.
  */
-export async function computeShippingFloorCents(goodsCents: number): Promise<number> {
-  const { options } = await resolveShippingOptions(goodsCents);
+export async function computeShippingFloorCents(goodsCents: number, boxes?: number): Promise<number> {
+  const { options } = await resolveShippingOptions(goodsCents, { boxes });
   if (options.length === 0) return 0;
   // `option.cost` is major-unit dollars; convert to cents for the floor.
   const costsCents = options.map((o) => formatAmountForStripe(o.cost));
@@ -320,7 +321,12 @@ export async function computeExpectedChargeExtras(
   // seam `/api/shipping-options` quotes) so the floor matches what the customer
   // was actually charged; tax is computed on goods + that minimum shipping so the
   // tax floor never exceeds what an honest customer paid (BMC-201).
-  const shippingCents = await computeShippingFloorCents(goodsCents);
+  // The tier is resolved from the SAME items list that produced the goods total,
+  // using the SAME quantity normalization `computeCatalogLineCents` used to
+  // price it (`countBoxes` mirrors `normalizeQuantity`, including the omitted
+  // → 1 default) — so the box count and the goods total can't disagree about
+  // what a line's quantity is, and the quote and the floor can't drift apart.
+  const shippingCents = await computeShippingFloorCents(goodsCents, countBoxes(items));
   const tax = await computeExpectedTaxCents({ lineCents, taxCodes: taxLines.taxCodes, shippingAddress, shippingCents, orderId });
   return {
     goodsCents,
