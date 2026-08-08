@@ -51,59 +51,63 @@ know what's coming before you commit to the deploy.
 
 ---
 
-## Phase 0.5 — Merge to `main` and let CI gate the SHA before deploying
+## Phase 0.5 — Confirm the SHA you are about to deploy went green
 
-This runbook was written and tested on a feature branch. Production deploys
-are only supposed to happen for a commit that CI has verified — and running
-the command in Phase 1 from your own machine does **not** enforce that on its
-own:
+**The plan for this sale is to stay on `goob` and deploy both dev and
+production from it manually.** The store is closing, the work is terminal,
+and merging 44 commits to `main` to run a handful of deploys buys nothing
+that outlives the sale. That decision moves one safety check from CI onto
+you, so this phase is where you perform it by hand.
+
+What you are replacing:
 
 - `.github/workflows/ci.yml` ("Launch readiness gate": lint, typecheck,
   dependency audit, unit tests, Workers integration tests, a production
   OpenNext build, and the checkout browser suite) runs on push/PR to `main`.
-- `.github/workflows/production-deploy-guard.yml` is a separate, manually
-  dispatched workflow that checks the Launch readiness gate's result for the
-  exact commit SHA *before* it runs `npm run deploy:production` — but only
-  when it is *that workflow* doing the deploying.
-- **`npm run deploy:production` run locally, as Phase 1 below shows it, does
-  not go through the guard at all.** It builds and deploys whatever is
-  currently checked out on your machine, gated by nothing but your own
-  judgment.
+  Because PR #123 targets `main`, it **does** run on every push to `goob` —
+  so the gate still covers this branch.
+- `.github/workflows/production-deploy-guard.yml` checks the gate's result
+  for an exact SHA before deploying, but its `deploy` job carries
+  `if: github.ref == 'refs/heads/main'`, so **it cannot deploy this branch.**
+  Dispatching it with `goob` selected finishes *green* with `deploy` silently
+  skipped — a run that looks exactly like a successful deploy that never
+  happened. Do not use it while working this way.
+- **`npm run deploy:production` run locally, as Phase 1 shows it, does not
+  consult CI at all.** It builds and deploys whatever is checked out, gated
+  by nothing but your own judgment. That is the check you are now making.
 
 So, before Phase 1:
 
-1. Merge this branch to `main` (PR or direct merge, whichever this repo's
-   convention is) and push.
-2. Watch the "Launch readiness gate" run on `main` for that commit to
-   completion and confirm it is green:
+1. Commit and push everything you intend to deploy — a local deploy ships
+   your working tree, including anything uncommitted.
+2. Confirm your working tree is clean and note the SHA:
    ```bash
-   gh run list --branch main --workflow ci.yml --limit 1
+   git status --short && git rev-parse --short HEAD
    ```
-3. Check out that exact `main` commit locally before running Phase 1's deploy
-   command — a local deploy from a different commit (including this branch,
-   pre-merge) ships code CI never verified.
+3. Confirm the Launch readiness gate went green **for that exact SHA**:
+   ```bash
+   gh run list --branch goob --workflow ci.yml --limit 3 \
+     --json headSha,status,conclusion --jq '.[] | "\(.headSha[0:7]) \(.status) \(.conclusion)"'
+   ```
+   A green run on an *earlier* commit does not cover the one in your working
+   tree. If the SHA is not in that list as `completed success`, push and wait
+   for it before deploying.
 
-If you would rather have the guard enforce this for you mechanically instead
-of trusting step 3, dispatch `production-deploy-guard.yml` from the Actions
-tab (or `gh workflow run production-deploy-guard.yml`) instead of running
-`npm run deploy:production` locally in Phase 1 — it re-checks the gate for
-the SHA on `main` and refuses to deploy if it did not pass. Either path is
-fine; picking neither is the gap this phase exists to close.
+Deploy dev first and work the phases there — dev has no deploy workflow
+either, so `npm run deploy:dev` is the only path to it regardless, and it
+exercises the identical migration-then-build sequence against
+`beauteas-db-dev` and `beauteas-db-dev-preview`.
 
-**If you dispatch the workflow, the branch/ref picker must be `main`, not
-`goob`.** The workflow's `deploy` job carries `if: github.ref ==
-'refs/heads/main'`; `pre-deploy-check` has no such condition and runs either
-way. Pick `goob` in the branch selector and the run finishes green —
-`pre-deploy-check` passes, `deploy` is silently *skipped* (not failed) by
-that `if`, and a green workflow run looks exactly like a successful deploy
-that never happened.
+**If you later decide to merge to `main` anyway**, the mechanical path opens
+back up: dispatch `production-deploy-guard.yml` with the ref picker on
+`main` and it re-checks the gate for you instead of you doing step 3.
 
 ---
 
 ## Phase 1 — Deploy
 
-**Read Phase 0.5 first if you have not merged to `main` yet — this command
-does not check CI status on its own.**
+**Read Phase 0.5 first — this command deploys your working tree and does not
+check CI status on its own.**
 
 **This deploy alone puts the store in a state that looks like a clearance
 sale but is not yet priced like one.** The homepage hero ("We're Closing
