@@ -198,7 +198,9 @@ but it is *not* the tiered pricing this sale is built around.
    bound" — it must be the top tier. If you check "No upper bound" on a
    second row, the editor automatically clears it from whichever row had it
    first (rather than letting two tiers be open-ended at once) — that's the
-   intended behavior, not a bug.
+   intended behavior, not a bug. If you mark *none*, you'll see a warning
+   saying orders above your biggest tier are charged that tier's price;
+   that's a supported choice, just make it on purpose.
 4. If you save a tier without entering a cost, you'll see a $0 warning. That
    tier still goes live at $0 — the warning is there so a $0 tier is a
    deliberate choice, not a silent mistake. Fix it if it wasn't intentional.
@@ -208,10 +210,10 @@ but it is *not* the tiered pricing this sale is built around.
    tier price, not the flat $5.99.
 7. Spot-check the **top** of the range too: put more boxes in the cart than
    your largest bounded tier covers (e.g. 60 if your bands stop at 40) and
-   confirm the quote is your open-ended tier price, not $5.99. If no tier is
-   marked "No upper bound", every order above the last band silently falls
-   back to the flat Standard rate — and a clearance sale is exactly what
-   produces those oversized orders.
+   confirm the quote is your open-ended tier price, not $5.99. A clearance
+   sale is exactly what produces those oversized orders. If you see $5.99
+   there, your tiers did not save — a configured tier set always prices the
+   whole cart, falling back to the top band when no row is open-ended.
 
 ---
 
