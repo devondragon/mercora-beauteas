@@ -67,7 +67,7 @@ import {
   Share2, Plus, Trash2
 } from "lucide-react";
 import type { ShippingTier } from "@/lib/sale/rules";
-import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier } from "@/lib/sale/tier-editor";
+import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier, hasNoOpenEndedTier } from "@/lib/sale/tier-editor";
 
 interface SystemSettings {
   maintenance_mode: boolean;
@@ -772,6 +772,19 @@ export default function AdminSettingsPage() {
                       <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
                       <p className="text-sm text-state-warning">
                         A tier priced at $0.00 ships that entire band free. Confirm that&rsquo;s intentional before saving.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {hasNoOpenEndedTier(shippingSettings.tiers) && (
+                  <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                      <p className="text-sm text-state-warning">
+                        No tier has &ldquo;No upper bound&rdquo; checked. Orders larger than the
+                        biggest tier are charged that biggest tier&rsquo;s price. Add an
+                        open-ended row if bigger orders should cost more.
                       </p>
                     </div>
                   </div>

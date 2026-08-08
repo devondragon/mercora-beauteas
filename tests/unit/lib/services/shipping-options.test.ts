@@ -196,6 +196,26 @@ describe('resolveShippingOptions — quantity tiers (GOOB)', () => {
     expect((await resolveShippingOptions(2000, { boxes: 10 })).options[0].cost).toBe(22);
   });
 
+  // Regression: with every tier bounded, `resolveShippingTier` returned null
+  // for a cart above the largest bound and this function read that as "no
+  // tiers configured" — so the LARGEST orders both quoted and were charged the
+  // flat $5.99. `computeShippingFloorCents` resolves through here too, so the
+  // floor agreed and nothing caught the undercharge. A configured tier set
+  // must price every cart; the editor warns about the missing open-ended row.
+  it('charges the top band above the largest bound rather than the flat rate', async () => {
+    withSettings({
+      'shipping.tiers': [
+        { max_boxes: 20, cost: 8 },
+        { max_boxes: 40, cost: 14 },
+      ],
+      'shipping.methods': [
+        { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+      ],
+    });
+
+    expect((await resolveShippingOptions(2000, { boxes: 60 })).options[0].cost).toBe(14);
+  });
+
   it('keeps the flat per-method cost when no tiers are configured', async () => {
     withSettings({
       'shipping.methods': [

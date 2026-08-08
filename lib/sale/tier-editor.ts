@@ -23,6 +23,10 @@
  * can never diverge by storage order, but the editor should not let an admin
  * create that ambiguous state in the first place: fewer moving parts than
  * relying on the resolver's tie-break alone.
+ *
+ * `hasNoOpenEndedTier` covers the opposite end of that same invariant — ZERO
+ * open-ended rows, which the editor can reach and which leaves the largest
+ * carts covered only by the resolver's top-band fallback.
  */
 import type { ShippingTier } from '@/lib/sale/rules';
 
@@ -61,4 +65,21 @@ export function setOpenEndedTier(tiers: ShippingTier[], index: number, openEnded
  */
 export function hasZeroCostTier(tiers: ShippingTier[]): boolean {
   return tiers.length > 0 && tiers.some((t) => t.cost === 0);
+}
+
+/**
+ * True when a CONFIGURED tier set has no open-ended row, so nothing explicitly
+ * covers carts above the largest bound. `addTierRow` only guards against a
+ * SECOND open-ended row; nothing stops an admin reaching ZERO of them, either
+ * by unchecking "No upper bound" on the only one or by deleting that row.
+ *
+ * `resolveShippingTier` charges such a cart the TOP band, which is defined and
+ * safe — it used to fall through to the flat per-method rate and undercharge
+ * the largest orders. That still isn't necessarily the price the admin meant,
+ * so surface it. A warning, not a block, for the same reason as
+ * `hasZeroCostTier`: capping the bands is a legitimate choice when the top
+ * band is the intended price for everything above it.
+ */
+export function hasNoOpenEndedTier(tiers: ShippingTier[]): boolean {
+  return tiers.length > 0 && !tiers.some((t) => t.max_boxes === null);
 }

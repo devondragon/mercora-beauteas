@@ -112,10 +112,15 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const { minimumBoxes, finalSale } = useSaleRules();
+  const { minimumBoxes, minimumKnown, finalSale } = useSaleRules();
 
   const boxes = countBoxes(items);
   const minimum = checkMinimumOrder(boxes, minimumBoxes);
+  // Only a SERVER-STATED minimum blocks the flow. On the fallback (fetch in
+  // flight, or a 429 from the shared PUBLIC_RATE_LIMITER) this page would
+  // otherwise lock out a cart the server would accept, with no retry — see the
+  // note in lib/sale/use-sale-rules.ts. /api/payment-intent still enforces it.
+  const blockedByMinimum = minimumKnown && !minimum.ok;
 
   // Handle address form changes
   const handleAddressChange = (
@@ -402,7 +407,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   // payment step can't be reached by navigating back after the cart drops
   // below the minimum — see the module comment on why this gate lives here
   // rather than per-step.
-  if (!minimum.ok && currentStep !== 'confirmation') {
+  if (blockedByMinimum && currentStep !== 'confirmation') {
     return (
       <div className="mx-auto max-w-xl rounded-xl bg-white p-8 text-center">
         <h2 className="mb-2 text-lg font-semibold text-text-primary">

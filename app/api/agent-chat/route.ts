@@ -129,6 +129,50 @@ function untrustedDataBlock(label: string, value: string): string {
 }
 
 /**
+ * Drop Vectorize matches pointing at a product that is no longer publicly
+ * purchasable (GOOB: the archived bundles, and anything archived later).
+ *
+ * The index is rebuilt on demand, not on every catalog write, so an archived
+ * product keeps its embedding — and its OLD price — until someone reindexes.
+ * Filtering only the product CARDS left that product in `contextSnippets`,
+ * which is the text the model actually reads while the system prompt tells it
+ * to recommend from that context, so Chai still described and priced something
+ * nobody can buy. Filtering at the MATCH level instead means the snippets, the
+ * fallback product ids, and the bold-name→id mapping all draw from one vetted
+ * set. The card-level filter downstream stays as the last line of defence.
+ *
+ * Matches carrying no `productId` (knowledge-base chunks) always pass through.
+ * If the status read fails, every product-backed match is dropped rather than
+ * trusted: thinner product context degrades an answer, a withdrawn product
+ * quoted at a stale price misleads a customer.
+ */
+async function dropWithdrawnMatches(matches: any[]): Promise<any[]> {
+  const productIdOf = (match: any): string | null => {
+    const id = match?.metadata?.productId;
+    return typeof id === "string" && id !== "" ? id : null;
+  };
+
+  const ids = [...new Set(matches.map(productIdOf).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return matches;
+
+  let purchasable: Set<string>;
+  try {
+    const db = await getDbAsync();
+    const rows = await db.select().from(products).where(inArray(products.id, ids));
+    purchasable = new Set(rows.filter(isPubliclyPurchasableProduct).map((row) => row.id));
+  } catch (error) {
+    console.error("[agent-chat] product status read failed; dropping product matches:", error);
+    purchasable = new Set();
+  }
+
+  // An id with no row at all is a stale index entry and is dropped too.
+  return matches.filter((match) => {
+    const id = productIdOf(match);
+    return id === null || purchasable.has(id);
+  });
+}
+
+/**
  * Handles chat interactions with the Chai AI assistant
  * 
  * @param req - Next.js request object containing question, userName, and history
@@ -302,6 +346,14 @@ export async function POST(req: NextRequest) {
         vectorResults = await Promise.race([vectorSearchPromise, timeoutPromise]);
 
         if (vectorResults && vectorResults.matches) {
+          // Vet the matches BEFORE any of them reach the model — see
+          // dropWithdrawnMatches. Reassigned rather than mutated so the
+          // bold-name→id mapping further down reads the same vetted set.
+          vectorResults = {
+            ...vectorResults,
+            matches: await dropWithdrawnMatches(vectorResults.matches),
+          };
+
           // Extract text snippets to provide context to the AI
           contextSnippets = vectorResults.matches
             .map((match: any) => match.metadata?.text || match.id)

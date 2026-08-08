@@ -124,6 +124,50 @@ function normalizeQuantity(raw: unknown): number | null {
 
 type LinePrice = { cents: number } | { reason: string };
 
+type CatalogVariant = Awaited<ReturnType<typeof getProductVariant>>;
+type CatalogProduct = Awaited<ReturnType<typeof getProduct>>;
+
+/**
+ * The catalog rows a single line needs, read at most once each.
+ *
+ * A line is inspected by three consecutive steps — the gift-card launch
+ * control, the GOOB withdrawal guard, and the price lookup — and each used to
+ * issue its own `getProductVariant` / `getProduct`. Neither model function
+ * caches (`lib/models/mach/products.ts`), so pricing a line cost up to three
+ * reads of the same variant row and two of the same product row. With
+ * `MAX_ORDER_LINE_ITEMS` at 100 and every checkout entry point
+ * (`/api/tax`, `/api/payment-intent`, `/api/orders`) running through
+ * `computeCatalogLineCents`, that is roughly double the D1 round-trips the
+ * hottest path needs. Memoizing per line — not per request — keeps each line
+ * independent, so `Promise.all` still overlaps their round-trips, and keeps
+ * the reads inside the request rather than caching catalog state across them.
+ */
+interface LineCatalog {
+  /** The line's `variant_id` row, or null when the line omitted one. */
+  variant(): Promise<CatalogVariant | null>;
+  product(id: string): Promise<CatalogProduct | null>;
+}
+
+function lineCatalog(item: { product_id?: string; variant_id?: string }): LineCatalog {
+  let variantRead: Promise<CatalogVariant | null> | undefined;
+  const productReads = new Map<string, Promise<CatalogProduct | null>>();
+
+  return {
+    variant() {
+      if (!item.variant_id) return Promise.resolve(null);
+      return (variantRead ??= getProductVariant(item.variant_id));
+    },
+    product(id: string) {
+      let read = productReads.get(id);
+      if (!read) {
+        read = getProduct(id);
+        productReads.set(id, read);
+      }
+      return read;
+    },
+  };
+}
+
 /**
  * Resolve the authoritative catalog unit price (cents) for an order line.
  *
@@ -137,13 +181,16 @@ type LinePrice = { cents: number } | { reason: string };
  * applies ONLY when the line legitimately omitted a `variant_id`. Returns a
  * `reason` (not a bare null) so the caller can report WHY a line is unpriceable.
  */
-async function catalogUnitPriceCents(item: {
-  product_id?: string;
-  variant_id?: string;
-}): Promise<LinePrice> {
+async function catalogUnitPriceCents(
+  item: {
+    product_id?: string;
+    variant_id?: string;
+  },
+  catalog: LineCatalog
+): Promise<LinePrice> {
   // A supplied variant_id must resolve to that exact variant — no fallback.
   if (item.variant_id) {
-    const variant = await getProductVariant(item.variant_id);
+    const variant = await catalog.variant();
     if (!variant) {
       return { reason: `variant ${item.variant_id} has no catalog price` };
     }
@@ -160,7 +207,7 @@ async function catalogUnitPriceCents(item: {
 
   // No variant_id supplied: resolve the product's default (or first) variant.
   if (item.product_id) {
-    const product = await getProduct(item.product_id);
+    const product = await catalog.product(item.product_id);
     const variant =
       product?.variants?.find((v) => v.id === product.default_variant_id) ||
       product?.variants?.[0] ||
@@ -219,15 +266,20 @@ export async function computeCatalogLineCents(
         return { error: `line ${i} is not a valid item object` };
       }
 
+      // Every catalog read below goes through this, so the gift-card control,
+      // the withdrawal guard, and the price lookup share one read of the
+      // variant row and one of each product row. See `LineCatalog`.
+      const catalog = lineCatalog(item);
+
       if (!giftCardPurchasesEnabled()) {
         let productId = item.product_id;
         // Do not let a forged line evade the launch control by supplying only
         // a gift-card variant id and omitting its product id.
         if (!productId && item.variant_id) {
-          productId = (await getProductVariant(item.variant_id))?.product_id;
+          productId = (await catalog.variant())?.product_id;
         }
         const product = productId && productId !== GIFT_CARD_PRODUCT_ID
-          ? await getProduct(productId)
+          ? await catalog.product(productId)
           : null;
         if (productId === GIFT_CARD_PRODUCT_ID || isGiftCardPurchaseProduct(product)) {
           return { error: `line ${i} contains a launch-disabled gift-card purchase` };
@@ -238,16 +290,14 @@ export async function computeCatalogLineCents(
       // merchant's withdrawal control (the PDP and sitemap already honour it via
       // isPubliclyPurchasableProduct); before this check, archiving a product
       // hid it from browsing while leaving it buyable by direct request.
-      const withdrawalVariant = item.variant_id
-        ? await getProductVariant(item.variant_id)
-        : null;
+      const withdrawalVariant = await catalog.variant();
       if (item.variant_id && !isSellableVariant(withdrawalVariant)) {
         return { error: `line ${i} references a withdrawn variant` };
       }
 
       const withdrawalProductId = item.product_id ?? withdrawalVariant?.product_id;
       if (withdrawalProductId) {
-        const withdrawalProduct = await getProduct(withdrawalProductId);
+        const withdrawalProduct = await catalog.product(withdrawalProductId);
         // A product that does not resolve is left to the pricing step below,
         // which already fails it closed with a more precise reason.
         if (withdrawalProduct && !isPubliclyPurchasableProduct(withdrawalProduct)) {
@@ -260,7 +310,7 @@ export async function computeCatalogLineCents(
         return { error: `line ${i} has an invalid quantity` };
       }
 
-      const priced = await catalogUnitPriceCents(item);
+      const priced = await catalogUnitPriceCents(item, catalog);
       if ('reason' in priced) {
         return {
           error: `line ${i} (product=${item.product_id ?? 'none'}, variant=${
@@ -418,7 +468,7 @@ export async function canonicalizeOrderItemsPricing<
         const quantity = normalizeQuantity(item.quantity);
         if (quantity == null) return item; // untrusted qty → keep session price
 
-        const priced = await catalogUnitPriceCents(item);
+        const priced = await catalogUnitPriceCents(item, lineCatalog(item));
         if ('reason' in priced) return item; // unresolved → fail soft to session
 
         const currency = item.unit_price?.currency ?? item.total_price?.currency ?? 'USD';

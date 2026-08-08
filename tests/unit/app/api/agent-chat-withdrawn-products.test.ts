@@ -53,8 +53,9 @@ vi.mock('@opennextjs/cloudflare', () => ({
   getCloudflareContext: (...args: unknown[]) => getCloudflareContext(...args),
 }));
 
+const runAI = vi.fn().mockResolvedValue({});
 vi.mock('@/lib/ai/config', () => ({
-  runAI: vi.fn().mockResolvedValue({}),
+  runAI: (...args: unknown[]) => runAI(...args),
   getCurrentEmbeddingModel: vi.fn(() => '@cf/baai/bge-base-en-v1.5'),
   extractAIResponse: vi.fn(
     () => 'Our Clearly Calendula Morning blend could be lovely for your skin goals.'
@@ -65,16 +66,21 @@ const getDbAsync = vi.fn();
 vi.mock('@/lib/db', () => ({ getDbAsync: (...args: unknown[]) => getDbAsync(...args) }));
 
 import { NextRequest } from 'next/server';
+import { products, product_variants } from '@/lib/db/schema/products';
 import { POST } from '@/app/api/agent-chat/route';
 
-/** First `.from()` call answers the `products` lookup; every call after answers a `product_variants` lookup. */
+/**
+ * Answer each `.from()` by TABLE, not by call order: the handler now reads
+ * `products` twice — once to vet the vector matches before they reach the
+ * model, once to hydrate the cards — and an order-indexed mock silently fed
+ * the second read the variant rows.
+ */
 function mockDb(productRows: any[], variantRows: any[] = []) {
-  let calls = 0;
-  const fromMock = vi.fn(() => {
-    calls += 1;
-    const rows = calls === 1 ? productRows : variantRows;
-    return { where: vi.fn().mockResolvedValue(rows) };
-  });
+  const fromMock = vi.fn((table: unknown) => ({
+    where: vi.fn().mockResolvedValue(
+      table === products ? productRows : table === product_variants ? variantRows : []
+    ),
+  }));
   getDbAsync.mockResolvedValue({ select: vi.fn().mockReturnValue({ from: fromMock }) } as any);
 }
 
@@ -105,6 +111,7 @@ const ARCHIVED_PRODUCT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  runAI.mockResolvedValue({});
   aiRun.mockResolvedValue({ data: [[0.1, 0.2, 0.3]] });
   getCloudflareContext.mockResolvedValue({
     env: { AI: { run: aiRun }, VECTORIZE: { query: (...args: unknown[]) => vectorizeQuery(...args) } },
@@ -143,6 +150,57 @@ describe('/api/agent-chat withdrawn-product filtering (final-review fix, item 6)
     const body = (await res.json()) as { products: Array<{ id: string }> };
 
     expect(res.status).toBe(200);
+    expect(body.products).toEqual([]);
+  });
+
+  // The card filter alone left the withdrawn product in `contextSnippets` —
+  // the text the model actually reads, with the system prompt telling it to
+  // recommend from that context — so Chai still described and priced it in
+  // prose while returning no card for it. Vetting happens at the match level
+  // now, before anything reaches the prompt.
+  it('keeps a withdrawn product out of the context the model is given', async () => {
+    vectorizeQuery.mockResolvedValue({
+      matches: [
+        {
+          id: 'm1',
+          metadata: {
+            productId: ARCHIVED_PRODUCT.id,
+            text: 'The Full Package bundle, all three blends for $84.00',
+          },
+        },
+        { id: 'm2', metadata: { productId: ACTIVE_PRODUCT.id, text: 'Clearly Calendula Morning' } },
+        { id: 'm3', metadata: { text: 'Steep for five minutes just off the boil.' } },
+      ],
+    });
+    mockDb([ACTIVE_PRODUCT, ARCHIVED_PRODUCT]);
+
+    await post("What's a good tea for dry skin?");
+
+    expect(runAI).toHaveBeenCalledTimes(1);
+    const prompt = JSON.stringify(runAI.mock.calls[0][2]);
+    expect(prompt).not.toContain('Full Package bundle');
+    expect(prompt).toContain('Clearly Calendula Morning');
+    // Knowledge-base chunks carry no productId and must survive the filter.
+    expect(prompt).toContain('Steep for five minutes');
+  });
+
+  it('drops every product-backed match when the status read fails', async () => {
+    vectorizeQuery.mockResolvedValue({
+      matches: [
+        { id: 'm1', metadata: { productId: ACTIVE_PRODUCT.id, text: 'Clearly Calendula Morning' } },
+        { id: 'm2', metadata: { text: 'Steep for five minutes just off the boil.' } },
+      ],
+    });
+    getDbAsync.mockRejectedValue(new Error('D1 unavailable'));
+
+    const res = await post("What's a good tea for dry skin?");
+    const body = (await res.json()) as { products: Array<{ id: string }> };
+
+    // Thinner context degrades an answer; a stale price misleads a customer.
+    expect(res.status).toBe(200);
+    const prompt = JSON.stringify(runAI.mock.calls[0][2]);
+    expect(prompt).not.toContain('Clearly Calendula Morning');
+    expect(prompt).toContain('Steep for five minutes');
     expect(body.products).toEqual([]);
   });
 });

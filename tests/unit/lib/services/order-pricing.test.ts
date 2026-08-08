@@ -523,3 +523,41 @@ describe('computeCatalogLineCents — withdrawn catalog entries (GOOB)', () => {
     expect(line).toEqual({ cents: 2000 });
   });
 });
+
+// The gift-card control, the withdrawal guard, and the price lookup each used
+// to issue their own catalog reads for the same line, and neither model
+// function caches — so a line cost up to three reads of one variant row and
+// two of one product row. `/api/tax`, `/api/payment-intent`, and `/api/orders`
+// all run through here with up to MAX_ORDER_LINE_ITEMS (100) lines.
+describe('computeCatalogLineCents — catalog reads per line', () => {
+  beforeEach(() => {
+    vi.mocked(getProductVariant).mockResolvedValue({
+      id: 'var-tea-1',
+      product_id: 'tea-1',
+      status: 'active',
+      price: { amount: 200, currency: 'USD' },
+    } as any);
+    vi.mocked(getProduct).mockResolvedValue({
+      id: 'tea-1',
+      slug: 'morning',
+      status: 'active',
+    } as any);
+  });
+
+  it('reads each variant and product row once per line', async () => {
+    await computeCatalogLineCents([{ product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 }]);
+
+    expect(vi.mocked(getProductVariant)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not share reads across lines — each line stays independent', async () => {
+    await computeCatalogLineCents([
+      { product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 1 },
+      { product_id: 'tea-1', variant_id: 'var-tea-1', quantity: 2 },
+    ]);
+
+    expect(vi.mocked(getProductVariant)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(getProduct)).toHaveBeenCalledTimes(2);
+  });
+});

@@ -10,7 +10,13 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier } from '@/lib/sale/tier-editor';
+import {
+  addTierRow,
+  removeTierRow,
+  setOpenEndedTier,
+  hasZeroCostTier,
+  hasNoOpenEndedTier,
+} from '@/lib/sale/tier-editor';
 import type { ShippingTier } from '@/lib/sale/rules';
 
 describe('addTierRow', () => {
@@ -113,5 +119,33 @@ describe('hasZeroCostTier', () => {
       { max_boxes: null, cost: 0 },
     ];
     expect(hasZeroCostTier(allZero)).toBe(true);
+  });
+});
+
+// `addTierRow` guards against a SECOND open-ended row; nothing guards against
+// ZERO of them, and both editor actions below reach that state. The resolver
+// now charges such a cart the top band rather than falling through to the flat
+// rate, but the admin should still be told that is what will happen.
+describe('hasNoOpenEndedTier', () => {
+  it('is false for an empty (not configured) tier list', () => {
+    expect(hasNoOpenEndedTier([])).toBe(false);
+  });
+
+  it('is false when a tier is open-ended', () => {
+    expect(hasNoOpenEndedTier([{ max_boxes: 20, cost: 8 }, { max_boxes: null, cost: 22 }])).toBe(false);
+  });
+
+  it('flags a configured set where every tier is bounded', () => {
+    expect(hasNoOpenEndedTier([{ max_boxes: 20, cost: 8 }, { max_boxes: 40, cost: 14 }])).toBe(true);
+  });
+
+  it('flags the state unchecking "No upper bound" on the only open-ended row produces', () => {
+    const tiers: ShippingTier[] = [{ max_boxes: 20, cost: 8 }, { max_boxes: null, cost: 22 }];
+    expect(hasNoOpenEndedTier(setOpenEndedTier(tiers, 1, false))).toBe(true);
+  });
+
+  it('flags the state deleting the only open-ended row produces', () => {
+    const tiers: ShippingTier[] = [{ max_boxes: 20, cost: 8 }, { max_boxes: null, cost: 22 }];
+    expect(hasNoOpenEndedTier(removeTierRow(tiers, 1))).toBe(true);
   });
 });

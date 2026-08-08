@@ -79,6 +79,26 @@ describe('parseSaleRulesBody', () => {
     expect(Number.isFinite(result.short)).toBe(true);
     expect(result.short).toBe(DEFAULT_MINIMUM_BOXES - 6);
   });
+
+  // `minimumKnown` is what stops the fallback minimum being ENFORCED. The
+  // checkout page blocks its whole step flow on the minimum and the cart drawer
+  // disables the checkout button, so a defaulted 10 is a lockout, not copy:
+  // with the real minimum lowered to 4, a customer holding 5 boxes the server
+  // would accept could not check out. Only a server-stated number may gate.
+  it('reports minimumKnown: true only when the body carried a usable minimum', () => {
+    expect(parseSaleRulesBody({ minimumBoxes: 4, finalSale: false }).minimumKnown).toBe(true);
+    expect(parseSaleRulesBody({ minimumBoxes: 0, finalSale: true }).minimumKnown).toBe(true);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['a rate-limit error body', { error: 'Rate limit exceeded' }],
+    ['a numeric string', { minimumBoxes: '4' }],
+    ['NaN', { minimumBoxes: Number.NaN }],
+    ['negative', { minimumBoxes: -1 }],
+  ])('reports minimumKnown: false when the minimum is %s', (_label, body) => {
+    expect(parseSaleRulesBody(body).minimumKnown).toBe(false);
+  });
 });
 
 describe('readSaleRules', () => {
@@ -107,7 +127,11 @@ describe('readSaleRules', () => {
       vi.fn().mockResolvedValue(jsonResponse({ minimumBoxes: 4, finalSale: false }, { ok: true, status: 200 })),
     );
     const { readSaleRules } = await freshModule();
-    await expect(readSaleRules()).resolves.toEqual({ minimumBoxes: 4, finalSale: false });
+    await expect(readSaleRules()).resolves.toEqual({
+      minimumBoxes: 4,
+      finalSale: false,
+      minimumKnown: true,
+    });
   });
 
   it.each([
@@ -153,9 +177,9 @@ describe('readSaleRules', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(results).toEqual([
-      { minimumBoxes: 10, finalSale: true },
-      { minimumBoxes: 10, finalSale: true },
-      { minimumBoxes: 10, finalSale: true },
+      { minimumBoxes: 10, finalSale: true, minimumKnown: true },
+      { minimumBoxes: 10, finalSale: true, minimumKnown: true },
+      { minimumBoxes: 10, finalSale: true, minimumKnown: true },
     ]);
   });
 
@@ -168,7 +192,11 @@ describe('readSaleRules', () => {
     const { readSaleRules } = await freshModule();
 
     await expect(readSaleRules()).rejects.toThrow('429');
-    await expect(readSaleRules()).resolves.toEqual({ minimumBoxes: 10, finalSale: true });
+    await expect(readSaleRules()).resolves.toEqual({
+      minimumBoxes: 10,
+      finalSale: true,
+      minimumKnown: true,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -180,7 +208,11 @@ describe('readSaleRules', () => {
     const { readSaleRules } = await freshModule();
 
     await readSaleRules();
-    await expect(readSaleRules()).resolves.toEqual({ minimumBoxes: 8, finalSale: true });
+    await expect(readSaleRules()).resolves.toEqual({
+      minimumBoxes: 8,
+      finalSale: true,
+      minimumKnown: true,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

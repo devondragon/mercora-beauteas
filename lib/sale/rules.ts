@@ -90,6 +90,9 @@ export function checkMinimumOrder(
  * The band a box count falls into. Bounds are INCLUSIVE, and the tiers are
  * sorted here rather than trusting the order an admin saved them in — the
  * settings editor lets rows be reordered.
+ *
+ * `null` means ONLY "not configured" (an empty/invalid set). A configured set
+ * always resolves to a band — see the fallback at the end.
  */
 export function resolveShippingTier(tiers: ShippingTier[], boxes: number): ShippingTier | null {
   if (!Array.isArray(tiers) || tiers.length === 0) return null;
@@ -119,7 +122,22 @@ export function resolveShippingTier(tiers: ShippingTier[], boxes: number): Shipp
     return (a.max_boxes - b.max_boxes) || (a.cost - b.cost);
   });
 
-  return sorted.find((tier) => tier.max_boxes === null || boxes <= tier.max_boxes) ?? null;
+  // A CONFIGURED tier set prices the whole cart, so a box count above every
+  // bounded band falls into the TOP band rather than falling through to null.
+  // Returning null here handed `resolveShippingOptions` nothing, and it
+  // silently reverted to the flat per-method rate for the LARGEST orders:
+  // against tiers of 20/$8 and 40/$14 with no open-ended row, a 60-box cart
+  // both quoted and charged Standard's $5.99. The charge floor resolves
+  // through this same function, so the floor agreed and nothing caught the
+  // undercharge. `sorted` puts the open-ended row last when one exists, in
+  // which case `find` always matches and this fallback is unreachable; the
+  // editor warns when there is no open-ended row (lib/sale/tier-editor.ts),
+  // but this resolver can't assume every caller enforces that — the same
+  // reason the comparator above tie-breaks explicitly.
+  return (
+    sorted.find((tier) => tier.max_boxes === null || boxes <= tier.max_boxes) ??
+    sorted[sorted.length - 1]
+  );
 }
 
 export function minimumOrderMessage(short: number, minimumBoxes: number): string {

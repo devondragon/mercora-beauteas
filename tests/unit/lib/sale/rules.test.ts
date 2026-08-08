@@ -138,6 +138,38 @@ describe('resolveShippingTier', () => {
     expect(resolveShippingTier([], 10)).toBeNull();
   });
 
+  // Regression: with every row bounded, a cart above the largest bound used to
+  // resolve to null, and `resolveShippingOptions` reads null as "no tiers" and
+  // quotes the flat per-method rate — so a 60-box order was quoted AND charged
+  // Standard's $5.99 instead of $14. The charge floor resolves through this
+  // same function, so it agreed and nothing caught the undercharge. A
+  // configured tier set must price every cart.
+  it('charges the top band above the largest bound when no tier is open-ended', () => {
+    const capped: ShippingTier[] = [
+      { max_boxes: 20, cost: 8 },
+      { max_boxes: 40, cost: 14 },
+    ];
+
+    expect(resolveShippingTier(capped, 41)).toEqual({ max_boxes: 40, cost: 14 });
+    expect(resolveShippingTier(capped, 60)).toEqual({ max_boxes: 40, cost: 14 });
+  });
+
+  it('picks the top band by bound, not by storage order, in that fallback', () => {
+    const unordered: ShippingTier[] = [
+      { max_boxes: 40, cost: 14 },
+      { max_boxes: 20, cost: 8 },
+    ];
+
+    expect(resolveShippingTier(unordered, 60)).toEqual({ max_boxes: 40, cost: 14 });
+  });
+
+  it('still resolves a single bounded tier for a cart above its bound', () => {
+    expect(resolveShippingTier([{ max_boxes: 20, cost: 8 }], 500)).toEqual({
+      max_boxes: 20,
+      cost: 8,
+    });
+  });
+
   it('sorts unordered tiers rather than trusting admin input order', () => {
     const unordered: ShippingTier[] = [
       { max_boxes: null, cost: 22 },

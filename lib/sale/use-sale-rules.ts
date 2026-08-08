@@ -24,6 +24,19 @@
  * `/api/orders`, and the two MCP order tools, all reading settings server-side.
  * For `finalSale` it is the disclosure: an unreadable setting must never render
  * a checkout that omits the no-returns statement.
+ *
+ * `minimumKnown` is what keeps "copy only" true. The checkout page and the cart
+ * drawer don't just PRINT the minimum, they block on it — the step flow refuses
+ * to render and the drawer's checkout button is disabled. Applied to the
+ * fallback that is a lockout, not copy: a customer whose cart the server would
+ * happily accept (say the minimum was lowered to 4 mid-sale, or dropped to 0)
+ * hits a 429 from the PUBLIC_RATE_LIMITER that `/api/payment-intent` also draws
+ * on, keeps the fallback 10, and cannot check out — with no retry, since the
+ * fetch runs once per mount and only successes are cached. So both surfaces
+ * enforce the minimum ONLY when it came from the server. Failing open here is
+ * safe precisely because the real gates are server-side: an under-minimum cart
+ * that gets through the UI is rejected at `/api/payment-intent` with the same
+ * message the UI would have shown.
  */
 'use client';
 
@@ -42,8 +55,24 @@ export const SALE_RULES_FALLBACK: StorefrontSaleRules = {
   finalSale: true,
 };
 
+/**
+ * The rules plus whether `minimumBoxes` is the server's number or the fallback.
+ * Only a server-stated minimum may be ENFORCED in the UI — see the module note.
+ */
+export interface SaleRulesState extends StorefrontSaleRules {
+  minimumKnown: boolean;
+}
+
+/** Pre-fetch / post-failure state: the sale posture, minimum not enforceable. */
+export const SALE_RULES_FALLBACK_STATE: SaleRulesState = {
+  ...SALE_RULES_FALLBACK,
+  minimumKnown: false,
+};
+
 export interface ParsedSaleRules {
   rules: StorefrontSaleRules;
+  /** True when `rules.minimumBoxes` is the body's value, not the fallback. */
+  minimumKnown: boolean;
   /**
    * Fields that failed validation and were defaulted. Returned rather than
    * logged so the parse stays pure and unit-testable; the caller logs them,
@@ -77,20 +106,21 @@ export function parseSaleRulesBody(body: unknown): ParsedSaleRules {
       // the string "false" all mean "not known" → keep the disclosure.
       finalSale: rawFinalSale !== false,
     },
+    minimumKnown: minimumValid,
     issues,
   };
 }
 
-async function fetchSaleRules(): Promise<StorefrontSaleRules> {
+async function fetchSaleRules(): Promise<SaleRulesState> {
   const res = await fetch('/api/sale-rules');
   // A 429/500 body still parses as JSON — status must be checked first.
   if (!res.ok) throw new Error(`/api/sale-rules responded ${res.status}`);
 
-  const { rules, issues } = parseSaleRulesBody(await res.json());
+  const { rules, minimumKnown, issues } = parseSaleRulesBody(await res.json());
   if (issues.length > 0) {
     console.error('[sale] /api/sale-rules returned unusable fields; using defaults:', issues.join('; '));
   }
-  return rules;
+  return { ...rules, minimumKnown };
 }
 
 // `HeaderClient` mounts two CartDrawers (desktop + mobile, one CSS-hidden), so
@@ -98,10 +128,10 @@ async function fetchSaleRules(): Promise<StorefrontSaleRules> {
 // PUBLIC_RATE_LIMITER budget that /api/payment-intent shares. Collapse them to
 // one request per page load. Only successes are cached, so a transient 429
 // is still retried by the next mount rather than being pinned for the session.
-let cached: StorefrontSaleRules | null = null;
-let inFlight: Promise<StorefrontSaleRules> | null = null;
+let cached: SaleRulesState | null = null;
+let inFlight: Promise<SaleRulesState> | null = null;
 
-export function readSaleRules(): Promise<StorefrontSaleRules> {
+export function readSaleRules(): Promise<SaleRulesState> {
   if (cached) return Promise.resolve(cached);
   inFlight ??= fetchSaleRules()
     .then((rules) => {
@@ -114,8 +144,8 @@ export function readSaleRules(): Promise<StorefrontSaleRules> {
   return inFlight;
 }
 
-export function useSaleRules(): StorefrontSaleRules {
-  const [rules, setRules] = useState<StorefrontSaleRules>(SALE_RULES_FALLBACK);
+export function useSaleRules(): SaleRulesState {
+  const [rules, setRules] = useState<SaleRulesState>(SALE_RULES_FALLBACK_STATE);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +167,11 @@ export function useSaleRules(): StorefrontSaleRules {
   return rules;
 }
 
-export function useMinimumBoxes(): number {
-  return useSaleRules().minimumBoxes;
+/**
+ * The minimum and whether it may be ENFORCED (not merely printed). Callers that
+ * block on it must respect `minimumKnown` — see the module note.
+ */
+export function useMinimumBoxes(): { minimumBoxes: number; minimumKnown: boolean } {
+  const { minimumBoxes, minimumKnown } = useSaleRules();
+  return { minimumBoxes, minimumKnown };
 }

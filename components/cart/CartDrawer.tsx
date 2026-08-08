@@ -69,10 +69,15 @@ export default function CartDrawer() {
     setHasMounted(true);
   }, []);
 
-  const minimumBoxes = useMinimumBoxes();
+  const { minimumBoxes, minimumKnown } = useMinimumBoxes();
 
   const boxes = countBoxes(items);
   const minimum = checkMinimumOrder(boxes, minimumBoxes);
+  // Disable checkout only on a SERVER-STATED minimum. On the fallback (fetch in
+  // flight, or a 429 from the shared PUBLIC_RATE_LIMITER) the drawer would
+  // otherwise disable the button for a cart the server would accept, with no
+  // retry — see the note in lib/sale/use-sale-rules.ts.
+  const belowMinimum = minimumKnown && !minimum.ok;
 
   // Calculate total price for all items in cart with safety checks (integer minor units)
   const total = items.reduce(
@@ -150,17 +155,17 @@ export default function CartDrawer() {
                   <span>Total: {Money.fromMinor(total, "USD").format()}</span>
                 </div>
 
-                {!minimum.ok && (
+                {belowMinimum && (
                   <p className="mt-4 text-sm text-state-warning">
                     {minimumOrderMessage(minimum.short, minimumBoxes)}
                   </p>
                 )}
                 <Button
-                  asChild={minimum.ok}
-                  disabled={!minimum.ok}
-                  className={`w-full bg-primary-500 hover:bg-primary-600 ${minimum.ok ? 'mt-4' : 'mt-2'}`}
+                  asChild={!belowMinimum}
+                  disabled={belowMinimum}
+                  className={`w-full bg-primary-500 hover:bg-primary-600 ${belowMinimum ? 'mt-2' : 'mt-4'}`}
                 >
-                  {minimum.ok ? (
+                  {!belowMinimum ? (
                     <Link href="/checkout" onClick={() => setCartOpen(false)}>
                       Proceed to Checkout
                     </Link>
