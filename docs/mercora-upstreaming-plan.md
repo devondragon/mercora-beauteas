@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; MCP trust and commerce integrity is draft PR `#41`; fulfillment is draft PR `#42`
+**Status:** Active; MCP trust and commerce integrity merged via PR `#41`; fulfillment PR `#42` is ready for review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -230,9 +230,9 @@ finding does not block further upstream work.
 | 3 | MACH Money boundary (merged via `#24`) | `U07` | PR `#10`; prepared in parallel with sequence 2 |
 | 4 | Order trust and server-authoritative checkout (merged via `#39`) | `U06 + U08` | `U04 + U05`, `U07` |
 | 5 | Webhook, inventory, and refund correctness (merged via `#40`) | `U09` | `U06 + U08` |
-| 6 | MCP trust and commerce integrity (draft PR `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
+| 6 | MCP trust and commerce integrity (merged via `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
 | 7 | Recommendations | `U12` | `U03`; independently deferrable |
-| 8 | Fulfillment vertical slice (draft PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`; final MCP integration follows `#41` |
+| 8 | Fulfillment vertical slice (ready PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`, merged `#41` |
 
 ### 4.1 Testing foundation
 
@@ -339,7 +339,9 @@ through customer and admin surfaces. Review it in this dependency order:
 5. Authenticated customer and signed guest tracking.
 6. The admin fulfillment queue.
 7. Shipping email, retry, and idempotency behavior.
-8. Real D1 integration tests, focused browser coverage, and operator docs.
+8. Owned MCP order status/tracking backed by configured shipment data and a
+   bounded, customer-safe fulfillment event projection.
+9. Real D1 integration tests, focused browser coverage, and operator docs.
 
 Migration commits must precede code that uses their schema, timestamp writers
 must ship with a repair path, and guest tracking must use signed access rather
