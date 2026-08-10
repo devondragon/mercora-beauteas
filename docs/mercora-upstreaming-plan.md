@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; MCP trust and commerce integrity merged via PR `#41`; fulfillment PR `#42` is ready for review
+**Status:** Active; fulfillment merged via PR `#42`; recommendations PR `#43` is ready for review
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -231,8 +231,8 @@ finding does not block further upstream work.
 | 4 | Order trust and server-authoritative checkout (merged via `#39`) | `U06 + U08` | `U04 + U05`, `U07` |
 | 5 | Webhook, inventory, and refund correctness (merged via `#40`) | `U09` | `U06 + U08` |
 | 6 | MCP trust and commerce integrity (merged via `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
-| 7 | Recommendations | `U12` | `U03`; independently deferrable |
-| 8 | Fulfillment vertical slice (ready PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`, merged `#41` |
+| 7 | Recommendations (ready PR `#43`) | `U12` | `U03`; independently deferrable |
+| 8 | Fulfillment vertical slice (merged PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`, merged `#41` |
 
 ### 4.1 Testing foundation
 

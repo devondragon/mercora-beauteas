@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** `U10 + U11` merged via Mercora PR `#41`; `U13 + U14` PR `#42` is ready for review
+**Status:** `U13 + U14` merged via Mercora PR `#42`; `U12` PR `#43` is ready for review
 **Research snapshot:** 2026-08-03
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -198,8 +198,8 @@ dependency and test review.
 | 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | Merged |
 | 8 | Webhook, inventory, and refund correctness, Mercora PR `#40` | `U09` | Merged |
 | 9 | MCP trust and commerce integrity, Mercora PR `#41` | `U10 + U11` | Merged |
-| 10 | Recommendations | `U12` | Planned; independently deferrable |
-| 11 | Fulfillment vertical slice, Mercora PR `#42` | `U13 + U14` | Ready for review; implementation complete |
+| 10 | Recommendations, Mercora PR `#43` | `U12` | Ready for review; implementation and validation complete |
+| 11 | Fulfillment vertical slice, Mercora PR `#42` | `U13 + U14` | Merged to Mercora `main` as `339e54d` |
 
 ## Group Dossiers
 
@@ -794,15 +794,14 @@ Update this table as Mercora issues and PRs are created.
 | `U06 + U08` | Merged | — | `#39` | Merged to Mercora `main` as `7a020d3`; order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams |
 | `U09` | Merged | — | `#40` | Merged to Mercora `main` as `26ff9c1`; durable webhook claims/effects, authoritative inventory, and refund reconciliation landed together |
 | `U10 + U11` | Merged | — | `#41` | Merged to Mercora `main` as `0afa14a`; trusted credentials, scoped ownership, catalog-neutral MCP boundaries, and authoritative PaymentIntent checkout |
-| `U12` | Research complete | — | — | Standalone and deferrable; neutralize fixtures/resources |
-| `U13 + U14` | Ready for review | — | `#42` | Rebased on merged `#41`; core fulfillment and owned MCP shipment/history projection complete; independently re-reviewed with zero remaining findings |
+| `U12` | Ready for review | — | `#43` | Server-rendered deterministic/AI-batch seam, public product projection, OOS/owned filtering, bounded atomic rebuild, staleness/empty-wipe guards, admin controls, and cron failure propagation; reviewed and validated under Node 24 |
+| `U13 + U14` | Merged | — | `#42` | Merged to Mercora `main` as `339e54d`; core fulfillment and owned MCP shipment/history projection complete |
 
 ## Immediate Next Planning Actions
 
-1. Monitor ready Mercora PR `#42` and its GitHub checks, address Russell's
-   review, and merge it once review is complete.
-2. Keep the fulfillment PR focused: its schema, guarded services/APIs,
-   admin/customer/email surfaces, and owned MCP shipment/history projection
-   are complete and independently re-reviewed.
-3. Treat `U12` recommendations as the next independent, deferrable PR. It can
-   be prepared while fulfillment is under review without changing `#42`.
+1. Monitor ready Mercora PR `#43` and its GitHub checks, and address Russell's
+   review before merge.
+2. Keep `U12` on its safe deterministic default; the AI-batch strategy remains
+   optional and falls back to the active catalog when precomputed rows are absent.
+3. After `#43` lands, verify the extraction ledger is complete and prepare the
+   upstreaming closeout rather than opening another feature PR by default.
