@@ -166,7 +166,16 @@ const RULES: CategoryRule[] = [
     patterns: [
       /\bhow (long|many days)\b.{0,20}\b(does|will|do)\b.{0,15}\ba? ?box\b.{0,15}\blast\b/i,
       /\bhow (many|much)\b.{0,20}\b(cups|tea ?bags|bags|servings)\b.{0,20}\b(in|is|per|a|are)\b.{0,10}\bbox\b/i,
-      /\bhow (many|much)\b.{0,15}\bshould (i|we) (buy|order|get)\b/i,
+      // Zero-gap ("\s+", not ".{0,N}") between the quantity word and
+      // "should" — with `order`/`get` now admitted alongside `buy`, a wide
+      // gap let an arbitrary intervening noun through: "how much REFUND
+      // should I get?", "how much DISCOUNT should I get?", "how much TEA
+      // should I order for a party?" all matched and got a tea-box count
+      // instead of the question actually asked (review finding, round 3).
+      // The three required generic phrasings ("how much should I
+      // buy/order/get?") have no words between the quantity word and
+      // "should", so this loses nothing they need.
+      /\bhow (many|much)\s+should (i|we) (buy|order|get)\b/i,
       /\bhow many boxes\b.{0,20}\b(is|are|make|makes|for)\b.{0,15}\b(a |one )?year\b/i,
       /\bhow many boxes\b.{0,15}\bshould (i|we) (buy|order|purchase|get)\b/i,
     ],
@@ -186,6 +195,16 @@ const RULES: CategoryRule[] = [
       // when phrased as "how much should I buy". Falls through to
       // minimum_order's own patterns (or retrieval) instead.
       /\bminimum\b/i,
+      // Two zero-gap survivors of the \s+ tightening above: "how much
+      // SHOULD I GET REFUNDED?" and "...GET CHARGED [for shipping]?" both
+      // still read as "how much ... should i get" with nothing between
+      // "much" and "should" — but they're a refund_window question and a
+      // shipping_rates question respectively, not year-supply math. Scoped
+      // to the exact trailing verb rather than a noun list, so this can't
+      // grow into the ever-growing exclude list this file's comments warn
+      // against elsewhere.
+      /\bshould (i|we) get refunded\b/i,
+      /\bshould (i|we) get charged\b/i,
     ],
   },
   {

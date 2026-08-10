@@ -908,6 +908,43 @@ describe('box_math', () => {
     expect(classifyQuery(question)).toBe(expected);
   });
 
+  // Review finding (round 3): once pattern 3 admitted "order"/"get" (to fix
+  // the verb seam above), its wide `.{0,15}` gap between the quantity word
+  // and "should" let an arbitrary intervening noun through — "how much
+  // REFUND should I get?" matched and got a tea-box count instead of the
+  // refund question actually asked. Tightened to `\s+` (zero gap), which
+  // kills every case below except the two survivors that still read as
+  // zero-gap "how much ... should i get" (get REFUNDED / get CHARGED),
+  // which need their own narrow excludes.
+  it.each([
+    ['how much refund should I get?', null],
+    ['how much money should I get back?', null],
+    ['how much store credit should I get?', null],
+    ['how much discount should I get?', null],
+    ['how much sleep should I get?', null],
+    ['how much time should I get to return it?', null],
+    ['how much notice should I get before you close?', null],
+    ['how many emails should I get after ordering?', null],
+    ['how much tea should I order for a party?', null],
+    // Zero-gap survivors of the tightening — these need the dedicated
+    // "get refunded" / "get charged" excludes, not the gap fix alone.
+    ['how much should I get refunded?', null],
+    ['how much should I get charged for shipping?', 'shipping_rates'],
+  ])('does not let an intervening noun before "should" claim %s', (question, expected) => {
+    expect(classifyQuery(question)).not.toBe('box_math');
+    expect(classifyQuery(question)).toBe(expected);
+  });
+
+  // The gap tightening must not lose the three required generic
+  // phrasings — they have zero words between the quantity word and
+  // "should" to begin with.
+  it.each(['how much should I buy?', 'how much should I order?', 'how much should I get?'])(
+    'still classifies the zero-gap generic phrasing %s',
+    (question) => {
+      expect(classifyQuery(question)).toBe('box_math');
+    }
+  );
+
   it('answers with the box math, the minimum, and a price read from the catalog', async () => {
     getSaleRules.mockResolvedValue({
       minimumBoxes: 10,
