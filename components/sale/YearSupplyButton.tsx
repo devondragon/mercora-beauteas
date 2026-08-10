@@ -11,9 +11,20 @@
  *
  * The price is read from the variant every render. A constant would go stale
  * the moment scripts/goob-reprice.mjs runs again, which it is built to do.
+ *
+ * The click confirms itself with the SAME toast the sibling Add to Cart button
+ * on this page raises (app/product/[slug]/ProductDisplay.tsx) - same title,
+ * same icon, same "View Cart" action, and like that button it does not force
+ * the drawer open. Without it the click is invisible: `addItem` merges into an
+ * existing line, the header badge counts lines rather than units, and 373 in
+ * stock less 36 in cart is still a full year, so the label does not move
+ * either. A customer who cannot tell the first click registered clicks again
+ * and commits a second year.
  */
 import { Money } from '@/lib/money';
 import { useCartStore } from '@/lib/stores/cart-store';
+import { useCartUIStore } from '@/lib/stores/cart-ui-store';
+import { toast } from 'sonner';
 import {
   CUPS_PER_BOX,
   boxesLeft,
@@ -63,7 +74,18 @@ export default function YearSupplyButton({
     <div className="mt-3">
       <button
         type="button"
-        onClick={() => addItem(item)}
+        onClick={() => {
+          addItem(item);
+
+          toast('Added to Cart', {
+            description: `${offer.boxes} boxes of ${name} have been added to your cart.`,
+            icon: '\uD83D\uDD25',
+            action: {
+              label: 'View Cart',
+              onClick: () => useCartUIStore.getState().openCart(),
+            },
+          });
+        }}
         className="w-full rounded border border-secondary-400 px-4 py-2 text-sm font-semibold text-secondary-600 transition hover:bg-secondary-400 hover:text-text-inverse"
       >
         {label}

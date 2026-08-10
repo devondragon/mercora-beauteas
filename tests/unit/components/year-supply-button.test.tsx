@@ -9,13 +9,22 @@
  * Rendered with renderToStaticMarkup, matching the repo's other component
  * tests. There is no DOM testing library here and none is being added.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let cartItems: Array<{ variantId: string; quantity: number }> = [];
+const addItem = vi.fn();
 vi.mock('@/lib/stores/cart-store', () => ({
-  useCartStore: (selector: (s: unknown) => unknown) =>
-    selector({ items: cartItems, addItem: vi.fn() }),
+  useCartStore: (selector: (s: unknown) => unknown) => selector({ items: cartItems, addItem }),
+}));
+
+const toastMock = vi.fn();
+vi.mock('sonner', () => ({ toast: (...args: unknown[]) => toastMock(...args) }));
+
+const openCart = vi.fn();
+vi.mock('@/lib/stores/cart-ui-store', () => ({
+  useCartUIStore: { getState: () => ({ openCart }) },
 }));
 
 const { default: YearSupplyButton } = await import('@/components/sale/YearSupplyButton');
@@ -76,5 +85,69 @@ describe('YearSupplyButton', () => {
   it('renders nothing when the price cannot be read', () => {
     cartItems = [];
     expect(renderToStaticMarkup(<YearSupplyButton {...props(373, null)} />)).toBe('');
+  });
+});
+
+/**
+ * Whole-branch review fix: the click used to call `addItem` and nothing else.
+ * `addItem` merges into an existing line, the header badge counts lines rather
+ * than units, and 373 in stock less 36 in cart is still a full year - so a
+ * customer who could not tell the click registered clicked again and committed
+ * a second year. The confirmation is the same toast the sibling Add to Cart
+ * button raises on the same page.
+ *
+ * `renderToStaticMarkup` drops event handlers, so the component is invoked
+ * directly for its element tree and the button's onClick is called. That works
+ * because the only hook it uses (`useCartStore`) is mocked to a plain selector
+ * call above.
+ */
+function clickTheButton(element: React.ReactElement) {
+  const children = React.Children.toArray(
+    (element.props as { children: React.ReactNode }).children
+  );
+  const button = children[0] as React.ReactElement<{ onClick: () => void }>;
+  button.props.onClick();
+}
+
+describe('YearSupplyButton click feedback', () => {
+  beforeEach(() => {
+    cartItems = [];
+    addItem.mockClear();
+    toastMock.mockClear();
+    openCart.mockClear();
+  });
+
+  it('confirms the click with the same toast as Add to Cart', () => {
+    clickTheButton(YearSupplyButton(props(373)) as React.ReactElement);
+
+    expect(addItem).toHaveBeenCalledTimes(1);
+    expect(toastMock).toHaveBeenCalledTimes(1);
+
+    const [title, options] = toastMock.mock.calls[0] as [
+      string,
+      { description: string; icon: string; action: { label: string; onClick: () => void } },
+    ];
+    expect(title).toBe('Added to Cart');
+    expect(options.description).toContain('36 boxes');
+    expect(options.description).toContain('Clearly Calendula Morning');
+    expect(options.icon).toBe('🔥');
+    expect(options.action.label).toBe('View Cart');
+  });
+
+  it('offers the cart rather than forcing it open, matching Add to Cart', () => {
+    clickTheButton(YearSupplyButton(props(373)) as React.ReactElement);
+
+    expect(openCart).not.toHaveBeenCalled();
+
+    const [, options] = toastMock.mock.calls[0] as [string, { action: { onClick: () => void } }];
+    options.action.onClick();
+    expect(openCart).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the actual quantity when only a remainder is on offer', () => {
+    clickTheButton(YearSupplyButton(props(24)) as React.ReactElement);
+
+    const [, options] = toastMock.mock.calls[0] as [string, { description: string }];
+    expect(options.description).toContain('24 boxes');
   });
 });
