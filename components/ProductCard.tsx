@@ -208,16 +208,17 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               )}
             </div>
           )}
+          {/*
+            BoxesLeft owns the sold-out label: it renders "Sold out" itself
+            at boxes === 0 (both the no-sellable-variant case, forced to 0
+            above, and a tracked variant actually at zero). This paragraph
+            only ever adds "In Stock" on top of that - never a second "Sold
+            out" - so the card shows exactly one sold-out message, not two.
+          */}
           <BoxesLeft boxes={boxes} />
-          <p
-            className={`mt-2 text-xs ${
-              availability === "available"
-                ? stateStyles.inStock
-                : stateStyles.outOfStock
-            }`}
-          >
-            {availability === "available" ? "In Stock" : "Sold out"}
-          </p>
+          {availability === "available" && (
+            <p className={`mt-2 text-xs ${stateStyles.inStock}`}>In Stock</p>
+          )}
 
           {/*
             Not a <Link>: the whole card is already an anchor to this same href
