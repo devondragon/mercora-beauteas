@@ -388,25 +388,14 @@ license skipping the ordering.
    recoverable only as long as `compare_at_price` in the DB is still correct;
    don't let both go missing at once.
 
-6. **The homepage can show stale prices linking to the new ones for up to an
-   hour.** `app/page.tsx` sets `export const revalidate = 3600`; the product
-   page (`app/product/[slug]/page.tsx`) sets `revalidate = 0`. This reprice is
-   a pure D1 write with no deploy, so the PDP reflects the new price the
-   instant step 4 finishes, while the homepage's cached catalog cards can keep
-   showing the pre-sale price for up to an hour afterward — a customer
-   clicking a card from the homepage can land on a PDP quoting a different
-   (lower) price than the card they clicked. There is no admin "purge the
-   homepage now" control in this codebase today (the only `revalidatePath`
-   call is in the settings-save route, and it targets CMS `[slug]` pages, not
-   `/`). Two honest options, neither of which is "nothing":
-   - Do nothing and let the hour pass — mention the mismatch window to
-     whoever's watching the storefront so a screenshot of it doesn't turn
-     into a support fire drill.
-   - Force a fresh homepage render sooner by redeploying
-     (`npm run deploy:production` again, no code changes needed) after the
-     reprice — a new deploy serves fresh renders, so this clears the stale
-     cache without waiting out the hour. Confirm the "Uploaded" +
-     "Current Version ID" pair as in Phase 1 before considering it done.
+6. **The reprice is visible immediately, everywhere, no redeploy needed.**
+   `app/page.tsx` sets `export const revalidate = 3600`, but `app/layout.tsx`
+   sets `export const dynamic = "force-dynamic"` on the root layout, which
+   overrides every page-level `revalidate` beneath it, the homepage's
+   included. This reprice is a pure D1 write with no deploy, so both the
+   homepage's catalog cards and the PDP (`app/product/[slug]/page.tsx`, which
+   also sets `revalidate = 0`) reflect the new price on the very next request
+   after step 4 finishes.
 
 ---
 

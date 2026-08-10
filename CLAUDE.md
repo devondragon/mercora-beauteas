@@ -94,7 +94,7 @@ A newer wrangler CLI rewrites bindings as optional (`DB?`), breaking every `env.
 
 ## Where the non-obvious logic lives
 
-Everything else is discoverable by reading the tree; these four encode decisions the code alone won't explain.
+Everything else is discoverable by reading the tree; these five encode decisions the code alone won't explain.
 
 | Path | What it owns |
 |---|---|
@@ -102,6 +102,7 @@ Everything else is discoverable by reading the tree; these four encode decisions
 | `lib/cms/` | CMS render pipeline — HTML normalization, section parsing, template config, blend (product) resolution |
 | `lib/money/` | The `Money` type and every conversion boundary (see above) |
 | `lib/recommendations/` | PDP recommendations — a **separate seam** from Chai, called server-side |
+| `lib/sale/year-supply.ts` | Box math for the closing sale: 10 cups a box, 36 boxes a year, and the stock-aware year-supply offer. Pure like `lib/sale/rules.ts`, since client bundles (PDP, catalog cards) import it directly |
 
 Carrier codes are pinned in **four** places that must agree: `CARRIERS` in `lib/fulfillment/types.ts`, `buildTrackingUrl`, `normalizeLegacyCarrier`, and the `LIKE` patterns in migration `0022`.
 
