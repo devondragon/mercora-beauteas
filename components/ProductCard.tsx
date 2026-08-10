@@ -46,6 +46,8 @@ import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Money } from "@/lib/money";
+import { boxesLeft } from "@/lib/sale/year-supply";
+import BoxesLeft from "@/components/sale/BoxesLeft";
 
 /**
  * Props interface for ProductCard component
@@ -87,9 +89,16 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   const compareAt = defaultVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > (price ?? 0);
 
-  // Availability logic
-  const quantityInStock = defaultVariant?.inventory?.quantity ?? 0;
-  const availability = quantityInStock > 0 ? "available" : "coming_soon";
+  // Availability logic. `boxesLeft` (not `?? 0`) so an untracked or
+  // backorder-allowed variant reads as unlimited rather than sold out - the
+  // same semantics isVariantAvailable and hasAvailableStock already use.
+  // `defaultVariant` can itself be undefined (every variant withdrawn, e.g.
+  // migration 0028) - boxesLeft(undefined) would also return null via its
+  // "no inventory record" case, which reads as unlimited/available. A
+  // product with no sellable variant at all is never available, so that case
+  // is forced to 0 rather than handed to boxesLeft.
+  const boxes = defaultVariant ? boxesLeft(defaultVariant) : 0;
+  const availability = boxes === 0 ? "coming_soon" : "available";
 
   // Name/description/slug logic
   const name =
@@ -199,6 +208,7 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               )}
             </div>
           )}
+          <BoxesLeft boxes={boxes} />
           <p
             className={`mt-2 text-xs ${
               availability === "available"
