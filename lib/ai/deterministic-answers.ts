@@ -157,22 +157,16 @@ const RULES: CategoryRule[] = [
     // `boxMathAnswer` states both the year math AND the current minimum, so
     // routing it here loses nothing minimum_order would have said.
     //
-    // The should-patterns split on whether "boxes" is explicit:
-    //   - #3 (no "boxes" noun, just "how much/many should I X") stays
-    //     "buy"-only. Without the noun there's no signal this is about tea
-    //     at all — "how much should I order?" and "how much should I get?"
-    //     are too underspecified for a canned answer and must reach
-    //     retrieval, not box_math.
-    //   - #5 (explicit "boxes") widens to buy/order/purchase — the noun
-    //     removes the ambiguity, so all three acquisition verbs mean the
-    //     same "how many should I get" question a shopper would type.
-    //     "get" is excluded below rather than included: it's the one verb
-    //     with no obligation-shaped counterpart in minimum_order either, so
-    //     "how many boxes should I get?" is left to retrieval on purpose.
+    // Every "should I VERB" phrasing is advice-seeking, whatever the verb —
+    // buy/order/purchase/get all mean the same "how many should I get"
+    // question to a shopper, whether or not "boxes" is stated explicitly.
+    // (An earlier draft split on the "boxes" noun and additionally excluded
+    // "get" specifically; review found that just moved the arbitrary seam
+    // from buy-vs-order to buy/order-vs-get instead of removing it.)
     patterns: [
       /\bhow (long|many days)\b.{0,20}\b(does|will|do)\b.{0,15}\ba? ?box\b.{0,15}\blast\b/i,
       /\bhow (many|much)\b.{0,20}\b(cups|tea ?bags|bags|servings)\b.{0,20}\b(in|is|per|a|are)\b.{0,10}\bbox\b/i,
-      /\bhow (many|much)\b.{0,15}\bshould (i|we) buy\b/i,
+      /\bhow (many|much)\b.{0,15}\bshould (i|we) (buy|order|get)\b/i,
       /\bhow many boxes\b.{0,20}\b(is|are|make|makes|for)\b.{0,15}\b(a |one )?year\b/i,
       /\bhow many boxes\b.{0,15}\bshould (i|we) (buy|order|purchase|get)\b/i,
     ],
@@ -181,10 +175,6 @@ const RULES: CategoryRule[] = [
       /\b(once|after) (it'?s? )?open(ed)?\b/i,
       // The customer's own order history.
       /\b(did|have|has) (i|we) (order|buy|bought|purchase|purchased)\b/i,
-      // "get" is deliberately not an acquisition verb here (see comment
-      // above) — this cancels the match #5's alternation would otherwise
-      // produce for "how many boxes should I get?".
-      /\bshould (i|we) get\b/i,
       // A shipping-rates question dressed as "how much should I buy" — the
       // free-shipping THRESHOLD belongs to shipping_rates, not year-supply
       // math. Same lookbehind as shipping_rates' own exclude, so "plastic-

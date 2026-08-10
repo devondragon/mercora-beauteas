@@ -871,11 +871,17 @@ describe('box_math', () => {
     'how much should I buy?',
     'how many boxes should I buy?',
     'how many boxes is a year?',
-    // The verb seam (review finding): "should I buy/order/purchase" all mean
-    // the same acquisition question once "boxes" makes the subject explicit.
+    // The verb seam (review finding, round 2): EVERY "should I VERB" is
+    // advice-seeking, whatever the verb or whether "boxes" is explicit.
+    // Splitting on the verb (buy vs order/purchase) or on the noun
+    // (buy-only when "boxes" is absent) is the same arbitrary seam the
+    // finding named, just moved rather than removed.
     'how many boxes should I order?',
     'how many boxes should we order?',
     'how many boxes should I purchase?',
+    'how many boxes should I get?',
+    'how much should I order?',
+    'how much should I get?',
   ])('classifies %s', (question) => {
     expect(classifyQuery(question)).toBe('box_math');
   });
@@ -890,14 +896,6 @@ describe('box_math', () => {
     ['how many boxes did I order?', null],
     ['what is in the morning blend?', null],
     ['how long does the tea last once opened?', null],
-    // "get" is deliberately not an acquisition verb here — no obligation
-    // counterpart in minimum_order either, so it reaches the model instead
-    // of a canned answer for either category.
-    ['how many boxes should I get?', null],
-    // Without the "boxes" noun, "should I order/get" is too underspecified
-    // to be box math — only "should I buy" is narrow enough on its own.
-    ['how much should I get?', null],
-    ['how much should I order?', null],
     // A shipping-rates question dressed as "how much should I buy" — the
     // free-shipping THRESHOLD, not year-supply math. Both orderings.
     ['how much should I buy for free shipping?', 'shipping_rates'],
