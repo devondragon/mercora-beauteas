@@ -39,6 +39,7 @@ import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import { getProductsByCategory } from "@/lib/models/mach/products";
 import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
+import { boxesLeft } from "@/lib/sale/year-supply";
 
 /**
  * Home page component - main landing page for the application
@@ -62,6 +63,20 @@ export default async function HomePage() {
     .slice(0, 3)
     .map(({ product }) => product);
 
+  // Live shop total. `force-dynamic` on the root layout overrides this page's
+  // `revalidate`, so every request re-renders and the number is current -
+  // verified against dev, which returns `cache-control: no-store`.
+  //
+  // Blends whose count is unknown (untracked / backorder) contribute nothing,
+  // and if NONE of them report a number the line is omitted entirely rather
+  // than claiming zero boxes remain.
+  const blendBoxCounts = featuredProducts
+    .map((product) => boxesLeft(product.variants?.find((v) => v.id === product.default_variant_id) ?? product.variants?.[0]))
+    .filter((count): count is number => count !== null);
+  const totalBoxesLeft = blendBoxCounts.length > 0
+    ? blendBoxCounts.reduce((sum, count) => sum + count, 0)
+    : null;
+
   return (
     <div className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       {/* Hero Section — GOOB: leads with the closing story, per /thank-you */}
@@ -78,6 +93,11 @@ export default async function HomePage() {
             Read the whole story here.
           </Link>
         </p>
+        {totalBoxesLeft !== null && (
+          <p className="text-text-primary text-base sm:text-lg font-semibold mb-6 sm:mb-8">
+            {totalBoxesLeft.toLocaleString("en-US")} boxes left in the whole shop.
+          </p>
+        )}
         <Link href="/category/clearly-calendula" className="inline-block">
           <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse transition rounded">
             Shop While It Lasts
