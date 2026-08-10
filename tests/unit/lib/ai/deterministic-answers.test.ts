@@ -36,6 +36,14 @@ vi.mock('@/lib/sale/settings', () => ({
   getSaleRules: (...args: unknown[]) => getSaleRules(...args),
 }));
 
+// `@/lib/sale/year-supply` is intentionally NOT mocked — it's pure, so the
+// box-math tests below exercise the real CUPS_PER_BOX / YEAR_SUPPLY_BOXES
+// constants rather than a stand-in.
+const getProductBySlug = vi.fn();
+vi.mock('@/lib/models/mach/products', () => ({
+  getProductBySlug: (...args: unknown[]) => getProductBySlug(...args),
+}));
+
 import {
   classifyQuery,
   resolveDeterministicAnswer,
@@ -66,6 +74,7 @@ beforeEach(() => {
   // `{}` → the storefront defaults baked into `shipping-options.ts`
   // (standard $5.99 / express $9.99 / overnight $19.99, free ≥ $75 on standard).
   getSettings.mockResolvedValue({});
+  getProductBySlug.mockReset();
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -660,6 +669,7 @@ describe('deterministic category table (BMC-215)', () => {
       'order_status',
       'business_address',
       'refund_window',
+      'box_math',
       'minimum_order',
       'store_closing',
       'tea_freshness',
@@ -840,6 +850,57 @@ describe('minimum order answer (GOOB)', () => {
   ])('does not let "spend"/"cart" hijack shipping or coupon questions: %s -> %s', (question, expected) => {
     expect(classifyQuery(question)).not.toBe('minimum_order');
     expect(classifyQuery(question)).toBe(expected);
+  });
+});
+
+describe('box_math', () => {
+  it.each([
+    'how long does a box last?',
+    'how many cups is a box?',
+    'how many tea bags are in a box?',
+    'how much should I buy?',
+    'how many boxes should I buy?',
+    'how many boxes is a year?',
+  ])('classifies %s', (question) => {
+    expect(classifyQuery(question)).toBe('box_math');
+  });
+
+  it.each([
+    // minimum_order owns the obligation shape - what a shopper MUST buy.
+    ['do I have to buy a minimum?', 'minimum_order'],
+    ['is there a minimum order?', 'minimum_order'],
+    // These belong to other rules or to retrieval.
+    ['how long does shipping take?', 'shipping_rates'],
+    ['how old is the tea?', 'tea_freshness'],
+    ['how many boxes did I order?', null],
+    ['what is in the morning blend?', null],
+    ['how long does the tea last once opened?', null],
+  ])('does not claim %s', (question, expected) => {
+    expect(classifyQuery(question)).toBe(expected);
+  });
+
+  it('answers with the box math and a price read from the catalog', async () => {
+    getProductBySlug.mockResolvedValue({
+      default_variant_id: 'var_morning',
+      variants: [{ id: 'var_morning', price: { amount: 300, currency: 'USD' } }],
+    });
+    const answer = await resolveDeterministicAnswer('box_math');
+    expect(answer).toContain('10 tea bags');
+    expect(answer).toContain('36 boxes');
+    expect(answer).toContain('$108.00');
+  });
+
+  it('omits the figure rather than guessing when the price read fails', async () => {
+    getProductBySlug.mockRejectedValue(new Error('D1 unavailable'));
+    const answer = await resolveDeterministicAnswer('box_math');
+    expect(answer).toContain('10 tea bags');
+    expect(answer).not.toContain('$');
+  });
+
+  it('omits the figure when the blend has no readable price', async () => {
+    getProductBySlug.mockResolvedValue({ variants: [{ id: 'v', price: {} }] });
+    const answer = await resolveDeterministicAnswer('box_math');
+    expect(answer).not.toContain('$');
   });
 });
 

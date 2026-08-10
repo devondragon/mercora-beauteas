@@ -36,8 +36,10 @@ import {
   SUPPORT_HOURS,
 } from "@/lib/ai/canonical-facts";
 import { Money } from "@/lib/money";
+import { getProductBySlug } from "@/lib/models/mach/products";
 import { getSaleRules } from "@/lib/sale/settings";
 import type { ShippingTier } from "@/lib/sale/rules";
+import { CUPS_PER_BOX, YEAR_SUPPLY_BOXES } from "@/lib/sale/year-supply";
 import { resolveShippingOptions } from "@/lib/services/shipping-options";
 import type { ShippingOption } from "@/lib/types/shipping";
 import { getRefundPolicy } from "@/lib/utils/settings";
@@ -48,6 +50,7 @@ export type DeterministicCategory =
   | "order_status"
   | "business_address"
   | "refund_window"
+  | "box_math"
   | "minimum_order"
   | "store_closing"
   | "tea_freshness"
@@ -138,6 +141,39 @@ const RULES: CategoryRule[] = [
       /\b(window|deadline) (to|for) (a )?(return|refund)\b/i,
       /\bwhat('?s| is) your (return|refund) policy\b/i,
       /\bdo you (accept|take|do) returns\b/i,
+    ],
+  },
+  {
+    category: "box_math",
+    // Answered partly from the catalog (the per-box price), so no sync `answer`.
+    //
+    // DELIBERATELY NARROW, for the same reason minimum_order is: the subject
+    // must be the CONTENTS or DURATION of a box, or how much to buy. A bare
+    // /\bhow (long|much)\b/ would swallow shipping times and the rate card,
+    // both of which have better answers elsewhere in this table.
+    //
+    // Placed above minimum_order on purpose. "how many boxes should i buy?"
+    // matches minimum_order's obligation shape too, and minimum_order would
+    // answer about the enforced floor rather than the question asked.
+    //
+    // The "should ... BUY" patterns below deliberately cover only "buy", not
+    // "order"/"purchase/get" — minimum_order's own tests pin "how many boxes
+    // should i/we ORDER?" as staying with minimum_order (the obligation
+    // shape it owns). Widening the verb here to "order" would re-hijack
+    // that case; "buy" is the one verb the box-math phrasing in the brief
+    // actually needs.
+    patterns: [
+      /\bhow (long|many days)\b.{0,20}\b(does|will|do)\b.{0,15}\ba? ?box\b.{0,15}\blast\b/i,
+      /\bhow (many|much)\b.{0,20}\b(cups|tea ?bags|bags|servings)\b.{0,20}\b(in|is|per|a|are)\b.{0,10}\bbox\b/i,
+      /\bhow (many|much)\b.{0,15}\bshould (i|we) buy\b/i,
+      /\bhow many boxes\b.{0,20}\b(is|are|make|makes|for)\b.{0,15}\b(a |one )?year\b/i,
+      /\bhow many boxes\b.{0,15}\bshould (i|we) buy\b/i,
+    ],
+    exclude: [
+      // Shelf life once opened is a freshness question, not box arithmetic.
+      /\b(once|after) (it'?s? )?open(ed)?\b/i,
+      // The customer's own order history.
+      /\b(did|have|has) (i|we) (order|buy|bought|purchase|purchased)\b/i,
     ],
   },
   {
@@ -327,6 +363,7 @@ export async function resolveDeterministicAnswer(
   if (rule?.answer) return rule.answer();
 
   if (category === "refund_window") return refundWindowAnswer();
+  if (category === "box_math") return boxMathAnswer();
   if (category === "minimum_order") return minimumOrderAnswer();
   if (category === "shipping_rates") return shippingRatesAnswer();
 
@@ -360,6 +397,57 @@ async function refundWindowAnswer(): Promise<string> {
   } catch (error) {
     console.error("[chai] refund policy lookup failed:", error);
     return `Our full return policy is here: ${REFUND_POLICY_URL}, and if you'd rather ask a person, email ${CONTACT_EMAIL} 💕`;
+  }
+}
+
+/**
+ * The current per-box price in cents, or null if it cannot be read.
+ *
+ * Reads ONE blend because scripts/goob-reprice.mjs writes a single flat
+ * `--rate` to every active variant, so any of the three gives the sale price.
+ * Morning is the arbitrary-but-stable pick; if it is ever archived this returns
+ * null and the answer simply omits the figure, which is the intended posture.
+ */
+async function blendUnitPriceCents(): Promise<number | null> {
+  const product = await getProductBySlug("clearly-calendula-morning");
+  if (!product) return null;
+
+  const variant =
+    product.variants?.find((v) => v.id === product.default_variant_id) ??
+    product.variants?.[0];
+
+  const amount = variant?.price?.amount;
+  return typeof amount === "number" && Number.isFinite(amount) && amount >= 0
+    ? amount
+    : null;
+}
+
+/**
+ * Box math, with the per-box price read from the catalog rather than hardcoded.
+ *
+ * The three blends share one flat rate by construction - scripts/goob-reprice.mjs
+ * writes the same `--rate` to every active variant - so a single read gives the
+ * current price. It is read rather than baked in because that script is built to
+ * run more than once (data/goob/price-baseline.json makes a second markdown
+ * safe), and a stale figure quoted by the deterministic layer is exactly the
+ * failure this whole module exists to prevent.
+ *
+ * On a read failure this answers WITHOUT a price rather than guessing one, the
+ * same posture refundWindowAnswer takes with the return window.
+ */
+async function boxMathAnswer(): Promise<string> {
+  const base =
+    `Each box has ${CUPS_PER_BOX} tea bags, so a box is ${CUPS_PER_BOX} cups, about ten days at a cup a day 💕 ` +
+    `Most folks went through 3 boxes a month of their favourite blend, which is why ${YEAR_SUPPLY_BOXES} boxes works out to a year.`;
+
+  try {
+    const cents = await blendUnitPriceCents();
+    if (cents == null) return base;
+    const year = Money.fromMinor(cents * YEAR_SUPPLY_BOXES, "USD").format();
+    return `${base} At today's price that is ${year} for the year.`;
+  } catch (error) {
+    console.error("[chai] blend price lookup failed:", error);
+    return base;
   }
 }
 
