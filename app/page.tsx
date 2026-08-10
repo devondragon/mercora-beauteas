@@ -38,7 +38,7 @@
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import { getProductsByCategory } from "@/lib/models/mach/products";
-import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
+import { isPubliclyPurchasableProduct, isSellableVariant } from "@/lib/config/commerce";
 import { boxesLeft } from "@/lib/sale/year-supply";
 
 /**
@@ -70,8 +70,17 @@ export default async function HomePage() {
   // Blends whose count is unknown (untracked / backorder) contribute nothing,
   // and if NONE of them report a number the line is omitted entirely rather
   // than claiming zero boxes remain.
+  //
+  // Withdrawn variants (e.g. the discontinued 3-box packs from migration
+  // 0028) are filtered out before the default/first lookup, same as
+  // ProductCard and ProductDisplay - they still carry live inventory, and an
+  // unfiltered find/fallback could let a withdrawn variant's stock into a
+  // customer-facing total.
   const blendBoxCounts = featuredProducts
-    .map((product) => boxesLeft(product.variants?.find((v) => v.id === product.default_variant_id) ?? product.variants?.[0]))
+    .map((product) => {
+      const variants = (product.variants || []).filter((v) => isSellableVariant(v));
+      return boxesLeft(variants.find((v) => v.id === product.default_variant_id) ?? variants[0]);
+    })
     .filter((count): count is number => count !== null);
   const totalBoxesLeft = blendBoxCounts.length > 0
     ? blendBoxCounts.reduce((sum, count) => sum + count, 0)

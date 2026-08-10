@@ -14,6 +14,12 @@
  *     rendering "0 boxes left" - a false claim that nothing is left;
  *   - a single blend legitimately at zero stock still contributes zero and
  *     does not suppress the line for the others.
+ *   - a withdrawn (non-sellable) variant's inventory never reaches the total,
+ *     even if `default_variant_id` matches nothing and the find/fallback
+ *     would otherwise land on it - the same hardening ProductCard.tsx and
+ *     ProductDisplay.tsx already apply via `isSellableVariant`. Migration
+ *     0028 left the discontinued 3-box packs (BTCCM3/BTCCA3/BTCCE3) in place
+ *     with live nonzero inventory (124/203/63), so this is not hypothetical.
  *
  * Rendered with `renderToStaticMarkup` per the reference pattern in
  * tests/unit/components/product-card-anchor-nesting.test.tsx: next/link and
@@ -59,6 +65,39 @@ function makeBlend(
         id: `var_${timeOfDay}`,
         price: { amount: 1499, currency: "USD" },
         inventory,
+      },
+    ],
+  } as unknown as Product;
+}
+
+/**
+ * A blend whose `default_variant_id` matches nothing, carrying a
+ * discontinued variant with real inventory alongside a sellable one - the
+ * migration-0028 shape (withdrawn 3-box packs, still stocked).
+ */
+function makeBlendWithDiscontinuedStock(
+  timeOfDay: "morning" | "afternoon" | "evening",
+  discontinuedQuantity: number,
+  sellableQuantity: number,
+): Product {
+  return {
+    id: `prod_${timeOfDay}`,
+    name: `Clearly Calendula ${timeOfDay[0].toUpperCase()}${timeOfDay.slice(1)}`,
+    description: "An organic tea blend.",
+    slug: `clearly-calendula-${timeOfDay}`,
+    default_variant_id: `var_${timeOfDay}_missing`, // matches no variant below
+    categories: ["cat_clearly_calendula"],
+    variants: [
+      {
+        id: `var_${timeOfDay}_3box`,
+        status: "discontinued",
+        price: { amount: 3499, currency: "USD" },
+        inventory: { quantity: discontinuedQuantity },
+      },
+      {
+        id: `var_${timeOfDay}_1box`,
+        price: { amount: 1499, currency: "USD" },
+        inventory: { quantity: sellableQuantity },
       },
     ],
   } as unknown as Product;
@@ -113,5 +152,19 @@ describe("homepage hero: shop-wide boxes-left total (SDD Task 5)", () => {
     ]);
 
     expect(html).toContain("150 boxes left in the whole shop.");
+  });
+
+  it("excludes a discontinued variant's inventory when default_variant_id matches nothing, falling back to the sellable variant instead", async () => {
+    const html = await renderHome([
+      makeBlendWithDiscontinuedStock("morning", 124, 50),
+      makeBlend("afternoon", { quantity: 100 }),
+      makeBlend("evening", { quantity: 50 }),
+    ]);
+
+    // 50 (morning's only sellable variant) + 100 + 50 = 200. If the
+    // discontinued 3-box variant's 124 leaked in via an unfiltered
+    // find/fallback, this would read 324 instead.
+    expect(html).toContain("200 boxes left in the whole shop.");
+    expect(html).not.toContain("324 boxes left");
   });
 });
