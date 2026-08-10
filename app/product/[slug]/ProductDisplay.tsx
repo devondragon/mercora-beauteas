@@ -44,6 +44,8 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Money } from "@/lib/money";
 import { isSellableVariant } from "@/lib/config/commerce";
+import { boxesLeft } from "@/lib/sale/year-supply";
+import BoxesLeft from "@/components/sale/BoxesLeft";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -190,6 +192,14 @@ export default function ProductDisplay({
   // Stock logic (MACH: inventory is on variant)
   const quantityInStock = selectedVariant?.inventory?.quantity ?? 0;
   const available = quantityInStock > 0;
+
+  // Boxes-remaining readout for the closing sale (see BoxesLeft). `boxesLeft`
+  // is only handed a real variant - boxesLeft(undefined) would read as "no
+  // count to show" (unlimited) via its "no inventory record" case, when a
+  // product with no sellable variant at all (every variant withdrawn) is
+  // never available and must still show "Sold out", not nothing. Mirrors
+  // ProductCard's identical forced-to-0 fallback.
+  const boxes = selectedVariant ? boxesLeft(selectedVariant) : 0;
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
   const descriptionParagraphs = useMemo(
@@ -451,11 +461,14 @@ export default function ProductDisplay({
                   }}
                 />
 
-                {selectedVariant?.inventory && (
-                  <p className="text-xs text-text-muted">
-                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
-                  </p>
-                )}
+                {/*
+                  SubscriptionToggle already renders its own "Sold out" when
+                  `available` is false, so BoxesLeft is only shown here while
+                  available - otherwise this page would show "Sold out"
+                  twice. When available, boxes is never 0, so this never
+                  collides with that label.
+                */}
+                {available && <BoxesLeft boxes={boxes} />}
               </>
             ) : (
               <>
@@ -469,13 +482,9 @@ export default function ProductDisplay({
                   <p className="text-lg font-semibold text-text-primary sm:text-xl">{Money.fromMinor(price, currency).format()}</p>
                 )}
 
-                {selectedVariant?.inventory && (
-                  <p className="text-xs text-text-muted">
-                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
-                  </p>
-                )}
+                <BoxesLeft boxes={boxes} />
 
-                {available ? (
+                {available && (
                   <button
                     className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
                     onClick={() => {
@@ -514,8 +523,6 @@ export default function ProductDisplay({
                   >
                     Add to Cart
                   </button>
-                ) : (
-                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Sold out</p>
                 )}
               </>
             )}
