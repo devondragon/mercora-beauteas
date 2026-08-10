@@ -46,6 +46,7 @@ import { Money } from "@/lib/money";
 import { isSellableVariant } from "@/lib/config/commerce";
 import { boxesLeft } from "@/lib/sale/year-supply";
 import BoxesLeft from "@/components/sale/BoxesLeft";
+import YearSupplyButton from "@/components/sale/YearSupplyButton";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -212,6 +213,24 @@ export default function ProductDisplay({
   // never available and must still show "Sold out", not nothing. Mirrors
   // ProductCard's identical forced-to-0 fallback.
   const boxes = selectedVariant ? boxesLeft(selectedVariant) : 0;
+
+  // Display name and primary image for a cart line added from this page -
+  // shared by the default Add to Cart handler and YearSupplyButton so both
+  // add the same product under the same name and image.
+  const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
+  const productName = typeof product.name === "string" ? product.name : "";
+  const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
+  const primaryImageUrl = (() => {
+    try {
+      return (
+        (product.primary_image as any)?.url ||
+        (product.primary_image as any)?.file?.url ||
+        "/placeholder.svg"
+      );
+    } catch (error) {
+      return "/placeholder.svg";
+    }
+  })();
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
   const descriptionParagraphs = useMemo(
@@ -500,27 +519,13 @@ export default function ProductDisplay({
                   <button
                     className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
                     onClick={() => {
-                      const productName = typeof product.name === "string" ? product.name : "";
-                      const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
-                      const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
-
                       useCartStore.getState().addItem({
                         productId: product.id,
                         variantId: selectedVariant?.id,
                         name: fullName,
                         price,
                         quantity: 1,
-                        primaryImageUrl: (() => {
-                          try {
-                            return (
-                              (product.primary_image as any)?.url ||
-                              (product.primary_image as any)?.file?.url ||
-                              "/placeholder.svg"
-                            );
-                          } catch (error) {
-                            return "/placeholder.svg";
-                          }
-                        })(),
+                        primaryImageUrl,
                       });
 
                       toast("Added to Cart", {
@@ -535,6 +540,15 @@ export default function ProductDisplay({
                   >
                     Add to Cart
                   </button>
+                )}
+
+                {selectedVariant && (
+                  <YearSupplyButton
+                    variant={selectedVariant}
+                    productId={product.id}
+                    name={fullName}
+                    imageUrl={primaryImageUrl}
+                  />
                 )}
               </>
             )}
