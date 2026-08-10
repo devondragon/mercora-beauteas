@@ -20,6 +20,8 @@
 - **Run `npm run lint` before considering any task done.**
 - **No hardcoded dollar amounts in copy.** Every figure derives from the live variant price; `scripts/goob-reprice.mjs` is designed to run more than once.
 - Unit tests live in `tests/unit/**/*.test.{ts,tsx}` and are the only suite CI gates.
+- **No implementer deploys or writes to a database.** Never run `npm run deploy:*`, `npm run db:migrate:dev`, or `wrangler d1 execute`. Deploys apply pending migrations to live databases; the controller does that once, after every task lands (see Controller Verification).
+- **No new dependencies.** `@testing-library/react` is not installed and is not being added; component tests use `renderToStaticMarkup`, matching the repo's existing four component tests.
 
 ---
 
@@ -31,7 +33,9 @@
 
 **Interfaces:**
 - Consumes: nothing (leaf module).
-- Produces: `CUPS_PER_BOX: number`, `YEAR_SUPPLY_BOXES: number`, `boxesLeft(variant: StockVariant | null | undefined): number | null`, `yearSupplyOffer(left: number | null, alreadyInCart: number): YearSupplyOffer | null`, `type YearSupplyOffer = { boxes: number; kind: 'year' | 'rest' }`, `type StockVariant = { inventory?: { quantity?: unknown; track_inventory?: unknown; allow_backorder?: unknown } | null }`.
+- Produces: `CUPS_PER_BOX: number`, `YEAR_SUPPLY_BOXES: number`, `boxesLeft(variant: StockVariant | null | undefined): number | null`, `yearSupplyOffer(left: number | null, alreadyInCart: number): YearSupplyOffer | null`, `yearSupplyCartItem(input: YearSupplyCartInput): CartItem | null`, `type YearSupplyOffer = { boxes: number; kind: 'year' | 'rest' }`, `type StockVariant = { inventory?: { quantity?: unknown; track_inventory?: unknown; allow_backorder?: unknown } | null }`.
+
+**`yearSupplyCartItem` exists so Task 4 needs no DOM testing library.** `@testing-library/react` is not a dependency of this repo and is not being added; the cart payload is the part worth asserting exactly (minor units, quantity), so it lives here as a pure function and the component becomes a thin caller. `import type { CartItem }` is type-only and erased at build, so the module's purity contract holds.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -55,6 +59,7 @@ import {
   YEAR_SUPPLY_BOXES,
   boxesLeft,
   yearSupplyOffer,
+  yearSupplyCartItem,
 } from '@/lib/sale/year-supply';
 
 describe('constants', () => {
@@ -136,6 +141,49 @@ describe('yearSupplyOffer', () => {
 
   it('treats a non-finite cart quantity as an empty cart', () => {
     expect(yearSupplyOffer(100, Number.NaN)).toEqual({ boxes: 36, kind: 'year' });
+  });
+});
+
+describe('yearSupplyCartItem', () => {
+  const input = (overrides = {}) => ({
+    variant: { id: 'var_morning', price: { amount: 300, currency: 'USD' } },
+    productId: 'prod_morning',
+    name: 'Clearly Calendula Morning',
+    imageUrl: '/morning.jpg',
+    boxes: 36,
+    ...overrides,
+  });
+
+  it('builds the cart line in MINOR units at the offered quantity', () => {
+    expect(yearSupplyCartItem(input() as never)).toEqual({
+      variantId: 'var_morning',
+      productId: 'prod_morning',
+      name: 'Clearly Calendula Morning',
+      price: 300,
+      quantity: 36,
+      primaryImageUrl: '/morning.jpg',
+    });
+  });
+
+  it('carries the remainder quantity through unchanged', () => {
+    expect(yearSupplyCartItem(input({ boxes: 24 }) as never)?.quantity).toBe(24);
+  });
+
+  it.each([
+    ['no price object', { variant: { id: 'v' } }],
+    ['no amount', { variant: { id: 'v', price: {} } }],
+    ['a non-numeric amount', { variant: { id: 'v', price: { amount: '300' } } }],
+    ['a NaN amount', { variant: { id: 'v', price: { amount: Number.NaN } } }],
+  ])('returns null when the price is unreadable (%s)', (_label, overrides) => {
+    expect(yearSupplyCartItem(input(overrides) as never)).toBeNull();
+  });
+
+  it('returns null without a variant id', () => {
+    expect(yearSupplyCartItem(input({ variant: { price: { amount: 300 } } }) as never)).toBeNull();
+  });
+
+  it('returns null for a non-positive box count', () => {
+    expect(yearSupplyCartItem(input({ boxes: 0 }) as never)).toBeNull();
   });
 });
 ```
@@ -232,12 +280,54 @@ export function yearSupplyOffer(
     ? { boxes: YEAR_SUPPLY_BOXES, kind: 'year' }
     : { boxes: available, kind: 'rest' };
 }
+
+export interface YearSupplyCartInput {
+  variant: { id?: unknown; price?: { amount?: unknown; currency?: unknown } | null };
+  productId: string;
+  name: string;
+  imageUrl: string;
+  boxes: number;
+}
+
+/**
+ * The cart line for an accepted offer, or null if it cannot be built safely.
+ *
+ * Lives here rather than inside the button so the payload can be asserted
+ * exactly without a DOM testing library (this repo has none). `price` is the
+ * variant's MINOR-unit amount, unchanged - the cart store, the drawer total,
+ * and the charge floor all work in minor units, and converting here would be
+ * the raw-arithmetic mistake CLAUDE.md forbids.
+ */
+export function yearSupplyCartItem(input: YearSupplyCartInput): CartItem | null {
+  const id = input?.variant?.id;
+  const amount = input?.variant?.price?.amount;
+  const boxes = input?.boxes;
+
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return null;
+  if (typeof boxes !== 'number' || !Number.isFinite(boxes) || boxes <= 0) return null;
+
+  return {
+    variantId: id,
+    productId: input.productId,
+    name: input.name,
+    price: amount,
+    quantity: Math.floor(boxes),
+    primaryImageUrl: input.imageUrl,
+  };
+}
+```
+
+Add this type-only import at the top of the module (type-only, so nothing is emitted and the purity contract holds):
+
+```ts
+import type { CartItem } from '@/lib/types/cartitem';
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/unit/lib/sale/year-supply.test.ts`
-Expected: PASS, 18 tests.
+Expected: PASS, 26 tests.
 
 - [ ] **Step 5: Lint and commit**
 
@@ -477,90 +567,79 @@ Create `tests/unit/components/year-supply-button.test.tsx`:
 
 ```tsx
 /**
- * The one-click year supply. Its whole decision lives in `yearSupplyOffer`
- * (lib/sale/year-supply.ts), so this file covers the wiring: the label reflects
- * the offer, the dollar figure comes from the LIVE variant price rather than a
- * constant, and a click adds exactly the offered quantity.
+ * The one-click year supply. Its two decisions live in pure functions tested in
+ * tests/unit/lib/sale/year-supply.test.ts - `yearSupplyOffer` (how many boxes)
+ * and `yearSupplyCartItem` (the exact cart payload). This file covers only what
+ * those cannot: that the rendered label reflects the offer, that the dollar
+ * figure comes from the LIVE variant price rather than a constant, and that the
+ * component renders nothing when there is nothing to offer.
+ *
+ * Rendered with renderToStaticMarkup, matching the repo's other component
+ * tests. There is no DOM testing library here and none is being added.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import YearSupplyButton from '@/components/sale/YearSupplyButton';
+import { describe, it, expect, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-const addItem = vi.fn();
 let cartItems: Array<{ variantId: string; quantity: number }> = [];
-
 vi.mock('@/lib/stores/cart-store', () => ({
   useCartStore: (selector: (s: unknown) => unknown) =>
-    selector({ items: cartItems, addItem }),
+    selector({ items: cartItems, addItem: vi.fn() }),
 }));
 
-const variant = (quantity: number) => ({
-  id: 'var_morning',
-  price: { amount: 300, currency: 'USD' },
-  inventory: { quantity, track_inventory: true },
-});
+const { default: YearSupplyButton } = await import('@/components/sale/YearSupplyButton');
 
-const props = (quantity: number) => ({
-  variant: variant(quantity) as never,
+const props = (quantity: number, amount: number | undefined = 300) => ({
+  variant: {
+    id: 'var_morning',
+    price: amount === undefined ? undefined : { amount, currency: 'USD' },
+    inventory: { quantity, track_inventory: true },
+  } as never,
   productId: 'prod_morning',
   name: 'Clearly Calendula Morning',
   imageUrl: '/morning.jpg',
 });
 
-beforeEach(() => {
-  addItem.mockClear();
-  cartItems = [];
-});
-
 describe('YearSupplyButton', () => {
   it('offers a year priced from the live variant price', () => {
-    render(<YearSupplyButton {...props(373)} />);
+    cartItems = [];
+    const html = renderToStaticMarkup(<YearSupplyButton {...props(373)} />);
     // 36 boxes at $3.00 = $108.00, formatted by lib/money, never hardcoded.
-    expect(screen.getByRole('button').textContent).toContain('36 boxes');
-    expect(screen.getByRole('button').textContent).toContain('$108.00');
+    expect(html).toContain('36 boxes');
+    expect(html).toContain('$108.00');
+  });
+
+  it('reprices itself when the catalog price changes', () => {
+    cartItems = [];
+    // Same 36 boxes at $2.00 must read $72.00 - proof the figure is derived.
+    expect(renderToStaticMarkup(<YearSupplyButton {...props(373, 200)} />)).toContain('$72.00');
   });
 
   it('states the cups so the year claim is checkable', () => {
-    render(<YearSupplyButton {...props(373)} />);
-    expect(screen.getByText(/360 cups/)).toBeTruthy();
-  });
-
-  it('adds exactly 36 boxes on click', () => {
-    render(<YearSupplyButton {...props(373)} />);
-    fireEvent.click(screen.getByRole('button'));
-    expect(addItem).toHaveBeenCalledTimes(1);
-    expect(addItem.mock.calls[0][0]).toMatchObject({
-      variantId: 'var_morning',
-      productId: 'prod_morning',
-      price: 300,
-      quantity: 36,
-    });
+    cartItems = [];
+    expect(renderToStaticMarkup(<YearSupplyButton {...props(373)} />)).toContain('360 cups');
   });
 
   it('offers the remainder when fewer than 36 are left', () => {
-    render(<YearSupplyButton {...props(24)} />);
-    expect(screen.getByRole('button').textContent).toContain('last 24');
-    fireEvent.click(screen.getByRole('button'));
-    expect(addItem.mock.calls[0][0].quantity).toBe(24);
+    cartItems = [];
+    const html = renderToStaticMarkup(<YearSupplyButton {...props(24)} />);
+    expect(html).toContain('last 24');
+    expect(html).toContain('$72.00');
   });
 
   it('accounts for what is already in the cart', () => {
     cartItems = [{ variantId: 'var_morning', quantity: 10 }];
-    render(<YearSupplyButton {...props(40)} />);
-    fireEvent.click(screen.getByRole('button'));
-    expect(addItem.mock.calls[0][0].quantity).toBe(30);
+    // 40 in stock less 10 in cart = 30, not a full year.
+    expect(renderToStaticMarkup(<YearSupplyButton {...props(40)} />)).toContain('last 30');
   });
 
   it('renders nothing when sold out', () => {
-    const { container } = render(<YearSupplyButton {...props(0)} />);
-    expect(container.innerHTML).toBe('');
+    cartItems = [];
+    expect(renderToStaticMarkup(<YearSupplyButton {...props(0)} />)).toBe('');
   });
 
   it('renders nothing when the price cannot be read', () => {
-    const { container } = render(
-      <YearSupplyButton {...props(373)} variant={{ id: 'v', inventory: { quantity: 373 } } as never} />
-    );
-    expect(container.innerHTML).toBe('');
+    cartItems = [];
+    expect(renderToStaticMarkup(<YearSupplyButton {...props(373, undefined)} />)).toBe('');
   });
 });
 ```
@@ -591,7 +670,12 @@ Create `components/sale/YearSupplyButton.tsx`:
  */
 import { Money } from '@/lib/money';
 import { useCartStore } from '@/lib/stores/cart-store';
-import { CUPS_PER_BOX, boxesLeft, yearSupplyOffer } from '@/lib/sale/year-supply';
+import {
+  CUPS_PER_BOX,
+  boxesLeft,
+  yearSupplyOffer,
+  yearSupplyCartItem,
+} from '@/lib/sale/year-supply';
 import type { ProductVariant } from '@/lib/types';
 
 interface YearSupplyButtonProps {
@@ -615,17 +699,17 @@ export default function YearSupplyButton({
     .reduce((total, item) => total + (item.quantity ?? 0), 0);
 
   const offer = yearSupplyOffer(boxesLeft(variant), alreadyInCart);
+  const item = offer
+    ? yearSupplyCartItem({ variant, productId, name, imageUrl, boxes: offer.boxes })
+    : null;
 
-  const unitAmount = variant?.price?.amount;
-  const currency = variant?.price?.currency ?? 'USD';
   // No offer, or no readable price: render nothing rather than a $NaN button.
-  if (!offer || typeof unitAmount !== 'number' || !Number.isFinite(unitAmount)) {
-    return null;
-  }
+  if (!offer || !item) return null;
 
+  const currency = typeof variant?.price?.currency === 'string' ? variant.price.currency : 'USD';
   // Integer minor units times a box count - exact, and not a major/minor
   // conversion, so lib/money's boundary rules are satisfied by formatting alone.
-  const total = Money.fromMinor(unitAmount * offer.boxes, currency).format();
+  const total = Money.fromMinor(item.price * item.quantity, currency).format();
   const label =
     offer.kind === 'year'
       ? `Make it a year - ${offer.boxes} boxes, ${total}`
@@ -635,16 +719,7 @@ export default function YearSupplyButton({
     <div className="mt-3">
       <button
         type="button"
-        onClick={() =>
-          addItem({
-            variantId: variant.id,
-            productId,
-            name,
-            price: unitAmount,
-            quantity: offer.boxes,
-            primaryImageUrl: imageUrl,
-          })
-        }
+        onClick={() => addItem(item)}
         className="w-full rounded border border-secondary-400 px-4 py-2 text-sm font-semibold text-secondary-600 transition hover:bg-secondary-400 hover:text-text-inverse"
       >
         {label}
@@ -662,8 +737,6 @@ export default function YearSupplyButton({
 
 Run: `npx vitest run tests/unit/components/year-supply-button.test.tsx`
 Expected: PASS, 7 tests.
-
-If `@testing-library/react` is not already a devDependency, use `renderToStaticMarkup` for the label assertions and call the exported pure helpers directly for the click behaviour instead of adding a dependency. Check with `node -e "require.resolve('@testing-library/react')"` before writing the test.
 
 - [ ] **Step 5: Wire it into the PDP**
 
@@ -741,19 +814,12 @@ Immediately after the existing closing paragraph (the one ending "Read the whole
         )}
 ```
 
-- [ ] **Step 3: Verify against dev**
+- [ ] **Step 3: Do NOT deploy**
 
-```bash
-npm run deploy:dev
-curl -s https://beauteas-dev.justblackmagic.workers.dev/ | grep -o "[0-9,]* boxes left in the whole shop"
-```
-
-Expected: a number matching the sum of the three blends' inventory. Cross-check with:
-
-```bash
-npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
-  --command "SELECT SUM(json_extract(inventory,'\$.quantity')) FROM product_variants WHERE sku IN ('BTCCM1','BTCCA1','BTCCE1');"
-```
+Verification against live dev is the controller's job, run once after every
+task lands. Do not run `npm run deploy:dev` or any `wrangler d1 execute`
+command in this task: a deploy applies pending migrations to two databases and
+uploads a Worker, which is not a subagent's call to make.
 
 - [ ] **Step 4: Lint, full suite, commit**
 
@@ -832,35 +898,37 @@ grep -c $'—' migrations/0030_goob_box_math_content.sql
 
 Expected: `0`.
 
-- [ ] **Step 3: Preview, then apply to dev**
+- [ ] **Step 3: Do NOT apply the migration**
+
+Write the file and commit it. Do not run `npm run deploy:dev`, `npm run
+db:migrate:dev`, or any `wrangler d1 execute` command: applying a migration
+writes to `beauteas-db-dev` and `beauteas-db-dev-preview` and is the
+controller's call, made once after every task lands. The controller runs the
+apply, the content checks, and the idempotency re-run (see Controller
+Verification at the end of this plan).
+
+- [ ] **Step 4: Check the SQL parses without executing it**
+
+Confirm the statement shapes are valid before handing them over. `json_set` +
+`json_extract` + `||` is already verified working on this D1 instance, so this
+is a syntax check only:
 
 ```bash
-npm run db:migrate:status:dev
-npm run deploy:dev
+sqlite3 :memory: <<'SQL'
+CREATE TABLE pages (slug TEXT, content TEXT);
+CREATE TABLE products (slug TEXT, description TEXT);
+INSERT INTO pages VALUES ('faq', '<p>old</p>');
+INSERT INTO products VALUES ('clearly-calendula-morning', '{"en":"Old copy."}');
+.read migrations/0030_goob_box_math_content.sql
+.read migrations/0030_goob_box_math_content.sql
+SELECT content FROM pages;
+SELECT json_extract(description,'$.en') FROM products;
+SQL
 ```
 
-Expected: status lists `0030_goob_box_math_content.sql` as pending on both dev databases; the deploy applies it after taking a backup.
-
-- [ ] **Step 4: Verify the content and the idempotency**
-
-```bash
-npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
-  --command "SELECT substr(content, -260) FROM pages WHERE slug = 'faq';"
-npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
-  --command "SELECT slug, substr(json_extract(description,'\$.en'), -90) FROM products WHERE slug LIKE 'clearly-calendula-%';"
-```
-
-Expected: the FAQ ends with the new section; each of the three blends ends with the new sentence, and no other product does.
-
-Then confirm re-running is a no-op by executing the migration file's statements a second time and checking the text did not double:
-
-```bash
-npx wrangler d1 execute beauteas-db-dev --remote --env dev -y --file migrations/0030_goob_box_math_content.sql
-npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
-  --command "SELECT slug, length(json_extract(description,'\$.en')) FROM products WHERE slug LIKE 'clearly-calendula-%';"
-```
-
-Expected: lengths unchanged from the previous step.
+Expected: the FAQ content contains the new section exactly ONCE and the
+description contains the new sentence exactly ONCE, proving idempotency
+without touching a real database.
 
 - [ ] **Step 5: Commit**
 
@@ -1117,6 +1185,30 @@ git commit -m "docs: correct the stale-homepage claim and register year-supply"
 ```
 
 ---
+
+## Controller Verification (after Task 8, not a subagent task)
+
+No implementer deploys or writes to a database. Once all eight tasks are
+complete and reviewed, the controller runs:
+
+```bash
+npm run db:migrate:status:dev          # expect 0030 pending on both dev DBs
+npm run deploy:dev                     # applies 0030 after an R2 backup, then deploys
+
+curl -s https://beauteas-dev.justblackmagic.workers.dev/ \
+  | grep -o "[0-9,]* boxes left in the whole shop"
+npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
+  --command "SELECT SUM(json_extract(inventory,'\$.quantity')) FROM product_variants WHERE sku IN ('BTCCM1','BTCCA1','BTCCE1');"
+
+npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
+  --command "SELECT substr(content, -260) FROM pages WHERE slug = 'faq';"
+npx wrangler d1 execute beauteas-db-dev --remote --env dev -y \
+  --command "SELECT slug, substr(json_extract(description,'\$.en'), -90) FROM products WHERE slug LIKE 'clearly-calendula-%';"
+```
+
+Expected: the hero count equals the SUM query; the FAQ ends with the new
+section; each of the three blends ends with the new sentence and no other
+product does.
 
 ## Deployment
 
