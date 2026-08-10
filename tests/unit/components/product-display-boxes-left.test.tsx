@@ -35,7 +35,11 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-function makeProduct(overrides: { quantity: number }): Product {
+function makeProduct(overrides: {
+  quantity: number;
+  track_inventory?: boolean;
+  allow_backorder?: boolean;
+}): Product {
   return {
     id: "prod_boxes_left",
     name: "Clearly Calendula Morning",
@@ -48,7 +52,15 @@ function makeProduct(overrides: { quantity: number }): Product {
         status: "active",
         option_values: [{ option_id: "size", value: "One box (10 tea bags)" }],
         price: { amount: 1499, currency: "USD" },
-        inventory: { quantity: overrides.quantity },
+        inventory: {
+          quantity: overrides.quantity,
+          ...(overrides.track_inventory !== undefined && {
+            track_inventory: overrides.track_inventory,
+          }),
+          ...(overrides.allow_backorder !== undefined && {
+            allow_backorder: overrides.allow_backorder,
+          }),
+        },
       },
     ],
   } as unknown as Product;
@@ -72,5 +84,39 @@ describe("ProductDisplay boxes-left readout (goob-year-of-tea Task 3)", () => {
     expect(html).not.toContain("Backordered");
     expect(html).not.toContain("Add to Cart");
     expect(countOccurrences(html, "Sold out")).toBe(1);
+  });
+
+  // Regression: `boxesLeft` reads track_inventory === false / allow_backorder
+  // === true as "unlimited, no count to show" (returns null), the same as
+  // isVariantAvailable and hasAvailableStock elsewhere in the codebase. Zero
+  // quantity there does not mean sold out. `available` must agree, or the
+  // page renders neither the box count nor "Sold out" nor "Add to Cart" -
+  // a blank hole where the stock/CTA area should be.
+  it("treats an untracked variant at quantity 0 as purchasable, not sold out", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeProduct({ quantity: 0, track_inventory: false })}
+        reviews={[]}
+        recommendations={[]}
+      />
+    );
+
+    expect(html).toContain("Add to Cart");
+    expect(html).not.toContain("Sold out");
+    expect(html).not.toContain("Backordered");
+  });
+
+  it("treats a backorder-allowed variant at quantity 0 as purchasable, not sold out", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeProduct({ quantity: 0, allow_backorder: true })}
+        reviews={[]}
+        recommendations={[]}
+      />
+    );
+
+    expect(html).toContain("Add to Cart");
+    expect(html).not.toContain("Sold out");
+    expect(html).not.toContain("Backordered");
   });
 });

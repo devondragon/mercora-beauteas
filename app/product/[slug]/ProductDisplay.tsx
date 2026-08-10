@@ -189,9 +189,21 @@ export default function ProductDisplay({
   const compareAt = selectedVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > price;
 
-  // Stock logic (MACH: inventory is on variant)
+  // Stock logic (MACH: inventory is on variant). A variant with quantity 0
+  // but track_inventory === false or allow_backorder === true is not
+  // actually out of stock - those flags mean "unlimited," the same reading
+  // boxesLeft (lib/sale/year-supply.ts), isVariantAvailable
+  // (lib/db/schema/products.ts), and hasAvailableStock
+  // (lib/recommendations/blend.ts) already give them. Folding that into
+  // `available` keeps it agreeing with `boxes` below: boxesLeft returns null
+  // (its "no count to show" case) for exactly this variant, so BoxesLeft
+  // renders nothing for it - `available` has to say "yes, purchasable" here
+  // too, or the CTA would hide with nothing else in its place.
   const quantityInStock = selectedVariant?.inventory?.quantity ?? 0;
-  const available = quantityInStock > 0;
+  const unlimitedInventory =
+    selectedVariant?.inventory?.track_inventory === false ||
+    selectedVariant?.inventory?.allow_backorder === true;
+  const available = quantityInStock > 0 || unlimitedInventory;
 
   // Boxes-remaining readout for the closing sale (see BoxesLeft). `boxesLeft`
   // is only handed a real variant - boxesLeft(undefined) would read as "no
