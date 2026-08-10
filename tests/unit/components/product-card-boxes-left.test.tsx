@@ -40,6 +40,10 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     name: "Clearly Calendula Morning",
     description: "An energizing organic black tea blend.",
     slug: "clearly-calendula-morning",
+    // The catalog's real type for the three blends. Without it the card falls
+    // back to the plain In Stock / Sold out label (see isSoldByTheBox).
+    type: "Tea Bags",
+    extensions: { servings: "10 tea bags per box" },
     default_variant_id: "var_1",
     variants: [
       {
@@ -113,5 +117,99 @@ describe("ProductCard + BoxesLeft: exactly one Sold out label", () => {
 
     expect(soldOutCount(html)).toBe(0);
     expect(html).toContain("In Stock");
+  });
+});
+
+/**
+ * Whole-branch review fix: ProductCard is drawn for the WHOLE active catalog,
+ * not just the blends - CategoryDisplay renders it, and PDP recommendations
+ * (lib/recommendations/index.ts) draw from every purchasable product. Before
+ * this fix a travel mug with 25 units read "25 boxes left" and the Mega Month
+ * bundle read "82 boxes left", both false: a mug is not a box and a bundle is
+ * nine of them. Non-box products keep the In Stock / Sold out label the card
+ * carried before the closing sale.
+ */
+describe("ProductCard: the box count only where a box is the unit", () => {
+  it("gives a tea blend the box count", () => {
+    const html = renderToStaticMarkup(<ProductCard product={makeProduct()} />);
+
+    expect(html).toContain("12 boxes left");
+    expect(html).toContain("In Stock");
+  });
+
+  it("gives a travel mug the In Stock label and no box count", () => {
+    const product = makeProduct({
+      id: "prod_beauteas_15oz_steel_travel_mug",
+      name: "BeauTeas 15oz Steel Travel Mug",
+      slug: "beauteas-15oz-steel-travel-mug",
+      type: "Drinkware",
+      extensions: {},
+      variants: [
+        {
+          id: "var_1",
+          status: "active",
+          price: { amount: 2999, currency: "USD" },
+          inventory: { quantity: 25, track_inventory: true },
+        },
+      ],
+    } as unknown as Partial<Product>);
+
+    const html = renderToStaticMarkup(<ProductCard product={product} />);
+
+    expect(html).not.toContain("boxes left");
+    expect(html).not.toContain("25 boxes");
+    expect(html).toContain("In Stock");
+    expect(soldOutCount(html)).toBe(0);
+  });
+
+  it("gives a glossy mug the Sold out label, exactly once, when its stock is gone", () => {
+    const product = makeProduct({
+      id: "prod_beauteas_white_glossy_mug",
+      name: "BeauTeas White Glossy Tea Mug",
+      slug: "beauteas-white-glossy-tea-mug",
+      type: "Mugs",
+      extensions: {},
+      variants: [
+        {
+          id: "var_1",
+          status: "active",
+          price: { amount: 1899, currency: "USD" },
+          inventory: { quantity: 0, track_inventory: true },
+        },
+      ],
+    } as unknown as Partial<Product>);
+
+    const html = renderToStaticMarkup(<ProductCard product={product} />);
+
+    expect(html).not.toContain("boxes left");
+    expect(soldOutCount(html)).toBe(1);
+    expect(html).not.toContain("In Stock");
+  });
+
+  it("gives a multi-box bundle the In Stock label and no box count", () => {
+    // Same 'Tea Bags' type as a blend; `extensions.contents` is what marks it
+    // as several boxes to a unit, so 82 units are not 82 boxes.
+    const product = makeProduct({
+      id: "prod_clearly_calendula_full_package",
+      name: "Clearly Calendula Mega Month",
+      slug: "clearly-calendula-full-package",
+      type: "Tea Bags",
+      extensions: { contents: "9 boxes · 90 tea bags" },
+      variants: [
+        {
+          id: "var_1",
+          status: "active",
+          price: { amount: 9999, currency: "USD" },
+          inventory: { quantity: 82, track_inventory: true },
+        },
+      ],
+    } as unknown as Partial<Product>);
+
+    const html = renderToStaticMarkup(<ProductCard product={product} />);
+
+    expect(html).not.toContain("boxes left");
+    expect(html).not.toContain("82 boxes");
+    expect(html).toContain("In Stock");
+    expect(soldOutCount(html)).toBe(0);
   });
 });

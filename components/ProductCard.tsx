@@ -46,7 +46,7 @@ import { normalizeProductRating } from "@/lib/utils/ratings";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Money } from "@/lib/money";
-import { boxesLeft } from "@/lib/sale/year-supply";
+import { boxesLeft, isSoldByTheBox } from "@/lib/sale/year-supply";
 import BoxesLeft from "@/components/sale/BoxesLeft";
 
 /**
@@ -99,6 +99,14 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   // is forced to 0 rather than handed to boxesLeft.
   const boxes = defaultVariant ? boxesLeft(defaultVariant) : 0;
   const availability = boxes === 0 ? "coming_soon" : "available";
+
+  // ...but "boxes" is only the honest unit for the tea blends. This card is
+  // also drawn for drinkware, mugs, gift cards and the multi-box bundles -
+  // PDP recommendations pull from the whole active catalog - and a travel mug
+  // reading "25 boxes left" is a unit lie. Everything that is not stocked by
+  // the box keeps the In Stock / Sold out label this card carried before the
+  // closing sale. See isSoldByTheBox in lib/sale/year-supply.ts.
+  const soldByTheBox = isSoldByTheBox(product);
 
   // Name/description/slug logic
   const name =
@@ -209,15 +217,32 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
             </div>
           )}
           {/*
+            Box-stocked products (the tea blends) get the closing-sale count;
+            everything else gets the pre-sale label. In the box branch,
             BoxesLeft owns the sold-out label: it renders "Sold out" itself
             at boxes === 0 (both the no-sellable-variant case, forced to 0
-            above, and a tracked variant actually at zero). This paragraph
-            only ever adds "In Stock" on top of that - never a second "Sold
-            out" - so the card shows exactly one sold-out message, not two.
+            above, and a tracked variant actually at zero). The paragraph
+            beside it only ever adds "In Stock" on top of that - never a
+            second "Sold out" - so the card shows exactly one sold-out
+            message, not two.
           */}
-          <BoxesLeft boxes={boxes} />
-          {availability === "available" && (
-            <p className={`mt-2 text-xs ${stateStyles.inStock}`}>In Stock</p>
+          {soldByTheBox ? (
+            <>
+              <BoxesLeft boxes={boxes} />
+              {availability === "available" && (
+                <p className={`mt-2 text-xs ${stateStyles.inStock}`}>In Stock</p>
+              )}
+            </>
+          ) : (
+            <p
+              className={`mt-2 text-xs ${
+                availability === "available"
+                  ? stateStyles.inStock
+                  : stateStyles.outOfStock
+              }`}
+            >
+              {availability === "available" ? "In Stock" : "Sold out"}
+            </p>
           )}
 
           {/*

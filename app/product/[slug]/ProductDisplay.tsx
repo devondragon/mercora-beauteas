@@ -44,7 +44,7 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Money } from "@/lib/money";
 import { isSellableVariant } from "@/lib/config/commerce";
-import { boxesLeft } from "@/lib/sale/year-supply";
+import { boxesLeft, isSoldByTheBox } from "@/lib/sale/year-supply";
 import BoxesLeft from "@/components/sale/BoxesLeft";
 import YearSupplyButton from "@/components/sale/YearSupplyButton";
 import { normalizeProductRating } from "@/lib/utils/ratings";
@@ -177,8 +177,9 @@ export default function ProductDisplay({
   // Server-side pricing already refuses these via isSellableVariant
   // (computeCatalogLineCents); this is what keeps the UI from offering them
   // in the first place. If every variant on a product is withdrawn, variants
-  // is empty, defaultVariant/selectedVariant are undefined, and the existing
-  // "Sold out" branch below (available === false) renders instead of crashing.
+  // is empty and defaultVariant/selectedVariant are undefined; `boxes` is
+  // forced to 0 below so the stock readout renders "Sold out" instead of the
+  // page crashing or silently showing nothing.
   const variants = (product.variants || []).filter((variant) => isSellableVariant(variant));
   const defaultVariant = variants.find((variant) => variant.id === product.default_variant_id) || variants[0];
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(defaultVariant?.id);
@@ -214,6 +215,13 @@ export default function ProductDisplay({
   // ProductCard's identical forced-to-0 fallback.
   const boxes = selectedVariant ? boxesLeft(selectedVariant) : 0;
 
+  // ...but only for products actually stocked one box to a unit. This same PDP
+  // renders drinkware, mugs, gift cards and the multi-box bundles, where "N
+  // boxes left" is a unit lie and a one-click "36 boxes" year supply is worse
+  // than one. Those keep the plain In Stock / Sold out label and get no
+  // year-supply CTA. See isSoldByTheBox in lib/sale/year-supply.ts.
+  const soldByTheBox = isSoldByTheBox(product);
+
   // Display name and primary image for a cart line added from this page -
   // shared by the default Add to Cart handler and YearSupplyButton so both
   // add the same product under the same name and image.
@@ -231,6 +239,24 @@ export default function ProductDisplay({
       return "/placeholder.svg";
     }
   })();
+
+  // The single stock readout, shared by the subscription and plain branches so
+  // the page can never render two of them. Box-stocked products get the
+  // closing-sale count (BoxesLeft renders its own "Sold out" at zero and
+  // nothing at all for an untracked variant); everything else keeps the plain
+  // In Stock / Sold out label. Note this deliberately does NOT restore the old
+  // "Backordered" wording - nothing is being restocked, the shop is closing.
+  const stockReadout = soldByTheBox ? (
+    <BoxesLeft boxes={boxes} />
+  ) : (
+    <p
+      className={`text-xs font-semibold ${
+        available ? stateStyles.inStock : stateStyles.outOfStock
+      }`}
+    >
+      {available ? "In Stock" : "Sold out"}
+    </p>
+  );
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
   const descriptionParagraphs = useMemo(
@@ -494,12 +520,13 @@ export default function ProductDisplay({
 
                 {/*
                   SubscriptionToggle already renders its own "Sold out" when
-                  `available` is false, so BoxesLeft is only shown here while
-                  available - otherwise this page would show "Sold out"
-                  twice. When available, boxes is never 0, so this never
-                  collides with that label.
+                  `available` is false, so the stock readout is only shown
+                  here while available - otherwise this page would show "Sold
+                  out" twice. When available, boxes is never 0 and the
+                  non-box label reads "In Stock", so neither can collide with
+                  the toggle's own label.
                 */}
-                {available && <BoxesLeft boxes={boxes} />}
+                {available && stockReadout}
               </>
             ) : (
               <>
@@ -513,7 +540,7 @@ export default function ProductDisplay({
                   <p className="text-lg font-semibold text-text-primary sm:text-xl">{Money.fromMinor(price, currency).format()}</p>
                 )}
 
-                <BoxesLeft boxes={boxes} />
+                {stockReadout}
 
                 {available && (
                   <button
@@ -542,7 +569,7 @@ export default function ProductDisplay({
                   </button>
                 )}
 
-                {selectedVariant && (
+                {soldByTheBox && selectedVariant && (
                   <YearSupplyButton
                     variant={selectedVariant}
                     productId={product.id}

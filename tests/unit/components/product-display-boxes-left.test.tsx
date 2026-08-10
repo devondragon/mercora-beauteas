@@ -45,6 +45,10 @@ function makeProduct(overrides: {
     name: "Clearly Calendula Morning",
     description: "An energizing organic black tea blend.",
     slug: "clearly-calendula-morning",
+    // The catalog's real type for the three blends. isSoldByTheBox gates the
+    // box count and the year-supply CTA on it.
+    type: "Tea Bags",
+    extensions: { servings: "10 tea bags per box" },
     default_variant_id: "var_1box",
     variants: [
       {
@@ -118,5 +122,97 @@ describe("ProductDisplay boxes-left readout (goob-year-of-tea Task 3)", () => {
     expect(html).toContain("Add to Cart");
     expect(html).not.toContain("Sold out");
     expect(html).not.toContain("Backordered");
+  });
+});
+
+/**
+ * Whole-branch review fix: the PDP renders every product, not just the blends.
+ * A travel mug must not read "25 boxes left", and must not be offered a
+ * one-click "36 boxes" year supply - that button would put 36 mugs in the
+ * cart. Non-box products get the plain In Stock / Sold out label instead, and
+ * still never the old "Backordered" wording.
+ */
+function makeNonBoxProduct(overrides: {
+  type: string;
+  quantity: number;
+  extensions?: Record<string, unknown>;
+}): Product {
+  return {
+    id: "prod_travel_mug",
+    name: "BeauTeas 15oz Steel Travel Mug",
+    description: "An insulated steel travel mug.",
+    slug: "beauteas-15oz-steel-travel-mug",
+    type: overrides.type,
+    extensions: overrides.extensions ?? {},
+    default_variant_id: "var_mug",
+    variants: [
+      {
+        id: "var_mug",
+        status: "active",
+        option_values: [{ option_id: "title", value: "Default Title" }],
+        price: { amount: 2999, currency: "USD" },
+        inventory: { quantity: overrides.quantity, track_inventory: true },
+      },
+    ],
+  } as unknown as Product;
+}
+
+describe("ProductDisplay: box count and year supply only where a box is the unit", () => {
+  it("shows In Stock and no box count or year supply for a travel mug", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeNonBoxProduct({ type: "Drinkware", quantity: 25 })}
+        reviews={[]}
+        recommendations={[]}
+      />
+    );
+
+    expect(html).not.toContain("boxes left");
+    expect(html).not.toContain("Make it a year");
+    expect(html).not.toContain("Take the last");
+    expect(html).toContain("In Stock");
+    expect(html).toContain("Add to Cart");
+    expect(html).not.toContain("Backordered");
+  });
+
+  it("shows Sold out exactly once for a mug with no stock left", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeNonBoxProduct({ type: "Mugs", quantity: 0 })}
+        reviews={[]}
+        recommendations={[]}
+      />
+    );
+
+    expect(html).not.toContain("boxes left");
+    expect(html).not.toContain("Add to Cart");
+    expect(html).not.toContain("Backordered");
+    expect(countOccurrences(html, "Sold out")).toBe(1);
+  });
+
+  it("shows no box count or year supply for a multi-box bundle", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeNonBoxProduct({
+          type: "Tea Bags",
+          quantity: 82,
+          extensions: { contents: "9 boxes · 90 tea bags" },
+        })}
+        reviews={[]}
+        recommendations={[]}
+      />
+    );
+
+    expect(html).not.toContain("boxes left");
+    expect(html).not.toContain("Make it a year");
+    expect(html).toContain("In Stock");
+  });
+
+  it("still offers the year supply on a blend", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay product={makeProduct({ quantity: 250 })} reviews={[]} recommendations={[]} />
+    );
+
+    expect(html).toContain("Make it a year");
   });
 });

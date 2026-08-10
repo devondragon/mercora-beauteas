@@ -14,6 +14,7 @@ import {
   CUPS_PER_BOX,
   YEAR_SUPPLY_BOXES,
   boxesLeft,
+  isSoldByTheBox,
   yearSupplyOffer,
   yearSupplyCartItem,
 } from '@/lib/sale/year-supply';
@@ -23,6 +24,61 @@ describe('constants', () => {
     expect(CUPS_PER_BOX).toBe(10);
     expect(YEAR_SUPPLY_BOXES).toBe(36);
     expect(YEAR_SUPPLY_BOXES * CUPS_PER_BOX).toBe(360);
+  });
+});
+
+/**
+ * `isSoldByTheBox` is what stops "N boxes left" appearing on a product whose
+ * unit is not a box. The catalog's real `type` and `extensions` values are used
+ * verbatim below: the three blends are 'Tea Bags' with a per-box `servings`
+ * string, the two bundles are also 'Tea Bags' but carry `extensions.contents`
+ * ("3 boxes ...", "9 boxes ..."), and drinkware/mugs/gift cards have their own
+ * types.
+ */
+describe('isSoldByTheBox', () => {
+  it('accepts a tea blend', () => {
+    expect(
+      isSoldByTheBox({
+        type: 'Tea Bags',
+        extensions: { product_type: 'Tea Bags', servings: '10 tea bags per box' },
+      })
+    ).toBe(true);
+  });
+
+  it('normalizes the type the way lib/config/commerce does', () => {
+    expect(isSoldByTheBox({ type: 'tea bags' })).toBe(true);
+    expect(isSoldByTheBox({ type: 'TEA-BAGS' })).toBe(true);
+    expect(isSoldByTheBox({ type: 'teabags' })).toBe(true);
+  });
+
+  it('rejects drinkware, mugs and gift cards', () => {
+    expect(isSoldByTheBox({ type: 'Drinkware' })).toBe(false);
+    expect(isSoldByTheBox({ type: 'Mugs' })).toBe(false);
+    expect(isSoldByTheBox({ type: 'Gift Card' })).toBe(false);
+    expect(isSoldByTheBox({ type: 'gift-card' })).toBe(false);
+  });
+
+  it('rejects a multi-box bundle even though its type is tea', () => {
+    expect(
+      isSoldByTheBox({ type: 'Tea Bags', extensions: { contents: '3 boxes · 30 tea bags' } })
+    ).toBe(false);
+    expect(
+      isSoldByTheBox({ type: 'Tea Bags', extensions: { contents: '9 boxes · 90 tea bags' } })
+    ).toBe(false);
+  });
+
+  it('ignores an empty contents value rather than treating it as a bundle', () => {
+    expect(isSoldByTheBox({ type: 'Tea Bags', extensions: { contents: '   ' } })).toBe(true);
+    expect(isSoldByTheBox({ type: 'Tea Bags', extensions: { contents: null } })).toBe(true);
+  });
+
+  it('fails toward no count on a missing, non-string or unknown type', () => {
+    expect(isSoldByTheBox({})).toBe(false);
+    expect(isSoldByTheBox({ type: null })).toBe(false);
+    expect(isSoldByTheBox({ type: 42 })).toBe(false);
+    expect(isSoldByTheBox({ type: 'Candles' })).toBe(false);
+    expect(isSoldByTheBox(null)).toBe(false);
+    expect(isSoldByTheBox(undefined)).toBe(false);
   });
 });
 

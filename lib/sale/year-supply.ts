@@ -59,6 +59,73 @@ export function boxesLeft(variant: StockVariant | null | undefined): number | nu
   return Math.max(0, Math.floor(quantity));
 }
 
+/**
+ * The product shape the box-unit predicate reads. Structural and `unknown`-typed
+ * so any product object fits without importing the MACH types (this module is
+ * pure and must stay import-light for the client bundle).
+ */
+export interface BoxUnitProduct {
+  type?: unknown;
+  extensions?: unknown;
+}
+
+/**
+ * Catalog `type` values whose unit of inventory is ONE BOX of tea.
+ *
+ * Compared normalized (lowercased, non-alphanumerics stripped), the same way
+ * `isGiftCardPurchaseProduct` normalizes `type` in lib/config/commerce.ts.
+ * The catalog's `type` values are 'Tea Bags', 'Drinkware', 'Mugs' and
+ * 'Gift Card'; only the first is counted in boxes.
+ */
+const BOX_UNIT_PRODUCT_TYPES = new Set(['teabags']);
+
+/**
+ * Whether "N boxes left" is a TRUE sentence about this product.
+ *
+ * The closing sale counts stock in boxes, but only the three Clearly Calendula
+ * blends are actually stocked one box to a unit. The rest of the catalog is
+ * drinkware, mugs and gift cards, where a unit is a mug or a card - a card
+ * reading "25 boxes left" is a unit lie, not merely an odd word. Callers that
+ * render a box count must ask this first and fall back to the plain
+ * In Stock / Sold out treatment when it is false.
+ *
+ * Two signals, both structural fields already in the catalog rather than a
+ * name match or a slug list:
+ *
+ *  1. POSITIVE - the product `type` is the tea type. Drinkware, Mugs and
+ *     Gift Card are distinct `type` values, so this alone separates tea from
+ *     everything else.
+ *  2. NEGATIVE - `extensions.contents` is absent. That field is defined in
+ *     ProductDisplay's `ProductExtensions` as "what's in the box for
+ *     MULTI-BOX packs" and exists only on the two archived bundles
+ *     (`clearly-calendula-sample-pack`, 3 boxes; `clearly-calendula-full-package`,
+ *     9 boxes). A bundle unit is several boxes, so its inventory count is not
+ *     a box count either - and the bundles can still reach a card through the
+ *     recommendation pool.
+ *
+ * Both directions fail toward showing LESS: an unreadable or unexpected type,
+ * or a stray `contents` value on a blend, drops the box count and leaves the
+ * plain stock label, which is the error-handling rule the rest of this feature
+ * follows. It never invents a box count for something that is not a box.
+ */
+export function isSoldByTheBox(product: BoxUnitProduct | null | undefined): boolean {
+  if (!product) return false;
+
+  const type =
+    typeof product.type === 'string'
+      ? product.type.toLowerCase().replace(/[^a-z0-9]/g, '')
+      : '';
+  if (!BOX_UNIT_PRODUCT_TYPES.has(type)) return false;
+
+  const extensions = product.extensions;
+  const contents =
+    extensions && typeof extensions === 'object'
+      ? (extensions as Record<string, unknown>).contents
+      : undefined;
+
+  return !(typeof contents === 'string' && contents.trim() !== '');
+}
+
 export type YearSupplyOffer = { boxes: number; kind: 'year' | 'rest' };
 
 /**
