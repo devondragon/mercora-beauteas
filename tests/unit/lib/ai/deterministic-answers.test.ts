@@ -793,8 +793,8 @@ describe('minimum order answer (GOOB)', () => {
     // by a first attempt that only excluded past tense — "are in my order"
     // matches no `did/have/has i order` phrasing, so an exclude list would
     // have had to enumerate this too. The obligation-shaped positive pattern
-    // ("do i have to" / "must i" / "should i" / "am i required to") rules it
-    // out structurally instead.
+    // ("do i have to" / "must i" / "am i required to") rules it out
+    // structurally instead.
     'how many boxes are in my order?',
     'how many boxes were in my last order?',
     'how many boxes have i purchased this year?',
@@ -814,7 +814,6 @@ describe('minimum order answer (GOOB)', () => {
     // false negative from "how many boxes ... buy/order" to only that one
     // exact modal.
     'how many boxes must i order?',
-    'how many boxes should i order?',
     'how many boxes am i required to purchase?',
     // First-person-plural forms — the same obligation shape a couple
     // shopping together would type. Widening the modal alternation only
@@ -822,12 +821,23 @@ describe('minimum order answer (GOOB)', () => {
     // vector) or the gap tolerance (round 2's), so the negatives above stay
     // covered.
     'how many boxes must we order?',
-    'how many boxes should we order?',
     'how many boxes do we have to buy?',
     'how many boxes are we required to purchase?',
   ])('still answers other obligation phrasings: %s', (question) => {
     expect(classifyQuery(question)).toBe('minimum_order');
   });
+
+  // "should" is advice-seeking, not obligation, and was DROPPED from this
+  // rule's pattern (review finding) — "how many boxes should i/we order?"
+  // now belongs to box_math, which states both the year math and the
+  // current minimum, alongside "...should i/we buy?". See the box_math
+  // describe block below.
+  it.each(['how many boxes should i order?', 'how many boxes should we order?'])(
+    'no longer claims the advice-shaped %s (moved to box_math)',
+    (question) => {
+      expect(classifyQuery(question)).toBe('box_math');
+    }
+  );
 
   it.each([
     // "spend" and "cart" were dropped from the noun list entirely: the
@@ -861,6 +871,11 @@ describe('box_math', () => {
     'how much should I buy?',
     'how many boxes should I buy?',
     'how many boxes is a year?',
+    // The verb seam (review finding): "should I buy/order/purchase" all mean
+    // the same acquisition question once "boxes" makes the subject explicit.
+    'how many boxes should I order?',
+    'how many boxes should we order?',
+    'how many boxes should I purchase?',
   ])('classifies %s', (question) => {
     expect(classifyQuery(question)).toBe('box_math');
   });
@@ -875,11 +890,33 @@ describe('box_math', () => {
     ['how many boxes did I order?', null],
     ['what is in the morning blend?', null],
     ['how long does the tea last once opened?', null],
+    // "get" is deliberately not an acquisition verb here — no obligation
+    // counterpart in minimum_order either, so it reaches the model instead
+    // of a canned answer for either category.
+    ['how many boxes should I get?', null],
+    // Without the "boxes" noun, "should I order/get" is too underspecified
+    // to be box math — only "should I buy" is narrow enough on its own.
+    ['how much should I get?', null],
+    ['how much should I order?', null],
+    // A shipping-rates question dressed as "how much should I buy" — the
+    // free-shipping THRESHOLD, not year-supply math. Both orderings.
+    ['how much should I buy for free shipping?', 'shipping_rates'],
+    ['how much should I buy for shipping to be free?', 'shipping_rates'],
+    // A minimum-order question dressed as "how much should I buy" — falls
+    // all the way to retrieval since it doesn't match minimum_order's own
+    // patterns either (no "minimum order/boxes", no obligation modal).
+    ['how much should I buy to hit the minimum?', null],
   ])('does not claim %s', (question, expected) => {
     expect(classifyQuery(question)).toBe(expected);
   });
 
-  it('answers with the box math and a price read from the catalog', async () => {
+  it('answers with the box math, the minimum, and a price read from the catalog', async () => {
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 10,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
     getProductBySlug.mockResolvedValue({
       default_variant_id: 'var_morning',
       variants: [{ id: 'var_morning', price: { amount: 300, currency: 'USD' } }],
@@ -887,6 +924,7 @@ describe('box_math', () => {
     const answer = await resolveDeterministicAnswer('box_math');
     expect(answer).toContain('10 tea bags');
     expect(answer).toContain('36 boxes');
+    expect(answer).toContain('10-box minimum');
     expect(answer).toContain('$108.00');
   });
 
@@ -899,6 +937,27 @@ describe('box_math', () => {
 
   it('omits the figure when the blend has no readable price', async () => {
     getProductBySlug.mockResolvedValue({ variants: [{ id: 'v', price: {} }] });
+    const answer = await resolveDeterministicAnswer('box_math');
+    expect(answer).not.toContain('$');
+  });
+
+  it('omits the minimum clause rather than guessing when that read fails, but keeps the rest', async () => {
+    getSaleRules.mockRejectedValue(new Error('D1 unavailable'));
+    getProductBySlug.mockResolvedValue({
+      default_variant_id: 'var_morning',
+      variants: [{ id: 'var_morning', price: { amount: 300, currency: 'USD' } }],
+    });
+    const answer = await resolveDeterministicAnswer('box_math');
+    expect(answer).toContain('10 tea bags');
+    expect(answer).toContain('$108.00');
+    expect(answer).not.toMatch(/box minimum/);
+  });
+
+  it('treats a zero price as unreadable rather than advertising it as free', async () => {
+    getProductBySlug.mockResolvedValue({
+      default_variant_id: 'var_morning',
+      variants: [{ id: 'var_morning', price: { amount: 0, currency: 'USD' } }],
+    });
     const answer = await resolveDeterministicAnswer('box_math');
     expect(answer).not.toContain('$');
   });
