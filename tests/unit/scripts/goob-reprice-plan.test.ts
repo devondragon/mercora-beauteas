@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  resolveTarget,
   planReprice,
   ACTIVE_PHYSICAL_VARIANTS_SQL,
   buildUpdateStatement,
@@ -241,5 +242,53 @@ describe('buildUpdateStatement', () => {
     // from `; DROP TABLE` onward would sit outside any string — live SQL, not
     // a value — which is exactly what this asserts did NOT happen.
     expect(stmt.endsWith(`WHERE id = 'x''; DROP TABLE product_variants; --'`)).toBe(true);
+  });
+});
+
+/**
+ * Target resolution. This script writes prices to live databases, so which
+ * one it picks is load-bearing: the whole reason `dev-remote` exists is that
+ * the default local target writes a file the deployed dev Worker never reads,
+ * which made "rehearse on dev" impossible without touching production.
+ *
+ * The asymmetry is deliberate and pinned here: D1_REMOTE=true still means
+ * production and only production, so no existing invocation changed meaning
+ * when dev-remote was added.
+ */
+describe('resolveTarget', () => {
+  it('defaults to the LOCAL dev database when nothing is set', () => {
+    const t = resolveTarget({});
+    expect(t).toMatchObject({ database: 'beauteas-db-dev', wranglerEnv: 'dev', remote: false });
+  });
+
+  it('sends D1_REMOTE=true to production, unchanged', () => {
+    const t = resolveTarget({ D1_REMOTE: 'true' });
+    expect(t).toMatchObject({ database: 'beauteas-db', wranglerEnv: 'production', remote: true });
+    expect(t.label).toContain('PRODUCTION');
+  });
+
+  it('sends D1_TARGET=dev-remote to the deployed dev database, not production', () => {
+    const t = resolveTarget({ D1_TARGET: 'dev-remote' });
+    expect(t).toMatchObject({ database: 'beauteas-db-dev', wranglerEnv: 'dev', remote: true });
+    expect(t.label).not.toContain('PRODUCTION');
+  });
+
+  it('refuses to guess when both are set rather than picking one', () => {
+    // The two disagree about which database is intended. A precedence rule
+    // would silently write to whichever the author happened to rank first.
+    const t = resolveTarget({ D1_REMOTE: 'true', D1_TARGET: 'dev-remote' });
+    expect(t.error).toMatch(/disagree/i);
+    expect(t.database).toBeUndefined();
+  });
+
+  it('rejects an unrecognised D1_TARGET rather than falling back to a default', () => {
+    // A typo like D1_TARGET=prod must not quietly resolve to the local file.
+    const t = resolveTarget({ D1_TARGET: 'prod' });
+    expect(t.error).toMatch(/unknown D1_TARGET/i);
+    expect(t.database).toBeUndefined();
+  });
+
+  it('treats an empty D1_TARGET as unset', () => {
+    expect(resolveTarget({ D1_TARGET: '' })).toMatchObject({ remote: false });
   });
 });

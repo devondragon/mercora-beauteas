@@ -3,7 +3,13 @@
  * Reprice the catalog for the going-out-of-business sale.
  *
  *   node scripts/goob-reprice.mjs --rate 2.00 --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
+ *   D1_TARGET=dev-remote node scripts/goob-reprice.mjs --rate 3.00 --expect-skus BTCCM1,BTCCA1,BTCCE1
  *   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 --expect-skus BTCCM1,BTCCA1,BTCCE1
+ *
+ * Three targets, resolved by `resolveTarget()`: no env vars means the LOCAL
+ * dev D1 (a file on disk the deployed dev Worker never reads),
+ * D1_TARGET=dev-remote means the deployed dev database, and D1_REMOTE=true
+ * means live production. Setting both env vars is a hard error.
  *
  * Every remaining SKU is one box, so every active variant is set to the flat
  * per-box rate, with its genuine PRE-SALE price kept as compare_at_price so the
@@ -216,22 +222,68 @@ export function planReprice({ variants, rate, baseline }) {
 }
 
 /**
- * Run `wrangler d1 execute --json` and parse the result.
+ * The database this run targets, resolved from the environment.
  *
- * D1_REMOTE=true targets the LIVE production database (beauteas-db); anything
- * else targets the local dev D1 (beauteas-db-dev --local). Both need an
- * explicit --env: wrangler.jsonc defines d1_databases only under env.dev /
- * env.production, not at the top level, so a call missing --env cannot
- * resolve the binding at all.
+ * Three targets, deliberately asymmetric so the dangerous one stays the one
+ * you have to type on purpose:
+ *
+ *   D1_REMOTE=true       -> beauteas-db, remote          (LIVE PRODUCTION)
+ *   D1_TARGET=dev-remote -> beauteas-db-dev, remote      (the deployed dev site)
+ *   neither              -> beauteas-db-dev, local       (a file on your disk)
+ *
+ * `dev-remote` exists because the deployed dev environment is the only place
+ * this can be rehearsed end to end: the local target writes a file the
+ * deployed dev Worker never reads, so a "dev run" against it changes nothing
+ * anyone can look at. Before this existed the only way to see repriced
+ * catalog on a real site was to run against production.
+ *
+ * D1_REMOTE=true keeps meaning production and nothing else, so no existing
+ * invocation changes meaning. Setting both is a hard error rather than a
+ * precedence rule: the two disagree about which database is intended, and
+ * guessing which one the operator meant is exactly the class of mistake the
+ * --expect-skus guard exists to prevent.
+ *
+ * Every target needs an explicit --env: wrangler.jsonc defines d1_databases
+ * only under env.dev / env.production, not at the top level, so a call
+ * missing --env cannot resolve the binding at all.
+ */
+export function resolveTarget(env = process.env) {
+  const production = env.D1_REMOTE === 'true';
+  const devRemote = env.D1_TARGET === 'dev-remote';
+
+  if (production && devRemote) {
+    return {
+      error:
+        'D1_REMOTE=true (production) and D1_TARGET=dev-remote disagree about which database to ' +
+        'write to. Set exactly one.',
+    };
+  }
+  if (env.D1_TARGET !== undefined && env.D1_TARGET !== '' && !devRemote) {
+    return { error: `unknown D1_TARGET "${env.D1_TARGET}" — the only supported value is dev-remote.` };
+  }
+
+  if (production) {
+    return { database: 'beauteas-db', wranglerEnv: 'production', remote: true, label: 'beauteas-db (PRODUCTION, remote)' };
+  }
+  if (devRemote) {
+    return { database: 'beauteas-db-dev', wranglerEnv: 'dev', remote: true, label: 'beauteas-db-dev (dev, REMOTE)' };
+  }
+  return { database: 'beauteas-db-dev', wranglerEnv: 'dev', remote: false, label: 'beauteas-db-dev (local)' };
+}
+
+/**
+ * Run `wrangler d1 execute --json` and parse the result.
  */
 function d1(sql) {
-  const remote = process.env.D1_REMOTE === 'true';
-  const database = remote ? 'beauteas-db' : 'beauteas-db-dev';
-  const wranglerEnv = remote ? 'production' : 'dev';
+  const target = resolveTarget();
+  if (target.error) {
+    console.error(`${tag} ${target.error}`);
+    process.exit(1);
+  }
   const args = [
-    'wrangler', 'd1', 'execute', database,
-    remote ? '--remote' : '--local',
-    '--env', wranglerEnv,
+    'wrangler', 'd1', 'execute', target.database,
+    target.remote ? '--remote' : '--local',
+    '--env', target.wranglerEnv,
     '--json', '--command', sql,
   ];
   const out = execFileSync('npx', args, { encoding: 'utf8' });
@@ -253,7 +305,11 @@ function main() {
   }
   const rate = Number(argv[rateIndex + 1]);
   const dryRun = argv.includes('--dry-run');
-  const remote = process.env.D1_REMOTE === 'true';
+  const target = resolveTarget();
+  if (target.error) {
+    console.error(`${tag} ${target.error}`);
+    process.exit(1);
+  }
 
   const expectSkusIndex = argv.indexOf('--expect-skus');
   const expectSkus =
@@ -281,8 +337,7 @@ function main() {
   }
 
   console.log(
-    `${tag} target: ${remote ? 'beauteas-db (PRODUCTION, remote)' : 'beauteas-db-dev (local)'}` +
-      `${dryRun ? ' — DRY RUN, no writes' : ''}`,
+    `${tag} target: ${target.label}${dryRun ? ' — DRY RUN, no writes' : ''}`,
   );
 
   const rows = d1(ACTIVE_PHYSICAL_VARIANTS_SQL);

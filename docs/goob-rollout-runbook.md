@@ -333,6 +333,22 @@ license skipping the ordering.
      --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
    ```
 
+   **Rehearse on dev first if you want to see it before production.** The
+   script has three targets: no env vars writes the LOCAL D1 file (which the
+   deployed dev Worker never reads, so it changes nothing you can look at),
+   `D1_TARGET=dev-remote` writes the deployed dev database, and
+   `D1_REMOTE=true` writes production. Archive the two bundles on dev first,
+   the same Phase 3 ordering this phase depends on, or the `--expect-skus`
+   guard will refuse to run:
+
+   ```bash
+   D1_TARGET=dev-remote node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
+   ```
+
+   Setting both env vars at once is a hard error rather than a precedence
+   rule, so there is no way to mean production and get dev or the reverse.
+
    `--dry-run` writes nothing — no D1 updates, no baseline file.
    `--expect-skus` is required (or `--expect-count`) and is a HARD failure on
    mismatch, checked before the dry-run's own "nothing written" message: the
