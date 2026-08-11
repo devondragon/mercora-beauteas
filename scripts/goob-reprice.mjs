@@ -247,6 +247,9 @@ export function planReprice({ variants, rate, baseline }) {
  * only under env.dev / env.production, not at the top level, so a call
  * missing --env cannot resolve the binding at all.
  */
+// The annotation matters: without it the default value makes TypeScript infer
+// `ProcessEnv`, which requires NODE_ENV, so a test could not pass a plain `{}`.
+/** @param {Record<string, string | undefined>} [env] */
 export function resolveTarget(env = process.env) {
   const production = env.D1_REMOTE === 'true';
   const devRemote = env.D1_TARGET === 'dev-remote';
