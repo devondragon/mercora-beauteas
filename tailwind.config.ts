@@ -5,6 +5,18 @@ const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
+    // `lib/` too, because class strings live there as well — `lib/ui/state-styles.ts`
+    // holds the shared price/stock classNames that ProductCard, the agent's
+    // ProductCard, ProductDisplay and SubscriptionToggle all spread into JSX.
+    // Tailwind only emits utilities it can SEE in the scanned files, so without
+    // this glob any class used solely from `lib/` is purged: the markup ships
+    // the className and no rule ever defines it. That is exactly what happened
+    // to `line-through` in `priceOriginal` — every sale price rendered its
+    // pre-sale figure with no strikethrough, so "$20.00" sat above "$3.00"
+    // looking like two prices rather than a discount. It survived unnoticed
+    // because every OTHER class in that file coincidentally also appears under
+    // `app/` or `components/`, so `line-through` was the lone casualty.
+    "./lib/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {
