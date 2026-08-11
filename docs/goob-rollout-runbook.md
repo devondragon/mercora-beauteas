@@ -35,7 +35,7 @@ npm run db:migrate:status:production
 ```
 
 This is read-only (`--dry-run`, no writes). As of this writing it will report
-four pending migrations, in this order:
+six pending migrations, in this order:
 
 | Migration | What it does |
 |---|---|
@@ -43,6 +43,34 @@ four pending migrations, in this order:
 | `0026_goob_closing_content.sql` | Adds the `/thank-you` page, rewrites `shipping-policy`, `contact`, `faq`, `refund-policy`, archives `/subscriptions` and the empty `clearly-calendula-sample-pack-on-sale` stub. |
 | `0027_remove_em_dashes_from_content.sql` | Sweeps em dashes out of live `pages`, `categories`, and `blog_posts` rows (customer-facing content only). |
 | `0028_withdraw_box_variants_and_single_shipping_method.sql` | Discontinues the three-box variants (`BTCCM3`/`BTCCA3`/`BTCCE3` — the owner's call: one blend, one SKU, one box); disables `express`/`overnight` in `shipping.methods` so only Standard is sold, without deleting them. |
+| `0029_deactivate_subscription_plans_for_goob.sql` | Sets `subscription_plans.is_active = 0`, a data-level stop behind the `sale.subscriptions_enabled` policy check. |
+| `0030_goob_box_math_content.sql` | Appends the ten-bags-per-box fact to the `faq` page and the three blend descriptions, so the storefront and Chai's vector index both carry it. |
+
+### Pre-flight for `0030`, on production only
+
+`0030` is verified on dev. Two production-only conditions can spoil it, and
+both are one read-only query to rule out. Run these **before** the deploy:
+
+```bash
+npx wrangler d1 execute beauteas-db --remote --env production -y \
+  --command "SELECT slug, json_valid(description) AS valid_json, json_extract(description,'\$.en') IS NOT NULL AS has_en FROM products WHERE slug LIKE 'clearly-calendula-%';"
+
+npx wrangler d1 execute beauteas-db --remote --env production -y \
+  --command "SELECT count(*) AS faq_rows FROM pages WHERE slug = 'faq';"
+```
+
+Expect `valid_json = 1` and `has_en = 1` on every blend, and `faq_rows = 1`.
+
+- **A blend whose `description` is not valid JSON** makes `json_extract` throw
+  during the WHERE evaluation, which aborts that whole UPDATE for all three
+  rows. Because migrations apply from the `predeploy` hook, that aborts the
+  deploy *after* `0025`-`0029` have already been written: database migrated,
+  Worker never uploaded. Recoverable, but only by fixing the row and
+  re-running.
+- **No `faq` row** makes the pages UPDATE silently affect zero rows with no
+  error, so Chai loses its FAQ grounding and nothing says so. This is the
+  known dev/prod `pages` divergence, so it is worth actually checking rather
+  than assuming.
 
 `npm run deploy:production` backs up and applies pending migrations
 automatically, *before* the build (see `docs/database-migrations.md` §
@@ -323,6 +351,14 @@ step 2) specifically so this can't happen silently — but do not rely on the
 guard instead of doing Phase 3 first; it exists to catch a mistake, not to
 license skipping the ordering.
 
+0. **Archive the two bundles first if Phase 3 has not run.** `BTCCFP` (9-box
+   Full Package) and `BTCCSP` (3-box Sample Pack) are `active` + `physical`
+   until then, so they match the reprice SELECT exactly like a single box and
+   would be set to the same flat per-box rate: nine boxes for the price of one.
+   The `--expect-skus` guard refuses to run in that state, which is the
+   intended behaviour, not an error to work around. This ordering was
+   rehearsed on dev on 2026-08-10.
+
 1. Recount physical stock per blend (Morning / Afternoon / Evening) and enter
    the real numbers wherever inventory is tracked in `/admin/products`.
 2. Decide your sale rate in dollars per box, then dry-run the reprice script
@@ -389,8 +425,12 @@ license skipping the ordering.
    `compare_at_price` to the real pre-sale price (so the storefront strikethrough
    is accurate), and writes `data/goob/price-baseline.json`.
 
-5. **Commit `data/goob/price-baseline.json` and back it up somewhere outside
-   git** (a second copy, not just the commit).
+5. **`data/goob/price-baseline.json` already exists, written by the dev
+   rehearsal on 2026-08-10, and is committed.** It was checked against
+   production before being committed: same variant ids, same 2000 minor units
+   of `compare_at_price` on all three blends, so the production run reads the
+   same originals it would have derived for itself. Keep a copy outside git
+   anyway (a second copy, not just the commit).
 
    Why this matters: the baseline file is the only record of each variant's
    *true* pre-sale price. Every later run of this script reads it first, so
