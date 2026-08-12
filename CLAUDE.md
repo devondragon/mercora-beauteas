@@ -2,15 +2,15 @@
 
 Essential context for Claude when working on **BeauTeas**, an AI-enhanced eCommerce storefront built on the **Mercora** platform.
 
-> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0029` carry it and are pending on production (dev is deployed and migrated as of 2026-08-08). **The sale ships from the `goob` branch, deployed manually — it is not being merged to `main`**, so the production-deploy-guard workflow is out of play and confirming the gate went green for the exact SHA is a manual step (runbook Phase 0.5). Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
+> **Status:** BeauTeas is closing and running a terminal going-out-of-business sale. The Shopify→Mercora cutover itself is done — prod is deployed and taking live orders on `shop.beauteas.com` — but the store is winding down rather than continuing. All sale code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built and gated by CI; migrations `0025`–`0031` carry it and are pending on production (dev is deployed and migrated through `0030` as of 2026-08-10). **The sale ships from the `goob` branch, deployed manually — it is not being merged to `main`**, so the production-deploy-guard workflow is out of play and confirming the gate went green for the exact SHA is a manual step (runbook Phase 0.5). Deploying the sale, then the DNS switch (runbook Phase 10) afterward, is owner-only work — see [`docs/goob-rollout-runbook.md`](docs/goob-rollout-runbook.md). See also [`docs/cutover-status.md`](docs/cutover-status.md) and `PRODUCTION-CUTOVER-RUNBOOK.md`.
 
 ---
 
-## ☑ Migrations: all environments up to date through `0024`; `0025`–`0029` pending (verified 2026-08-06)
+## ☑ Migrations: prod up to date through `0024` with `0025`–`0031` pending; dev migrated through `0030` with `0031` pending (verified 2026-08-11)
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
 
-`0025_seed_goob_sale_settings.sql`, `0026_goob_closing_content.sql`, `0027_remove_em_dashes_from_content.sql`, `0028_withdraw_box_variants_and_single_shipping_method.sql`, and `0029_deactivate_subscription_plans_for_goob.sql` (the going-out-of-business sale) are pending on every database — confirmed via `npm run db:migrate:status:dev`. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0030_*`.**
+`0025_seed_goob_sale_settings.sql` through `0031_goob_copy_fixes_and_banner_text.sql` (the going-out-of-business sale: settings seed, closing content, em-dash sweep, variant withdrawal, subscription deactivation, box-math content, and the pre-launch copy fixes) are pending on production; dev has applied `0025`–`0030` and has only `0031` pending. They apply automatically on the next `npm run deploy:*`. **The next new migration after these is `0032_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -63,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0030_*`** (`0011`–`0029` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0032_*`** (`0011`–`0031` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.

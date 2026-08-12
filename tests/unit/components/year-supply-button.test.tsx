@@ -40,7 +40,8 @@ const props = (quantity: number, amount: number | null = 300) => ({
     inventory: { quantity, track_inventory: true },
   } as never,
   productId: 'prod_morning',
-  name: 'Clearly Calendula Morning',
+  name: 'Clearly Calendula Morning - One box (10 tea bags)',
+  productName: 'Clearly Calendula Morning',
   imageUrl: '/morning.jpg',
 });
 
@@ -130,6 +131,9 @@ describe('YearSupplyButton click feedback', () => {
     expect(title).toBe('Added to Cart');
     expect(options.description).toContain('36 boxes');
     expect(options.description).toContain('Clearly Calendula Morning');
+    // The toast names the product alone: "36 boxes of X - One box (10 tea
+    // bags)" read like a contradiction with the variant suffix attached.
+    expect(options.description).not.toContain('One box');
     expect(options.icon).toBe('🔥');
     expect(options.action.label).toBe('View Cart');
   });

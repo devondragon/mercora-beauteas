@@ -172,7 +172,7 @@ export const defaultSettings = [
   },
   {
     key: 'promotions.banner_text',
-    value: JSON.stringify('🎉 Free shipping on orders over $75!'),
+    value: JSON.stringify('We’re closing BeauTeas. Everything must go while supplies last.'),
     category: 'promotions',
     description: 'Banner message text',
     data_type: 'string'

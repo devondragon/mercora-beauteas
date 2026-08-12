@@ -739,7 +739,7 @@ describe('minimum order answer (GOOB)', () => {
 
     const category = classifyQuery(question);
     expect(category).toBe('minimum_order');
-    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10-box minimum/);
   });
 
   it('does not hijack an unrelated question about order status', () => {
@@ -780,7 +780,7 @@ describe('minimum order answer (GOOB)', () => {
 
     const category = classifyQuery(question);
     expect(category).toBe('minimum_order');
-    expect(await resolveDeterministicAnswer(category!)).toMatch(/10 boxes/);
+    expect(await resolveDeterministicAnswer(category!)).toMatch(/10-box minimum/);
   });
 
   it.each([

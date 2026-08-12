@@ -55,7 +55,7 @@ export default function CartItemCard({ item }: CartItemCardProps) {
           )}
         </div>
         <p className="text-xs sm:text-sm text-text-muted mt-1">
-          {Money.fromMinor(item.price, "USD").format()} × {item.quantity} : {" "}
+          {Money.fromMinor(item.price, "USD").format()} × {item.quantity} = {" "}
           {Money.fromMinor(item.price * item.quantity, "USD").format()}
         </p>
         {!isCheckoutPage && (

@@ -124,7 +124,7 @@ export default async function ProductPage({
 
   const userContext = await buildServerUserContext(userId);
 
-  const [reviews, reviewEligibility, subscriptionPlans, recommendations, { subscriptionsEnabled }] =
+  const [reviews, reviewEligibility, subscriptionPlans, recommendations, { subscriptionsEnabled, minimumBoxes }] =
     await Promise.all([
       getProductReviews({
         productId: product.id,
@@ -160,6 +160,7 @@ export default async function ProductPage({
           reviewEligibility={reviewEligibility}
           subscriptionPlans={subscriptionPlans}
           subscriptionsEnabled={subscriptionsEnabled}
+          minimumBoxes={minimumBoxes}
           recommendations={recommendations}
         />
       </div>

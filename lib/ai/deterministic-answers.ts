@@ -510,7 +510,7 @@ async function boxMathAnswer(): Promise<string> {
 
   const base =
     `Each box has ${CUPS_PER_BOX} tea bags, so a box is ${CUPS_PER_BOX} cups, about ${daysPerBox} days at a cup a day 💕 ` +
-    `Most folks went through ${boxesPerMonth} boxes a month of their favourite blend, which is why ${YEAR_SUPPLY_BOXES} boxes works out to a year.`;
+    `Most folks went through ${boxesPerMonth} boxes a month of their favorite blend, which is why ${YEAR_SUPPLY_BOXES} boxes works out to a year.`;
 
   const withMinimum = base + (await minimumBoxesClause());
 
@@ -529,7 +529,7 @@ async function boxMathAnswer(): Promise<string> {
 async function minimumOrderAnswer(): Promise<string> {
   try {
     const { minimumBoxes } = await getSaleRules();
-    return `There's a ${minimumBoxes} boxes minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends. It all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
+    return `There's a ${minimumBoxes}-box minimum on orders right now 💕 Mix and match however you like across the Morning, Afternoon and Evening blends. It all counts toward the same total. It keeps shipping affordable while we clear the last of our stock.`;
   } catch (error) {
     console.error("[chai] minimum order lookup failed:", error);
     return `There's a minimum order while we clear the last of our stock. Your cart will tell you exactly how many more boxes you need 💕`;

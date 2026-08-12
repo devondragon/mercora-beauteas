@@ -186,7 +186,7 @@ export default function AdminSettingsPage() {
   const [promotionSettings, setPromotionSettings] = useState<PromotionSettings>({
     site_wide_discount_percent: 0,
     banner_enabled: false,
-    banner_text: '🎉 Free shipping on orders over $75!',
+    banner_text: 'We’re closing BeauTeas. Everything must go while supplies last.',
     banner_type: 'info',
     new_customer_discount: 0
   });

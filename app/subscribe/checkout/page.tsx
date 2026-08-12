@@ -43,7 +43,12 @@ export default async function SubscribeCheckoutPage({
     getSaleRules(),
     getSubscriptionPlanById(planId),
   ]);
-  if (!subscriptionsEnabled || !plan || !plan.is_active) {
+  // During the closing sale, a bookmarked subscribe link lands on the page
+  // that explains why subscriptions are off, not an unexplained home page.
+  if (!subscriptionsEnabled) {
+    redirect("/thank-you");
+  }
+  if (!plan || !plan.is_active) {
     redirect("/");
   }
 

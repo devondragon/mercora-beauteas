@@ -35,7 +35,7 @@ npm run db:migrate:status:production
 ```
 
 This is read-only (`--dry-run`, no writes). As of this writing it will report
-six pending migrations, in this order:
+seven pending migrations, in this order:
 
 | Migration | What it does |
 |---|---|
@@ -45,6 +45,7 @@ six pending migrations, in this order:
 | `0028_withdraw_box_variants_and_single_shipping_method.sql` | Discontinues the three-box variants (`BTCCM3`/`BTCCA3`/`BTCCE3` — the owner's call: one blend, one SKU, one box); disables `express`/`overnight` in `shipping.methods` so only Standard is sold, without deleting them. |
 | `0029_deactivate_subscription_plans_for_goob.sql` | Sets `subscription_plans.is_active = 0`, a data-level stop behind the `sale.subscriptions_enabled` policy check. |
 | `0030_goob_box_math_content.sql` | Appends the ten-bags-per-box fact to the `faq` page and the three blend descriptions, so the storefront and Chai's vector index both carry it. |
+| `0031_goob_copy_fixes_and_banner_text.sql` | Pre-launch copy fixes: rewrites the stale free-shipping `promotions.banner_text` to the closing-sale message (without enabling the banner — that stays Phase 6), links "now is the time" on `/thank-you` back to the catalog, and fixes two British spellings. |
 
 ### Pre-flight for `0030`, on production only
 
@@ -219,6 +220,13 @@ storefront quotes the **flat Standard rate ($5.99)** regardless of box count —
 `0028` disabled Express and Overnight, so Standard is the only enabled method
 during the sale. That is safe (nothing overcharges or undercharges silently)
 but it is *not* the tiered pricing this sale is built around.
+
+> **Dev carries a provisional tier set** (written 2026-08-11 so the tiered
+> path could be rehearsed at all): up to 18 boxes $5.99, 19–36 boxes $9.99,
+> 37+ boxes $19.99 — the three old flat method rates recycled as bands. The
+> **structure** is fine to copy; the **prices are placeholders** pending the
+> box measurements, so do not copy the dollar amounts to production without
+> replacing them with the measured costs.
 
 1. Weigh a representative box (or a few, if weight varies enough to matter)
    and work out real shipping costs per tier.
@@ -529,20 +537,21 @@ successful response is JSON with counts, not an error.
 
 ## Phase 6 — Turn on the banner
 
-**Production's current `promotions.banner_text` is actively wrong for this
-sale** (verified read-only against production, 2026-08-06):
-`"🎉 Free shipping on orders over $75!"` — this store has free shipping
-switched off entirely for the sale (item 3 of the final review; `0025`
-empties `shipping.free_methods`). `banner_enabled` is currently `false`, so
-nothing has shipped yet, but do not flip it on before step 2 below replaces
-the text — enabling the banner as-is would advertise free shipping on a
-store that has none.
+`0031` rewrote the stale free-shipping `promotions.banner_text` to
+`We're closing BeauTeas. Everything is $3 a box while it lasts.` at deploy
+time (Phase 1), but left `banner_enabled` `false` on purpose: the deploy
+lands before the Phase 4 reprice, and the banner must not quote $3 while the
+PDP still says $14.99. That is why this phase comes after Phase 4 — do not
+enable the banner earlier.
 
 1. `/admin/settings` → **Promotions** tab.
-2. **Replace the banner text first** — it is not a placeholder to leave and
-   fill in later, it is currently set to the wrong claim above. Enable the
-   promotional banner, set its text to something accurate for the closing
-   sale, and confirm the link field is `/thank-you`.
+2. **Confirm the text before enabling.** It should read the `0031` message
+   above — if it still mentions free shipping, `0031`'s guarded UPDATE
+   no-opped (an admin edit had drifted the value) and you need to set the
+   text by hand. Then enable the promotional banner and confirm the link
+   field is `/thank-you`. If the price ever drops again
+   (`scripts/goob-reprice.mjs` is built to run twice), this text is the
+   other place the old price survives — update it in the same breath.
 3. Load the homepage and confirm the banner is visible, underlined, and
    clicking through lands on `/thank-you`.
 4. Optional, but worth doing once: the `0025` seed already sets

@@ -556,9 +556,9 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
           <Link href="/terms-of-service" className="underline hover:text-text-primary transition-colors">Terms of Service</Link>
           <span> and </span>
           <Link href="/privacy-policy" className="underline hover:text-text-primary transition-colors">Privacy Policy</Link>
-          <span>. See our </span>
+          <span>. All sales are final. See our </span>
           <Link href="/refund-policy" className="underline hover:text-text-primary transition-colors">Refund Policy</Link>
-          <span> for returns and refunds.</span>
+          <span> for details.</span>
         </div>
       )}
     </div>

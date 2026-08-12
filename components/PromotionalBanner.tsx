@@ -61,7 +61,7 @@ export default async function PromotionalBanner() {
       return null;
     }
     
-    const bannerText = promotionSettings['promotions.banner_text'] || '🎉 Free shipping on orders over $75!';
+    const bannerText = promotionSettings['promotions.banner_text'] || 'We’re closing BeauTeas. Everything must go while supplies last.';
     const bannerType = promotionSettings['promotions.banner_type'] || 'info';
     const bannerLink = promotionSettings['promotions.banner_link'] || '';
     

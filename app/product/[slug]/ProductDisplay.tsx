@@ -69,6 +69,9 @@ interface ProductDisplayProps {
   /** Gates the subscription toggle. Defaults to false so a caller that forgets
    * to pass it hides the toggle rather than showing it. */
   subscriptionsEnabled?: boolean;
+  /** Cart minimum in boxes (sale.minimum_boxes). Shown near Add to Cart so the
+   * minimum isn't first discovered in the cart drawer; hidden when <= 1. */
+  minimumBoxes?: number;
   recommendations: Product[];
 }
 
@@ -145,6 +148,7 @@ export default function ProductDisplay({
   reviewEligibility,
   subscriptionPlans = [],
   subscriptionsEnabled = false,
+  minimumBoxes = 0,
   recommendations,
 }: ProductDisplayProps) {
   const allImages = useMemo(() => {
@@ -534,7 +538,7 @@ export default function ProductDisplay({
                   <div>
                     <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>{Money.fromMinor(compareAt!, currency).format()}</p>
                     <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>{Money.fromMinor(price, currency).format()}</p>
-                    <p className="text-xs italic text-primary-600 sm:text-sm">Limited-time offer</p>
+                    <p className="text-xs italic text-primary-600 sm:text-sm">While supplies last</p>
                   </div>
                 ) : (
                   <p className="text-lg font-semibold text-text-primary sm:text-xl">{Money.fromMinor(price, currency).format()}</p>
@@ -569,11 +573,18 @@ export default function ProductDisplay({
                   </button>
                 )}
 
+                {available && minimumBoxes > 1 && (
+                  <p className="text-xs text-text-muted">
+                    {minimumBoxes}-box minimum per order. Mix and match across the blends.
+                  </p>
+                )}
+
                 {soldByTheBox && selectedVariant && (
                   <YearSupplyButton
                     variant={selectedVariant}
                     productId={product.id}
                     name={fullName}
+                    productName={productName}
                     imageUrl={primaryImageUrl}
                   />
                 )}

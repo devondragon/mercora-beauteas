@@ -36,7 +36,10 @@ import type { ProductVariant } from '@/lib/types';
 interface YearSupplyButtonProps {
   variant: ProductVariant;
   productId: string;
+  /** Full cart-line name, product plus variant, matching the sibling Add to Cart. */
   name: string;
+  /** Product name alone, for the toast: "36 boxes of <product>" reads wrong with the variant's "One box (10 tea bags)" suffix attached. */
+  productName: string;
   imageUrl: string;
 }
 
@@ -44,6 +47,7 @@ export default function YearSupplyButton({
   variant,
   productId,
   name,
+  productName,
   imageUrl,
 }: YearSupplyButtonProps) {
   const items = useCartStore((state) => state.items);
@@ -78,7 +82,7 @@ export default function YearSupplyButton({
           addItem(item);
 
           toast('Added to Cart', {
-            description: `${offer.boxes} boxes of ${name} have been added to your cart.`,
+            description: `${offer.boxes} boxes of ${productName} have been added to your cart.`,
             icon: '\uD83D\uDD25',
             action: {
               label: 'View Cart',
