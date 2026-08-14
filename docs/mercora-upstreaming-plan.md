@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Active; fulfillment merged via PR `#42`; recommendations PR `#43` is ready for review
+**Status:** Core `U00`-`U14`, `M01`, `O01`, and `O03` merged; `O02` ready for review as Mercora PR `#73`; `O04`-`O07` planned
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 
@@ -23,12 +23,15 @@ BeauTeas will remain a public downstream/reference implementation of Mercora. Me
 | BeauTeas baseline | `~/git/mercora-beauteas-v1.0.0` | Read-only worktree detached at tag `v1.0.0`. **Read BeauTeas source here.** No install needed |
 | BeauTeas sale | `~/git/mercora-beauteas-goob` | Going-out-of-business sale work on branch `goob`. Never a source for upstreaming |
 
-Current repository state when this plan was written:
+Original repository state when this plan was written:
 
 - Mercora `main`: `ed04264` (`russellkmoore/mercora`)
 - BeauTeas `main`: `1fa7c81` (`devondragon/mercora-beauteas`)
 - Both working trees were clean and synchronized with their respective `origin/main` branches.
 - The repositories have related source history but no shared Git commit ancestry because the upstream history was rewritten. Do not directly merge or rebase their `main` branches.
+
+The optional-pass research was refreshed on 2026-08-10 against Mercora
+`153cbe0` and BeauTeas tag `v1.0.0` (`c9b135d`).
 
 ### BeauTeas Source Is Read at Tag `v1.0.0`
 
@@ -211,17 +214,14 @@ Use one Mercora tracking issue for the overall initiative and separate issues or
 Do not submit one giant pull request or replay all 122 BeauTeas pull requests
 individually. Research identified 15 coherent core contribution groups, but
 the consolidation review found that several form stronger, end-to-end review
-units when combined. The current target is 11 core contribution units: the
-three foundations (`U00`-`U02`) plus eight remaining PRs. Because PR `#10` was
-merged into an already-merged branch and did not reach `main`, recovery PR
-`#21` adds one unavoidable GitHub PR to the ledger. `U03`, `U04 + U05`, and
-`U07`, `U06 + U08`, and `U09` have now landed; `U12` recommendations can still
-be deferred independently, leaving two immediate feature PRs on the core
-order-to-fulfillment path.
+units when combined. The core `U00`-`U14` pass is now complete: recommendations
+landed through Mercora PR `#43`, fulfillment landed through PR `#42`, and PR
+`#44` completed automatic migration deployment. The remaining candidates are
+a second, optional platform pass rather than unfinished core work.
 
-Before beginning the feature sequence below, complete the dependency-security
-follow-up from Phase 1 or explicitly document why any remaining production
-finding does not block further upstream work.
+Before beginning the optional feature sequence, complete `M01`: refresh the
+production dependency audit, remediate its findings or renew explicit owned
+exceptions, and close the remaining global runtime/repository-hygiene defects.
 
 | Remaining sequence | Consolidated scope | Inventory units | Prerequisites |
 | ---: | --- | --- | --- |
@@ -231,7 +231,7 @@ finding does not block further upstream work.
 | 4 | Order trust and server-authoritative checkout (merged via `#39`) | `U06 + U08` | `U04 + U05`, `U07` |
 | 5 | Webhook, inventory, and refund correctness (merged via `#40`) | `U09` | `U06 + U08` |
 | 6 | MCP trust and commerce integrity (merged via `#41`) | `U10 + U11` | `U04 + U05`, `U07`, `U06 + U08` |
-| 7 | Recommendations (ready PR `#43`) | `U12` | `U03`; independently deferrable |
+| 7 | Recommendations (merged PR `#43`) | `U12` | `U03`; independently deferrable |
 | 8 | Fulfillment vertical slice (merged PR `#42`) | `U13 + U14` | `U03`, `U07`, `U06 + U08`, `U09`, merged `#41` |
 
 ### 4.1 Testing foundation
@@ -348,19 +348,150 @@ must ship with a repair path, and guest tracking must use signed access rather
 than order identifiers alone. Keep unrelated email compliance work and general
 UI polish outside this PR.
 
-### 4.10 Optional platform features
+### 4.10 Optional platform pass
 
-Port these only after their foundations have landed and Russell confirms the intended Mercora scope:
+The nine optional inventory trains can be compressed into seven extraction
+PRs, preceded by one maintenance PR. This is the minimum effective set: going
+below seven would mix unrelated privacy, behavioral-security,
+operator-tooling, or money-state-machine review surfaces. The two largest
+commerce capabilities remain one PR each, following the same ordered,
+vertical-slice approach used successfully for fulfillment.
 
-1. Customer accounts
-2. Gift cards
-3. Subscriptions
-4. Blog and CMS enhancements
-5. Shopify migration tooling
-6. Observability
-7. Recommendation engines beyond the core `U12` capability
+| ID | Pull-request scope | Inventory coverage | Prerequisites | Schema |
+| --- | --- | --- | --- | --- |
+| `M01` | Dependency, runtime, and repository-hygiene closeout | Cross-cutting prerequisite | Core `U00`-`U14` | None expected |
+| `O01` | Customer account and communications platform | Customer accounts; merchant email/compliance | `M01` | Email preferences/unsubscribes |
+| `O02` | Content publishing and storefront correctness | Blog/CMS; feature-adjacent UI/runtime polish | `M01` | Blog tables; neutral CMS template registration |
+| `O03` | Privacy-safe observability | Observability | `M01` | None expected; optional bindings only |
+| `O04` | Canonical AI facts and guarded responses | AI canonical facts/response guard | `O03` | None expected |
+| `O05` | Shopify migration toolkit | Redirect/media runtime and complete ETL/operator tooling, including Blog import | `O02` | Redirect map |
+| `O06` | Subscriptions vertical slice | Subscriptions | `O01`, `O03`, core checkout/webhooks/fulfillment | Subscription tables and shipping address |
+| `O07` | Gift cards and generic digital commerce | Gift cards | `O01`, `O03`, core checkout/webhooks/refunds | Gift-card account, ledger, reservation, and delivery state |
 
-Each large feature may require its own multi-PR series.
+#### `M01`: dependency, runtime, and repository hygiene
+
+Use three ordered commit groups so security/toolchain review remains distinct
+from runtime and accessibility review:
+
+1. Capture a fresh `npm audit --omit=dev` snapshot at branch cut. Enumerate
+   every high/critical production path and either remediate it safely or record
+   an owner, compensating control, and next-review date. Preserve the safe
+   image-loader control if Next-bundled Sharp remains excepted; do not force a
+   Next major without a deliberate compatibility decision.
+2. Remove the custom `splitChunks` override that can serve CSS as JavaScript
+   and verify the production chunk graph; add neutral route/root error
+   boundaries; guarantee one `<main>`; remove the nested anchor from
+   `ProductCard`; fix mobile-header overflow at 320/360/375 pixels; normalize
+   CMS timestamps; and replace timer-driven persisted hydration with an
+   event-driven contract.
+3. Verify that no database dump/export is tracked and add neutral ignore rules
+   preventing future dumps from entering Git.
+
+#### `O01`: customer account and communications platform
+
+Deliver the neutral account shell, lazy customer provisioning, owner-only
+order history/detail, addresses, and customer settings before the email work
+so account delivery never depends on an email provider. Then add configured
+postal footers and policy links, signed unsubscribe preferences and
+suppression, order-line image hydration, and an independently retryable durable
+merchant-notification effect.
+
+Address writes require ownership, same-origin enforcement, bounded validation,
+and atomic default selection. Unsubscribe tokens require bounded expiry, a key
+rotation policy, idempotent/replay-safe POST behavior, and suppression across
+every eligible non-transactional sender; transactional mail remains explicitly
+policy-defined. Account deletion/data export is deferred unless Russell adds it
+to this PR's acceptance criteria.
+
+#### `O02`: content publishing and storefront correctness
+
+Combine the Blog and CMS trains because they share routing, sanitization,
+uploads, templates, metadata, and sitemap behavior. Fix CMS control-flow and
+soft-404 behavior first, then add generic structured page templates, Blog
+schema/models, guarded admin editor/upload APIs, public listing/detail pages,
+RSS, and a dynamic sitemap. Finish with only the responsive footer, cart,
+admin-identity, and readability work that consumes these content/configuration
+owners. No BeauTeas content, imagery, templates, or seeded posts travel with
+the feature.
+
+#### `O03`: privacy-safe observability
+
+Add a stable non-PII event envelope, optional Analytics Engine metrics,
+instrumentation over the current payment/webhook/refund/effect/fulfillment and
+email paths, and a generic Tail Worker. Exact marker validation, redaction,
+sampling/cardinality limits, bounded payload/CPU, cross-invocation cooldown,
+operator authentication, secret/config validation, and fail-open behavior are
+required. Tail or analytics outages must never break commerce. Redaction covers
+headers, cookies, auth/payment data, customer/order identifiers, query strings,
+and raw exceptions.
+
+#### `O04`: canonical AI facts and guarded responses
+
+Compute canonical facts from request-time configuration and answer deterministic
+support, order-history, address, refund, and shipping questions before model
+work. Use the current Money and shipping models, exact configured host/email
+allowlists, and one customer-response builder for deterministic, ordinary model,
+streaming, tool, fallback, and error paths. Test partial/malformed configuration,
+locale/currency behavior, adversarial hosts/categories, and prompt injection.
+`O03` is a deliberate release prerequisite so guard failures and replacements
+are measurable without recording the rejected content.
+
+#### `O05`: Shopify migration toolkit
+
+Present redirects/media runtime and the ETL/operator tooling as one migration
+feature. Include exact safe redirects, same-origin media, real Shopify Link
+pagination, historical orders, schema-aligned catalog/customer/order/page/
+review/Blog transforms, dry-run-by-default execution, explicit writes,
+fail-fast dependency ordering, rerun/FK safety, importer-owned validation,
+HTTPS/host allowlists, and neutral operator documentation. `O02` is a hard
+dependency because this PR includes Blog import. Never track imported data,
+ID maps, reports, logs, or environment-specific promotion state.
+
+#### `O06`: subscriptions vertical slice
+
+Ship subscriptions disabled by default in ordered schema, domain/service,
+webhook/effect, guarded API, customer/admin, email, and test commits. Cover
+cadence/variant/currency/Stripe price identity, SetupIntent ownership,
+idempotent creation, pause/resume/cancel/change flows, cancellation timing,
+payment failure/recovery, shipping, consent, fulfillment, and retry behavior.
+Deduplicate and order-guard both `customer.subscription.*` and `invoice.*`,
+enforce one renewal order per invoice, and never stage fulfillment before a
+paid invoice is verified.
+
+#### `O07`: gift cards and generic digital commerce
+
+Ship gift cards disabled by default as one ordered vertical feature. Generate
+high-entropy codes with a CSPRNG, normalize then keyed-hash them, and never log
+or re-return plaintext outside issuance/delivery. Use an atomic conserved
+ledger and server-owned reserve/release/consume transitions with expiry cleanup;
+support digital-only and mixed carts, stable line identifiers, partial/mixed
+refund restoration, durable issuance, and retryable delivery. Test currency
+rules, authorization, enumeration resistance, balance/history ownership, and
+guarded admin issuance. Do not seed a merchant gift-card product.
+
+#### Optional-pass waves and merge rules
+
+1. Land `M01` alone.
+2. Develop `O01`, `O02`, and `O03` in parallel from updated `main`.
+3. Develop `O04` after `O03`, and `O05` after `O02`.
+4. Develop `O06` and `O07` after `O01` and `O03`.
+
+`O06` and `O07` may be developed concurrently in separate worktrees, but they
+overlap checkout, paid-order effects, refunds, and webhooks. Merge them
+serially. Rebase the second onto the first and rerun the complete commerce
+suite before review.
+
+Every large PR uses schema-first, independently reviewable commits. Migrations
+are additive and forward-only, use numbers reserved from then-current Mercora
+`main`, and are tested against a populated baseline. Old code must tolerate the
+new tables; new code must tolerate capability-off and empty tables. Deploy
+schema before code and roll back money features by disabling their capability,
+never by down-migrating a ledger.
+
+Every PR runs under Node 24 and must pass lockfile/install integrity, lint,
+typecheck, unit tests, applicable Workers/D1 tests, production build, migration
+safety for schema changes, and a scan for BeauTeas/Chai identifiers, content,
+data, domains, and resource IDs.
 
 ## Upstream Pull-Request Workflow
 

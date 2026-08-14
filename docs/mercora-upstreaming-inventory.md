@@ -1,11 +1,12 @@
 # Mercora Upstreaming Inventory
 
-**Status:** `U13 + U14` merged via Mercora PR `#42`; `U12` PR `#43` is ready for review
-**Research snapshot:** 2026-08-03
+**Status:** Core `U00`-`U14`, `M01`, `O01`, and `O03` merged; `O02` ready for review as Mercora PR `#73`; `O04`-`O07` planned
+**Research snapshot:** 2026-08-10
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
 **BeauTeas source of truth:** tag `v1.0.0` (`c9b135d`) — read source here, not `main`
-**Mercora baseline:** `ed04264`
+**Mercora optional-pass research baseline:** `153cbe0`
+**Mercora M01 branch baseline:** `45244fd`
 **Related plan:** [mercora-upstreaming-plan.md](mercora-upstreaming-plan.md)
 
 ## Purpose
@@ -80,8 +81,10 @@ History findings:
 - PR numbers `#2`, `#9`, `#13`, and `#14` do not appear in the merged history.
 - 65 additional first-parent commits exist outside numbered PRs.
 - BeauTeas contains 168 tracked test files and roughly 1,600 test cases.
-- Mercora currently has no test framework or tracked tests.
-- Mercora migrations end at `0006`; BeauTeas continues through `0024` and
+- Mercora had no test framework or tracked tests at the original inventory
+  snapshot; the completed core pass now has a Node 24 Vitest/Workers test base.
+- Mercora migrations ended at `0006` at the original snapshot and now end at
+  `0018`; BeauTeas continues through `0024` and
   contains two different `0010_*` migration files.
 
 ## Disposition Codes
@@ -118,10 +121,10 @@ Mercora after reconciling the current upstream source and all later fixes.
 7. **Playwright comes later.** Current E2E tests assume BeauTeas products,
    copy, storage keys, and URLs. Vitest can land immediately; browser tests
    require neutral seed fixtures and configurable namespaces.
-8. **Inventory groups are not one-to-one with PRs.** Consolidation maps the 15
-   core groups to 11 contribution units: three foundations plus eight remaining
-   PRs. PR `#10` did not reach `main`, so recovery PR `#21` adds one unavoidable
-   GitHub PR to the ledger. `U12` can be deferred independently.
+8. **Inventory groups are not one-to-one with PRs.** The completed core pass
+   consolidated 15 groups into 11 contribution units. The second-pass review
+   similarly consolidates nine optional trains into seven extraction PRs,
+   preceded by one bounded maintenance PR.
 
 ## Dependency Graph
 
@@ -198,7 +201,7 @@ dependency and test review.
 | 7 | Order trust and server-authoritative checkout, Mercora PR `#39` | `U06 + U08` | Merged |
 | 8 | Webhook, inventory, and refund correctness, Mercora PR `#40` | `U09` | Merged |
 | 9 | MCP trust and commerce integrity, Mercora PR `#41` | `U10 + U11` | Merged |
-| 10 | Recommendations, Mercora PR `#43` | `U12` | Ready for review; implementation and validation complete |
+| 10 | Recommendations, Mercora PR `#43` | `U12` | Merged as `8f688fb` |
 | 11 | Fulfillment vertical slice, Mercora PR `#42` | `U13 + U14` | Merged to Mercora `main` as `339e54d` |
 
 ## Group Dossiers
@@ -449,8 +452,8 @@ of this PR.
 
 ## Optional Feature Trains
 
-These remain valuable upstream targets, but should follow the core trust,
-configuration, Money, migration, and test foundations.
+These remain valuable upstream targets. The core trust, configuration, Money,
+migration, test, recommendation, and fulfillment foundations are now present.
 
 | Feature train | Source | Required generalization / blocker |
 | --- | --- | --- |
@@ -463,6 +466,73 @@ configuration, Money, migration, and test foundations.
 | Observability | `#94` | Neutral worker names, datasets, alert subjects, and service bindings |
 | AI canonical facts/response guard | `#106`, `#108`, `#120` | Configured assistant identity/facts; Chai/tea knowledge remains downstream |
 | UI/runtime polish | `#64`, `#99`, `#113`, selected direct commits | Neutral styles/copy; preserve focused regression tests |
+
+## Consolidated Optional Pass
+
+The source audits initially suggested roughly 15 separately reviewable units.
+The final consolidation uses seven extraction PRs plus one maintenance PR. This
+is the fewest defensible set without mixing privacy infrastructure,
+customer-visible AI truth controls, destructive operator tooling, or distinct
+money-state machines.
+
+| ID | Scope | Optional trains covered | Dependencies | Planned migration |
+| --- | --- | --- | --- | --- |
+| `M01` | Dependency, runtime, and repository-hygiene closeout | Cross-cutting prerequisite and generic dump hygiene from `#76` | Core complete | None expected |
+| `O01` | Customer account and communications platform | Customer accounts; merchant email/compliance | `M01` | Email preferences/unsubscribes |
+| `O02` | Content publishing and storefront correctness | Blog/CMS; UI/runtime polish tied to content/configuration | `M01` | Blog tables; neutral CMS template registration |
+| `O03` | Privacy-safe observability | Observability | `M01` | None expected |
+| `O04` | Canonical AI facts and guarded responses | AI canonical facts/response guard | `O03` | None expected |
+| `O05` | Shopify migration toolkit | Redirect/media runtime and full ETL/operator tooling, including Blog import | `O02` | Redirect map |
+| `O06` | Subscriptions vertical slice | Subscriptions | `O01`, `O03` | Subscription tables and shipping address |
+| `O07` | Gift cards and generic digital commerce | Gift cards | `O01`, `O03` | Gift-card account/ledger/reservation/delivery state |
+
+### Consolidation coverage
+
+| Original train | Destination |
+| --- | --- |
+| Customer accounts | `O01` |
+| Merchant email/compliance | `O01` |
+| Blog/CMS | `O02` |
+| UI/runtime polish | Global correctness in `M01`; content/storefront consumers in `O02` |
+| Observability | `O03` |
+| AI canonical facts/response guard | `O04` |
+| Shopify migration toolkit | `O05` |
+| Subscriptions | `O06` |
+| Gift cards | `O07` |
+
+### Delivery waves
+
+1. Land `M01` alone with a fresh production audit snapshot, enumerated
+   remediations/exceptions, CSS-as-script/runtime regression coverage, and a
+   verified no-dump repository boundary.
+2. Develop `O01`, `O02`, and `O03` in parallel from updated `main`.
+3. Develop `O04` after `O03`, and `O05` after `O02` because Blog import is part
+   of the complete Shopify train.
+4. Develop `O06` and `O07` after `O01` and `O03`. They may use parallel
+   worktrees, but merge serially; rebase and fully revalidate the second because
+   both touch checkout, paid effects, webhooks, and refunds.
+
+### Cross-pass acceptance rules
+
+- All optional capabilities default off and leave core checkout operational.
+- Schema PRs use additive, forward-only migrations assigned from then-current
+  Mercora `main`; never reuse BeauTeas migration numbers.
+- Money-ledger features are rolled back by disabling their capability, never by
+  down-migrating. Test migrations on a populated baseline, old code with the
+  added schema, and new code with capability-off/empty tables.
+- Each large PR is one vertical feature with ordered schema, domain/service,
+  guarded API, UI/email/operator, test, and documentation commits.
+- Node 24, install/lockfile integrity, lint, typecheck, unit tests, applicable
+  Workers/D1 tests, production build, and migration safety are required.
+- Scan every extraction for BeauTeas/Chai names, content, assets, domains,
+  resource IDs, merchant values, imported data, exports, logs, and cutover state.
+- `O03` must fail open and redact headers, cookies, auth/payment data,
+  customer/order identifiers, query strings, and raw exceptions.
+- `O06` must prove webhook disorder/duplication safety, one renewal order per
+  invoice, and paid-invoice verification before fulfillment.
+- `O07` must prove CSPRNG/keyed-hash code safety, server-owned reservation
+  transitions, expiry cleanup, ledger conservation, currency rules,
+  authorization, and enumeration resistance.
 
 ## Migration Reconciliation
 
@@ -794,14 +864,23 @@ Update this table as Mercora issues and PRs are created.
 | `U06 + U08` | Merged | — | `#39` | Merged to Mercora `main` as `7a020d3`; order authorization, authoritative pricing, durable pending orders, verified/idempotent payment finalization, and optional commerce capability seams |
 | `U09` | Merged | — | `#40` | Merged to Mercora `main` as `26ff9c1`; durable webhook claims/effects, authoritative inventory, and refund reconciliation landed together |
 | `U10 + U11` | Merged | — | `#41` | Merged to Mercora `main` as `0afa14a`; trusted credentials, scoped ownership, catalog-neutral MCP boundaries, and authoritative PaymentIntent checkout |
-| `U12` | Ready for review | — | `#43` | Server-rendered deterministic/AI-batch seam, public product projection, OOS/owned filtering, bounded atomic rebuild, staleness/empty-wipe guards, admin controls, and cron failure propagation; reviewed and validated under Node 24 |
+| `U12` | Merged | — | `#43` | Merged as `8f688fb`; server-rendered deterministic/AI-batch seam, public projection, bounded rebuild, safety guards, admin controls, and cron failure propagation |
 | `U13 + U14` | Merged | — | `#42` | Merged to Mercora `main` as `339e54d`; core fulfillment and owned MCP shipment/history projection complete |
+| `M01` | Merged | — | `#55` | Merged to Mercora `main` as `6dd990d`; dependency/runtime/repository-hygiene closeout complete |
+| `O01` | Merged | — | `#66` | Merged to Mercora `main` as `438a1cd`; customer accounts, provider-neutral communications, compliance/unsubscribe, and durable merchant notifications complete |
+| `O02` | Ready for review | — | `#73` | Branch `agent/o02-content-publishing` at `5aec0c9`; secure CMS, neutral templates, Blog/admin publishing, R2 integration, RSS, dynamic sitemap/robots, and additive migration `0019`; independent reviews passed; Node 24 unit, Workers/D1, lint, typecheck, production build, Cloudflare type, migration, diff, neutral-content, and secret checks passed; assigned to Russell; CI and Workers builds passed |
+| `O03` | Merged | — | `#72` | Merged to Mercora `main` as `02b1bd2`; privacy-safe producer telemetry, provider-neutral Tail alerts, and sharded SQLite cooldown complete |
+| `O04` | Planned | — | — | Canonical AI facts and guarded responses; follows `O03` |
+| `O05` | Planned | — | — | Complete Shopify migration toolkit; follows `O02` |
+| `O06` | Planned | — | — | Disabled-by-default subscriptions vertical slice |
+| `O07` | Planned | — | — | Disabled-by-default gift cards and generic digital commerce |
 
 ## Immediate Next Planning Actions
 
-1. Monitor ready Mercora PR `#43` and its GitHub checks, and address Russell's
-   review before merge.
-2. Keep `U12` on its safe deterministic default; the AI-batch strategy remains
+1. Monitor Mercora PR `#73` and address Russell's review before merging `O02`.
+2. Start `O04` independently from current Mercora `main`; keep all sub-agent
+   work behind local parent review before pushing or opening a PR.
+3. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
    optional and falls back to the active catalog when precomputed rows are absent.
-3. After `#43` lands, verify the extraction ledger is complete and prepare the
-   upstreaming closeout rather than opening another feature PR by default.
+4. Begin `O05` only after `O02` lands. `O06` and `O07` are now dependency-ready,
+   but should proceed as separate worktrees and serialize their merges.
