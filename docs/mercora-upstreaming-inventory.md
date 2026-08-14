@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Core `U00`-`U14`, `M01`, `O01`, and `O03` merged; `O02` ready for review as Mercora PR `#73`; `O04`-`O07` planned
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in progress; `O06`-`O07` planned
 **Research snapshot:** 2026-08-10
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -868,19 +868,19 @@ Update this table as Mercora issues and PRs are created.
 | `U13 + U14` | Merged | — | `#42` | Merged to Mercora `main` as `339e54d`; core fulfillment and owned MCP shipment/history projection complete |
 | `M01` | Merged | — | `#55` | Merged to Mercora `main` as `6dd990d`; dependency/runtime/repository-hygiene closeout complete |
 | `O01` | Merged | — | `#66` | Merged to Mercora `main` as `438a1cd`; customer accounts, provider-neutral communications, compliance/unsubscribe, and durable merchant notifications complete |
-| `O02` | Ready for review | — | `#73` | Branch `agent/o02-content-publishing` at `5aec0c9`; secure CMS, neutral templates, Blog/admin publishing, R2 integration, RSS, dynamic sitemap/robots, and additive migration `0019`; independent reviews passed; Node 24 unit, Workers/D1, lint, typecheck, production build, Cloudflare type, migration, diff, neutral-content, and secret checks passed; assigned to Russell; CI and Workers builds passed |
+| `O02` | Merged | — | `#73` | Merged to Mercora `main` as `8894d1b`; secure CMS, neutral templates, Blog/admin publishing, R2 integration, RSS, dynamic sitemap/robots, and additive migration `0019` complete |
 | `O03` | Merged | — | `#72` | Merged to Mercora `main` as `02b1bd2`; privacy-safe producer telemetry, provider-neutral Tail alerts, and sharded SQLite cooldown complete |
-| `O04` | Planned | — | — | Canonical AI facts and guarded responses; follows `O03` |
-| `O05` | Planned | — | — | Complete Shopify migration toolkit; follows `O02` |
+| `O04` | Merged | — | `#74` | Merged to Mercora `main` as `ff163b0`; request-scoped canonical facts, deterministic policy answers, guarded customer responses, typed Workers AI, and privacy-safe telemetry complete |
+| `O05` | In progress | — | — | Branch `agent/o05-shopify-migration-toolkit` from `ff163b0`; redirect/media runtime and complete ETL/operator tooling, including Blog import |
 | `O06` | Planned | — | — | Disabled-by-default subscriptions vertical slice |
 | `O07` | Planned | — | — | Disabled-by-default gift cards and generic digital commerce |
 
 ## Immediate Next Planning Actions
 
-1. Monitor Mercora PR `#73` and address Russell's review before merging `O02`.
-2. Start `O04` independently from current Mercora `main`; keep all sub-agent
-   work behind local parent review before pushing or opening a PR.
-3. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
+1. Build `O05` from current Mercora `main`; keep all sub-agent work behind local
+   parent review before pushing or opening a PR.
+2. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
    optional and falls back to the active catalog when precomputed rows are absent.
-4. Begin `O05` only after `O02` lands. `O06` and `O07` are now dependency-ready,
-   but should proceed as separate worktrees and serialize their merges.
+3. `O06` and `O07` are dependency-ready, but should proceed as separate
+   worktrees and serialize their merges because both touch checkout, payments,
+   webhooks, and refunds.
