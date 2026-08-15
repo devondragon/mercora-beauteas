@@ -5,7 +5,7 @@ category: product
 tags: [blends, recommendations, how-to-choose, faq]
 ---
 
-**AI NOTES:** Use this to help customers pick the right Clearly Calendula tea based on their routine and goals. Only describe products and benefits listed here or in the live product catalog. Do not invent ingredients or make medical claims.
+**AI NOTES:** Use this to help customers pick the right Clearly Calendula tea based on their routine and goals. Only describe products and benefits listed here or in the live product catalog. The Sample Pack, the Mega Month, and the three-box size have all been withdrawn for the closing sale, and subscriptions are switched off: one blend, one box, one-time purchase. Do not invent ingredients or make medical claims.
 
 ## The Clearly Calendula Collection
 
@@ -19,9 +19,11 @@ If caffeine matters for your routine, steer earlier sippers toward Morning, midd
 
 ## Not Sure Where to Start?
 
-- **New to BeauTeas?** Try the **Sample Pack** to taste all three daily blends before committing.
-- **Ready for the full ritual?** The **Mega Month** gives you a month's supply of the complete Morning / Afternoon / Evening routine.
-- **Want to save and never run out?** Subscribe to any blend for a recurring delivery. See our subscription details.
+We're closing, so the range is simpler than it was: each blend is sold as a single box of 10 tea bags, and orders are a minimum of 10 boxes. The Sample Pack, the Mega Month, and the three-box size are no longer available, and there are no subscriptions.
+
+- **New to BeauTeas?** Split your order across all three blends to taste the whole routine.
+- **Know what you like?** Take as many boxes of that one blend as you want while stock lasts. At a cup a day, 36 boxes is about a year's worth.
+- **Stocking up?** This is the last of it. Nothing is being restocked, so what's on the site is what's left.
 
 ## Building the Ritual
 

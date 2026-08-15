@@ -2,22 +2,22 @@
 id: faq-account
 title: Accounts & Login
 category: support
-tags: [account, login, password, subscriptions, faq]
+tags: [account, login, password, faq]
 ---
 
-**AI NOTES:** Help users create or recover their account and find where to manage orders and subscriptions.
+**AI NOTES:** Help users create or recover their account and find their orders. Subscriptions are switched off for the closing sale, so do not describe managing, pausing, or resuming one: every order is a one-time purchase.
 
 ## Creating an Account
 
-Click "Sign In" in the header and choose "Create Account." An account lets you track orders, manage subscriptions, and check out faster.
+Click "Sign In" in the header and choose "Create Account." An account lets you track your orders and check out faster.
 
 ## Password Help
 
 Forgot your password? Use the "Reset Password" link on the sign-in page and follow the emailed instructions.
 
-## Managing Your Subscription
+## Subscriptions
 
-If you subscribe to a blend, you can pause, skip, change, or cancel anytime from the subscription section of your account.
+Subscriptions are switched off for the closing sale. Every order is a one-time purchase, and there is nothing recurring to manage.
 
 ## Email Issues
 

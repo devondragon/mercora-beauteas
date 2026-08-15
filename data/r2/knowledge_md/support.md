@@ -5,11 +5,11 @@ category: support
 tags: [contact, support, faq]
 ---
 
-**AI NOTES:** Direct users to the support team when the assistant can't help or when human contact is needed. Use only the contact details listed here.
+**AI NOTES:** Direct users to the support team when the assistant can't help or when human contact is needed. Use only the contact details listed here. Subscriptions are switched off for the closing sale, so do not offer help with one.
 
 ## Contact Us
 
-Email us at info@beauteas.com: we're happy to help with orders, products, subscriptions, and anything else.
+Email us at info@beauteas.com: we're happy to help with orders, products, and anything else while we wind down.
 
 ## Support Hours
 
