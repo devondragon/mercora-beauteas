@@ -108,6 +108,25 @@ const nextConfig: NextConfig = {
         destination: "/thank-you",
         permanent: true,
       },
+      // The two bundle SKUs withdrawn for the closing sale (BTCCSP, BTCCFP).
+      // These are catalog PRODUCTS, so unlike the pages above they are reached
+      // at the singular /product/<slug> path, which middleware.ts never
+      // consults redirect_map for (it only checks /products/, /collections/,
+      // /pages/, /blogs/, /policies/). Archiving a product makes
+      // app/product/[slug]/page.tsx call notFound() immediately (revalidate =
+      // 0, no cache to hide behind), so these entries must be DEPLOYED BEFORE
+      // either product is archived in /admin/products or the live URL 404s in
+      // between. See docs/goob-rollout-runbook.md Phase 3 for the ordering.
+      {
+        source: "/product/clearly-calendula-sample-pack",
+        destination: "/thank-you",
+        permanent: true,
+      },
+      {
+        source: "/product/clearly-calendula-full-package",
+        destination: "/thank-you",
+        permanent: true,
+      },
     ];
   },
   // Shopify URL redirects are handled entirely in middleware.ts so that
