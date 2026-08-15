@@ -1,6 +1,6 @@
 # Mercora Upstreaming Plan
 
-**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06`-`O07` planned
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06` in progress; `O07` researched and queued behind `O06`
 **Created:** 2026-08-03  
 **Owners:** Russell K. Moore and Devon Hillard
 

@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06`-`O07` planned
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06` in progress; `O07` researched and queued behind `O06`
 **Research snapshot:** 2026-08-10
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -872,15 +872,19 @@ Update this table as Mercora issues and PRs are created.
 | `O03` | Merged | — | `#72` | Merged to Mercora `main` as `02b1bd2`; privacy-safe producer telemetry, provider-neutral Tail alerts, and sharded SQLite cooldown complete |
 | `O04` | Merged | — | `#74` | Merged to Mercora `main` as `ff163b0`; request-scoped canonical facts, deterministic policy answers, guarded customer responses, typed Workers AI, and privacy-safe telemetry complete |
 | `O05` | In review | — | `#75` | Draft PR is assigned to Russell with GitHub CI and Workers Builds green; reviewed redirect/media runtime and complete dry-run-first ETL/operator tooling, including Blog import |
-| `O06` | Planned | — | — | Disabled-by-default subscriptions vertical slice |
-| `O07` | Planned | — | — | Disabled-by-default gift cards and generic digital commerce |
+| `O06` | In progress | — | — | Branch `agent/o06-subscriptions` from `ff163b0`; schema/domain/capability foundation is the first implementation wave |
+| `O07` | Researched | — | — | Source, dependency, and test audit complete; reserve migration `0022` and start code after O06 fixes the shared capability/webhook contracts |
 
 ## Immediate Next Planning Actions
 
 1. Await Russell's review of `O05` PR `#75`; keep any review fixes on the
    existing branch and preserve its dry-run-first, target-bound safety model.
-2. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
+2. Build `O06` in `agent/o06-subscriptions`, reserving migration `0021` and
+   separating acquisition disablement from existing-subscription reconciliation.
+3. Keep `O07` at reviewed-design status until O06 establishes the production
+   capability resolver and webhook dispatcher; then branch/rebase it with `0022`.
+4. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
    optional and falls back to the active catalog when precomputed rows are absent.
-3. `O06` and `O07` are dependency-ready, but should proceed as separate
+5. `O06` and `O07` are dependency-ready, but should proceed as separate
    worktrees and serialize their merges because both touch checkout, payments,
    webhooks, and refunds.
