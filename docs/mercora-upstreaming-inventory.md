@@ -1,6 +1,6 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in progress; `O06`-`O07` planned
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06`-`O07` planned
 **Research snapshot:** 2026-08-10
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -871,14 +871,14 @@ Update this table as Mercora issues and PRs are created.
 | `O02` | Merged | — | `#73` | Merged to Mercora `main` as `8894d1b`; secure CMS, neutral templates, Blog/admin publishing, R2 integration, RSS, dynamic sitemap/robots, and additive migration `0019` complete |
 | `O03` | Merged | — | `#72` | Merged to Mercora `main` as `02b1bd2`; privacy-safe producer telemetry, provider-neutral Tail alerts, and sharded SQLite cooldown complete |
 | `O04` | Merged | — | `#74` | Merged to Mercora `main` as `ff163b0`; request-scoped canonical facts, deterministic policy answers, guarded customer responses, typed Workers AI, and privacy-safe telemetry complete |
-| `O05` | In progress | — | — | Branch `agent/o05-shopify-migration-toolkit` from `ff163b0`; redirect/media runtime and complete ETL/operator tooling, including Blog import |
+| `O05` | In review | — | `#75` | Draft PR is assigned to Russell with GitHub CI and Workers Builds green; reviewed redirect/media runtime and complete dry-run-first ETL/operator tooling, including Blog import |
 | `O06` | Planned | — | — | Disabled-by-default subscriptions vertical slice |
 | `O07` | Planned | — | — | Disabled-by-default gift cards and generic digital commerce |
 
 ## Immediate Next Planning Actions
 
-1. Build `O05` from current Mercora `main`; keep all sub-agent work behind local
-   parent review before pushing or opening a PR.
+1. Await Russell's review of `O05` PR `#75`; keep any review fixes on the
+   existing branch and preserve its dry-run-first, target-bound safety model.
 2. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
    optional and falls back to the active catalog when precomputed rows are absent.
 3. `O06` and `O07` are dependency-ready, but should proceed as separate
