@@ -34,6 +34,20 @@ function toStoredVariant(variant: any) {
   return next;
 }
 
+/**
+ * The values the Product Type dropdown offers. The catalog also holds free-text
+ * types from the Shopify ETL that are not in this list, and those must survive an
+ * edit — see the dropdown itself for what happened when they didn't.
+ */
+const KNOWN_PRODUCT_TYPES = [
+  "simple",
+  "configurable",
+  "bundle",
+  "digital",
+  "subscription",
+  "service",
+];
+
 interface ProductEditorProps {
   product: Product | null;
   isOpen: boolean;
@@ -1014,6 +1028,22 @@ export default function ProductEditor({
                   className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="">Select type...</option>
+                  {/*
+                    The catalog's real `type` values are free text from the Shopify
+                    ETL ("Tea Bags", "Drinkware", "Gift Card"), none of which appear
+                    in the fixed list below. A controlled <select> whose value matches
+                    no <option> renders with nothing selected, so the field showed
+                    blank and a single interaction replaced the stored value: that is
+                    how the Evening blend's "Tea Bags" became "simple", which silently
+                    switched off its box count and year-supply offer, because
+                    isSoldByTheBox (lib/sale/year-supply.ts) gates on the type
+                    normalizing to "teabags". Surfacing the current value as its own
+                    option keeps the control valid and makes overwriting it a
+                    deliberate choice.
+                  */}
+                  {productType && !KNOWN_PRODUCT_TYPES.includes(productType) && (
+                    <option value={productType}>{productType} (current)</option>
+                  )}
                   <option value="simple">Simple Product</option>
                   <option value="configurable">Configurable Product</option>
                   <option value="bundle">Bundle</option>

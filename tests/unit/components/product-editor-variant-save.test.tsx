@@ -102,6 +102,40 @@ function findSaveButton(): HTMLButtonElement {
   return save as HTMLButtonElement;
 }
 
+describe('ProductEditor — product type', () => {
+  it('offers the stored type as an option when it is outside the fixed list', async () => {
+    // The catalog's real types are free text from the Shopify ETL ("Tea Bags").
+    // A controlled <select> whose value matches no <option> renders with nothing
+    // selected, and one interaction then replaces the stored value. That is how
+    // Evening's "Tea Bags" became "simple" on production, which switched off its
+    // box count and year-supply offer, since isSoldByTheBox gates on the type
+    // normalizing to "teabags".
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    await act(async () => {
+      root.render(
+        <ProductEditor
+          product={{ ...PRODUCT, type: 'Tea Bags' }}
+          isOpen={true}
+          isNew={false}
+          onClose={() => {}}
+          onSave={onSave}
+        />
+      );
+    });
+
+    const select = Array.from(container.querySelectorAll('select')).find((s) =>
+      Array.from(s.options).some((o) => o.value === 'simple')
+    );
+    if (!select) throw new Error('product type select not found');
+
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain('Tea Bags');
+    // And the control is actually resolved to it, rather than sitting at -1.
+    expect(select.value).toBe('Tea Bags');
+  });
+});
+
 describe('ProductEditor — saving an edited variant field', () => {
   it('sends the typed inventory quantity, not the value it was opened with', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
