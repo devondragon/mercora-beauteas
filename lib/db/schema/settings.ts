@@ -256,6 +256,18 @@ export const defaultSettings = [
     data_type: 'object'
   },
   {
+    key: 'shipping.per_box_cost',
+    // ZERO is intentional, the same reasoning as the empty `shipping.tiers` above:
+    // normalizePerBoxCost (lib/sale/rules.ts) treats anything <= 0 as "not
+    // configured", so a fresh database keeps whatever the tiers or flat rates say
+    // until an admin enters a real rate. A placeholder rate here would price every
+    // order off a number nobody chose.
+    value: JSON.stringify(0),
+    category: 'shipping',
+    description: 'Flat shipping cost in dollars PER BOX. When above zero it prices the whole cart and overrides both shipping.tiers and the flat shipping.methods rates. ZERO means not configured.',
+    data_type: 'number'
+  },
+  {
     key: 'promotions.banner_link',
     value: JSON.stringify('/thank-you'),
     category: 'promotions',

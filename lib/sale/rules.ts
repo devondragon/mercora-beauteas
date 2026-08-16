@@ -35,6 +35,61 @@ export interface SaleRules {
   finalSale: boolean;
   subscriptionsEnabled: boolean;
   tiers: ShippingTier[];
+  /**
+   * `shipping.per_box_cost` in MAJOR units, or `null` when not configured.
+   *
+   * OPTIONAL on the type, always set by `getSaleRules`. Absent therefore means
+   * the same thing a `null` does — no per-box rate, leave the tiers and flat
+   * rates in force — so a consumer reading an older shape (or a test fixture
+   * written before this existed) degrades to the pre-existing pricing rather
+   * than to free shipping. Consumers must resolve it through
+   * `normalizePerBoxCost` rather than testing it directly, since `undefined`
+   * is not `null`.
+   */
+  perBoxCost?: number | null;
+}
+
+/**
+ * Per-box shipping (`shipping.per_box_cost`): the cart is charged this many
+ * DOLLARS for every box in it. When configured it prices the whole cart,
+ * ahead of both `shipping.tiers` and the flat `shipping.methods` rates — see
+ * `resolveShippingOptions`, which owns the multiplication so the quote, the
+ * charge floor, and Chai can't diverge.
+ *
+ * Why a flat per-box rate rather than another band: the sale's real postage is
+ * about $10 for 10 boxes and about $9 for 20 (they ship as separate parcels
+ * above that), so $1 a box tracks cost closely while staying a single number a
+ * customer can hold in their head. Banded pricing put a cliff at each boundary
+ * — a 20th box cost $10 of shipping while the 19th cost nothing — which is
+ * both a sticker shock and a reason to stop at 19.
+ *
+ * NOT configured is `null`, and every unusable value lands there: zero,
+ * negative, non-finite, and non-numeric all mean "no per-box rate", which
+ * leaves whatever the tiers or flat rates already said in force. That is the
+ * same posture `shipping.tiers` takes with an empty array, and for the same
+ * reason — a half-configured rate must never silently become the price.
+ * A blank string coerces to `0` under `Number`, so it is rejected here rather
+ * than shipping every order free.
+ */
+export function normalizePerBoxCost(raw: unknown): number | null {
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/**
+ * Boxes to bill per-box shipping for. Never less than one: `resolveShippingOptions`
+ * is also called with an UNKNOWN box count (Chai has no cart, so it passes 0),
+ * and a zero there would quote and floor at $0 — free shipping invented from a
+ * missing argument. One box is the lowest charge the rate can produce, which
+ * matches the existing "unknown box count resolves to the lowest tier" bias:
+ * ambiguous input must not invent a higher charge, but it must not invent a
+ * free one either. Fractional and non-finite counts floor the same way
+ * `countBoxes` does.
+ */
+export function billableBoxes(boxes: number): number {
+  if (!Number.isFinite(boxes)) return 1;
+  return Math.max(1, Math.floor(boxes));
 }
 
 export const DEFAULT_MINIMUM_BOXES = 10;

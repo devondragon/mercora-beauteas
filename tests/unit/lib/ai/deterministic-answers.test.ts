@@ -382,6 +382,67 @@ describe('classifyQuery — shipping rates and timelines (BMC-242)', () => {
   // are common, so `resolveShippingOptions(0)` resolving only the lowest tier
   // must not be stated as THE rate. When shipping.tiers is configured, the
   // answer renders the whole table instead.
+  describe('per-box shipping (GOOB)', () => {
+    it('states the RATE per box, never the resolved single-box cost as the total', async () => {
+      // A chat message carries no cart, so resolveShippingOptions prices one box.
+      // Quoting that number would tell a 30-box shopper their shipping is $1.
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [],
+        perBoxCost: 1,
+      });
+      getSettings.mockResolvedValue({ 'shipping.per_box_cost': 1 });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('$1.00 a box');
+      expect(answer).toContain('10 box order ships for $10.00');
+      expect(answer).toContain(SHIPPING_POLICY_URL);
+      expect(answer).not.toContain('Standard (5–7 days): $5.99');
+    });
+
+    it('outranks a configured tier table, matching resolveShippingOptions', async () => {
+      getSaleRules.mockResolvedValue({
+        minimumBoxes: 10,
+        finalSale: true,
+        subscriptionsEnabled: false,
+        tiers: [{ max_boxes: null, cost: 22 }],
+        perBoxCost: 1,
+      });
+      getSettings.mockResolvedValue({
+        'shipping.per_box_cost': 1,
+        'shipping.tiers': [{ max_boxes: null, cost: 22 }],
+      });
+
+      const answer = await resolveDeterministicAnswer('shipping_rates');
+
+      expect(answer).toContain('$1.00 a box');
+      expect(answer).not.toContain('1+ boxes: $22.00');
+    });
+
+    it('ignores an unusable rate rather than stating a free or broken one', async () => {
+      // `undefined` is what an older cached shape or a pre-existing fixture
+      // carries; it must read as "not configured", not as a rate.
+      for (const perBoxCost of [0, undefined, null]) {
+        getSaleRules.mockResolvedValue({
+          minimumBoxes: 10,
+          finalSale: true,
+          subscriptionsEnabled: false,
+          tiers: [],
+          perBoxCost,
+        });
+        getSettings.mockResolvedValue({});
+
+        const answer = await resolveDeterministicAnswer('shipping_rates');
+
+        expect(answer).not.toContain('a box');
+        expect(answer).toContain('Standard (5–7 days): $5.99');
+      }
+    });
+  });
+
   describe('quantity-tiered shipping (final-review fix, item 4)', () => {
     it('renders one ascending line per configured tier instead of a single rate', async () => {
       getSaleRules.mockResolvedValue({

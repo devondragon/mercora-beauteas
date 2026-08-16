@@ -94,6 +94,10 @@ interface ShippingSettings {
   // configured" — the flat per-method costs above stay in force. Any
   // non-empty array replaces them entirely (see migrations/0025).
   tiers: ShippingTier[];
+  // GOOB: flat cost per box (lib/sale/rules `normalizePerBoxCost`). ZERO means
+  // "not configured"; anything above zero outranks BOTH the tiers and the flat
+  // per-method costs above (see migrations/0032).
+  perBoxCost: number;
 }
 
 interface RefundSettings {
@@ -170,7 +174,8 @@ export default function AdminSettingsPage() {
     // defaults above, a non-empty placeholder here would be a live pricing
     // change if `loadSettings` ever failed to land before a save — see
     // lib/sale/tier-editor.ts.
-    tiers: []
+    tiers: [],
+    perBoxCost: 0
   });
 
   const [refundSettings, setRefundSettings] = useState<RefundSettings>({
@@ -251,6 +256,11 @@ export default function AdminSettingsPage() {
             if (setting.key === 'shipping.methods') setShippingSettings(prev => ({ ...prev, methods: value }));
             if (setting.key === 'shipping.free_methods') setShippingSettings(prev => ({ ...prev, free_methods: value }));
             if (setting.key === 'shipping.tiers') setShippingSettings(prev => ({ ...prev, tiers: value }));
+            // A stored string ("1") must not land in a number input as a string —
+            // it would re-save as one and read back through normalizePerBoxCost's
+            // string branch every time. Coerce once, here, and treat anything
+            // unusable as not configured.
+            if (setting.key === 'shipping.per_box_cost') setShippingSettings(prev => ({ ...prev, perBoxCost: Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0 }));
           } else if (setting.category === 'refund') {
             if (setting.key === 'refund.shipping_refunded_partial') setRefundSettings(prev => ({ ...prev, shipping_refunded_partial: value }));
             if (setting.key === 'refund.shipping_refunded_full') setRefundSettings(prev => ({ ...prev, shipping_refunded_full: value }));
@@ -398,6 +408,7 @@ export default function AdminSettingsPage() {
         { key: 'shipping.methods', value: shippingSettings.methods, category: 'shipping' },
         { key: 'shipping.free_methods', value: shippingSettings.free_methods, category: 'shipping' },
         { key: 'shipping.tiers', value: shippingSettings.tiers, category: 'shipping' },
+        { key: 'shipping.per_box_cost', value: shippingSettings.perBoxCost, category: 'shipping' },
         
         // Refund settings
         { key: 'refund.shipping_refunded_partial', value: refundSettings.shipping_refunded_partial, category: 'refund' },
@@ -750,8 +761,63 @@ export default function AdminSettingsPage() {
           <Card className="admin-card p-6">
             <div className="flex items-center space-x-3 mb-4">
               <DollarSign className="w-5 h-5 text-state-info" />
+              <h3 className="text-lg font-semibold text-text-primary">Shipping Per Box</h3>
+            </div>
+
+            <p className="text-sm text-text-muted mb-4">
+              Cost in dollars for EVERY box in the cart: a 30 box order at $1.00 ships
+              for $30.00. When this is above $0.00 it prices the whole cart and
+              overrides both the quantity tiers and the flat per-method rates below.
+              Set it to $0.00 to turn it off.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <span className="text-sm text-text-secondary">$</span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="w-32"
+                value={shippingSettings.perBoxCost}
+                onChange={(e) =>
+                  setShippingSettings(prev => ({
+                    ...prev,
+                    perBoxCost: Math.max(0, parseFloat(e.target.value) || 0),
+                  }))
+                }
+              />
+              <span className="text-sm text-text-muted">per box</span>
+            </div>
+
+            {shippingSettings.perBoxCost > 0 ? (
+              <p className="text-sm text-text-muted mb-2">
+                In effect. Every order is charged ${shippingSettings.perBoxCost.toFixed(2)} a
+                box, and the tiers and flat rates below are ignored.
+              </p>
+            ) : (
+              <p className="text-sm text-text-muted italic mb-2">
+                Not configured. The tiers or flat rates below are in effect.
+              </p>
+            )}
+          </Card>
+
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <DollarSign className="w-5 h-5 text-state-info" />
               <h3 className="text-lg font-semibold text-text-primary">Shipping by Quantity</h3>
             </div>
+
+            {shippingSettings.perBoxCost > 0 && (
+              <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                  <p className="text-sm text-state-warning">
+                    A per-box rate is set above, so nothing in this section is charged.
+                    Clear the per-box rate to price by tier instead.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <p className="text-sm text-text-muted mb-4">
               Cost in dollars for an order up to and including that many boxes. Bounds

@@ -9,8 +9,10 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  billableBoxes,
   countBoxes,
   checkMinimumOrder,
+  normalizePerBoxCost,
   resolveShippingTier,
   minimumOrderMessage,
   type ShippingTier,
@@ -225,6 +227,51 @@ describe('resolveShippingTier', () => {
     const expected = { max_boxes: 20, cost: 8 };
     expect(resolveShippingTier(cheapFirst, 15)).toEqual(expected);
     expect(resolveShippingTier(expensiveFirst, 15)).toEqual(expected);
+  });
+});
+
+describe('normalizePerBoxCost', () => {
+  it('accepts a positive number and a numeric string', () => {
+    expect(normalizePerBoxCost(1)).toBe(1);
+    expect(normalizePerBoxCost(0.45)).toBe(0.45);
+    expect(normalizePerBoxCost('1')).toBe(1);
+  });
+
+  it('treats zero and negatives as NOT configured', () => {
+    // Zero is how the admin editor and the 0032 seed both express "off", so it
+    // has to mean "leave the tiers/flat rates alone" rather than "ship free".
+    expect(normalizePerBoxCost(0)).toBeNull();
+    expect(normalizePerBoxCost(-1)).toBeNull();
+  });
+
+  it('rejects every value that Number() would silently turn into zero', () => {
+    // Number(null) === Number('') === Number('  ') === Number([]) === Number(false) === 0.
+    // Any of these passing through as a rate would price every order at $0 —
+    // the same trap `rateMajor` in deterministic-answers.ts documents.
+    for (const raw of [null, undefined, '', '   ', [], false, {}, 'free', NaN, Infinity]) {
+      expect(normalizePerBoxCost(raw)).toBeNull();
+    }
+  });
+});
+
+describe('billableBoxes', () => {
+  it('bills the real box count', () => {
+    expect(billableBoxes(10)).toBe(10);
+    expect(billableBoxes(37)).toBe(37);
+  });
+
+  it('never bills less than one box', () => {
+    // resolveShippingOptions is called with 0 boxes for an UNKNOWN cart (Chai has
+    // no cart to read). Zero here would quote and floor at $0 — free shipping
+    // invented from a missing argument.
+    expect(billableBoxes(0)).toBe(1);
+    expect(billableBoxes(-5)).toBe(1);
+    expect(billableBoxes(NaN)).toBe(1);
+    expect(billableBoxes(Infinity)).toBe(1);
+  });
+
+  it('floors a fractional count the way countBoxes does', () => {
+    expect(billableBoxes(10.9)).toBe(10);
   });
 });
 

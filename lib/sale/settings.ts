@@ -7,7 +7,12 @@
  */
 
 import { getSettings } from '@/lib/utils/settings';
-import { DEFAULT_MINIMUM_BOXES, type SaleRules, type ShippingTier } from '@/lib/sale/rules';
+import {
+  DEFAULT_MINIMUM_BOXES,
+  normalizePerBoxCost,
+  type SaleRules,
+  type ShippingTier,
+} from '@/lib/sale/rules';
 
 /** Settings values arrive JSON-parsed, but a quoted number stays a string. */
 function toPositiveInt(raw: unknown, fallback: number): number {
@@ -29,5 +34,6 @@ export async function getSaleRules(): Promise<SaleRules> {
     tiers: Array.isArray(shipping['shipping.tiers'])
       ? (shipping['shipping.tiers'] as ShippingTier[])
       : [],
+    perBoxCost: normalizePerBoxCost(shipping['shipping.per_box_cost']),
   };
 }

@@ -152,6 +152,83 @@ describe('resolveShippingOptions — admin-configured methods', () => {
   });
 });
 
+describe('resolveShippingOptions — per-box shipping (GOOB)', () => {
+  const STANDARD_ONLY = [
+    { id: 'standard', label: 'Standard', cost: 5.99, estimatedDays: 5, enabled: true },
+  ];
+
+  it('charges the rate for every box in the cart', async () => {
+    withSettings({ 'shipping.per_box_cost': 1, 'shipping.methods': STANDARD_ONLY });
+
+    expect((await resolveShippingOptions(3000, { boxes: 10 })).options[0].cost).toBe(10);
+    expect((await resolveShippingOptions(3000, { boxes: 19 })).options[0].cost).toBe(19);
+    expect((await resolveShippingOptions(3000, { boxes: 20 })).options[0].cost).toBe(20);
+    expect((await resolveShippingOptions(3000, { boxes: 137 })).options[0].cost).toBe(137);
+  });
+
+  it('scales with no cliff at any box count', async () => {
+    // The whole point of the model: every additional box costs exactly the rate,
+    // so there is no boundary where one more box jumps the price by $10 (which
+    // is both a sticker shock and a reason to stop one box short of it).
+    withSettings({ 'shipping.per_box_cost': 1, 'shipping.methods': STANDARD_ONLY });
+
+    for (let boxes = 10; boxes < 60; boxes++) {
+      const here = (await resolveShippingOptions(3000, { boxes })).options[0].cost;
+      const next = (await resolveShippingOptions(3000, { boxes: boxes + 1 })).options[0].cost;
+      expect(next - here).toBeCloseTo(1, 10);
+    }
+  });
+
+  it('OUTRANKS the tier bands', async () => {
+    // Both models configured at once is reachable — the sale switched from bands
+    // to per-box and the band rows are deliberately left in place so switching
+    // back is one settings write. The quote, the charge floor, and Chai all
+    // resolve through this function, so they can only agree if the precedence
+    // lives here rather than at each call site.
+    withSettings({
+      'shipping.per_box_cost': 1,
+      'shipping.tiers': [{ max_boxes: null, cost: 22 }],
+      'shipping.methods': STANDARD_ONLY,
+    });
+
+    expect((await resolveShippingOptions(3000, { boxes: 10 })).options[0].cost).toBe(10);
+  });
+
+  it('bills a minimum of one box when the box count is unknown', async () => {
+    // Chai calls this with no cart, so `boxes` is absent. Zero boxes would quote
+    // $0 and floor the charge at $0.
+    withSettings({ 'shipping.per_box_cost': 1, 'shipping.methods': STANDARD_ONLY });
+
+    expect((await resolveShippingOptions(0)).options[0].cost).toBe(1);
+    expect((await resolveShippingOptions(0, { boxes: 0 })).options[0].cost).toBe(1);
+  });
+
+  it('keeps sub-cent rates exact across a large cart', async () => {
+    // 0.45 * 37 is 16.650000000000002 in float. The quote and the charge floor
+    // both resolve through here, so a fraction of a cent apart would reject an
+    // honest order at the floor check.
+    withSettings({ 'shipping.per_box_cost': 0.45, 'shipping.methods': STANDARD_ONLY });
+
+    expect((await resolveShippingOptions(3000, { boxes: 37 })).options[0].cost).toBe(16.65);
+  });
+
+  it('falls back to the tiers or flat rate when the rate is unusable', async () => {
+    // Zero, blank, and non-numeric all mean NOT configured. Treating any of them
+    // as a rate would ship every order free.
+    for (const raw of [0, '', '  ', null, 'free']) {
+      withSettings({ 'shipping.per_box_cost': raw, 'shipping.methods': STANDARD_ONLY });
+      expect((await resolveShippingOptions(3000, { boxes: 30 })).options[0].cost).toBe(5.99);
+    }
+
+    withSettings({
+      'shipping.per_box_cost': 0,
+      'shipping.tiers': [{ max_boxes: null, cost: 22 }],
+      'shipping.methods': STANDARD_ONLY,
+    });
+    expect((await resolveShippingOptions(3000, { boxes: 30 })).options[0].cost).toBe(22);
+  });
+});
+
 describe('resolveShippingOptions — quantity tiers (GOOB)', () => {
   const TIERS = [
     { max_boxes: 20, cost: 8 },

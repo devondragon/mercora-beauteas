@@ -38,7 +38,7 @@ import {
 import { Money } from "@/lib/money";
 import { getProductBySlug } from "@/lib/models/mach/products";
 import { getSaleRules } from "@/lib/sale/settings";
-import type { ShippingTier } from "@/lib/sale/rules";
+import { normalizePerBoxCost, type ShippingTier } from "@/lib/sale/rules";
 import { CUPS_PER_BOX, YEAR_SUPPLY_BOXES } from "@/lib/sale/year-supply";
 import { resolveShippingOptions } from "@/lib/services/shipping-options";
 import type { ShippingOption } from "@/lib/types/shipping";
@@ -571,8 +571,22 @@ async function shippingRatesAnswer(): Promise<string> {
       await resolveShippingOptions(0);
     if (options.length === 0) throw new Error("no enabled shipping methods configured");
 
-    const { tiers } = await getSaleRules();
+    const { tiers, perBoxCost, minimumBoxes } = await getSaleRules();
     const freeShipping = freeShippingSentence(options, freeShippingThresholdMajor, freeMethodIds);
+
+    // Per-box outranks the bands here exactly as it does in resolveShippingOptions,
+    // so Chai can never read a rate the checkout doesn't charge. Stated as the RATE
+    // ("$1 a box"), never as a total: a chat message carries no cart, so the
+    // resolved `options` above are priced for a single box and quoting that number
+    // would tell a 30-box shopper their shipping is $1.
+    const perBox = normalizePerBoxCost(perBoxCost);
+    if (perBox !== null) {
+      const example =
+        Number.isFinite(minimumBoxes) && minimumBoxes > 0
+          ? ` So a ${minimumBoxes} box order ships for ${Money.fromMajor(perBox).times(minimumBoxes).format()}, and it scales straight from there with no jumps.`
+          : "";
+      return `Shipping is ${Money.fromMajor(perBox).format()} a box during the closing sale 💕${example} ${freeShipping}Checkout shows the exact cost before you pay. For anywhere outside the US, email ${CONTACT_EMAIL}. Full details: ${SHIPPING_POLICY_URL}`;
+    }
 
     if (tiers.length > 0) {
       const table = describeTierTable(tiers).join("\n");

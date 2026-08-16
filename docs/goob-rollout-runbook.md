@@ -46,6 +46,13 @@ seven pending migrations, in this order:
 | `0029_deactivate_subscription_plans_for_goob.sql` | Sets `subscription_plans.is_active = 0`, a data-level stop behind the `sale.subscriptions_enabled` policy check. |
 | `0030_goob_box_math_content.sql` | Appends the ten-bags-per-box fact to the `faq` page and the three blend descriptions, so the storefront and Chai's vector index both carry it. |
 | `0031_goob_copy_fixes_and_banner_text.sql` | Pre-launch copy fixes: rewrites the stale free-shipping `promotions.banner_text` to the closing-sale message (without enabling the banner — that stays Phase 6), links "now is the time" on `/thank-you` back to the catalog, and fixes two British spellings. |
+| `0032_seed_per_box_shipping.sql` | Seeds `shipping.per_box_cost` at $1.00, the model that replaced the tier bands (see Phase 2). Applied 2026-08-16. |
+
+> **Phases 0 through 4 ran on production on 2026-08-15** (`e0718c5`, Worker
+> `824f0636`): all seven migrations applied, both bundles archived, all three
+> blends repriced to $3.00. What follows is kept for the record and for the
+> phases still outstanding — the production Vectorize rebuild (Phase 5), the
+> banner (Phase 6), and the verification checklist plus DNS (Phase 7).
 
 ### Pre-flight for `0030`, on production only
 
@@ -213,47 +220,40 @@ npx wrangler d1 execute beauteas-db --remote --env production --json \
 
 ---
 
-## Phase 2 — Set the shipping tiers (nothing ships correctly until this is done)
+## Phase 2 — Shipping: $1.00 per box (superseded the tier bands, 2026-08-16)
 
-Until you enter real tier costs, `shipping.tiers` stays empty, which means the
-storefront quotes the **flat Standard rate ($5.99)** regardless of box count —
-`0028` disabled Express and Overnight, so Standard is the only enabled method
-during the sale. That is safe (nothing overcharges or undercharges silently)
-but it is *not* the tiered pricing this sale is built around.
+**The banded model this phase originally described is no longer what the sale
+runs on.** Measured postage came back at about $10 for 10 boxes and about $9
+for 20 (larger orders ship as several parcels — a single 40-box parcel prices
+at $160), which made $1.00 a box both close to real cost and free of the thing
+bands could not avoid: a price cliff at every boundary, where the 20th box cost
+$10 of shipping while the 19th cost nothing. That is a sticker shock at
+checkout and a reason to stop at 19.
 
-> **Dev carries a provisional tier set** (written 2026-08-11 so the tiered
-> path could be rehearsed at all): up to 18 boxes $5.99, 19–36 boxes $9.99,
-> 37+ boxes $19.99 — the three old flat method rates recycled as bands. The
-> **structure** is fine to copy; the **prices are placeholders** pending the
-> box measurements, so do not copy the dollar amounts to production without
-> replacing them with the measured costs.
+So shipping is now `shipping.per_box_cost`, seeded at **$1.00** by migration
+`0032`, which applies automatically on the deploy that carries it. `$1.00 × the
+box count` prices every cart: 10 boxes ship for $10.00, 37 for $37.00, with no
+jumps anywhere in between. It **outranks** `shipping.tiers` (left empty and
+still working, so reverting to bands is one settings write) and the flat
+per-method rates.
 
-1. Weigh a representative box (or a few, if weight varies enough to matter)
-   and work out real shipping costs per tier.
-2. Go to `/admin/settings` → **Shipping** tab. Before you add anything, it
-   should read "Not configured. The flat per-method rates below are in
-   effect.", not a blank list — that confirms you're looking at the empty
-   `0025` state, not stale data.
-3. Add three tiers with your real costs. Mark **exactly one** tier "No upper
-   bound" — it must be the top tier. If you check "No upper bound" on a
-   second row, the editor automatically clears it from whichever row had it
-   first (rather than letting two tiers be open-ended at once) — that's the
-   intended behavior, not a bug. If you mark *none*, you'll see a warning
-   saying orders above your biggest tier are charged that tier's price;
-   that's a supported choice, just make it on purpose.
-4. If you save a tier without entering a cost, you'll see a $0 warning. That
-   tier still goes live at $0 — the warning is there so a $0 tier is a
-   deliberate choice, not a silent mistake. Fix it if it wasn't intentional.
-5. Save, then **reload the page** and confirm the tiers you entered are still
-   there.
-6. Spot-check: add 10 boxes to a cart and confirm checkout quotes your new
-   tier price, not the flat $5.99.
-7. Spot-check the **top** of the range too: put more boxes in the cart than
-   your largest bounded tier covers (e.g. 60 if your bands stop at 40) and
-   confirm the quote is your open-ended tier price, not $5.99. A clearance
-   sale is exactly what produces those oversized orders. If you see $5.99
-   there, your tiers did not save — a configured tier set always prices the
-   whole cart, falling back to the top band when no row is open-ended.
+Nothing here is blocked on measurements any more, but confirm it after the
+deploy:
+
+1. Go to `/admin/settings` → **Shipping** tab. The top card, "Shipping Per
+   Box", should read `1` with "In effect. Every order is charged $1.00 a box,
+   and the tiers and flat rates below are ignored." If it reads $0.00 and
+   "Not configured", `0032` did not apply — check
+   `npm run db:migrate:status:production` before anything else.
+2. The "Shipping by Quantity" card below it should carry a warning saying
+   nothing in that section is charged. That is correct, not a misconfiguration.
+3. Spot-check the storefront: 10 boxes in the cart should quote $10.00 of
+   shipping at checkout, not the flat $5.99.
+4. Spot-check a large cart too — 60 boxes should quote $60.00. A clearance
+   sale is exactly what produces oversized orders, and this is the case the
+   banded model kept getting wrong.
+5. To change the rate later, edit that one field and save. To go back to
+   bands, set it to $0.00 and fill in the tier rows below it.
 
 ---
 

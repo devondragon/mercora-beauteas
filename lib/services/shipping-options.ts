@@ -12,10 +12,11 @@
  * | `computeShippingFloorCents` (BMC-201) | the enforced charge floor    |
  * | `lib/ai/deterministic-answers.ts`     | Chai's shipping answer       |
  *
- * GOOB: the sale prices shipping by box-count tier (`shipping.tiers`, from
- * `@/lib/sale/rules`) rather than a flat per-method rate — see the tier logic
- * below. All three consumers above still resolve through this one function, so
- * the tiered rate can't drift between the quote, the floor, and Chai either.
+ * GOOB: the sale prices shipping by the box, not by the method. `shipping.per_box_cost`
+ * (a flat rate per box, what the sale actually runs on) outranks `shipping.tiers`
+ * (box-count bands, kept working but unused), and either outranks the flat
+ * per-method rate. All three consumers above still resolve through this one
+ * function, so the sale rate can't drift between the quote, the floor, and Chai.
  *
  * WHY IT LIVES HERE rather than in `checkout-charges.ts` (its original home):
  * `checkout-charges` imports `@/lib/stripe`, which instantiates the Stripe server
@@ -30,7 +31,12 @@
 import type { ShippingOption } from '@/lib/types/shipping';
 import { Money } from '@/lib/money';
 import { getSettings } from '@/lib/utils/settings';
-import { resolveShippingTier, type ShippingTier } from '@/lib/sale/rules';
+import {
+  billableBoxes,
+  normalizePerBoxCost,
+  resolveShippingTier,
+  type ShippingTier,
+} from '@/lib/sale/rules';
 
 // The storefront's shipping methods when `shipping.methods` isn't configured —
 // IDENTICAL to the `/api/shipping-options` default (kept in lockstep because both
@@ -106,6 +112,24 @@ export async function resolveShippingOptions(
   const tiers = (shippingSettings['shipping.tiers'] as ShippingTier[] | undefined) ?? [];
   const tier = tiers.length > 0 ? resolveShippingTier(tiers, opts.boxes ?? 0) : null;
 
+  // GOOB: per-box shipping OUTRANKS the bands. `shipping.per_box_cost` charges a
+  // flat rate for every box in the cart, which is what the sale actually runs on
+  // (see `normalizePerBoxCost`); the band machinery stays in place, unused, so a
+  // saved tier set is not destroyed by switching models and switching back is one
+  // settings write. Both are below free shipping for the same reason the tier is.
+  //
+  // The multiplication lives HERE, in the single seam all three consumers resolve
+  // through, and goes through Money rather than a float multiply so a rate like
+  // $0.45 x 37 boxes can't land a fraction of a cent off between the quote and the
+  // charge floor. `toMach().amount` converts back to the MAJOR units every
+  // `ShippingOption.cost` carries, which is the wire shape `/api/shipping-options`
+  // serializes anyway.
+  const perBoxCost = normalizePerBoxCost(shippingSettings['shipping.per_box_cost']);
+  const perBoxMajor =
+    perBoxCost === null
+      ? null
+      : Money.fromMajor(perBoxCost).times(billableBoxes(opts.boxes ?? 0)).toMach().amount;
+
   // Free shipping is checked BEFORE the tier, deliberately: a method an admin
   // has explicitly listed in `shipping.free_methods` is free even when tiers
   // are configured (pinned by "charges nothing for a method still listed as
@@ -121,9 +145,11 @@ export async function resolveShippingOptions(
     cost:
       qualifiesForFreeShipping && freeMethods.includes(m.id)
         ? 0
-        : tier
-          ? tier.cost
-          : m.cost,
+        : perBoxMajor !== null
+          ? perBoxMajor
+          : tier
+            ? tier.cost
+            : m.cost,
     estimatedDays: m.estimatedDays,
   }));
 
