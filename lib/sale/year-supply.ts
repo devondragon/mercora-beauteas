@@ -150,6 +150,58 @@ export function yearSupplyOffer(
     : { boxes: available, kind: 'rest' };
 }
 
+/**
+ * === PDP quantity picker ===
+ *
+ * The picker next to Add to Cart is a box picker on the blends, so its bounds
+ * are box math and belong here rather than in the component: the same rules
+ * decide the number it opens on, and `yearSupplyOffer` above already owns the
+ * other side of the same question ("how many boxes may this customer take").
+ */
+
+/**
+ * The largest quantity the picker may reach: what is on hand when stock is
+ * counted, `null` (unbounded) when `boxesLeft` had no count to give. Zero
+ * stock returns 0, but no picker renders there - the CTA is gone by then.
+ */
+export function maxPurchaseQuantity(left: number | null): number | null {
+  return left;
+}
+
+/**
+ * A quantity forced into range: a whole number, at least 1, and never above
+ * `max` when one is known. Non-numeric input (a cleared field) reads as 1,
+ * because the picker must always resolve to something addable.
+ */
+export function clampQuantity(value: unknown, max: number | null): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  const floored = Number.isFinite(numeric) ? Math.floor(numeric) : 1;
+  const upper = max === null ? Infinity : Math.max(1, max);
+  return Math.min(Math.max(floored, 1), upper);
+}
+
+/**
+ * The quantity the picker opens on.
+ *
+ * Box-stocked blends open at the cart minimum (`sale.minimum_boxes`, 10),
+ * since that is what the order needs to check out anyway and starting at 1
+ * only defers the correction to the cart drawer. Everything else on this PDP -
+ * drinkware, mugs, gift cards - opens at 1: ten mugs is not a sensible default,
+ * and `isSoldByTheBox` is the same predicate that keeps a box COUNT off those
+ * products.
+ *
+ * Clamped to stock, so a blend with 4 boxes left opens at 4 rather than
+ * offering 10 that cannot ship.
+ */
+export function startingQuantity(input: {
+  soldByTheBox: boolean;
+  minimumBoxes: number;
+  left: number | null;
+}): number {
+  if (!input.soldByTheBox) return 1;
+  return clampQuantity(input.minimumBoxes, maxPurchaseQuantity(input.left));
+}
+
 export interface YearSupplyCartInput {
   variant: { id?: unknown; price?: { amount?: unknown; currency?: unknown } | null };
   productId: string;

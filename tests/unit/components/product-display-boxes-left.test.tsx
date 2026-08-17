@@ -216,3 +216,77 @@ describe("ProductDisplay: box count and year supply only where a box is the unit
     expect(html).toContain("Make it a year");
   });
 });
+
+/**
+ * The quantity picker beside Add to Cart. Only its RENDERED opening state is
+ * assertable here (no DOM testing library, so the +/- and typing paths are
+ * covered by the pure bounds in tests/unit/lib/sale/purchase-quantity.test.ts).
+ * What matters at this level is which number the customer lands on, since it
+ * is the number one click adds.
+ */
+describe("ProductDisplay quantity picker", () => {
+  function quantityValue(html: string): string | null {
+    const match = html.match(/id="purchase-quantity"[^>]*value="(\d+)"/);
+    if (match) return match[1];
+    // React may emit value= before id= depending on prop order.
+    const reversed = html.match(/value="(\d+)"[^>]*id="purchase-quantity"/);
+    return reversed ? reversed[1] : null;
+  }
+
+  it("opens a blend at the 10-box cart minimum", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeProduct({ quantity: 250 })}
+        reviews={[]}
+        recommendations={[]}
+        minimumBoxes={10}
+      />
+    );
+
+    expect(quantityValue(html)).toBe("10");
+  });
+
+  it("opens at the 10-box minimum even when the caller passes no minimum", () => {
+    // minimumBoxes defaults to 0 on the prop; the picker falls back to
+    // DEFAULT_MINIMUM_BOXES rather than opening at 1.
+    const html = renderToStaticMarkup(
+      <ProductDisplay product={makeProduct({ quantity: 250 })} reviews={[]} recommendations={[]} />
+    );
+
+    expect(quantityValue(html)).toBe("10");
+  });
+
+  it("opens at what is left when fewer than the minimum remain", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeProduct({ quantity: 4 })}
+        reviews={[]}
+        recommendations={[]}
+        minimumBoxes={10}
+      />
+    );
+
+    expect(quantityValue(html)).toBe("4");
+  });
+
+  it("opens a mug at 1, not at the box minimum", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay
+        product={makeNonBoxProduct({ type: "Drinkware", quantity: 25 })}
+        reviews={[]}
+        recommendations={[]}
+        minimumBoxes={10}
+      />
+    );
+
+    expect(quantityValue(html)).toBe("1");
+  });
+
+  it("renders no picker at all when the product is sold out", () => {
+    const html = renderToStaticMarkup(
+      <ProductDisplay product={makeProduct({ quantity: 0 })} reviews={[]} recommendations={[]} />
+    );
+
+    expect(html).not.toContain("purchase-quantity");
+  });
+});

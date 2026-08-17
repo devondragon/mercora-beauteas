@@ -34,7 +34,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Check } from "lucide-react";
 import ProductRecommendations from "@/components/ProductRecommendations";
@@ -44,7 +44,14 @@ import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Money } from "@/lib/money";
 import { isSellableVariant } from "@/lib/config/commerce";
-import { boxesLeft, isSoldByTheBox } from "@/lib/sale/year-supply";
+import {
+  boxesLeft,
+  clampQuantity,
+  isSoldByTheBox,
+  maxPurchaseQuantity,
+  startingQuantity,
+} from "@/lib/sale/year-supply";
+import { DEFAULT_MINIMUM_BOXES } from "@/lib/sale/rules";
 import BoxesLeft from "@/components/sale/BoxesLeft";
 import YearSupplyButton from "@/components/sale/YearSupplyButton";
 import { normalizeProductRating } from "@/lib/utils/ratings";
@@ -225,6 +232,31 @@ export default function ProductDisplay({
   // than one. Those keep the plain In Stock / Sold out label and get no
   // year-supply CTA. See isSoldByTheBox in lib/sale/year-supply.ts.
   const soldByTheBox = isSoldByTheBox(product);
+
+  // Quantity picker next to Add to Cart. The bounds are box math, so they live
+  // in lib/sale/year-supply.ts: blends open at the cart minimum (10 boxes) and
+  // everything else at 1, both clamped to what is actually on hand.
+  //
+  // The field is held as a STRING so it can be empty mid-edit - a numeric state
+  // would fight the user by snapping a cleared field back to 1 on the first
+  // keystroke. Every read goes through `quantity`, which is always a legal
+  // number, so nothing downstream ever sees the empty string.
+  const maxQuantity = maxPurchaseQuantity(boxes);
+  const openingQuantity = startingQuantity({
+    soldByTheBox,
+    minimumBoxes: minimumBoxes > 0 ? minimumBoxes : DEFAULT_MINIMUM_BOXES,
+    left: boxes,
+  });
+  const [quantityInput, setQuantityInput] = useState(String(openingQuantity));
+  const quantity = clampQuantity(quantityInput.trim() === "" ? NaN : quantityInput, maxQuantity);
+  const setQuantity = (value: number) => setQuantityInput(String(clampQuantity(value, maxQuantity)));
+
+  // A different variant is a different stock ceiling and a different opening
+  // number, so the picker resets rather than carrying 10 over to a variant with
+  // 4 left.
+  useEffect(() => {
+    setQuantityInput(String(openingQuantity));
+  }, [selectedVariantId, openingQuantity]);
 
   // Display name and primary image for a cart line added from this page -
   // shared by the default Add to Cart handler and YearSupplyButton so both
@@ -547,30 +579,80 @@ export default function ProductDisplay({
                 {stockReadout}
 
                 {available && (
-                  <button
-                    className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
-                    onClick={() => {
-                      useCartStore.getState().addItem({
-                        productId: product.id,
-                        variantId: selectedVariant?.id,
-                        name: fullName,
-                        price,
-                        quantity: 1,
-                        primaryImageUrl,
-                      });
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-3">
+                      <label
+                        htmlFor="purchase-quantity"
+                        className="text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                      >
+                        {soldByTheBox ? "Boxes" : "Qty"}
+                      </label>
+                      <div className="inline-flex items-stretch overflow-hidden rounded border border-border-default bg-white">
+                        <button
+                          type="button"
+                          aria-label="Decrease quantity"
+                          disabled={quantity <= 1}
+                          onClick={() => setQuantity(quantity - 1)}
+                          className="h-11 w-11 text-lg font-semibold text-text-primary transition hover:bg-surface-light disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent"
+                        >
+                          &minus;
+                        </button>
+                        <input
+                          id="purchase-quantity"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={maxQuantity ?? undefined}
+                          step={1}
+                          value={quantityInput}
+                          onChange={(event) => setQuantityInput(event.target.value.replace(/[^0-9]/g, ""))}
+                          // Normalizing on blur is what turns an empty or
+                          // out-of-range field back into the number the button
+                          // will actually add.
+                          onBlur={() => setQuantityInput(String(quantity))}
+                          className="h-11 w-16 border-x border-border-default text-center text-base font-semibold text-text-primary [appearance:textfield] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Increase quantity"
+                          disabled={maxQuantity !== null && quantity >= maxQuantity}
+                          onClick={() => setQuantity(quantity + 1)}
+                          className="h-11 w-11 text-lg font-semibold text-text-primary transition hover:bg-surface-light disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
+                      onClick={() => {
+                        useCartStore.getState().addItem({
+                          productId: product.id,
+                          variantId: selectedVariant?.id,
+                          name: fullName,
+                          price,
+                          quantity,
+                          primaryImageUrl,
+                        });
 
-                      toast("Added to Cart", {
-                        description: `${fullName} has been added to your cart.`,
-                        icon: "\uD83D\uDD25",
-                        action: {
-                          label: "View Cart",
-                          onClick: () => useCartUIStore.getState().openCart(),
-                        },
-                      });
-                    }}
-                  >
-                    Add to Cart
-                  </button>
+                        toast("Added to Cart", {
+                          description:
+                            quantity === 1
+                              ? `${fullName} has been added to your cart.`
+                              : soldByTheBox
+                                ? `${quantity} boxes of ${productName} have been added to your cart.`
+                                : `${quantity} \u00D7 ${fullName} have been added to your cart.`,
+                          icon: "\uD83D\uDD25",
+                          action: {
+                            label: "View Cart",
+                            onClick: () => useCartUIStore.getState().openCart(),
+                          },
+                        });
+                      }}
+                    >
+                      Add to Cart
+                    </button>
+                  </div>
                 )}
 
                 {available && minimumBoxes > 1 && (
