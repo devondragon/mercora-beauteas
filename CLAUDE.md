@@ -10,7 +10,7 @@ Essential context for Claude when working on **BeauTeas**, an AI-enhanced eComme
 
 Prod (`beauteas-db`), remote dev, and dev preview all report **up to date through `0024`** (`npm run db:migrate:status:{dev,production}`). The former "`main` is undeployable" blocker (BMC-231) is resolved — `0022`–`0024` were auto-applied by the BMC-239 deploy hook with pre-flight backups.
 
-`0025_seed_goob_sale_settings.sql` through `0031_goob_copy_fixes_and_banner_text.sql` (the going-out-of-business sale: settings seed, closing content, em-dash sweep, variant withdrawal, subscription deactivation, box-math content, and the pre-launch copy fixes) are applied on production and dev as of 2026-08-15. `0032_seed_per_box_shipping.sql` seeds the $1.00-per-box shipping rate and applies automatically on the next `npm run deploy:*`. **The next new migration after these is `0033_*`.**
+`0025`–`0031` (the going-out-of-business sale: settings seed, closing content, em-dash sweep, variant withdrawal, subscription deactivation, box-math content, pre-launch copy fixes) are applied on production and dev as of 2026-08-15, as are `0032_seed_per_box_shipping.sql` ($1.00-per-box shipping), `0033_repair_double_encoded_variant_json.sql` and `0034_restore_evening_product_type.sql` (repairs for admin-editor damage, 2026-08-16). `0035_normalize_legacy_setting_values.sql` JSON-encodes the eleven legacy `admin_settings` rows that held bare strings and applies on the next `npm run deploy:*`. **The next new migration after these is `0036_*`.**
 
 `npm run deploy:*` backs up and applies pending migrations before every build, so a deploy can no longer land code on an unmigrated database. CI (`ci.yml`) still never applies migrations — only the deploy path does. Run `npm run db:migrate:status:production` before dispatching a prod deploy so you know what's about to land.
 
@@ -63,7 +63,7 @@ These are the rules that bite hardest when broken. Everything else is in `docs/`
 ### Migrations are Wrangler-managed raw SQL — NOT Drizzle-generated
 There is no `drizzle.config.*` and no `drizzle-kit generate` step. Drizzle is the **runtime query/ORM layer only**. Hand-write `migrations/NNNN_name.sql`; Wrangler tracks applied state by **filename**.
 
-**The next new migration is `0035_*`** (`0011`–`0034` are taken, and two files share the `0010` prefix — never renumber an applied migration).
+**The next new migration is `0036_*`** (`0011`–`0035` are taken, and two files share the `0010` prefix — never renumber an applied migration).
 
 ### Deploys auto-apply migrations — so write them expand-first
 `npm run deploy:dev` / `deploy:production` (and CI, which calls the latter) run `scripts/d1-migrate.mjs` from a `predeploy:*` hook: it backs up, then applies every pending migration, *before* the build. A failure aborts the deploy, so the Worker never ships against a half-migrated DB. Dev covers the preview DB too.
