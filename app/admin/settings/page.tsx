@@ -68,6 +68,7 @@ import {
 } from "lucide-react";
 import type { ShippingTier } from "@/lib/sale/rules";
 import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier, hasNoOpenEndedTier } from "@/lib/sale/tier-editor";
+import { parseSettingRows } from "@/lib/admin/settings-parse";
 
 interface SystemSettings {
   maintenance_mode: boolean;
@@ -150,7 +151,17 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
-  
+  /**
+   * Whether the form is showing STORED settings rather than the defaults below.
+   * Saving while this is false writes those defaults over every setting on the
+   * site — which is exactly what happened on 2026-08-17, when one unparseable
+   * legacy row aborted the load and the next Save turned off per-box shipping,
+   * restored free shipping mid-sale, and re-enabled the withdrawn shipping
+   * methods. The load can no longer fail that way (lib/admin/settings-parse.ts),
+   * and this makes the blast radius zero if it ever fails for another reason.
+   */
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     maintenance_mode: false,
     maintenance_message: "We're making some improvements! We'll be back soon.",
@@ -239,11 +250,29 @@ export default function AdminSettingsPage() {
       const response = await fetch('/api/admin/settings');
       if (response.ok) {
         const { settings } = await response.json() as any;
-        
+
+        // Parse EVERY row before touching state. `JSON.parse` used to run
+        // unguarded inside this loop, and production carries legacy rows holding
+        // bare strings (currency = USD, social_instagram = https://..., see
+        // lib/admin/settings-parse.ts). The first one threw, this whole function
+        // bailed to its catch, and nothing loaded — so every field below kept its
+        // hardcoded default and the next Save wrote those defaults over all 31
+        // real settings, including turning per-box shipping off and restoring
+        // free shipping mid-sale.
+        const { values: parsedValues, nonJsonKeys } = parseSettingRows(settings);
+        if (nonJsonKeys.length > 0) {
+          console.warn(
+            `[admin/settings] ${nonJsonKeys.length} legacy non-JSON setting(s) read as raw strings:`,
+            nonJsonKeys.join(', ')
+          );
+        }
+
         // Parse settings by category
-        settings.forEach((setting: any) => {
-          const value = JSON.parse(setting.value);
-          
+        (settings as any[]).forEach((setting: any) => {
+          // `as any` matches what the previous `JSON.parse` returned, so the
+          // per-field assignments below are unchanged by this fix.
+          const value = parsedValues.get(setting.key) as any;
+
           if (setting.category === 'system') {
             if (setting.key === 'system.maintenance_mode') setSystemSettings(prev => ({ ...prev, maintenance_mode: value }));
             if (setting.key === 'system.maintenance_message') setSystemSettings(prev => ({ ...prev, maintenance_message: value }));
@@ -288,8 +317,17 @@ export default function AdminSettingsPage() {
             if (setting.key === 'recommendations.limit') setRecommendationSettings(prev => ({ ...prev, limit: value }));
           }
         });
+
+        // Only now is the form showing STORED values rather than the defaults
+        // below. Saving before this point writes those defaults over every
+        // setting on the site, so the Save button stays disabled until it flips.
+        setSettingsLoaded(true);
+      } else {
+        setSettingsLoaded(false);
+        console.error('[admin/settings] settings request failed:', response.status);
       }
     } catch (error) {
+      setSettingsLoaded(false);
       console.error('Error loading settings:', error);
     } finally {
       setLoading(false);
@@ -388,9 +426,15 @@ export default function AdminSettingsPage() {
   };
 
   const handleSave = async () => {
+    // Never write the component defaults over stored settings. See settingsLoaded.
+    if (!settingsLoaded) {
+      console.error('[admin/settings] refusing to save: settings never loaded');
+      return;
+    }
+
     setLoading(true);
     setSaved(false);
-    
+
     try {
       // Build updates array from all settings
       const updates = [
@@ -528,6 +572,23 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Saving before the stored settings load would write the component
+          defaults over every setting on the site, so say so rather than leaving
+          a disabled button with no explanation. */}
+      {!initialLoad && !settingsLoaded && (
+        <div className="bg-state-error-bg border border-state-error rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 text-state-error flex-shrink-0" />
+            <p className="text-sm text-state-error">
+              <strong>Settings could not be loaded.</strong> The fields below are showing
+              defaults, not your stored values, so saving is disabled to keep it from
+              overwriting them. Reload the page; if it keeps failing, check the browser
+              console.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -543,7 +604,12 @@ export default function AdminSettingsPage() {
           )}
           <Button
             onClick={handleSave}
-            disabled={loading}
+            disabled={loading || !settingsLoaded}
+            title={
+              settingsLoaded
+                ? undefined
+                : "Settings haven't loaded, so saving would overwrite them with defaults. Reload the page."
+            }
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
