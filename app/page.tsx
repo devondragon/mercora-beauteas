@@ -89,29 +89,56 @@ export default async function HomePage() {
   return (
     <div className="px-4 sm:px-6 lg:px-12 py-12 sm:py-16">
       {/* Hero Section — GOOB: leads with the closing story, per /thank-you */}
-      <section className="max-w-6xl mx-auto text-center mb-16 sm:mb-20">
-        <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-secondary-600 mb-4">Closing Sale · While Supplies Last</p>
-        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight uppercase mb-4 sm:mb-6 leading-tight">
-          We&rsquo;re Closing BeauTeas For Good
+      <section className="max-w-3xl mx-auto text-center mb-16 sm:mb-20">
+        {/* The rules are dropped on narrow screens, where the label wraps to two
+            lines and they would flank only the first of them. */}
+        <p className="flex items-center justify-center gap-4 text-[0.7rem] sm:text-xs font-semibold uppercase tracking-[0.2em] sm:tracking-[0.28em] text-secondary-600 mb-5 sm:mb-6">
+          <span aria-hidden="true" className="hidden sm:block h-px w-10 bg-secondary-300" />
+          Closing Sale · While Supplies Last
+          <span aria-hidden="true" className="hidden sm:block h-px w-10 bg-secondary-300" />
+        </p>
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-normal tracking-tight text-balance leading-[1.08] mb-5 sm:mb-6">
+          We&rsquo;re closing BeauTeas{" "}
+          <em className="italic text-primary-700">for good</em>
         </h1>
-        <p className="text-text-secondary text-base sm:text-lg max-w-2xl mx-auto mb-6 sm:mb-8 px-4">
+        <p className="text-text-secondary text-base sm:text-lg text-pretty max-w-xl mx-auto mb-4">
           After a lot of thought, we&rsquo;ve decided to wind the shop down. Everything
           left is USDA-certified organic and priced to clear, and once it&rsquo;s gone,
-          it&rsquo;s gone.{" "}
-          <Link href="/thank-you" className="underline hover:text-text-primary">
-            Read the whole story here.
+          it&rsquo;s gone.
+        </p>
+        {/* Own line, not trailing the paragraph — inline it wrapped mid-phrase
+            and split its underline across two lines. */}
+        <p className="mb-8 sm:mb-10">
+          <Link
+            href="/thank-you"
+            className="inline-flex items-center gap-2 rounded-sm text-base font-semibold text-primary-700 underline decoration-primary-300 underline-offset-4 transition-colors hover:decoration-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-dark"
+          >
+            Read the whole story
+            <span aria-hidden="true">&rarr;</span>
           </Link>
         </p>
-        {totalBoxesLeft !== null && (
-          <p className="text-text-primary text-base sm:text-lg font-semibold mb-6 sm:mb-8">
-            {totalBoxesLeft.toLocaleString("en-US")} boxes left in the whole shop.
-          </p>
-        )}
-        <Link href="/category/clearly-calendula" className="inline-block">
-          <button className="px-4 sm:px-6 py-2 sm:py-3 text-base sm:text-lg font-semibold border border-secondary-400 text-secondary-600 hover:bg-secondary-400 hover:text-text-inverse transition rounded">
+        {/* sm:items-stretch so the counter and the button share one height */}
+        <div className="flex flex-col sm:flex-row items-center sm:items-stretch justify-center gap-4 sm:gap-6">
+          {totalBoxesLeft !== null && (
+            <p className="inline-flex items-stretch gap-4 sm:gap-5 rounded-md border border-secondary-200 bg-white px-5 sm:px-6 py-3 sm:py-4 text-left">
+              <span className="font-serif self-center text-3xl sm:text-4xl leading-none tabular-nums text-primary-700">
+                {totalBoxesLeft.toLocaleString("en-US")}
+              </span>
+              <span aria-hidden="true" className="w-px self-stretch bg-secondary-200" />
+              <span className="self-center text-[0.68rem] sm:text-xs font-semibold uppercase leading-[1.55] tracking-[0.16em] text-text-secondary">
+                boxes left
+                <br />
+                in the whole shop
+              </span>
+            </p>
+          )}
+          <Link
+            href="/category/clearly-calendula"
+            className="inline-flex items-center justify-center rounded-md bg-primary-700 px-7 sm:px-8 py-4 text-base sm:text-lg font-semibold tracking-wide text-text-inverse transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-700 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-dark"
+          >
             Shop While It Lasts
-          </button>
-        </Link>
+          </Link>
+        </div>
       </section>
 
       {/* Featured Products Grid */}

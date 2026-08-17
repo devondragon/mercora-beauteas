@@ -103,25 +103,36 @@ function makeBlendWithDiscontinuedStock(
   } as unknown as Product;
 }
 
+/**
+ * Visible text of the rendered markup, tags collapsed to whitespace. The
+ * counter sets the number and its label in separate elements (the number is
+ * styled as the figure, the label as small caps on two lines), so the sentence
+ * is no longer one contiguous run in the HTML - these assertions are about the
+ * number and the words a customer reads, not the element boundaries.
+ */
+function textOf(html: string) {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 async function renderHome(products: Product[]) {
   getProductsByCategory.mockResolvedValueOnce(products);
   const element = await HomePage();
-  return renderToStaticMarkup(element);
+  return textOf(renderToStaticMarkup(element));
 }
 
 describe("homepage hero: shop-wide boxes-left total (SDD Task 5)", () => {
   it("renders the summed total across the three blends, thousands-grouped", async () => {
-    const html = await renderHome([
+    const text = await renderHome([
       makeBlend("morning", { quantity: 500 }),
       makeBlend("afternoon", { quantity: 400 }),
       makeBlend("evening", { quantity: 332 }),
     ]);
 
-    expect(html).toContain("1,232 boxes left in the whole shop.");
+    expect(text).toContain("1,232 boxes left in the whole shop");
   });
 
   it("excludes blends with an unknown count (untracked / backorder) from the sum, rather than treating them as zero", async () => {
-    const html = await renderHome([
+    const text = await renderHome([
       makeBlend("morning", { quantity: 500 }),
       makeBlend("afternoon", { quantity: 10, allow_backorder: true }), // -> null, would corrupt the sum if treated as 0
       makeBlend("evening", { quantity: 300 }),
@@ -129,33 +140,33 @@ describe("homepage hero: shop-wide boxes-left total (SDD Task 5)", () => {
 
     // 500 + 300, NOT 500 + 0 + 300 (same number here, so also assert the
     // excluded blend's own count never leaks in un-summed) and NOT 810.
-    expect(html).toContain("800 boxes left in the whole shop.");
-    expect(html).not.toContain("810 boxes left");
+    expect(text).toContain("800 boxes left in the whole shop");
+    expect(text).not.toContain("810 boxes left");
   });
 
   it("omits the line entirely when every blend returns null, rather than rendering 0 boxes left", async () => {
-    const html = await renderHome([
+    const text = await renderHome([
       makeBlend("morning", { track_inventory: false }),
       makeBlend("afternoon", { allow_backorder: true }),
       makeBlend("evening", null),
     ]);
 
-    expect(html).not.toContain("boxes left in the whole shop");
-    expect(html).not.toContain("0 boxes left in the whole shop");
+    expect(text).not.toContain("boxes left in the whole shop");
+    expect(text).not.toContain("0 boxes left in the whole shop");
   });
 
   it("still shows the line when a single blend is at zero stock, contributing zero rather than suppressing the total", async () => {
-    const html = await renderHome([
+    const text = await renderHome([
       makeBlend("morning", { quantity: 0 }),
       makeBlend("afternoon", { quantity: 100 }),
       makeBlend("evening", { quantity: 50 }),
     ]);
 
-    expect(html).toContain("150 boxes left in the whole shop.");
+    expect(text).toContain("150 boxes left in the whole shop");
   });
 
   it("excludes a discontinued variant's inventory when default_variant_id matches nothing, falling back to the sellable variant instead", async () => {
-    const html = await renderHome([
+    const text = await renderHome([
       makeBlendWithDiscontinuedStock("morning", 124, 50),
       makeBlend("afternoon", { quantity: 100 }),
       makeBlend("evening", { quantity: 50 }),
@@ -164,7 +175,7 @@ describe("homepage hero: shop-wide boxes-left total (SDD Task 5)", () => {
     // 50 (morning's only sellable variant) + 100 + 50 = 200. If the
     // discontinued 3-box variant's 124 leaked in via an unfiltered
     // find/fallback, this would read 324 instead.
-    expect(html).toContain("200 boxes left in the whole shop.");
-    expect(html).not.toContain("324 boxes left");
+    expect(text).toContain("200 boxes left in the whole shop");
+    expect(text).not.toContain("324 boxes left");
   });
 });
