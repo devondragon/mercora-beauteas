@@ -85,15 +85,14 @@ test('US discounted checkout reaches PaymentIntent creation with one authoritati
 
   await page.goto('/product/clearly-calendula-morning');
   // The sale enforces a 10-box minimum (sale.minimum_boxes) and every SKU is
-  // now one box, so a single click leaves CheckoutClient showing the blocking
-  // "add more to check out" panel instead of the address form. Add to Cart
-  // merges repeat clicks into the same cart line (lib/stores/cart-store.ts
-  // addItem), so ten clicks clears the minimum as one line of quantity 10 —
-  // the item count badge below stays "1 item" (it counts lines, not units).
-  const addToCartButton = page.getByRole('button', { name: 'Add to Cart' });
-  for (let i = 0; i < 10; i++) {
-    await addToCartButton.click();
-  }
+  // now one box, so a cart under ten leaves CheckoutClient showing the blocking
+  // "add more to check out" panel instead of the address form. The quantity
+  // picker beside Add to Cart opens AT that minimum for a blend
+  // (startingQuantity in lib/sale/year-supply.ts), so one click adds the ten
+  // boxes as a single cart line — the item count badge counts lines, not units,
+  // so it reads "1 item". This used to be ten clicks of a quantity-1 button;
+  // against the picker that builds a 100-box cart instead.
+  await page.getByRole('button', { name: 'Add to Cart' }).click();
   await expect(page.getByRole('button', { name: /Cart \(1 item\)/ })).toBeVisible();
 
   await page.goto('/checkout');
