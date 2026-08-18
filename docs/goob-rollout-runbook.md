@@ -48,11 +48,12 @@ seven pending migrations, in this order:
 | `0031_goob_copy_fixes_and_banner_text.sql` | Pre-launch copy fixes: rewrites the stale free-shipping `promotions.banner_text` to the closing-sale message (without enabling the banner — that stays Phase 6), links "now is the time" on `/thank-you` back to the catalog, and fixes two British spellings. |
 | `0032_seed_per_box_shipping.sql` | Seeds `shipping.per_box_cost` at $1.00, the model that replaced the tier bands (see Phase 2). Applied 2026-08-16. |
 
-> **Phases 0 through 4 ran on production on 2026-08-15** (`e0718c5`, Worker
-> `824f0636`): all seven migrations applied, both bundles archived, all three
-> blends repriced to $3.00. What follows is kept for the record and for the
-> phases still outstanding — the production Vectorize rebuild (Phase 5), the
-> banner (Phase 6), and the verification checklist plus DNS (Phase 7).
+> **Phases 0 through 6 have all run on production.** Phases 0-4 on 2026-08-15
+> (`e0718c5`, Worker `824f0636`): all seven migrations applied, both bundles
+> archived, all three blends repriced to $3.00. Phase 5 (the Vectorize rebuild)
+> and Phase 6 (the promo banner) on 2026-08-18, by the owner. What follows is
+> kept for the record and for the one phase still outstanding — the Phase 7
+> verification checklist and the DNS switch.
 
 ### Pre-flight for `0030`, on production only
 

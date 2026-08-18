@@ -2,9 +2,9 @@
 
 Migration is tracked under `.planning/` (GSD); the runbook is [`PRODUCTION-CUTOVER-RUNBOOK.md`](../PRODUCTION-CUTOVER-RUNBOOK.md) (original scope: [`MIGRATION-PLAN.md`](../MIGRATION-PLAN.md)).
 
-**Status as of 2026-08-06:** the Shopify→Mercora cutover itself is done; prod is deployed and taking live orders on `shop.beauteas.com`. The store is now winding down — BeauTeas is closing and running a terminal going-out-of-business sale rather than continuing as an ongoing concern. All sale-specific code (purchase minimum, tiered shipping, subscriptions off, Chai's answers, closing content, an em-dash sweep) is built, reviewed, and gated by the same green CI suite; migrations `0025`–`0027` carry it. None of that code has touched dev or prod yet — see [`goob-rollout-runbook.md`](goob-rollout-runbook.md) for the deploy-and-verify sequence.
+**Status as of 2026-08-18:** the Shopify→Mercora cutover itself is done; prod is deployed and taking live orders on `shop.beauteas.com`. The store is winding down — BeauTeas is closing and running a terminal going-out-of-business sale rather than continuing as an ongoing concern. **The sale has been live on production since 2026-08-15**, carried by migrations `0025`–`0035`: purchase minimum, subscriptions off, Chai's answers, closing content, an em-dash sweep, both bundle SKUs archived, and all three blends at $3.00 a box. Shipping is a flat $1.00 per box (`shipping.per_box_cost`), not the tier bands this doc was originally written around — those were abandoned before ever being priced.
 
-The DNS switch (runbook Phase 10, `www`) now follows the sale going live rather than preceding it: there is no reason to move the canonical domain before the store customers land on actually reflects the closing sale. What remains is entirely owner-only — weighing boxes to set real shipping-tier costs, recounting inventory, deciding the reprice rate, archiving the two bundle SKUs, and running the deploy itself. The runbook covers all of it in order.
+Since then: the production Vectorize rebuild, the inventory recount, and the promo banner all landed on 2026-08-18. What remains is the runbook's Phase 7 checklist (a real order and refund on the live sale) and then the DNS switch (Phase 10, `www`). DNS deliberately follows the sale going live rather than preceding it: there is no reason to move the canonical domain before the store customers land on reflects the closing sale.
 
 ---
 
@@ -56,8 +56,9 @@ npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-d
 - ✅ **Prod catalog populated by promoting the curated dev catalog** (`scripts/promote-dev-to-prod.mjs`, 2026-07-27) — NOT by re-running the Shopify ETL against prod; dev is the golden source. 10 products / 6 categories / 13 pages / 47 images / 18 Vectorize vectors.
 - ✅ Prod build deployed (latest 2026-08-01), smoke tested, live order placed end-to-end on `shop.beauteas.com` with real Stripe tax, webhook, inventory decrement, and confirmation email.
 - ✅ **Apple Pay live** (BMC-81, 2026-08-01) — domain-association file deployed and serving, both domains registered in Stripe, and a real production Apple Pay order placed successfully.
-- ☐ **Deploy the going-out-of-business sale** — code-complete and gated, not yet deployed. Owner-only steps (weighing boxes for real shipping-tier costs, recounting inventory, choosing the reprice rate, archiving the two bundle SKUs with their redirect, rebuilding Chai's knowledge base) are all in [`goob-rollout-runbook.md`](goob-rollout-runbook.md).
-- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11. Now sequenced *after* the sale deploy above, not before it.
+- ✅ **Going-out-of-business sale deployed** (2026-08-15, from `goob`; migrations `0025`–`0035`). The owner-only follow-ups are done too: bundle SKUs archived with their redirect, blends repriced to $3.00, shipping settled at $1.00/box, and — on 2026-08-18 — Chai's Vectorize index rebuilt on prod, inventory recounted (1,129 boxes), and the promo banner enabled. Sequence and verification steps: [`goob-rollout-runbook.md`](goob-rollout-runbook.md).
+- ☐ **Phase 7 checklist** — a real order and refund against the live sale.
+- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11. Sequenced *after* the sale deploy above, not before it.
 
 ---
 
