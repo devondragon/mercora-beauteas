@@ -107,6 +107,14 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     country: 'US',
   });
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  // Whether a shipping method was chosen IN THIS SESSION. The cart store's
+  // `shippingOption` is persisted to localStorage, so feeding it straight to
+  // <ShippingOptions selectedOptionId> rendered a returning customer's old
+  // choice as already-selected while `handleShippingSelected` (tax +
+  // PaymentIntent + step advance) had never run — the step looked complete and
+  // the click it still required looked redundant. Only a selection made here
+  // may paint a row as chosen.
+  const [shippingChosen, setShippingChosen] = useState(false);
   const [clientSecret, setClientSecret] = useState<string>('');
   const [orderId, setOrderId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -152,10 +160,9 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
       const data = await res.json() as { options: ShippingOption[] };
       // Response costs are dollars; convert to minor units immediately so
       // everything downstream (cart store, display) is consistently minor units.
-      setShippingOptions(
-        data.options.map((option) => ({ ...option, cost: majorToMinor(option.cost) }))
-      );
-      
+      const options = data.options.map((option) => ({ ...option, cost: majorToMinor(option.cost) }));
+      setShippingOptions(options);
+
       // Save address to store
       setShippingAddress({
         recipient: address.recipient || '',
@@ -170,6 +177,21 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
         status: 'unverified',
       } as Address);
 
+      // The sale ships one method (migration 0028 disables express and
+      // overnight), so the "Shipping Method" step presented a choice that did
+      // not exist and blocked the flow on a click nothing signalled was needed.
+      // A lone option is therefore selected for the customer and checkout goes
+      // straight to payment; the Shipping Method summary card below carries the
+      // cost, the estimate, and an Edit link, so nothing is hidden.
+      //
+      // This runs INSIDE the submit handler rather than in a useEffect on
+      // `shippingOptions` so it fires exactly once per address submit: an effect
+      // would re-fire on every render while the options array is unchanged,
+      // re-entering the tax + PaymentIntent chain after a failure.
+      if (options.length === 1) {
+        await handleShippingSelected(options[0]);
+      }
+
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -181,9 +203,19 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   const handleShippingSelected = async (option: ShippingOption) => {
     setIsLoading(true);
     setError('');
+    setShippingChosen(true);
 
     try {
       setShippingOption(option);
+
+      // Read the address back out of the store rather than using the
+      // render-time `shippingAddress` binding. On the single-option
+      // auto-advance path this runs in the SAME tick as the
+      // `setShippingAddress` above, so the closed-over binding is still the
+      // pre-submit value (undefined on a first checkout) and the tax quote
+      // would go out addressless. Same reasoning as the `calculateTotals()`
+      // note in createPaymentIntent.
+      const currentShippingAddress = useCartStore.getState().shippingAddress;
 
       const timestamp = Date.now();
       let baseId = userId ?? 'guest';
@@ -202,7 +234,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: cartItemsToMajorUnits(items),
-          shippingAddress,
+          shippingAddress: currentShippingAddress,
           shippingCost: minorToMajor(option.cost || 0),
           discountCodes: cartDiscountCodes(appliedDiscounts),
           orderId: newOrderId,
@@ -231,6 +263,11 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
   // Create Payment Intent with Stripe
   const createPaymentIntent = async (selectedShippingOption: ShippingOption, newOrderId: string) => {
     try {
+      // Shadows the render-time binding on purpose: on the single-option
+      // auto-advance path the address was written to the store in this same
+      // tick, so the closure still holds the pre-submit value. Everything below
+      // (the PaymentIntent body and both order drafts) needs the fresh one.
+      const shippingAddress = useCartStore.getState().shippingAddress;
       // The caller (handleShippingSelected) just wrote selectedShippingOption
       // and the freshly-computed tax to the store (setShippingOption +
       // setTaxAmount, both synchronous) — calculateTotals() reads that fresh
@@ -391,6 +428,12 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
     setCurrentStep('shipping');
     setClientSecret(''); // Clear payment intent
     setError(''); // Clear any errors
+    // The options on screen were quoted for the address being edited, so drop
+    // them and re-quote on the next submit. This also re-arms the single-option
+    // auto-advance, which would otherwise leave the customer back on a
+    // one-row list with the same "why must I click this?" problem.
+    setShippingOptions([]);
+    setShippingChosen(false);
   };
 
   // If no items in cart and not showing confirmation, show empty state
@@ -426,7 +469,7 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
   return (
     <div className="space-y-4">
-      <ProgressBar step={currentStep === 'shipping' ? 0 : currentStep === 'payment' ? 2 : 3} />
+      <ProgressBar step={currentStep === 'shipping' ? 0 : currentStep === 'payment' ? 1 : 2} />
 
       {error && (
         <div className="bg-state-error-bg border border-state-error text-state-error px-4 py-3 rounded-lg">
@@ -438,15 +481,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
         <div className="space-y-6 min-w-0">
           {/* Shipping Address Section */}
           {currentStep === 'shipping' ? (
-            <div className="bg-white p-6 rounded-xl">
-              <h3 className="text-lg font-semibold mb-4 text-text-primary">Shipping Address</h3>
-              <ShippingForm
-                address={address}
-                onChange={handleAddressChange}
-                onSubmit={handleAddressSubmit}
-                error={null}
-              />
-            </div>
+            <ShippingForm
+              address={address}
+              onChange={handleAddressChange}
+              onSubmit={handleAddressSubmit}
+              error={null}
+              disabled={isLoading}
+            />
           ) : (currentStep === 'payment' || currentStep === 'confirmation') && shippingAddress && (
             <div className="bg-surface-light p-4 rounded-lg border-l-4 border-primary-500">
               <div className="flex justify-between items-start mb-2">
@@ -470,16 +511,13 @@ export default function CheckoutClient({ userId }: CheckoutClientProps) {
 
           {/* Shipping Options Section */}
           {currentStep === 'shipping' && shippingOptions.length > 0 && (
-            <div className="bg-white p-6 rounded-xl">
-              <h3 className="text-lg font-semibold mb-4 text-text-primary">Shipping Method</h3>
-              <ShippingOptions
-                address={address}
-                options={shippingOptions}
-                onSelect={handleShippingSelected}
-                selectedOptionId={shippingOption?.id}
-                disabled={isLoading}
-              />
-            </div>
+            <ShippingOptions
+              address={address}
+              options={shippingOptions}
+              onSelect={handleShippingSelected}
+              selectedOptionId={shippingChosen ? shippingOption?.id : undefined}
+              disabled={isLoading}
+            />
           )}
 
           {/* Shipping Method Summary */}

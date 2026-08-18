@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 
 export default function ProgressBar({ step }: { step: number }) {
-  const steps = [
-    "Shipping Address",
-    "Shipping Method",
-    "Payment Information",
-    "Order Submitted",
-  ];
+  // Three steps, not four. "Shipping Method" used to sit between the address
+  // and payment, but CheckoutClient mapped its own 'shipping' step to index 0
+  // and 'payment' to index 2, so index 1 was never the current step — the bar
+  // showed a stage the customer could never be on. Choosing a method is also no
+  // longer a step they perform when the store offers only one (see the
+  // single-option auto-advance in CheckoutClient); when it is a real choice, it
+  // belongs to the shipping step it happens in.
+  const steps = ["Shipping", "Payment", "Order Submitted"];
 
   const [fillWidths, setFillWidths] = useState<number[]>(steps.map(() => 0));
 
