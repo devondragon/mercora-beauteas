@@ -545,7 +545,7 @@ This is the point of no easy return — everything above must be green first.
 ## Phase 11 — Post-cutover verification (first 60 min, then 24h)
 
 **First hour:**
-- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**. ⚠️ `redirect_map` is empty, so only the structural `/products/:slug` → `/product/:slug` rule fires. Check that the 301 **target actually resolves** (`curl -IL`, expect a final 200) — a 301 into a 404 is worse than no redirect. Test every old Shopify product and collection URL, not one.
+- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**. `redirect_map` is **populated — 51 rows in prod** (loaded 2026-07-27, re-verified 2026-08-01, see Phase 8), so both the table lookups and the structural `/products/:slug` → `/product/:slug` fallback (`middleware.ts`) are in play. Check that the 301 **target actually resolves** (`curl -IL`, expect a final 200) — a 301 into a 404 is worse than no redirect. Test every old Shopify product and collection URL, not one. Pay particular attention to the two archived bundles (`clearly-calendula-full-package`, `clearly-calendula-sample-pack`) and the three withdrawn three-box SKUs: those legitimately no longer have a product page, so confirm they land somewhere sensible (`/thank-you` or the catalog) rather than a 404.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
 - ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
 - ⊘ **DEFERRED** — subscriptions not sold at launch.
