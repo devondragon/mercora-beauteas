@@ -589,8 +589,9 @@ in order.
    dead link.
 3. Add 4 more boxes (10 total). Checkout should now proceed normally through
    every step.
-4. Confirm the shipping quote at checkout matches your Phase 2 tier price for
-   that box count, not the old flat rate.
+4. Confirm the shipping quote at checkout is **$1.00 x the box count** (the
+   `shipping.per_box_cost` model that replaced the tier bands), not the old
+   $5.99 flat rate. Ten boxes should quote $10.00.
 5. At the payment step with 10+ boxes, remove items via the cart drawer to
    drop back under the minimum. Checkout should re-render the blocking panel
    rather than let you continue.
@@ -631,10 +632,12 @@ in order.
 **Sold-out and admin surfaces**
 10. If any variant is sold out (check after Phase 4's recount), confirm both
     the product card badge and the PDP read "Sold out".
-11. In `/admin/settings` → Shipping, confirm the tiers you entered in Phase 2
-    persisted correctly after a reload, a tier saved at $0 shows the warning
-    rather than going live silently unnoticed, and checking "No upper bound"
-    on a second row clears it from whichever row had it first.
+11. In `/admin/settings` → Shipping, confirm **Per-box cost** reads $1.00 and
+    survives a reload. The tier-band checks that used to live here no longer
+    apply: `shipping.tiers` is `[]` and per-box outranks it. Note that a
+    per-box cost of $0 means "not configured" and silently falls back to the
+    flat per-method rates, so a cleared field is not the same as free
+    shipping.
 
 **Blog em-dash sweep (post-deploy only — local D1 has no blog rows to check
 this against)**
