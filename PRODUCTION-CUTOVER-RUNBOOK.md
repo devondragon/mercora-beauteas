@@ -537,7 +537,7 @@ This is the point of no easy return — everything above must be green first.
 - ☐ **Edit the existing Stripe webhook endpoint's URL** to `https://www.beauteas.com/api/webhooks/stripe`. Edit it — do not create a second endpoint — so the signing secret carries over and `STRIPE_WEBHOOK_SECRET` needs no change.
 - ☐ Update **Clerk** allowed domains / redirect URLs for `www.beauteas.com`.
 - ☐ Remove the Cloudflare Access gate from `shop.`, and 301 `shop.` → `www` (or retire it).
-- ☐ Submit `https://www.beauteas.com/sitemap.xml` to **Google Search Console** (BMC-85). No Change of Address needed — `www` was already the canonical under Shopify, which is the whole reason for choosing it.
+- ⊘ **DROPPED — sitemap submission to Google Search Console (BMC-85, canceled 2026-08-19).** Organic search is not a concern for a store that is closing. Nothing depends on it: `app/sitemap.ts` emits `www` URLs automatically once the rebuild above flips `NEXT_PUBLIC_SITE_URL`, `robots.txt` already points at it, and the `redirect_map` rows carry old Shopify traffic regardless. No Change of Address would have been needed either — `www` was already the canonical under Shopify.
 - ☐ *(No customer migration email — prod starts fresh; customers register on the new site. BMC-84 stays canceled.)*
 
 ---
@@ -555,7 +555,7 @@ This is the point of no easy return — everything above must be green first.
 
 **First 24h:**
 - ☐ Stripe dashboard: payment/subscription success rate + webhook delivery (no failures).
-- ☐ Search Console: no crawl / redirect errors.
+- ⊘ **DROPPED with BMC-85** — no Search Console property will be watching `www`. The redirect verification in the first-hour list above is done by hand with `curl -IL` and is unaffected; that is the check that matters.
 - ☐ A **new** customer can register + log in (prod Clerk), place an order, and see it in their account.
 
 ---
