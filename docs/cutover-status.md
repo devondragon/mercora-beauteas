@@ -4,7 +4,7 @@ Migration is tracked under `.planning/` (GSD); the runbook is [`PRODUCTION-CUTOV
 
 **Status as of 2026-08-18:** the Shopify→Mercora cutover itself is done; prod is deployed and taking live orders on `shop.beauteas.com`. The store is winding down — BeauTeas is closing and running a terminal going-out-of-business sale rather than continuing as an ongoing concern. **The sale has been live on production since 2026-08-15**, carried by migrations `0025`–`0035`: purchase minimum, subscriptions off, Chai's answers, closing content, an em-dash sweep, both bundle SKUs archived, and all three blends at $3.00 a box. Shipping is a flat $1.00 per box (`shipping.per_box_cost`), not the tier bands this doc was originally written around — those were abandoned before ever being priced.
 
-Since then: the production Vectorize rebuild, the inventory recount, and the promo banner all landed on 2026-08-18. What remains is the runbook's Phase 7 checklist (a real order and refund on the live sale) and then the DNS switch (Phase 10, `www`). DNS deliberately follows the sale going live rather than preceding it: there is no reason to move the canonical domain before the store customers land on reflects the closing sale.
+Since then: the production Vectorize rebuild, the inventory recount, and the promo banner all landed on 2026-08-18, and the Phase 7 checklist finished on 2026-08-20 with a real order that was then cancelled, refunded, and restocked. **All that remains is the DNS switch (Phase 10, `www`, BMC-83) and post-cutover verification (Phase 11, BMC-86).** DNS deliberately follows the sale going live rather than preceding it: there is no reason to move the canonical domain before the store customers land on reflects the closing sale.
 
 ---
 
@@ -57,8 +57,8 @@ npx wrangler d1 execute beauteas-db-dev --remote --env dev --file data/d1/seed-d
 - ✅ Prod build deployed (latest 2026-08-01), smoke tested, live order placed end-to-end on `shop.beauteas.com` with real Stripe tax, webhook, inventory decrement, and confirmation email.
 - ✅ **Apple Pay live** (BMC-81, 2026-08-01) — domain-association file deployed and serving, both domains registered in Stripe, and a real production Apple Pay order placed successfully.
 - ✅ **Going-out-of-business sale deployed** (2026-08-15, from `goob`; migrations `0025`–`0035`). The owner-only follow-ups are done too: bundle SKUs archived with their redirect, blends repriced to $3.00, shipping settled at $1.00/box, and — on 2026-08-18 — Chai's Vectorize index rebuilt on prod, inventory recounted (1,129 boxes), and the promo banner enabled. Sequence and verification steps: [`goob-rollout-runbook.md`](goob-rollout-runbook.md).
-- ☐ **Phase 7 checklist** — a real order and refund against the live sale.
-- ☐ **DNS switch** (runbook Phase 10) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11. Sequenced *after* the sale deploy above, not before it.
+- ✅ **Phase 7 checklist complete.** Items 1–7 and 9–11 verified against production 2026-08-19 (cart minimum, blocking panel, $1/box quote, final-sale notice, `/thank-you`, all five Chai answers, the em-dash sweep, the settings in D1). The real order followed on 2026-08-20: `WEB-USER3H6H7G2W4I30VDXSDY8LOTVG5FP-1787188093471`, $44.00 (11 boxes), then cancelled from `/admin/orders/<id>` — Stripe refund `re_3U6KSo…` succeeded, order `cancelled`/`refunded`, both lines restocked, so the recount above still holds.
+- ☐ **DNS switch** (runbook Phase 10, BMC-83) + Clerk/Stripe domain config, then post-cutover verification (orders, redirects, auth) — Phase 11, BMC-86. **This is the only work left.** Sequenced *after* the sale deploy above, not before it.
 
 ---
 

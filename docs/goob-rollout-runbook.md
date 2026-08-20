@@ -6,10 +6,21 @@ built, reviewed, and gated by the same CI suite as everything else in this
 repo (`npm run lint`, `npx tsc --noEmit`, `npm test` — all green as of this
 writing; see `task-14-report.md` for the exact output).
 
-**Nothing here has touched dev or prod yet.** Every command below is
-copy-pasteable and was checked against `package.json` and `wrangler.jsonc`
-before being written down. Where a value could not be confirmed from the repo,
-it says so explicitly instead of guessing.
+> **Status as of 2026-08-20: Phases 0 through 7 are DONE.** The sale has been
+> live on `shop.beauteas.com` since 2026-08-15. Migrations `0025`–`0035` are
+> applied, the Vectorize rebuild, the inventory recount, and the promo banner
+> were finished 2026-08-18, the Phase 7 checklist was verified against
+> production 2026-08-19, and the Phase 7 real order was placed, verified, and
+> cancelled (refunded and restocked) 2026-08-20.
+>
+> **What remains is not in this file:** `PRODUCTION-CUTOVER-RUNBOOK.md`
+> Phase 10 (DNS to `www`, tracked as BMC-83) and Phase 11 (post-cutover
+> verification, BMC-86). Phases 0–7 below are kept as the record of what was
+> run and as the rollback reference, not as a to-do list.
+
+Every command below is copy-pasteable and was checked against `package.json`
+and `wrangler.jsonc` before being written down. Where a value could not be
+confirmed from the repo, it says so explicitly instead of guessing.
 
 Two things this project has already gotten wrong once — do not repeat them:
 
@@ -611,18 +622,26 @@ in order.
    apostrophes) in your mail client.
 
    **This is real money and real inventory — clean it up immediately after
-   confirming the checks above, before moving on to step 9:**
-   - **Refund the charge in the Stripe Dashboard** (live mode). This is a real
-     PaymentIntent against a real card; nothing in this runbook or the app
-     reverses it automatically.
-   - **Restock the boxes you just bought** in `/admin/products` — the
-     inventory decrement from this test order is indistinguishable from a
-     real sale, so the count Phase 4 just recounted is now off by however
-     many boxes this order used unless you add them back by hand.
-   - If `sale.final_sale` policy or your own conscience says a test order
-     shouldn't sit in the order list as a normal completed sale, note that in
-     the order record (e.g. an admin note) so it isn't mistaken for a genuine
-     customer order later.
+   confirming the checks above, before moving on to step 9.** Open the order
+   at `/admin/orders/<id>` and use **Cancel Order**, giving a reason like
+   "This was a test order". That one action does all three things:
+   - issues the full refund against the original PaymentIntent (live mode),
+   - flips the order to `cancelled` / `refunded`,
+   - **restocks the boxes**, so the count Phase 4 recounted stays correct.
+
+   The reason text lands in `extensions.refunds[].reason`, which is what keeps
+   the row from being mistaken for a genuine sale later.
+
+   Do **not** refund from the Stripe Dashboard instead. That path works — the
+   `charge.refunded` handler reconciles it (BMC-213) and a full external
+   refund does restock — but it depends on webhook delivery and records no
+   reason. The admin action is the one to use.
+
+   While you are on that page, the same card carries **Mark as Shipped**
+   (carrier and tracking optional as a pair, and it emails the customer) and
+   **Edit tracking** once shipped. If you want to exercise shipping too, do it
+   *before* cancelling: a refund Stripe has accepted but not yet settled
+   blocks shipping by design (BMC-224).
 
 **Chai**
 9. Ask Chai each of the following and confirm every answer agrees with the
@@ -659,7 +678,8 @@ or leftover formatting artifacts from the migration.
 
 ## What "done" looks like
 
-- Phases 0–6 complete, in order.
-- Every item in the verification checklist passed against production.
-- Only then: `PRODUCTION-CUTOVER-RUNBOOK.md` Phase 10 (DNS) and Phase 11
-  (post-cutover verification).
+- ☑ Phases 0–6 complete, in order.
+- ☑ Every item in the verification checklist passed against production
+  (2026-08-19, plus the real order on 2026-08-20).
+- ☐ Only then: `PRODUCTION-CUTOVER-RUNBOOK.md` Phase 10 (DNS, BMC-83) and
+  Phase 11 (post-cutover verification, BMC-86). **This is all that is left.**
