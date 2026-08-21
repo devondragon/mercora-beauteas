@@ -175,9 +175,17 @@ export default function ProductDisplay({
   const compareAt = selectedVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > price;
 
-  // Stock logic (MACH: inventory is on variant)
+  // Stock logic (MACH: inventory is on variant). A variant at quantity 0 with
+  // track_inventory === false or allow_backorder === true is not out of stock:
+  // those flags mean "unlimited", the same reading isVariantAvailable
+  // (lib/db/schema/products.ts) and the recommendations blend pool
+  // (lib/recommendations/blend.ts) already give them. `available` has to agree
+  // or the Add to Cart CTA hides for a variant that is actually purchasable.
   const quantityInStock = selectedVariant?.inventory?.quantity ?? 0;
-  const available = quantityInStock > 0;
+  const unlimitedInventory =
+    selectedVariant?.inventory?.track_inventory === false ||
+    selectedVariant?.inventory?.allow_backorder === true;
+  const available = quantityInStock > 0 || unlimitedInventory;
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
   const descriptionParagraphs = useMemo(
