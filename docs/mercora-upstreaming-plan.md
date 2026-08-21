@@ -1,7 +1,8 @@
 # Mercora Upstreaming Plan
 
-**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06` in progress; `O07` researched and queued behind `O06`
-**Created:** 2026-08-03  
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; all remaining optional-pass implementation is complete and awaiting serial review in Mercora PRs `#75` (`O05`), `#76` (`O06`), and `#79` (`O07`)
+**Created:** 2026-08-03\
+**Status refreshed:** 2026-08-21\
 **Owners:** Russell K. Moore and Devon Hillard
 
 See [mercora-upstreaming-inventory.md](mercora-upstreaming-inventory.md) for
@@ -480,6 +481,25 @@ guarded admin issuance. Do not seed a merchant gift-card product.
 overlap checkout, paid-order effects, refunds, and webhooks. Merge them
 serially. Rebase the second onto the first and rerun the complete commerce
 suite before review.
+
+#### Current optional-pass review queue
+
+As of 2026-08-21, implementation of every planned optional-pass extraction is
+complete. The remaining work is review and serial integration, not another
+feature phase:
+
+1. Mercora PR `#75` (`O05`) targets `main`, is ready for review, and has green
+   GitHub CI and Workers Builds.
+2. Mercora PR `#76` (`O06`) is a draft stacked on `agent/o05-shopify-migration-toolkit`.
+   After `#75` merges, retarget or rebase it onto current `main`, rerun its full
+   validation matrix, and make it ready for final review.
+3. Mercora PR `#79` (`O07`) is a draft stacked on `agent/o06-subscriptions`.
+   After `#76` merges, retarget or rebase it onto the resulting `main`, rerun
+   the complete commerce suite, and make it ready for final review.
+
+All three PRs are currently merge-state clean and assigned to Russell. There
+is no planned `O08`; define any further Mercora feature work as a new milestone
+after this review queue closes.
 
 Every large PR uses schema-first, independently reviewable commits. Migrations
 are additive and forward-only, use numbers reserved from then-current Mercora

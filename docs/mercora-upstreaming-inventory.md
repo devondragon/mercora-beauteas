@@ -1,6 +1,7 @@
 # Mercora Upstreaming Inventory
 
-**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; `O05` in review as Mercora PR `#75`; `O06` in progress; `O07` researched and queued behind `O06`
+**Status:** Core `U00`-`U14`, `M01`, and `O01`-`O04` merged; all remaining optional-pass implementation is complete and awaiting serial review in Mercora PRs `#75` (`O05`), `#76` (`O06`), and `#79` (`O07`)
+**Status refreshed:** 2026-08-21
 **Research snapshot:** 2026-08-10
 **BeauTeas baseline:** `6b10d27..1fa7c81`
 **BeauTeas planning head:** `dcf2172`
@@ -871,20 +872,23 @@ Update this table as Mercora issues and PRs are created.
 | `O02` | Merged | — | `#73` | Merged to Mercora `main` as `8894d1b`; secure CMS, neutral templates, Blog/admin publishing, R2 integration, RSS, dynamic sitemap/robots, and additive migration `0019` complete |
 | `O03` | Merged | — | `#72` | Merged to Mercora `main` as `02b1bd2`; privacy-safe producer telemetry, provider-neutral Tail alerts, and sharded SQLite cooldown complete |
 | `O04` | Merged | — | `#74` | Merged to Mercora `main` as `ff163b0`; request-scoped canonical facts, deterministic policy answers, guarded customer responses, typed Workers AI, and privacy-safe telemetry complete |
-| `O05` | In review | — | `#75` | Draft PR is assigned to Russell with GitHub CI and Workers Builds green; reviewed redirect/media runtime and complete dry-run-first ETL/operator tooling, including Blog import |
-| `O06` | In progress | — | — | Branch `agent/o06-subscriptions` from `ff163b0`; schema/domain/capability foundation is the first implementation wave |
-| `O07` | Researched | — | — | Source, dependency, and test audit complete; reserve migration `0022` and start code after O06 fixes the shared capability/webhook contracts |
+| `O05` | In review | — | `#75` | Ready-for-review PR targets `main`, is assigned to Russell, is merge-state clean, and has green GitHub CI and Workers Builds; includes redirect/media runtime and complete dry-run-first ETL/operator tooling, including Blog import |
+| `O06` | In review | — | `#76` | Complete draft PR is assigned to Russell and merge-state clean; stacked on `agent/o05-shopify-migration-toolkit` pending `#75`, with the safe recurring-commerce vertical slice implemented |
+| `O07` | In review | — | `#79` | Complete draft PR is assigned to Russell and merge-state clean; stacked on `agent/o06-subscriptions` pending `#76`, with gift cards and generic digital commerce implemented |
 
 ## Immediate Next Planning Actions
 
-1. Await Russell's review of `O05` PR `#75`; keep any review fixes on the
-   existing branch and preserve its dry-run-first, target-bound safety model.
-2. Build `O06` in `agent/o06-subscriptions`, reserving migration `0021` and
-   separating acquisition disablement from existing-subscription reconciliation.
-3. Keep `O07` at reviewed-design status until O06 establishes the production
-   capability resolver and webhook dispatcher; then branch/rebase it with `0022`.
-4. Keep `U12` on its safe deterministic default; its AI-batch strategy remains
-   optional and falls back to the active catalog when precomputed rows are absent.
-5. `O06` and `O07` are dependency-ready, but should proceed as separate
-   worktrees and serialize their merges because both touch checkout, payments,
-   webhooks, and refunds.
+1. Await Russell's review of `O05` PR `#75`; keep any review fixes on its
+   existing branch and preserve the dry-run-first, target-bound safety model.
+2. After `#75` merges, retarget or rebase `O06` PR `#76` onto current `main`,
+   rerun its full validation matrix, resolve review feedback, and make the
+   draft ready for final review.
+3. After `#76` merges, retarget or rebase `O07` PR `#79` onto the resulting
+   `main`, rerun the complete commerce suite, resolve review feedback, and make
+   the draft ready for final review.
+4. Preserve feature rollback boundaries during review: subscription and gift-card
+   acquisition remain disabled by default while reconciliation paths remain
+   available for already-created state.
+5. After `#79` merges, mark the optional pass complete, run a final cross-feature
+   integration audit on `main`, and close the upstreaming milestone. No `O08`
+   or other implementation phase is currently planned.
