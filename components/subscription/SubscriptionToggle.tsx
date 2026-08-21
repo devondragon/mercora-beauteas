@@ -161,7 +161,7 @@ export default function SubscriptionToggle({
                 ${(variantPriceInCents / 100).toFixed(2)}
               </p>
               <p className="text-xs italic text-state-sale sm:text-sm">
-                Limited-time offer
+                While supplies last
               </p>
             </div>
           ) : (
@@ -195,7 +195,7 @@ export default function SubscriptionToggle({
         )
       ) : (
         <p className="text-lg font-semibold text-primary-600 sm:text-xl">
-          Coming soon
+          Sold out
         </p>
       )}
     </div>

@@ -37,7 +37,12 @@ import { listProducts, getProductsByCategory } from '@/lib/models/mach/products'
 const fakeProductWithInternalFields = {
   id: 'prod_1',
   name: 'Clearly Calendula — Morning Blend',
-  status: 'draft',
+  // GOOB: status must be 'active' here — this fixture exercises field
+  // stripping (cost/barcode/inventory), not status filtering, and a non-active
+  // status is now (correctly) withdrawn from the public listing by
+  // isPubliclyPurchasableProduct, which would empty body.data and defeat the
+  // test's actual purpose.
+  status: 'active',
   variants: [
     {
       id: 'var_1',

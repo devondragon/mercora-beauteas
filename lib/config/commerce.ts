@@ -40,10 +40,36 @@ export function isGiftCardPurchaseProduct(product: {
   );
 }
 
+/**
+ * Whether a `status` column value means "still sellable".
+ *
+ * FAILS OPEN on a missing value. `products.status` and `product_variants.status`
+ * both default to 'active' in the schema, but a NULL row must not withdraw the
+ * catalog — the blast radius of a false negative here is the entire storefront,
+ * while a false positive is one product that should have been archived.
+ */
+export function isActiveStatus(status: unknown): boolean {
+  if (status === undefined || status === null || status === '') return true;
+  return typeof status === 'string' && status.toLowerCase() === 'active';
+}
+
+/**
+ * Whether a resolved catalog variant may be sold. A null variant is never
+ * sellable — the caller could not resolve it, so there is nothing to price.
+ */
+export function isSellableVariant(
+  variant: { status?: unknown } | null | undefined
+): boolean {
+  if (!variant) return false;
+  return isActiveStatus(variant.status);
+}
+
 export function isPubliclyPurchasableProduct(product: {
   id?: unknown;
   slug?: unknown;
   type?: unknown;
+  status?: unknown;
 }): boolean {
+  if (!isActiveStatus(product.status)) return false;
   return giftCardPurchasesEnabled() || !isGiftCardPurchaseProduct(product);
 }

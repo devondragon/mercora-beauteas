@@ -29,12 +29,59 @@ import type { Product } from "@/lib/types";
 /**
  * Represents a single chat message in the conversation
  */
-type ChatMessage = {
+export type ChatMessage = {
   role?: "user" | "assistant";
   content: string;
   created_at: string;
   productIds?: string[]; // Optional product IDs associated with this message
 };
+
+/**
+ * How long a stored conversation may be replayed before it is dropped on load.
+ *
+ * A transcript is a record of something that happened, so it survives a reload
+ * — but a month-old one describes a catalog and a set of prices that no longer
+ * exist ("the Sample Pack is a lovely place to start"), and during a closing
+ * sale that gap only widens. A week keeps the continuity that persistence was
+ * added for and expires the rest.
+ */
+export const MAX_PERSISTED_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The messages worth restoring: those written within MAX_PERSISTED_AGE_MS.
+ *
+ * A message whose `created_at` cannot be parsed is dropped rather than kept —
+ * it carries no evidence of being recent, and this is a cache, not a record of
+ * record.
+ */
+export function freshMessages(messages: unknown, now: number): ChatMessage[] {
+  if (!Array.isArray(messages)) return [];
+  return messages.filter((message) => {
+    const written = Date.parse((message as ChatMessage)?.created_at ?? "");
+    return Number.isFinite(written) && now - written < MAX_PERSISTED_AGE_MS;
+  });
+}
+
+/**
+ * What rehydration is allowed to restore.
+ *
+ * Deliberately NOT the product cards. `products` holds full product objects —
+ * name, price, stock — captured from one server response, and localStorage has
+ * no expiry, so a card rendered before the closing sale kept rendering forever:
+ * the archived Sample Pack at its old $24.00, on every page load, with no
+ * request made and therefore nothing for the server's purchasability filters
+ * (agent-chat's dropWithdrawnMatches and its card-level filter) to catch. A
+ * price and an availability are only true at the moment they are fetched, so
+ * they are session state, not persisted state, and come back on the next turn.
+ */
+export function mergePersistedChat<T extends ChatState>(persisted: unknown, current: T, now: number): T {
+  return {
+    ...current,
+    messages: freshMessages((persisted as { messages?: unknown })?.messages, now),
+    productIds: [],
+    products: [],
+  };
+}
 
 /**
  * Chat store state interface defining all available state and actions
@@ -81,6 +128,17 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "chat-storage",
+      // v1 exists to expire the v0 blobs that already sit in customers'
+      // browsers holding pre-sale product cards; `merge` runs on every load,
+      // so the same rule applies to anything written since.
+      version: 1,
+      partialize: (state) => ({ messages: state.messages }),
+      migrate: (persisted) => ({
+        messages: Array.isArray((persisted as { messages?: unknown })?.messages)
+          ? ((persisted as { messages: ChatMessage[] }).messages)
+          : [],
+      }),
+      merge: (persisted, current) => mergePersistedChat(persisted, current, Date.now()),
     }
   )
 );

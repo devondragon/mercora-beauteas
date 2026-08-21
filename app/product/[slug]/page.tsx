@@ -61,6 +61,7 @@ import {
   buildBreadcrumbJsonLd,
 } from "@/lib/seo/json-ld";
 import { isPubliclyPurchasableProduct } from "@/lib/config/commerce";
+import { getSaleRules } from "@/lib/sale/settings";
 
 export const revalidate = 0;
 
@@ -123,19 +124,21 @@ export default async function ProductPage({
 
   const userContext = await buildServerUserContext(userId);
 
-  const [reviews, reviewEligibility, subscriptionPlans, recommendations] = await Promise.all([
-    getProductReviews({
-      productId: product.id,
-      status: ["published"],
-      limit: 50,
-    }),
-    getProductReviewEligibility({
-      productId: product.id,
-      customerId: userId,
-    }),
-    listSubscriptionPlans(product.id),
-    getRecommendationsForProduct(product, { userContext }),
-  ]);
+  const [reviews, reviewEligibility, subscriptionPlans, recommendations, { subscriptionsEnabled, minimumBoxes }] =
+    await Promise.all([
+      getProductReviews({
+        productId: product.id,
+        status: ["published"],
+        limit: 50,
+      }),
+      getProductReviewEligibility({
+        productId: product.id,
+        customerId: userId,
+      }),
+      listSubscriptionPlans(product.id),
+      getRecommendationsForProduct(product, { userContext }),
+      getSaleRules(),
+    ]);
 
   // Build JSON-LD structured data for rich results
   const productName = resolveLocalizedField(product.name);
@@ -156,6 +159,8 @@ export default async function ProductPage({
           reviews={reviews}
           reviewEligibility={reviewEligibility}
           subscriptionPlans={subscriptionPlans}
+          subscriptionsEnabled={subscriptionsEnabled}
+          minimumBoxes={minimumBoxes}
           recommendations={recommendations}
         />
       </div>

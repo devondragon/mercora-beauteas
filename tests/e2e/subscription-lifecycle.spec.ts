@@ -22,6 +22,10 @@ test.describe('Subscription UI', () => {
     expect(response?.status()).not.toBe(500);
   });
 
+  // NOTE (GOOB): these run unauthenticated, so the `redirect("/sign-in")` at the
+  // top of the page still fires first and this behaviour is unchanged. If this
+  // suite ever gains a signed-in fixture, expect `/subscribe/checkout` to
+  // redirect to `/` while `sale.subscriptions_enabled` is false.
   test('subscription checkout page shows plan options or CTA', async ({ page }) => {
     await page.goto('/subscribe/checkout');
     const body = await page.locator('body').textContent();

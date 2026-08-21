@@ -42,6 +42,10 @@ const getRefundPolicy = vi.fn();
 vi.mock('@/lib/utils/settings', () => ({
   getRefundPolicy: (...args: unknown[]) => getRefundPolicy(...args),
 }));
+const getSaleRules = vi.fn();
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: (...args: unknown[]) => getSaleRules(...args),
+}));
 vi.mock('@/lib/ai/config', () => ({
   runAI: vi.fn(),
   getCurrentEmbeddingModel: vi.fn(() => '@cf/baai/bge-base-en-v1.5'),
@@ -75,6 +79,14 @@ beforeEach(() => {
   // threshold so the flair never fires and the assertions stay deterministic.
   vi.spyOn(Math, 'random').mockReturnValue(0.99);
   getRefundPolicy.mockResolvedValue({ returnWindowDays: 30 });
+  // Pre-sale posture so this route-level suite (predates the GOOB sale) keeps
+  // exercising the return-window path it was written for.
+  getSaleRules.mockResolvedValue({
+    minimumBoxes: 10,
+    finalSale: false,
+    subscriptionsEnabled: false,
+    tiers: [],
+  });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -247,5 +259,47 @@ describe('/api/agent-chat verified-facts prompt block (BMC-215)', () => {
     expect(systemPrompt).toContain('VERIFIED FACTS');
     expect(systemPrompt).toContain(CONTACT_EMAIL);
     expect(systemPrompt).toContain(ORDER_HISTORY_URL);
+  });
+
+  it('injects the configured box minimum (GOOB) — not a hardcoded number', async () => {
+    // Pinned to a NON-default value (10 is both the seeded default and the
+    // `minimum_order` unit-test fixture elsewhere) so this only passes if the
+    // prompt is genuinely reading `getSaleRules()` rather than echoing a
+    // literal `10` typed into the route.
+    getSaleRules.mockResolvedValue({
+      minimumBoxes: 17,
+      finalSale: true,
+      subscriptionsEnabled: false,
+      tiers: [],
+    });
+    getCloudflareContext.mockResolvedValue({ env: { AI: {} } });
+    vi.mocked(runAI).mockResolvedValue({});
+    vi.mocked(extractAIResponse).mockReturnValue('ok');
+
+    // A question the `minimum_order` classifier does NOT recognize — this is
+    // the whole point of the backstop: an unmatched phrasing still reaches
+    // the model with the real number in context instead of inventing one.
+    await post({ question: 'whats the smallest amount i can order?' });
+
+    const opts = vi.mocked(runAI).mock.calls[0][2] as { messages: Array<{ content: string }> };
+    const systemPrompt = opts.messages[0].content;
+    expect(systemPrompt).toContain('Minimum order: 17 boxes');
+    expect(systemPrompt).not.toContain('Minimum order: 10 boxes');
+  });
+
+  it('omits the minimum-order fact rather than guessing when the sale-rules read fails', async () => {
+    getSaleRules.mockRejectedValue(new Error('D1 unavailable'));
+    getCloudflareContext.mockResolvedValue({ env: { AI: {} } });
+    vi.mocked(runAI).mockResolvedValue({});
+    vi.mocked(extractAIResponse).mockReturnValue('ok');
+
+    await post({ question: 'whats the smallest amount i can order?' });
+
+    const opts = vi.mocked(runAI).mock.calls[0][2] as { messages: Array<{ content: string }> };
+    const systemPrompt = opts.messages[0].content;
+    expect(systemPrompt).toContain('VERIFIED FACTS');
+    expect(systemPrompt).not.toMatch(/Minimum order: \d+ boxes/);
+    // The rest of the block (unrelated facts) still comes through.
+    expect(systemPrompt).toContain(CONTACT_EMAIL);
   });
 });

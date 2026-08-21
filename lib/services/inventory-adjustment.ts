@@ -461,7 +461,7 @@ export async function flagOversoldForReview(args: {
   );
   try {
     const existingNotes = currentNotes ? `${currentNotes}\n\n` : '';
-    await updateOrderNotes(orderId, `${existingNotes}NEEDS REVIEW (BMC-178): oversold — ${summary}`);
+    await updateOrderNotes(orderId, `${existingNotes}NEEDS REVIEW (BMC-178): oversold: ${summary}`);
   } catch (noteError) {
     console.error(`${logPrefix} Order ${orderId}: failed to record oversold review note`, noteError);
   }

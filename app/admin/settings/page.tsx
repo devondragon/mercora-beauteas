@@ -60,12 +60,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { 
-  Settings, Store, Bot, Mail, Database, 
+import {
+  Settings, Store, Bot, Mail, Database,
   RefreshCw, Save, Globe, DollarSign,
   Shield, Zap, AlertCircle, CheckCircle,
-  Share2
+  Share2, Plus, Trash2
 } from "lucide-react";
+import type { ShippingTier } from "@/lib/sale/rules";
+import { addTierRow, removeTierRow, setOpenEndedTier, hasZeroCostTier, hasNoOpenEndedTier } from "@/lib/sale/tier-editor";
+import { parseSettingRows } from "@/lib/admin/settings-parse";
 
 interface SystemSettings {
   maintenance_mode: boolean;
@@ -88,6 +91,14 @@ interface ShippingSettings {
     enabled: boolean;
   }>;
   free_methods: string[];
+  // GOOB: quantity-tiered shipping (lib/sale/rules). EMPTY means "not
+  // configured" — the flat per-method costs above stay in force. Any
+  // non-empty array replaces them entirely (see migrations/0025).
+  tiers: ShippingTier[];
+  // GOOB: flat cost per box (lib/sale/rules `normalizePerBoxCost`). ZERO means
+  // "not configured"; anything above zero outranks BOTH the tiers and the flat
+  // per-method costs above (see migrations/0032).
+  perBoxCost: number;
 }
 
 interface RefundSettings {
@@ -140,7 +151,17 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
-  
+  /**
+   * Whether the form is showing STORED settings rather than the defaults below.
+   * Saving while this is false writes those defaults over every setting on the
+   * site — which is exactly what happened on 2026-08-17, when one unparseable
+   * legacy row aborted the load and the next Save turned off per-box shipping,
+   * restored free shipping mid-sale, and re-enabled the withdrawn shipping
+   * methods. The load can no longer fail that way (lib/admin/settings-parse.ts),
+   * and this makes the blast radius zero if it ever fails for another reason.
+   */
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     maintenance_mode: false,
     maintenance_message: "We're making some improvements! We'll be back soon.",
@@ -159,7 +180,13 @@ export default function AdminSettingsPage() {
       { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
       { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true }
     ],
-    free_methods: ['standard']
+    free_methods: ['standard'],
+    // Matches the migration 0025 seed (empty = not configured). Unlike the
+    // defaults above, a non-empty placeholder here would be a live pricing
+    // change if `loadSettings` ever failed to land before a save — see
+    // lib/sale/tier-editor.ts.
+    tiers: [],
+    perBoxCost: 0
   });
 
   const [refundSettings, setRefundSettings] = useState<RefundSettings>({
@@ -175,7 +202,7 @@ export default function AdminSettingsPage() {
   const [promotionSettings, setPromotionSettings] = useState<PromotionSettings>({
     site_wide_discount_percent: 0,
     banner_enabled: false,
-    banner_text: '🎉 Free shipping on orders over $75!',
+    banner_text: 'We’re closing BeauTeas. Everything must go while supplies last.',
     banner_type: 'info',
     new_customer_discount: 0
   });
@@ -223,11 +250,29 @@ export default function AdminSettingsPage() {
       const response = await fetch('/api/admin/settings');
       if (response.ok) {
         const { settings } = await response.json() as any;
-        
+
+        // Parse EVERY row before touching state. `JSON.parse` used to run
+        // unguarded inside this loop, and production carries legacy rows holding
+        // bare strings (currency = USD, social_instagram = https://..., see
+        // lib/admin/settings-parse.ts). The first one threw, this whole function
+        // bailed to its catch, and nothing loaded — so every field below kept its
+        // hardcoded default and the next Save wrote those defaults over all 31
+        // real settings, including turning per-box shipping off and restoring
+        // free shipping mid-sale.
+        const { values: parsedValues, nonJsonKeys } = parseSettingRows(settings);
+        if (nonJsonKeys.length > 0) {
+          console.warn(
+            `[admin/settings] ${nonJsonKeys.length} legacy non-JSON setting(s) read as raw strings:`,
+            nonJsonKeys.join(', ')
+          );
+        }
+
         // Parse settings by category
-        settings.forEach((setting: any) => {
-          const value = JSON.parse(setting.value);
-          
+        (settings as any[]).forEach((setting: any) => {
+          // `as any` matches what the previous `JSON.parse` returned, so the
+          // per-field assignments below are unchanged by this fix.
+          const value = parsedValues.get(setting.key) as any;
+
           if (setting.category === 'system') {
             if (setting.key === 'system.maintenance_mode') setSystemSettings(prev => ({ ...prev, maintenance_mode: value }));
             if (setting.key === 'system.maintenance_message') setSystemSettings(prev => ({ ...prev, maintenance_message: value }));
@@ -239,6 +284,12 @@ export default function AdminSettingsPage() {
           } else if (setting.category === 'shipping') {
             if (setting.key === 'shipping.methods') setShippingSettings(prev => ({ ...prev, methods: value }));
             if (setting.key === 'shipping.free_methods') setShippingSettings(prev => ({ ...prev, free_methods: value }));
+            if (setting.key === 'shipping.tiers') setShippingSettings(prev => ({ ...prev, tiers: value }));
+            // A stored string ("1") must not land in a number input as a string —
+            // it would re-save as one and read back through normalizePerBoxCost's
+            // string branch every time. Coerce once, here, and treat anything
+            // unusable as not configured.
+            if (setting.key === 'shipping.per_box_cost') setShippingSettings(prev => ({ ...prev, perBoxCost: Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0 }));
           } else if (setting.category === 'refund') {
             if (setting.key === 'refund.shipping_refunded_partial') setRefundSettings(prev => ({ ...prev, shipping_refunded_partial: value }));
             if (setting.key === 'refund.shipping_refunded_full') setRefundSettings(prev => ({ ...prev, shipping_refunded_full: value }));
@@ -266,8 +317,17 @@ export default function AdminSettingsPage() {
             if (setting.key === 'recommendations.limit') setRecommendationSettings(prev => ({ ...prev, limit: value }));
           }
         });
+
+        // Only now is the form showing STORED values rather than the defaults
+        // below. Saving before this point writes those defaults over every
+        // setting on the site, so the Save button stays disabled until it flips.
+        setSettingsLoaded(true);
+      } else {
+        setSettingsLoaded(false);
+        console.error('[admin/settings] settings request failed:', response.status);
       }
     } catch (error) {
+      setSettingsLoaded(false);
       console.error('Error loading settings:', error);
     } finally {
       setLoading(false);
@@ -366,9 +426,15 @@ export default function AdminSettingsPage() {
   };
 
   const handleSave = async () => {
+    // Never write the component defaults over stored settings. See settingsLoaded.
+    if (!settingsLoaded) {
+      console.error('[admin/settings] refusing to save: settings never loaded');
+      return;
+    }
+
     setLoading(true);
     setSaved(false);
-    
+
     try {
       // Build updates array from all settings
       const updates = [
@@ -385,6 +451,8 @@ export default function AdminSettingsPage() {
         // Shipping settings
         { key: 'shipping.methods', value: shippingSettings.methods, category: 'shipping' },
         { key: 'shipping.free_methods', value: shippingSettings.free_methods, category: 'shipping' },
+        { key: 'shipping.tiers', value: shippingSettings.tiers, category: 'shipping' },
+        { key: 'shipping.per_box_cost', value: shippingSettings.perBoxCost, category: 'shipping' },
         
         // Refund settings
         { key: 'refund.shipping_refunded_partial', value: refundSettings.shipping_refunded_partial, category: 'refund' },
@@ -504,6 +572,23 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Saving before the stored settings load would write the component
+          defaults over every setting on the site, so say so rather than leaving
+          a disabled button with no explanation. */}
+      {!initialLoad && !settingsLoaded && (
+        <div className="bg-state-error-bg border border-state-error rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 text-state-error flex-shrink-0" />
+            <p className="text-sm text-state-error">
+              <strong>Settings could not be loaded.</strong> The fields below are showing
+              defaults, not your stored values, so saving is disabled to keep it from
+              overwriting them. Reload the page; if it keeps failing, check the browser
+              console.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -519,7 +604,12 @@ export default function AdminSettingsPage() {
           )}
           <Button
             onClick={handleSave}
-            disabled={loading}
+            disabled={loading || !settingsLoaded}
+            title={
+              settingsLoaded
+                ? undefined
+                : "Settings haven't loaded, so saving would overwrite them with defaults. Reload the page."
+            }
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -736,10 +826,190 @@ export default function AdminSettingsPage() {
         <div className="space-y-6">
           <Card className="admin-card p-6">
             <div className="flex items-center space-x-3 mb-4">
+              <DollarSign className="w-5 h-5 text-state-info" />
+              <h3 className="text-lg font-semibold text-text-primary">Shipping Per Box</h3>
+            </div>
+
+            <p className="text-sm text-text-muted mb-4">
+              Cost in dollars for EVERY box in the cart: a 30 box order at $1.00 ships
+              for $30.00. When this is above $0.00 it prices the whole cart and
+              overrides both the quantity tiers and the flat per-method rates below.
+              Set it to $0.00 to turn it off.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <span className="text-sm text-text-secondary">$</span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="w-32"
+                value={shippingSettings.perBoxCost}
+                onChange={(e) =>
+                  setShippingSettings(prev => ({
+                    ...prev,
+                    perBoxCost: Math.max(0, parseFloat(e.target.value) || 0),
+                  }))
+                }
+              />
+              <span className="text-sm text-text-muted">per box</span>
+            </div>
+
+            {shippingSettings.perBoxCost > 0 ? (
+              <p className="text-sm text-text-muted mb-2">
+                In effect. Every order is charged ${shippingSettings.perBoxCost.toFixed(2)} a
+                box, and the tiers and flat rates below are ignored.
+              </p>
+            ) : (
+              <p className="text-sm text-text-muted italic mb-2">
+                Not configured. The tiers or flat rates below are in effect.
+              </p>
+            )}
+          </Card>
+
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <DollarSign className="w-5 h-5 text-state-info" />
+              <h3 className="text-lg font-semibold text-text-primary">Shipping by Quantity</h3>
+            </div>
+
+            {shippingSettings.perBoxCost > 0 && (
+              <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                  <p className="text-sm text-state-warning">
+                    A per-box rate is set above, so nothing in this section is charged.
+                    Clear the per-box rate to price by tier instead.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <p className="text-sm text-text-muted mb-4">
+              Cost in dollars for an order up to and including that many boxes. Bounds
+              are inclusive; a row with no upper bound covers everything above the
+              rest. When this list is non-empty it REPLACES the per-method cost below
+              entirely. Leave it empty to keep the flat rates in force.
+            </p>
+
+            {shippingSettings.tiers.length === 0 ? (
+              <p className="text-sm text-text-muted italic mb-4">
+                Not configured. The flat per-method rates below are in effect.
+              </p>
+            ) : (
+              <>
+                {hasZeroCostTier(shippingSettings.tiers) && (
+                  <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                      <p className="text-sm text-state-warning">
+                        A tier priced at $0.00 ships that entire band free. Confirm that&rsquo;s intentional before saving.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {hasNoOpenEndedTier(shippingSettings.tiers) && (
+                  <div className="bg-state-warning-bg border border-state-warning rounded-lg p-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-state-warning flex-shrink-0" />
+                      <p className="text-sm text-state-warning">
+                        No tier has &ldquo;No upper bound&rdquo; checked. Orders larger than the
+                        biggest tier are charged that biggest tier&rsquo;s price. Add an
+                        open-ended row if bigger orders should cost more.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 mb-4">
+                  {shippingSettings.tiers.map((tier, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm w-32 text-text-secondary">
+                        {tier.max_boxes === null ? 'More than above' : `Up to ${tier.max_boxes} boxes`}
+                      </span>
+                      {tier.max_boxes !== null && (
+                        <Input
+                          type="number"
+                          min={1}
+                          value={tier.max_boxes}
+                          onChange={(e) => {
+                            const tiers = [...shippingSettings.tiers];
+                            tiers[i] = { ...tiers[i], max_boxes: parseInt(e.target.value, 10) || 1 };
+                            setShippingSettings(prev => ({ ...prev, tiers }));
+                          }}
+                          className="w-24 admin-input"
+                          aria-label={`Tier ${i + 1} maximum boxes`}
+                        />
+                      )}
+                      <label className="flex items-center gap-1 text-xs text-text-muted whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={tier.max_boxes === null}
+                          onChange={(e) => {
+                            // At most one tier can be open-ended — checking this
+                            // clears max_boxes on any other row that was too, so
+                            // resolveShippingTier is never handed an ambiguous set.
+                            setShippingSettings(prev => ({
+                              ...prev,
+                              tiers: setOpenEndedTier(prev.tiers, i, e.target.checked)
+                            }));
+                          }}
+                        />
+                        No upper bound
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-text-muted">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={tier.cost}
+                          onChange={(e) => {
+                            const tiers = [...shippingSettings.tiers];
+                            // `min={0}` is HTML-only — it doesn't stop `-5` from
+                            // being typed, and `parseFloat("-5") || 0` keeps -5
+                            // since it's truthy. Clamp so a negative cost can
+                            // never reach the customer-facing quote.
+                            tiers[i] = { ...tiers[i], cost: Math.max(0, parseFloat(e.target.value) || 0) };
+                            setShippingSettings(prev => ({ ...prev, tiers }));
+                          }}
+                          className="w-24 admin-input"
+                          aria-label={`Tier ${i + 1} cost in dollars`}
+                        />
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShippingSettings(prev => ({ ...prev, tiers: removeTierRow(prev.tiers, i) }))}
+                        className="h-7"
+                        aria-label={`Remove tier ${i + 1}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShippingSettings(prev => ({ ...prev, tiers: addTierRow(prev.tiers) }))}
+              className="border-secondary-400 text-secondary-600 hover:bg-secondary-500 hover:text-text-inverse"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Tier
+            </Button>
+          </Card>
+
+          <Card className="admin-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
               <Zap className="w-5 h-5 text-state-info" />
               <h3 className="text-lg font-semibold text-text-primary">Shipping Methods</h3>
             </div>
-            
+
             <div className="space-y-4">
               {shippingSettings.methods.map((method, index) => (
                 <div key={method.id} className="bg-surface border border-border-default rounded-lg p-4">
@@ -886,7 +1156,7 @@ export default function AdminSettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm font-medium text-text-secondary">Restock on Stripe Dashboard Refunds</label>
-                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock — Stripe refunds an amount, not items.</p>
+                  <p className="text-xs text-text-muted">Restore inventory when a full refund is issued outside the app. Partial ones never restock, since Stripe refunds an amount, not items.</p>
                 </div>
                 <Switch
                   checked={refundSettings.restock_on_external_refund}
@@ -1019,7 +1289,7 @@ export default function AdminSettingsPage() {
                 </select>
                 <p className="text-xs text-text-muted mt-1">
                   {recommendationSettings.strategy === 'ai_batch'
-                    ? 'Uses the precomputed product_recommendations table — rebuild after catalog changes.'
+                    ? 'Uses the precomputed product_recommendations table. Rebuild after catalog changes.'
                     : 'Computed on-the-fly from category, price, and attribute similarity.'}
                 </p>
               </div>
@@ -1069,7 +1339,7 @@ export default function AdminSettingsPage() {
 
             <div className="space-y-4">
               <p className="text-sm text-text-secondary leading-relaxed">
-                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch — rebuild after significant catalog changes.
+                Precomputes similar-product recommendations into the <code className="text-xs">product_recommendations</code> table using Vectorize. Only used when strategy is set to AI Batch. Rebuild after significant catalog changes.
               </p>
 
               {recRebuildSummary && (

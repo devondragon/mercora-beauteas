@@ -9,6 +9,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getSubscriptionPlanById } from "@/lib/models/mach/subscriptions";
+import { getSaleRules } from "@/lib/sale/settings";
 import { getProduct, getProductBySlug } from "@/lib/models/mach/products";
 import SubscribeCheckoutClient from "./SubscribeCheckoutClient";
 
@@ -32,9 +33,22 @@ export default async function SubscribeCheckoutPage({
     redirect("/");
   }
 
-  // Fetch subscription plan
-  const plan = await getSubscriptionPlanById(planId);
-  if (!plan) {
+  // Fetch subscription plan. The sale flag is read alongside it because this
+  // page is bookmarkable: without it, a saved link renders a full subscribe
+  // form during the closing sale. This redirect is UX only — the real boundary
+  // is the 403 in /api/setup-intent and /api/subscriptions, which this form
+  // posts to. `plan.is_active` is checked here too; it was missing, so an
+  // inactive plan also rendered a working-looking checkout.
+  const [{ subscriptionsEnabled }, plan] = await Promise.all([
+    getSaleRules(),
+    getSubscriptionPlanById(planId),
+  ]);
+  // During the closing sale, a bookmarked subscribe link lands on the page
+  // that explains why subscriptions are off, not an unexplained home page.
+  if (!subscriptionsEnabled) {
+    redirect("/thank-you");
+  }
+  if (!plan || !plan.is_active) {
     redirect("/");
   }
 

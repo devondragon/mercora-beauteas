@@ -35,6 +35,7 @@
 import { getSettings } from "@/lib/utils/settings";
 import { AlertCircle, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 import { unstable_cache } from "next/cache";
+import Link from "next/link";
 
 // Cache banner settings for performance
 const getCachedBannerSettings = unstable_cache(
@@ -60,8 +61,9 @@ export default async function PromotionalBanner() {
       return null;
     }
     
-    const bannerText = promotionSettings['promotions.banner_text'] || '🎉 Free shipping on orders over $75!';
+    const bannerText = promotionSettings['promotions.banner_text'] || 'We’re closing BeauTeas. Everything must go while supplies last.';
     const bannerType = promotionSettings['promotions.banner_type'] || 'info';
+    const bannerLink = promotionSettings['promotions.banner_link'] || '';
     
     // Define styling for different banner types
     const bannerStyles = {
@@ -94,9 +96,13 @@ export default async function PromotionalBanner() {
       <div className={`${currentStyle.bg} ${currentStyle.text} py-3 px-4 text-center relative`}>
         <div className="flex items-center justify-center space-x-2 max-w-4xl mx-auto">
           <IconComponent className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm font-medium">
-            {bannerText}
-          </p>
+          {bannerLink ? (
+            <Link href={bannerLink} className="text-sm font-medium underline underline-offset-2">
+              {bannerText}
+            </Link>
+          ) : (
+            <p className="text-sm font-medium">{bannerText}</p>
+          )}
         </div>
       </div>
     );

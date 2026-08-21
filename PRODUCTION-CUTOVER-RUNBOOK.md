@@ -537,7 +537,7 @@ This is the point of no easy return — everything above must be green first.
 - ☐ **Edit the existing Stripe webhook endpoint's URL** to `https://www.beauteas.com/api/webhooks/stripe`. Edit it — do not create a second endpoint — so the signing secret carries over and `STRIPE_WEBHOOK_SECRET` needs no change.
 - ☐ Update **Clerk** allowed domains / redirect URLs for `www.beauteas.com`.
 - ☐ Remove the Cloudflare Access gate from `shop.`, and 301 `shop.` → `www` (or retire it).
-- ☐ Submit `https://www.beauteas.com/sitemap.xml` to **Google Search Console** (BMC-85). No Change of Address needed — `www` was already the canonical under Shopify, which is the whole reason for choosing it.
+- ⊘ **DROPPED — sitemap submission to Google Search Console (BMC-85, canceled 2026-08-19).** Organic search is not a concern for a store that is closing. Nothing depends on it: `app/sitemap.ts` emits `www` URLs automatically once the rebuild above flips `NEXT_PUBLIC_SITE_URL`, `robots.txt` already points at it, and the `redirect_map` rows carry old Shopify traffic regardless. No Change of Address would have been needed either — `www` was already the canonical under Shopify.
 - ☐ *(No customer migration email — prod starts fresh; customers register on the new site. BMC-84 stays canceled.)*
 
 ---
@@ -545,9 +545,9 @@ This is the point of no easy return — everything above must be green first.
 ## Phase 11 — Post-cutover verification (first 60 min, then 24h)
 
 **First hour:**
-- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**. ⚠️ `redirect_map` is empty, so only the structural `/products/:slug` → `/product/:slug` rule fires. Check that the 301 **target actually resolves** (`curl -IL`, expect a final 200) — a 301 into a 404 is worse than no redirect. Test every old Shopify product and collection URL, not one.
+- ☐ `curl -I https://www.beauteas.com/products/<old-slug>` → **301**. `redirect_map` is **populated — 51 rows in prod** (loaded 2026-07-27, re-verified 2026-08-01, see Phase 8), so both the table lookups and the structural `/products/:slug` → `/product/:slug` fallback (`middleware.ts`) are in play. Check that the 301 **target actually resolves** (`curl -IL`, expect a final 200) — a 301 into a 404 is worse than no redirect. Test every old Shopify product and collection URL, not one. Pay particular attention to the two archived bundles (`clearly-calendula-full-package`, `clearly-calendula-sample-pack`) and the three withdrawn three-box SKUs: those legitimately no longer have a product page, so confirm they land somewhere sensible (`/thank-you` or the catalog) rather than a 404.
 - ☐ Google Rich Results Test on a live product URL — Product + Breadcrumb + Organization JSON-LD valid.
-- ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`.
+- ☐ Place one real order; confirm the Resend confirmation email + the order in `/admin`. Clean it up with **Cancel Order** on `/admin/orders/<id>` (give a reason): that one action refunds the PaymentIntent, cancels the order, and restocks the boxes. Do not refund from the Stripe Dashboard instead — that path reconciles via `charge.refunded` (BMC-213) but depends on webhook delivery and records no reason.
 - ⊘ **DEFERRED** — subscriptions not sold at launch.
 - ☐ **Auth check:** unauthenticated `curl` to `/api/orders` and `/api/orders/refund` → **401/403**.
 - ☐ `/api/tax` on a live checkout returns `"calculated_by": "stripe"` (not `"fallback"`) — confirms Phase 0 tax registration.
@@ -555,7 +555,7 @@ This is the point of no easy return — everything above must be green first.
 
 **First 24h:**
 - ☐ Stripe dashboard: payment/subscription success rate + webhook delivery (no failures).
-- ☐ Search Console: no crawl / redirect errors.
+- ⊘ **DROPPED with BMC-85** — no Search Console property will be watching `www`. The redirect verification in the first-hour list above is done by hand with `curl -IL` and is unaffected; that is the check that matters.
 - ☐ A **new** customer can register + log in (prod Clerk), place an order, and see it in their account.
 
 ---

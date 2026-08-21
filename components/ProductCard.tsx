@@ -40,11 +40,15 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Product, ProductVariant } from "@/lib/types";
+import { isSellableVariant } from "@/lib/config/commerce";
 import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
+import { resolveProductImageSrc } from "@/lib/utils/product-image";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Money } from "@/lib/money";
+import { boxesLeft, isSoldByTheBox } from "@/lib/sale/year-supply";
+import BoxesLeft from "@/components/sale/BoxesLeft";
 
 /**
  * Props interface for ProductCard component
@@ -73,8 +77,10 @@ function formatReviewDate(value?: string) {
  * @returns JSX element representing a clickable product card
  */
 export default function ProductCard({ product, priority = false }: ProductCardProps) {
-  // Get default or first variant
-  const variants = product.variants || [];
+  // Get default or first SELLABLE variant. A withdrawn variant (e.g. the
+  // discontinued 3-box packs) must never drive the card's price or
+  // availability, even if it happens to be the product's default_variant_id.
+  const variants = (product.variants || []).filter((v) => isSellableVariant(v));
   const defaultVariant: ProductVariant | undefined =
     variants.find((v) => v.id === product.default_variant_id) || variants[0];
 
@@ -84,9 +90,24 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
   const compareAt = defaultVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > (price ?? 0);
 
-  // Availability logic
-  const quantityInStock = defaultVariant?.inventory?.quantity ?? 0;
-  const availability = quantityInStock > 0 ? "available" : "coming_soon";
+  // Availability logic. `boxesLeft` (not `?? 0`) so an untracked or
+  // backorder-allowed variant reads as unlimited rather than sold out - the
+  // same semantics isVariantAvailable and hasAvailableStock already use.
+  // `defaultVariant` can itself be undefined (every variant withdrawn, e.g.
+  // migration 0028) - boxesLeft(undefined) would also return null via its
+  // "no inventory record" case, which reads as unlimited/available. A
+  // product with no sellable variant at all is never available, so that case
+  // is forced to 0 rather than handed to boxesLeft.
+  const boxes = defaultVariant ? boxesLeft(defaultVariant) : 0;
+  const availability = boxes === 0 ? "coming_soon" : "available";
+
+  // ...but "boxes" is only the honest unit for the tea blends. This card is
+  // also drawn for drinkware, mugs, gift cards and the multi-box bundles -
+  // PDP recommendations pull from the whole active catalog - and a travel mug
+  // reading "25 boxes left" is a unit lie. Everything that is not stocked by
+  // the box keeps the In Stock / Sold out label this card carried before the
+  // closing sale. See isSoldByTheBox in lib/sale/year-supply.ts.
+  const soldByTheBox = isSoldByTheBox(product);
 
   // Name/description/slug logic
   const name =
@@ -101,31 +122,11 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
     typeof product.slug === "string"
       ? product.slug
       : Object.values(product.slug || {})[0] || "";
-  // Handle consistent flat JSON structure: {"url": "...", "alt_text": "..."}
-  const imageUrl = (() => {
-    try {
-      if (!product.primary_image) return "/placeholder.svg";
-      
-      // If it's a JSON string, parse it first
-      let imageData = product.primary_image;
-      if (typeof imageData === "string" && (imageData as string).startsWith("{")) {
-        try {
-          imageData = JSON.parse(imageData);
-        } catch {
-          return "/placeholder.svg";
-        }
-      }
-      
-      const img = imageData as any;
-      const url = img?.url;
-      
-      if (!url) return "/placeholder.svg";
-      
-      return url.startsWith("/") ? url : "/" + url;
-    } catch {
-      return "/placeholder.svg";
-    }
-  })();
+  // Both stored shapes, flat ({url}) and MACH ({file:{url}}), resolve here. This
+  // used to read `img.url` only, so a product saved through /admin/products —
+  // which writes the MACH shape — silently lost its card image to the
+  // placeholder while its PDP kept working. See lib/utils/product-image.ts.
+  const imageUrl = resolveProductImageSrc(product.primary_image, product.media);
   const imageAlt = name;
   const ratingSummary = normalizeProductRating(product.rating);
   const hasRatings = Boolean(ratingSummary && ratingSummary.count > 0);
@@ -196,15 +197,34 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
               )}
             </div>
           )}
-          <p
-            className={`mt-2 text-xs ${
-              availability === "available"
-                ? stateStyles.inStock
-                : stateStyles.outOfStock
-            }`}
-          >
-            {availability === "available" ? "In Stock" : "Coming Soon"}
-          </p>
+          {/*
+            Box-stocked products (the tea blends) get the closing-sale count;
+            everything else gets the pre-sale label. In the box branch,
+            BoxesLeft owns the sold-out label: it renders "Sold out" itself
+            at boxes === 0 (both the no-sellable-variant case, forced to 0
+            above, and a tracked variant actually at zero). The paragraph
+            beside it only ever adds "In Stock" on top of that - never a
+            second "Sold out" - so the card shows exactly one sold-out
+            message, not two.
+          */}
+          {soldByTheBox ? (
+            <>
+              <BoxesLeft boxes={boxes} />
+              {availability === "available" && (
+                <p className={`mt-2 text-xs ${stateStyles.inStock}`}>In Stock</p>
+              )}
+            </>
+          ) : (
+            <p
+              className={`mt-2 text-xs ${
+                availability === "available"
+                  ? stateStyles.inStock
+                  : stateStyles.outOfStock
+              }`}
+            >
+              {availability === "available" ? "In Stock" : "Sold out"}
+            </p>
+          )}
 
           {/*
             Not a <Link>: the whole card is already an anchor to this same href

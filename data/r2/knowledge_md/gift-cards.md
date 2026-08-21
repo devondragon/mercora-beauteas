@@ -1,23 +1,20 @@
 ---
 id: faq-giftcards
-title: Gift Cards
+title: Gift Cards (Unavailable)
 category: sales
 tags: [gift cards, faq]
 ---
 
-**AI NOTES:** Explain how BeauTeas digital gift cards work — denominations, delivery, and limitations. Do not offer custom amounts unless they are listed here.
+**AI NOTES:** BeauTeas gift cards are NOT for sale. Purchasing is switched off in production and the store is closing, so a card could outlive the shop. Do not describe denominations, delivery, or how to buy one, and do not send anyone to a gift card page. Point shoppers at the tea instead.
 
-## Buying a Gift Card
+## Gift Cards Are Not Available
 
-BeauTeas digital gift cards are available in $20, $40, $50, and $100 denominations — the perfect way to share the gift of glowing skin.
+We are no longer selling BeauTeas gift cards. The shop is closing for good, so a gift card would outlast the store that honors it.
 
-## Delivery
+## Buying a Gift Instead
 
-Gift cards are delivered by email, typically within an hour of purchase. Send one to yourself or directly to a recipient.
+The tea itself still makes a good gift while it lasts. Any of the three Clearly Calendula blends can be shipped to whoever you like: choose the blend, enter their address at checkout, and it ships to them.
 
-## Using a Gift Card
+## Questions
 
-- Apply your gift card code at checkout.
-- Gift cards never expire and can be used across multiple orders.
-- Any unused balance stays on the card for next time.
-- Gift cards can't be redeemed for cash and aren't eligible for return.
+If you believe you hold a BeauTeas gift card, email info@beauteas.com and we'll sort it out with you.

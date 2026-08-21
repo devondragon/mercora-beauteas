@@ -1,0 +1,685 @@
+# Going-Out-of-Business Sale — Owner's Rollout Runbook
+
+This is the owner-only sequence for taking the going-out-of-business sale live
+on production, `shop.beauteas.com`. All of the code and content behind it is
+built, reviewed, and gated by the same CI suite as everything else in this
+repo (`npm run lint`, `npx tsc --noEmit`, `npm test` — all green as of this
+writing; see `task-14-report.md` for the exact output).
+
+> **Status as of 2026-08-20: Phases 0 through 7 are DONE.** The sale has been
+> live on `shop.beauteas.com` since 2026-08-15. Migrations `0025`–`0035` are
+> applied, the Vectorize rebuild, the inventory recount, and the promo banner
+> were finished 2026-08-18, the Phase 7 checklist was verified against
+> production 2026-08-19, and the Phase 7 real order was placed, verified, and
+> cancelled (refunded and restocked) 2026-08-20.
+>
+> **What remains is not in this file:** `PRODUCTION-CUTOVER-RUNBOOK.md`
+> Phase 10 (DNS to `www`, tracked as BMC-83) and Phase 11 (post-cutover
+> verification, BMC-86). Phases 0–7 below are kept as the record of what was
+> run and as the rollback reference, not as a to-do list.
+
+Every command below is copy-pasteable and was checked against `package.json`
+and `wrangler.jsonc` before being written down. Where a value could not be
+confirmed from the repo, it says so explicitly instead of guessing.
+
+Two things this project has already gotten wrong once — do not repeat them:
+
+1. **Never pipe a deploy through `head` or `grep`.** A deploy was SIGPIPE-killed
+   mid-run this way once already, leaving migrations applied but the Worker
+   *not* uploaded. Always redirect deploy output to a log file and read the
+   whole thing back.
+2. **`wrangler d1 execute` needs an explicit `--env` flag in this repo.**
+   `wrangler.jsonc` only defines `d1_databases` under `env.dev` and
+   `env.production`, not at the top level — a command missing `--env` cannot
+   resolve the binding and fails (sometimes silently, as a prior task's local
+   check did). Every command below carries it.
+
+Follow the phases in order. Do not skip ahead to the DNS switch — it is last,
+on purpose, per `docs/cutover-status.md`.
+
+---
+
+## Phase 0 — Before deploying: see what's about to land
+
+```bash
+npm run db:migrate:status:production
+```
+
+This is read-only (`--dry-run`, no writes). As of this writing it will report
+seven pending migrations, in this order:
+
+| Migration | What it does |
+|---|---|
+| `0025_seed_goob_sale_settings.sql` | Seeds `sale.minimum_boxes`, `sale.final_sale`, `sale.subscriptions_enabled`, `shipping.tiers` (empty — see Phase 2), `promotions.banner_link`; turns off free shipping (`shipping.free_methods`). |
+| `0026_goob_closing_content.sql` | Adds the `/thank-you` page, rewrites `shipping-policy`, `contact`, `faq`, `refund-policy`, archives `/subscriptions` and the empty `clearly-calendula-sample-pack-on-sale` stub. |
+| `0027_remove_em_dashes_from_content.sql` | Sweeps em dashes out of live `pages`, `categories`, and `blog_posts` rows (customer-facing content only). |
+| `0028_withdraw_box_variants_and_single_shipping_method.sql` | Discontinues the three-box variants (`BTCCM3`/`BTCCA3`/`BTCCE3` — the owner's call: one blend, one SKU, one box); disables `express`/`overnight` in `shipping.methods` so only Standard is sold, without deleting them. |
+| `0029_deactivate_subscription_plans_for_goob.sql` | Sets `subscription_plans.is_active = 0`, a data-level stop behind the `sale.subscriptions_enabled` policy check. |
+| `0030_goob_box_math_content.sql` | Appends the ten-bags-per-box fact to the `faq` page and the three blend descriptions, so the storefront and Chai's vector index both carry it. |
+| `0031_goob_copy_fixes_and_banner_text.sql` | Pre-launch copy fixes: rewrites the stale free-shipping `promotions.banner_text` to the closing-sale message (without enabling the banner — that stays Phase 6), links "now is the time" on `/thank-you` back to the catalog, and fixes two British spellings. |
+| `0032_seed_per_box_shipping.sql` | Seeds `shipping.per_box_cost` at $1.00, the model that replaced the tier bands (see Phase 2). Applied 2026-08-16. |
+
+> **Phases 0 through 6 have all run on production.** Phases 0-4 on 2026-08-15
+> (`e0718c5`, Worker `824f0636`): all seven migrations applied, both bundles
+> archived, all three blends repriced to $3.00. Phase 5 (the Vectorize rebuild)
+> and Phase 6 (the promo banner) on 2026-08-18, by the owner. What follows is
+> kept for the record and for the one phase still outstanding — the Phase 7
+> verification checklist and the DNS switch.
+
+### Pre-flight for `0030`, on production only
+
+`0030` is verified on dev. Two production-only conditions can spoil it, and
+both are one read-only query to rule out. Run these **before** the deploy:
+
+```bash
+npx wrangler d1 execute beauteas-db --remote --env production -y \
+  --command "SELECT slug, json_valid(description) AS valid_json, json_extract(description,'\$.en') IS NOT NULL AS has_en FROM products WHERE slug LIKE 'clearly-calendula-%';"
+
+npx wrangler d1 execute beauteas-db --remote --env production -y \
+  --command "SELECT count(*) AS faq_rows FROM pages WHERE slug = 'faq';"
+```
+
+Expect `valid_json = 1` and `has_en = 1` on every blend, and `faq_rows = 1`.
+
+- **A blend whose `description` is not valid JSON** makes `json_extract` throw
+  during the WHERE evaluation, which aborts that whole UPDATE for all three
+  rows. Because migrations apply from the `predeploy` hook, that aborts the
+  deploy *after* `0025`-`0029` have already been written: database migrated,
+  Worker never uploaded. Recoverable, but only by fixing the row and
+  re-running.
+- **No `faq` row** makes the pages UPDATE silently affect zero rows with no
+  error, so Chai loses its FAQ grounding and nothing says so. This is the
+  known dev/prod `pages` divergence, so it is worth actually checking rather
+  than assuming.
+
+`npm run deploy:production` backs up and applies pending migrations
+automatically, *before* the build (see `docs/database-migrations.md` §
+Auto-apply on deploy) — you do not run these by hand. This step is only so you
+know what's coming before you commit to the deploy.
+
+---
+
+## Phase 0.5 — Confirm the SHA you are about to deploy went green
+
+**The plan for this sale is to stay on `goob` and deploy both dev and
+production from it manually.** The store is closing, the work is terminal,
+and merging 44 commits to `main` to run a handful of deploys buys nothing
+that outlives the sale. That decision moves one safety check from CI onto
+you, so this phase is where you perform it by hand.
+
+What you are replacing:
+
+- `.github/workflows/ci.yml` ("Launch readiness gate": lint, typecheck,
+  dependency audit, unit tests, Workers integration tests, a production
+  OpenNext build, and the checkout browser suite) runs on push/PR to `main`.
+  Because PR #123 targets `main`, it **does** run on every push to `goob` —
+  so the gate still covers this branch.
+- `.github/workflows/production-deploy-guard.yml` checks the gate's result
+  for an exact SHA before deploying, but its `deploy` job carries
+  `if: github.ref == 'refs/heads/main'`, so **it cannot deploy this branch.**
+  Dispatching it with `goob` selected finishes *green* with `deploy` silently
+  skipped — a run that looks exactly like a successful deploy that never
+  happened. Do not use it while working this way.
+- **`npm run deploy:production` run locally, as Phase 1 shows it, does not
+  consult CI at all.** It builds and deploys whatever is checked out, gated
+  by nothing but your own judgment. That is the check you are now making.
+
+So, before Phase 1:
+
+1. Commit and push everything you intend to deploy — a local deploy ships
+   your working tree, including anything uncommitted.
+2. Confirm your working tree is clean and note the SHA:
+   ```bash
+   git status --short && git rev-parse --short HEAD
+   ```
+3. Confirm the Launch readiness gate went green **for that exact SHA**:
+   ```bash
+   gh run list --branch goob --workflow ci.yml --limit 3 \
+     --json headSha,status,conclusion --jq '.[] | "\(.headSha[0:7]) \(.status) \(.conclusion)"'
+   ```
+   A green run on an *earlier* commit does not cover the one in your working
+   tree. If the SHA is not in that list as `completed success`, push and wait
+   for it before deploying.
+
+Deploy dev first and work the phases there — dev has no deploy workflow
+either, so `npm run deploy:dev` is the only path to it regardless, and it
+exercises the identical migration-then-build sequence against
+`beauteas-db-dev` and `beauteas-db-dev-preview`.
+
+**If you later decide to merge to `main` anyway**, the mechanical path opens
+back up: dispatch `production-deploy-guard.yml` with the ref picker on
+`main` and it re-checks the gate for you instead of you doing step 3.
+
+---
+
+## Phase 1 — Deploy
+
+**Read Phase 0.5 first — this command deploys your working tree and does not
+check CI status on its own.**
+
+**This deploy alone puts the store in a state that looks like a clearance
+sale but is not yet priced like one.** The homepage hero ("We're Closing
+BeauTeas For Good ... priced to clear," hardcoded in `app/page.tsx`) ships as
+part of this same code deploy, and the 10-box minimum plus free shipping
+being switched off land from the `0025` migration in this same deploy. But
+the actual sale price per box does not exist until Phase 4, which is gated on
+physically weighing boxes and cannot be rushed. In between, a customer sees
+"going out of business, priced to clear," and the only way to check out is
+**10 boxes at the pre-sale $14.99 each — $149.90 minimum, all sales final**,
+with no return path (`sale.final_sale` is on from this same deploy). That is
+a real, live window, not a theoretical one — there is nothing else in the
+system that closes it until Phase 4 finishes. Pick one before you run this:
+
+- **Compress Phases 1–4 into one sitting.** Have the real per-box rate and
+  the recounted inventory ready *before* you start Phase 1, so Phase 4 runs
+  within minutes of Phase 1, not hours or days later.
+- **Or hold the hero/banner copy out of this deploy until pricing is live.**
+  If you want to ship the box-minimum/shipping changes on their own schedule,
+  temporarily revert the `app/page.tsx` hero copy (and don't enable the
+  Phase 6 banner) in the commit you deploy for Phase 1, so nothing advertises
+  a "priced to clear" sale that isn't priced yet; restore the hero copy in a
+  follow-up deploy once Phase 4 has run.
+
+```bash
+npm run deploy:production > /tmp/goob-deploy-production.log 2>&1
+```
+
+**Do not** add `| head` or `| grep` to that command, or run it any other way
+that could truncate the pipe before wrangler finishes writing. Let it run to
+completion, then read the log:
+
+```bash
+tail -n 40 /tmp/goob-deploy-production.log
+```
+
+Confirm **both** of these appear before considering the deploy done:
+
+- A line reading `Uploaded beauteas ...` (the Worker upload itself)
+- A line reading `Current Version ID: ...`
+
+If either is missing, the deploy did not complete — do not proceed to Phase 2
+until you have a clean `Uploaded` + `Current Version ID` pair in the log, even
+if the command appeared to exit normally.
+
+At this point the sale migrations are live on `beauteas-db`, but
+`shipping.tiers` is still `[]` (empty) from the `0025` seed — see Phase 2
+before telling anyone the sale is on.
+
+### Verify the two settings rows the migrations could not force
+
+Both `0025` and `0028` write these with **guarded** `UPDATE`s that no-op
+silently if the stored value has drifted (`0028` matches the exact prior JSON
+so it will not clobber an admin edit; `0025` deliberately cannot create a row
+that is missing). A no-op reports success, so check the result rather than
+assuming it:
+
+```bash
+npx wrangler d1 execute beauteas-db --remote --env production --json \
+  --command "SELECT key, value FROM admin_settings WHERE key IN ('shipping.methods','shipping.free_methods')"
+```
+
+- `shipping.methods` must show `"enabled":false` for **both** `express` and
+  `overnight`. If either is still `true`, `0028`'s guard did not match — every
+  order placed on that method will be charged the Standard tier rate while the
+  store pays the real carrier cost. Fix it in `/admin/settings` → Shipping
+  before continuing.
+- `shipping.free_methods` must exist and be `[]`. If the row is **absent**,
+  the code falls back to `['standard']` with a $75 threshold, and every cart
+  over $75 ships free — the charge floor accepts $0 in lockstep, so nothing
+  will alert you. Add the row (`INSERT INTO admin_settings (key, value,
+  category) VALUES ('shipping.free_methods', '[]', 'shipping')`) before
+  continuing.
+
+---
+
+## Phase 2 — Shipping: $1.00 per box (superseded the tier bands, 2026-08-16)
+
+**The banded model this phase originally described is no longer what the sale
+runs on.** Measured postage came back at about $10 for 10 boxes and about $9
+for 20 (larger orders ship as several parcels — a single 40-box parcel prices
+at $160), which made $1.00 a box both close to real cost and free of the thing
+bands could not avoid: a price cliff at every boundary, where the 20th box cost
+$10 of shipping while the 19th cost nothing. That is a sticker shock at
+checkout and a reason to stop at 19.
+
+So shipping is now `shipping.per_box_cost`, seeded at **$1.00** by migration
+`0032`, which applies automatically on the deploy that carries it. `$1.00 × the
+box count` prices every cart: 10 boxes ship for $10.00, 37 for $37.00, with no
+jumps anywhere in between. It **outranks** `shipping.tiers` (left empty and
+still working, so reverting to bands is one settings write) and the flat
+per-method rates.
+
+Nothing here is blocked on measurements any more, but confirm it after the
+deploy:
+
+1. Go to `/admin/settings` → **Shipping** tab. The top card, "Shipping Per
+   Box", should read `1` with "In effect. Every order is charged $1.00 a box,
+   and the tiers and flat rates below are ignored." If it reads $0.00 and
+   "Not configured", `0032` did not apply — check
+   `npm run db:migrate:status:production` before anything else.
+2. The "Shipping by Quantity" card below it should carry a warning saying
+   nothing in that section is charged. That is correct, not a misconfiguration.
+3. Spot-check the storefront: 10 boxes in the cart should quote $10.00 of
+   shipping at checkout, not the flat $5.99.
+4. Spot-check a large cart too — 60 boxes should quote $60.00. A clearance
+   sale is exactly what produces oversized orders, and this is the case the
+   banded model kept getting wrong.
+5. To change the rate later, edit that one field and save. To go back to
+   bands, set it to $0.00 and fill in the tier rows below it.
+
+---
+
+## Phase 3 — Withdraw the bundle SKUs (redirect lands, and goes live, before the archive)
+
+Two bundle products need to come off sale: `clearly-calendula-sample-pack`
+and `clearly-calendula-full-package`.
+
+### Why the redirect has to go live first, not "in the same change"
+
+- `middleware.ts` only consults the `redirect_map` table for paths starting
+  `/products/`, `/collections/`, `/pages/`, `/blogs/`, or `/policies/`. It
+  **never** looks at the singular `/product/<slug>` path the live PDP
+  actually uses.
+- `app/product/[slug]/page.tsx` calls `notFound()` the moment a product fails
+  `isPubliclyPurchasableProduct` — which an archived product does
+  immediately, and the page has `export const revalidate = 0`, so that
+  failure is live the instant the admin write commits, with no caching delay
+  to hide behind.
+
+Archiving is a D1 write that takes effect the moment you click it in
+`/admin/products`. The `next.config.ts` redirect only exists once a deploy
+finishes building and shipping it. **Bundling them as "one change, then
+deploy" still leaves a real gap**: from the moment you archive to the moment
+that deploy's "Uploaded" + "Current Version ID" lines appear, the redirect
+doesn't exist yet and the product already returns `notFound()` — a genuine
+404 on a real URL, which is exactly the failure this phase exists to prevent.
+So the order below puts the redirect live *before* the archive, not merely
+committed alongside it.
+
+### The change, in order
+
+1. In `next.config.ts`, add two entries to the `redirects()` array, following
+   the exact pattern already used for `/subscriptions` and
+   `/clearly-calendula-sample-pack-on-sale` in commit `7cb7c04`:
+
+   ```ts
+   {
+     source: "/product/clearly-calendula-sample-pack",
+     destination: "/thank-you",
+     permanent: true,
+   },
+   {
+     source: "/product/clearly-calendula-full-package",
+     destination: "/thank-you",
+     permanent: true,
+   },
+   ```
+
+   Commit that change on its own.
+
+2. Deploy (Phase 1's deploy command). **Read this before you run it:** the
+   redirect is unconditional and has nothing to do with product status, so
+   the moment this deploy finishes, both URLs stop showing the product page
+   and start sending every visitor straight to `/thank-you` — even though
+   both products are still `active` and still purchasable everywhere else
+   (category page, search, cart, direct add-to-cart) until step 4. In
+   practice, this step *is* the withdrawal going live for anyone who reaches
+   these products by their PDP URL; the database status change a few minutes
+   later is bookkeeping that catches up to it. Only proceed if you are fine
+   with that: it converts "still for sale, PDP reachable" into "still for
+   sale everywhere except its own product page" for the few minutes until you
+   archive.
+3. Confirm the redirect responded before touching product status:
+
+   ```bash
+   curl -sI https://shop.beauteas.com/product/clearly-calendula-sample-pack | head -1
+   curl -sI https://shop.beauteas.com/product/clearly-calendula-full-package | head -1
+   ```
+
+   Both should return `HTTP/2 308` (Next.js serves `permanent: true` redirects
+   as 308, not 301 — the browser-visible destination is still `/thank-you`
+   either way). If either is not a redirect, stop — do not archive until it
+   is.
+4. Only now, in `/admin/products`, archive both `clearly-calendula-sample-pack`
+   and `clearly-calendula-full-package`. From this point the redirect and the
+   product status agree, and the property that matters — no customer ever
+   hits a 404 on these two URLs — held throughout.
+
+**Do not start this phase today if the bundles are still meant to be actively
+for sale** — step 2 alone starts pulling their PDP out of reach the moment it
+deploys, regardless of whether you've archived anything yet. Sequence the
+whole phase for whenever you decide to pull them from the sale.
+
+**Phase 4 is blocked on this phase being fully complete (step 4 done, both
+bundles archived) — see the warning at the top of Phase 4 for why.**
+
+---
+
+## Phase 4 — Recount inventory and reprice
+
+**Blocked on Phase 3 being fully complete.** `clearly-calendula-full-package`
+(`BTCCFP`, a 9-box "Mega Month") and `clearly-calendula-sample-pack`
+(`BTCCSP`, a 3-box pack) are `active` + physical fulfillment right now, same
+as the three real single-box blends, and the reprice script's SELECT
+(`ACTIVE_PHYSICAL_VARIANTS_SQL`) has no way to tell a bundle apart from a
+blend — both are "every active, physical, tea variant." Run this phase
+before Phase 3 finishes archiving both bundles and the reprice sets a 9-box
+bundle to the same flat per-box rate as a single box (confirmed against
+production: as of this writing both bundles are still `active`). The script
+now refuses to run at all without `--expect-skus` or `--expect-count` (see
+step 2) specifically so this can't happen silently — but do not rely on the
+guard instead of doing Phase 3 first; it exists to catch a mistake, not to
+license skipping the ordering.
+
+0. **Archive the two bundles first if Phase 3 has not run.** `BTCCFP` (9-box
+   Full Package) and `BTCCSP` (3-box Sample Pack) are `active` + `physical`
+   until then, so they match the reprice SELECT exactly like a single box and
+   would be set to the same flat per-box rate: nine boxes for the price of one.
+   The `--expect-skus` guard refuses to run in that state, which is the
+   intended behaviour, not an error to work around. This ordering was
+   rehearsed on dev on 2026-08-10.
+
+1. Recount physical stock per blend (Morning / Afternoon / Evening) and enter
+   the real numbers wherever inventory is tracked in `/admin/products`.
+2. Decide your sale rate in dollars per box, then dry-run the reprice script
+   first:
+
+   ```bash
+   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
+   ```
+
+   **Rehearse on dev first if you want to see it before production.** The
+   script has three targets: no env vars writes the LOCAL D1 file (which the
+   deployed dev Worker never reads, so it changes nothing you can look at),
+   `D1_TARGET=dev-remote` writes the deployed dev database, and
+   `D1_REMOTE=true` writes production. Archive the two bundles on dev first,
+   the same Phase 3 ordering this phase depends on, or the `--expect-skus`
+   guard will refuse to run:
+
+   ```bash
+   D1_TARGET=dev-remote node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1 --dry-run
+   ```
+
+   Setting both env vars at once is a hard error rather than a precedence
+   rule, so there is no way to mean production and get dev or the reverse.
+
+   `--dry-run` writes nothing — no D1 updates, no baseline file.
+   `--expect-skus` is required (or `--expect-count`) and is a HARD failure on
+   mismatch, checked before the dry-run's own "nothing written" message: the
+   script now refuses to proceed, print or not, unless the plan is *exactly*
+   `BTCCM1`, `BTCCA1`, `BTCCE1` — no more, no fewer. **If the error output
+   mentions `BTCCFP` or `BTCCSP`, stop — go back and finish Phase 3 first.**
+   Do not loosen `--expect-skus` to make the error go away.
+
+3. **Back up production before running it for real.** The script has no
+   restore mode: it writes one `UPDATE` per variant as its own separate
+   `wrangler d1 execute` call (not one atomic transaction), and only writes
+   `data/goob/price-baseline.json` after the *entire* loop finishes. A failure
+   partway through — a dropped connection, a killed process, a bad SKU further
+   down the list — leaves prices half old / half new in production **and no
+   baseline file at all** to recover the true pre-sale prices from. Take a
+   fresh export first, using the same command shape `scripts/d1-migrate.mjs`
+   uses for its own pre-flight backups:
+
+   ```bash
+   npx wrangler d1 export beauteas-db --remote --env production \
+     --skip-confirmation --output ".backups/pre-reprice-$(date +%Y%m%dT%H%M%S).sql"
+   ```
+
+   Confirm the output file is non-empty before proceeding. If the reprice run
+   below fails partway through, this export is what lets you restore the
+   original prices and re-run cleanly, rather than reconstructing them by hand
+   from whatever `compare_at_price` values happen to still be intact.
+
+4. Once the dry-run output looks correct and the backup above exists, run it
+   for real, same rate and same `--expect-skus`:
+
+   ```bash
+   D1_REMOTE=true node scripts/goob-reprice.mjs --rate 2.00 \
+     --expect-skus BTCCM1,BTCCA1,BTCCE1
+   ```
+
+   This writes the new sale price to every qualifying variant, sets
+   `compare_at_price` to the real pre-sale price (so the storefront strikethrough
+   is accurate), and writes `data/goob/price-baseline.json`.
+
+5. **`data/goob/price-baseline.json` already exists, written by the dev
+   rehearsal on 2026-08-10, and is committed.** It was checked against
+   production before being committed: same variant ids, same 2000 minor units
+   of `compare_at_price` on all three blends, so the production run reads the
+   same originals it would have derived for itself. Keep a copy outside git
+   anyway (a second copy, not just the commit).
+
+   Why this matters: the baseline file is the only record of each variant's
+   *true* pre-sale price. Every later run of this script reads it first, so
+   re-running at a different rate always reprices from the original price,
+   not from the already-discounted one. If that file is lost, the script
+   falls back to reading whatever is currently in `compare_at_price` in the
+   database as the "original" price. If `compare_at_price` has *also* drifted
+   out of band by then (cleared, overwritten, or set by some other process),
+   a later run could silently set a lower "was" price than the real original
+   — understating the discount shown to customers. Losing the file is
+   recoverable only as long as `compare_at_price` in the DB is still correct;
+   don't let both go missing at once.
+
+6. **The reprice is visible immediately, everywhere, no redeploy needed.**
+   `app/page.tsx` sets `export const revalidate = 3600`, but `app/layout.tsx`
+   sets `export const dynamic = "force-dynamic"` on the root layout, which
+   overrides every page-level `revalidate` beneath it, the homepage's
+   included. This reprice is a pure D1 write with no deploy, so both the
+   homepage's catalog cards and the PDP (`app/product/[slug]/page.tsx`, which
+   also sets `revalidate = 0`) reflect the new price on the very next request
+   after step 4 finishes.
+
+---
+
+## Phase 5 — Rebuild Chai's knowledge base (it does not update itself)
+
+`app/api/admin/vectorize` (`GET`) rebuilds the Vectorize index from **the R2
+bucket bound as `MEDIA`**, not from the repo checkout. The corrected
+`data/r2/knowledge_md/returns.md` (Task 13's refund-policy fix) has **no
+effect on Chai's answers** until it is uploaded to R2 and the index is
+rebuilt — in both dev and production, independently. Skipping this means
+Chai's semantic search can still surface the old, wrong 30-day-return text for
+any question that doesn't hit the deterministic pattern-matched answers.
+
+### 1. Upload the corrected file to R2
+
+Dev bucket is `beauteas-images-dev`, production bucket is `beauteas-images`
+(confirmed in `wrangler.jsonc`). Repeat for each environment you need to fix
+— production is the one that matters for customers, but keep dev in sync too:
+
+```bash
+npx wrangler r2 object put "beauteas-images-dev/knowledge_md/returns.md" \
+  --file="data/r2/knowledge_md/returns.md" --content-type="text/markdown" --remote
+
+npx wrangler r2 object put "beauteas-images/knowledge_md/returns.md" \
+  --file="data/r2/knowledge_md/returns.md" --content-type="text/markdown" --remote
+```
+
+If other knowledge files changed too, repeat the same command for each one
+under `data/r2/knowledge_md/`.
+
+### 2. Rebuild the index
+
+Requires the `ADMIN_VECTORIZE_TOKEN` secret as a Bearer token. **Production**
+is documented as re-verified present (`docs/cutover-status.md`, via `wrangler
+secret list --env production` on 2026-08-01). **Dev's is not separately
+documented as re-verified** — check it exists before relying on it, so a
+missing secret shows up as "not set" rather than a confusing 401 partway
+through this step:
+
+```bash
+npx wrangler secret list --env dev
+```
+
+(`wrangler secret list` only confirms a secret *name* is set, never its
+value — that's expected, not a partial check.)
+
+**Do not assume `$ADMIN_VECTORIZE_TOKEN` is already exported in your shell —
+it almost certainly isn't.** It lives in Cloudflare secrets (deployed
+environments) and in this repo's `.dev.vars` (local value, same secret). If
+you run the `curl` commands below without exporting it first, the shell
+substitutes an empty string, the Bearer header comes through as
+`Authorization: Bearer ` with nothing after it, and you get a 401 that looks
+like a bad or expired token rather than what it actually is — a missing
+export. Read it from `.dev.vars` and export it into this shell session first:
+
+```bash
+export ADMIN_VECTORIZE_TOKEN=$(grep '^ADMIN_VECTORIZE_TOKEN=' .dev.vars | cut -d= -f2-)
+```
+
+Then call each environment:
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_VECTORIZE_TOKEN" \
+  https://beauteas-dev.justblackmagic.workers.dev/api/admin/vectorize
+
+curl -H "Authorization: Bearer $ADMIN_VECTORIZE_TOKEN" \
+  https://shop.beauteas.com/api/admin/vectorize
+```
+
+Each call clears the existing index and re-embeds from D1 (products) + R2
+(knowledge) fresh — expect it to take on the order of a minute or two. A
+successful response is JSON with counts, not an error.
+
+---
+
+## Phase 6 — Turn on the banner
+
+`0031` rewrote the stale free-shipping `promotions.banner_text` to
+`We're closing BeauTeas. Everything is $3 a box while it lasts.` at deploy
+time (Phase 1), but left `banner_enabled` `false` on purpose: the deploy
+lands before the Phase 4 reprice, and the banner must not quote $3 while the
+PDP still says $14.99. That is why this phase comes after Phase 4 — do not
+enable the banner earlier.
+
+1. `/admin/settings` → **Promotions** tab.
+2. **Confirm the text before enabling.** It should read the `0031` message
+   above — if it still mentions free shipping, `0031`'s guarded UPDATE
+   no-opped (an admin edit had drifted the value) and you need to set the
+   text by hand. Then enable the promotional banner and confirm the link
+   field is `/thank-you`. If the price ever drops again
+   (`scripts/goob-reprice.mjs` is built to run twice), this text is the
+   other place the old price survives — update it in the same breath.
+3. Load the homepage and confirm the banner is visible, underlined, and
+   clicking through lands on `/thank-you`.
+4. Optional, but worth doing once: the `0025` seed already sets
+   `promotions.banner_link` to `/thank-you`, so production may never actually
+   exercise the *blank*-link fallback on its own. To confirm that path still
+   works rather than assume it, temporarily clear the link field, save, and
+   confirm the banner renders as plain, non-clickable text instead of a
+   broken link — then restore the `/thank-you` link before moving on.
+
+---
+
+## Phase 7 — Verify on production, then only then the DNS switch
+
+Run the full checklist below against **production** (`shop.beauteas.com`)
+before touching DNS. Once everything checks out, proceed to
+`PRODUCTION-CUTOVER-RUNBOOK.md` Phase 10 (the `www` DNS switch) and Phase 11
+(post-cutover verification) — in that order, and not before.
+
+---
+
+## Human verification checklist (run this against production)
+
+These are the runtime checks that could not be exercised in earlier tasks
+because `preview:dev` is a long-running local server. Go through all of them
+in order.
+
+**Purchase minimum and shipping**
+1. Add 6 boxes to the cart. The drawer should show "Add 4 more boxes to check
+   out. 10 box minimum." and checkout should be unreachable (no working link
+   to `/checkout`, or a blocking panel if you navigate there directly).
+2. With the cart still under the minimum, go directly to `/checkout`. You
+   should see a blocking panel (e.g. "Just a few more boxes"), and its "Back
+   to the teas" link should resolve to `/category/clearly-calendula`, not a
+   dead link.
+3. Add 4 more boxes (10 total). Checkout should now proceed normally through
+   every step.
+4. Confirm the shipping quote at checkout is **$1.00 x the box count** (the
+   `shipping.per_box_cost` model that replaced the tier bands), not the old
+   $5.99 flat rate. Ten boxes should quote $10.00.
+5. At the payment step with 10+ boxes, remove items via the cart drawer to
+   drop back under the minimum. Checkout should re-render the blocking panel
+   rather than let you continue.
+
+**Final-sale notice and thank-you page**
+6. At the payment step, confirm the final-sale notice appears above the
+   Stripe form with the exact copy, and that its link ("More about all of
+   this here" or similar) goes to `/thank-you`. Advance to the confirmation
+   step and confirm the notice is gone there.
+7. Load `/thank-you` directly and confirm it renders. Confirm the promo
+   banner, the homepage, and the checkout notice all link to it correctly.
+
+**A real order, end to end**
+8. Place one real order for at least the 10-box minimum. Confirm: the order
+   completes, inventory decrements, and the confirmation email arrives with
+   the final-sale line in its intro paragraph, rendering cleanly (no broken
+   apostrophes) in your mail client.
+
+   **This is real money and real inventory — clean it up immediately after
+   confirming the checks above, before moving on to step 9.** Open the order
+   at `/admin/orders/<id>` and use **Cancel Order**, giving a reason like
+   "This was a test order". That one action does all three things:
+   - issues the full refund against the original PaymentIntent (live mode),
+   - flips the order to `cancelled` / `refunded`,
+   - **restocks the boxes**, so the count Phase 4 recounted stays correct.
+
+   The reason text lands in `extensions.refunds[].reason`, which is what keeps
+   the row from being mistaken for a genuine sale later.
+
+   Do **not** refund from the Stripe Dashboard instead. That path works — the
+   `charge.refunded` handler reconciles it (BMC-213) and a full external
+   refund does restock — but it depends on webhook delivery and records no
+   reason. The admin action is the one to use.
+
+   While you are on that page, the same card carries **Mark as Shipped**
+   (carrier and tracking optional as a pair, and it emails the customer) and
+   **Edit tracking** once shipped. If you want to exercise shipping too, do it
+   *before* cancelling: a refund Stripe has accepted but not yet settled
+   blocks shipping by design (BMC-224).
+
+**Chai**
+9. Ask Chai each of the following and confirm every answer agrees with the
+   live site: the return policy, the shipping cost, the minimum order size,
+   how old/fresh the tea is, and why the store is closing.
+
+**Sold-out and admin surfaces**
+10. If any variant is sold out (check after Phase 4's recount), confirm both
+    the product card badge and the PDP read "Sold out".
+11. In `/admin/settings` → Shipping, confirm **Per-box cost** reads $1.00 and
+    survives a reload. The tier-band checks that used to live here no longer
+    apply: `shipping.tiers` is `[]` and per-box outranks it. Note that a
+    per-box cost of $0 means "not configured" and silently falls back to the
+    flat per-method rates, so a cleared field is not the same as free
+    shipping.
+
+**Blog em-dash sweep (post-deploy only — local D1 has no blog rows to check
+this against)**
+
+Production database name is `beauteas-db` (confirmed in `wrangler.jsonc`,
+**not** `beauteas-db-prod`):
+
+```bash
+npx wrangler d1 execute beauteas-db --env production --remote \
+  --command "SELECT id,title,(html LIKE '%—%') h,(excerpt LIKE '%—%') e FROM blog_posts WHERE id IN (1,13);"
+```
+
+Expect `h` and `e` both `0` for both rows. Then eyeball
+`/blog/the-magical-calendula-flower` and `/blog/10-steps-for-better-sleep` in
+a browser to confirm the rendered post reads cleanly with no stray em dashes
+or leftover formatting artifacts from the migration.
+
+---
+
+## What "done" looks like
+
+- ☑ Phases 0–6 complete, in order.
+- ☑ Every item in the verification checklist passed against production
+  (2026-08-19, plus the real order on 2026-08-20).
+- ☐ Only then: `PRODUCTION-CUTOVER-RUNBOOK.md` Phase 10 (DNS, BMC-83) and
+  Phase 11 (post-cutover verification, BMC-86). **This is all that is left.**

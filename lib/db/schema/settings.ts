@@ -78,18 +78,28 @@ export const defaultSettings = [
   // Shipping Configuration
   {
     key: 'shipping.methods',
+    // GOOB: the sale ships a single Standard method — express and overnight
+    // are disabled rather than removed so the shape survives for any future
+    // use. Migration 0028 mirrors this for already-deployed databases.
     value: JSON.stringify([
       { id: 'standard', label: 'Standard (5–7 days)', cost: 5.99, estimatedDays: 5, enabled: true },
-      { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: true },
-      { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: true }
+      { id: 'express', label: 'Express (2–3 days)', cost: 9.99, estimatedDays: 2, enabled: false },
+      { id: 'overnight', label: 'Overnight', cost: 19.99, estimatedDays: 1, enabled: false }
     ]),
     category: 'shipping',
     description: 'Available shipping methods and pricing',
     data_type: 'object'
   },
   {
+    // GOOB: empty, matching what migration 0025 sets on every existing database.
+    // This array is not just documentation — app/api/admin/settings/route.ts
+    // inserts the whole `defaultSettings` block whenever `admin_settings` has
+    // zero rows, so a freshly provisioned or reset environment seeds from HERE,
+    // not from the migration. Leaving `['standard']` would silently re-enable
+    // free shipping over $75 during the closing sale, which is the exact
+    // failure 0025 exists to prevent. Empty = no method is ever free.
     key: 'shipping.free_methods',
-    value: JSON.stringify(['standard']),
+    value: JSON.stringify([]),
     category: 'shipping',
     description: 'Which methods become free over threshold',
     data_type: 'object'
@@ -162,7 +172,7 @@ export const defaultSettings = [
   },
   {
     key: 'promotions.banner_text',
-    value: JSON.stringify('🎉 Free shipping on orders over $75!'),
+    value: JSON.stringify('We’re closing BeauTeas. Everything must go while supplies last.'),
     category: 'promotions',
     description: 'Banner message text',
     data_type: 'string'
@@ -210,5 +220,58 @@ export const defaultSettings = [
     category: 'recommendations',
     description: 'Hide products the customer already purchased',
     data_type: 'boolean'
+  },
+
+  // Going-out-of-business sale (0025)
+  {
+    key: 'sale.minimum_boxes',
+    value: JSON.stringify(10),
+    category: 'sale',
+    description: 'Minimum number of boxes required to check out',
+    data_type: 'number'
+  },
+  {
+    key: 'sale.final_sale',
+    value: JSON.stringify(true),
+    category: 'sale',
+    description: 'All sales are final (no returns); damaged or lost shipments are still made right',
+    data_type: 'boolean'
+  },
+  {
+    key: 'sale.subscriptions_enabled',
+    value: JSON.stringify(false),
+    category: 'sale',
+    description: 'Show subscription options on the storefront',
+    data_type: 'boolean'
+  },
+  {
+    key: 'shipping.tiers',
+    // EMPTY is intentional: resolveShippingOptions (shipping-options.ts:99) treats
+    // any non-empty array as "configured" and overrides per-method costs. Placeholder
+    // bands with cost: 0 would ship every order free until an admin enters real prices.
+    // Empty array keeps flat rates ($5.99/$9.99/$19.99) in force.
+    value: JSON.stringify([]),
+    category: 'shipping',
+    description: 'Quantity-tiered shipping cost in dollars; the last entry has a null max_boxes and covers everything above. EMPTY means not configured: the flat shipping.methods rates stay in force.',
+    data_type: 'object'
+  },
+  {
+    key: 'shipping.per_box_cost',
+    // ZERO is intentional, the same reasoning as the empty `shipping.tiers` above:
+    // normalizePerBoxCost (lib/sale/rules.ts) treats anything <= 0 as "not
+    // configured", so a fresh database keeps whatever the tiers or flat rates say
+    // until an admin enters a real rate. A placeholder rate here would price every
+    // order off a number nobody chose.
+    value: JSON.stringify(0),
+    category: 'shipping',
+    description: 'Flat shipping cost in dollars PER BOX. When above zero it prices the whole cart and overrides both shipping.tiers and the flat shipping.methods rates. ZERO means not configured.',
+    data_type: 'number'
+  },
+  {
+    key: 'promotions.banner_link',
+    value: JSON.stringify('/thank-you'),
+    category: 'promotions',
+    description: 'URL the promotional banner links to',
+    data_type: 'string'
   }
 ];

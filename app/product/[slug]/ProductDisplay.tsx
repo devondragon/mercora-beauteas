@@ -34,7 +34,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Check } from "lucide-react";
 import ProductRecommendations from "@/components/ProductRecommendations";
@@ -43,6 +43,17 @@ import { ProductReviewsSection } from "@/components/reviews/ProductReviewsSectio
 import { useCartStore } from "@/lib/stores/cart-store";
 import { useCartUIStore } from "@/lib/stores/cart-ui-store";
 import { Money } from "@/lib/money";
+import { isSellableVariant } from "@/lib/config/commerce";
+import {
+  boxesLeft,
+  clampQuantity,
+  isSoldByTheBox,
+  maxPurchaseQuantity,
+  startingQuantity,
+} from "@/lib/sale/year-supply";
+import { DEFAULT_MINIMUM_BOXES } from "@/lib/sale/rules";
+import BoxesLeft from "@/components/sale/BoxesLeft";
+import YearSupplyButton from "@/components/sale/YearSupplyButton";
 import { normalizeProductRating } from "@/lib/utils/ratings";
 import { toast } from "sonner";
 import type { Product, Review, ProductReviewEligibility } from "@/lib/types";
@@ -62,6 +73,12 @@ interface ProductDisplayProps {
   reviews: Review[];
   reviewEligibility?: ProductReviewEligibility;
   subscriptionPlans?: SubscriptionPlan[];
+  /** Gates the subscription toggle. Defaults to false so a caller that forgets
+   * to pass it hides the toggle rather than showing it. */
+  subscriptionsEnabled?: boolean;
+  /** Cart minimum in boxes (sale.minimum_boxes). Shown near Add to Cart so the
+   * minimum isn't first discovered in the cart drawer; hidden when <= 1. */
+  minimumBoxes?: number;
   recommendations: Product[];
 }
 
@@ -137,6 +154,8 @@ export default function ProductDisplay({
   reviews,
   reviewEligibility,
   subscriptionPlans = [],
+  subscriptionsEnabled = false,
+  minimumBoxes = 0,
   recommendations,
 }: ProductDisplayProps) {
   const allImages = useMemo(() => {
@@ -163,8 +182,16 @@ export default function ProductDisplay({
   const [selectedImage, setSelectedImage] = useState<string | null>(allImages[0] || "/placeholder.svg");
   const [activeTab, setActiveTab] = useState<"details" | "reviews">("details");
 
-  // Variant selection state
-  const variants = product.variants || [];
+  // Variant selection state. Withdrawn (non-sellable) variants — e.g. the
+  // discontinued 3-box packs — are filtered out here rather than trusting the
+  // caller, so an unsellable variant can never become selectable or default.
+  // Server-side pricing already refuses these via isSellableVariant
+  // (computeCatalogLineCents); this is what keeps the UI from offering them
+  // in the first place. If every variant on a product is withdrawn, variants
+  // is empty and defaultVariant/selectedVariant are undefined; `boxes` is
+  // forced to 0 below so the stock readout renders "Sold out" instead of the
+  // page crashing or silently showing nothing.
+  const variants = (product.variants || []).filter((variant) => isSellableVariant(variant));
   const defaultVariant = variants.find((variant) => variant.id === product.default_variant_id) || variants[0];
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(defaultVariant?.id);
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || defaultVariant;
@@ -175,9 +202,97 @@ export default function ProductDisplay({
   const compareAt = selectedVariant?.compare_at_price?.amount;
   const onSale = compareAt && compareAt > price;
 
-  // Stock logic (MACH: inventory is on variant)
+  // Stock logic (MACH: inventory is on variant). A variant with quantity 0
+  // but track_inventory === false or allow_backorder === true is not
+  // actually out of stock - those flags mean "unlimited," the same reading
+  // boxesLeft (lib/sale/year-supply.ts), isVariantAvailable
+  // (lib/db/schema/products.ts), and hasAvailableStock
+  // (lib/recommendations/blend.ts) already give them. Folding that into
+  // `available` keeps it agreeing with `boxes` below: boxesLeft returns null
+  // (its "no count to show" case) for exactly this variant, so BoxesLeft
+  // renders nothing for it - `available` has to say "yes, purchasable" here
+  // too, or the CTA would hide with nothing else in its place.
   const quantityInStock = selectedVariant?.inventory?.quantity ?? 0;
-  const available = quantityInStock > 0;
+  const unlimitedInventory =
+    selectedVariant?.inventory?.track_inventory === false ||
+    selectedVariant?.inventory?.allow_backorder === true;
+  const available = quantityInStock > 0 || unlimitedInventory;
+
+  // Boxes-remaining readout for the closing sale (see BoxesLeft). `boxesLeft`
+  // is only handed a real variant - boxesLeft(undefined) would read as "no
+  // count to show" (unlimited) via its "no inventory record" case, when a
+  // product with no sellable variant at all (every variant withdrawn) is
+  // never available and must still show "Sold out", not nothing. Mirrors
+  // ProductCard's identical forced-to-0 fallback.
+  const boxes = selectedVariant ? boxesLeft(selectedVariant) : 0;
+
+  // ...but only for products actually stocked one box to a unit. This same PDP
+  // renders drinkware, mugs, gift cards and the multi-box bundles, where "N
+  // boxes left" is a unit lie and a one-click "36 boxes" year supply is worse
+  // than one. Those keep the plain In Stock / Sold out label and get no
+  // year-supply CTA. See isSoldByTheBox in lib/sale/year-supply.ts.
+  const soldByTheBox = isSoldByTheBox(product);
+
+  // Quantity picker next to Add to Cart. The bounds are box math, so they live
+  // in lib/sale/year-supply.ts: blends open at the cart minimum (10 boxes) and
+  // everything else at 1, both clamped to what is actually on hand.
+  //
+  // The field is held as a STRING so it can be empty mid-edit - a numeric state
+  // would fight the user by snapping a cleared field back to 1 on the first
+  // keystroke. Every read goes through `quantity`, which is always a legal
+  // number, so nothing downstream ever sees the empty string.
+  const maxQuantity = maxPurchaseQuantity(boxes);
+  const openingQuantity = startingQuantity({
+    soldByTheBox,
+    minimumBoxes: minimumBoxes > 0 ? minimumBoxes : DEFAULT_MINIMUM_BOXES,
+    left: boxes,
+  });
+  const [quantityInput, setQuantityInput] = useState(String(openingQuantity));
+  const quantity = clampQuantity(quantityInput.trim() === "" ? NaN : quantityInput, maxQuantity);
+  const setQuantity = (value: number) => setQuantityInput(String(clampQuantity(value, maxQuantity)));
+
+  // A different variant is a different stock ceiling and a different opening
+  // number, so the picker resets rather than carrying 10 over to a variant with
+  // 4 left.
+  useEffect(() => {
+    setQuantityInput(String(openingQuantity));
+  }, [selectedVariantId, openingQuantity]);
+
+  // Display name and primary image for a cart line added from this page -
+  // shared by the default Add to Cart handler and YearSupplyButton so both
+  // add the same product under the same name and image.
+  const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
+  const productName = typeof product.name === "string" ? product.name : "";
+  const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
+  const primaryImageUrl = (() => {
+    try {
+      return (
+        (product.primary_image as any)?.url ||
+        (product.primary_image as any)?.file?.url ||
+        "/placeholder.svg"
+      );
+    } catch (error) {
+      return "/placeholder.svg";
+    }
+  })();
+
+  // The single stock readout, shared by the subscription and plain branches so
+  // the page can never render two of them. Box-stocked products get the
+  // closing-sale count (BoxesLeft renders its own "Sold out" at zero and
+  // nothing at all for an untracked variant); everything else keeps the plain
+  // In Stock / Sold out label. Note this deliberately does NOT restore the old
+  // "Backordered" wording - nothing is being restocked, the shop is closing.
+  const stockReadout = soldByTheBox ? (
+    <BoxesLeft boxes={boxes} />
+  ) : (
+    <p
+      className={`text-xs font-semibold ${
+        available ? stateStyles.inStock : stateStyles.outOfStock
+      }`}
+    >
+      {available ? "In Stock" : "Sold out"}
+    </p>
+  );
 
   const ratingSummary = useMemo(() => normalizeProductRating(product.rating), [product.rating]);
   const descriptionParagraphs = useMemo(
@@ -396,7 +511,7 @@ export default function ProductDisplay({
               </div>
             )}
 
-            {subscriptionPlans.length > 0 ? (
+            {subscriptionsEnabled && subscriptionPlans.length > 0 ? (
               <>
                 <SubscriptionToggle
                   plans={subscriptionPlans}
@@ -439,11 +554,15 @@ export default function ProductDisplay({
                   }}
                 />
 
-                {selectedVariant?.inventory && (
-                  <p className="text-xs text-text-muted">
-                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
-                  </p>
-                )}
+                {/*
+                  SubscriptionToggle already renders its own "Sold out" when
+                  `available` is false, so the stock readout is only shown
+                  here while available - otherwise this page would show "Sold
+                  out" twice. When available, boxes is never 0 and the
+                  non-box label reads "In Stock", so neither can collide with
+                  the toggle's own label.
+                */}
+                {available && stockReadout}
               </>
             ) : (
               <>
@@ -451,59 +570,105 @@ export default function ProductDisplay({
                   <div>
                     <p className={`text-base sm:text-lg ${stateStyles.priceOriginal}`}>{Money.fromMinor(compareAt!, currency).format()}</p>
                     <p className={`text-lg sm:text-xl ${stateStyles.priceSale}`}>{Money.fromMinor(price, currency).format()}</p>
-                    <p className="text-xs italic text-primary-600 sm:text-sm">Limited-time offer</p>
+                    <p className="text-xs italic text-primary-600 sm:text-sm">While supplies last</p>
                   </div>
                 ) : (
                   <p className="text-lg font-semibold text-text-primary sm:text-xl">{Money.fromMinor(price, currency).format()}</p>
                 )}
 
-                {selectedVariant?.inventory && (
+                {stockReadout}
+
+                {available && (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-3">
+                      <label
+                        htmlFor="purchase-quantity"
+                        className="text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                      >
+                        {soldByTheBox ? "Boxes" : "Qty"}
+                      </label>
+                      <div className="inline-flex items-stretch overflow-hidden rounded border border-border-default bg-white">
+                        <button
+                          type="button"
+                          aria-label="Decrease quantity"
+                          disabled={quantity <= 1}
+                          onClick={() => setQuantity(quantity - 1)}
+                          className="h-11 w-11 text-lg font-semibold text-text-primary transition hover:bg-surface-light disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent"
+                        >
+                          &minus;
+                        </button>
+                        <input
+                          id="purchase-quantity"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={maxQuantity ?? undefined}
+                          step={1}
+                          value={quantityInput}
+                          onChange={(event) => setQuantityInput(event.target.value.replace(/[^0-9]/g, ""))}
+                          // Normalizing on blur is what turns an empty or
+                          // out-of-range field back into the number the button
+                          // will actually add.
+                          onBlur={() => setQuantityInput(String(quantity))}
+                          className="h-11 w-16 border-x border-border-default text-center text-base font-semibold text-text-primary [appearance:textfield] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Increase quantity"
+                          disabled={maxQuantity !== null && quantity >= maxQuantity}
+                          onClick={() => setQuantity(quantity + 1)}
+                          className="h-11 w-11 text-lg font-semibold text-text-primary transition hover:bg-surface-light disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
+                      onClick={() => {
+                        useCartStore.getState().addItem({
+                          productId: product.id,
+                          variantId: selectedVariant?.id,
+                          name: fullName,
+                          price,
+                          quantity,
+                          primaryImageUrl,
+                        });
+
+                        toast("Added to Cart", {
+                          description:
+                            quantity === 1
+                              ? `${fullName} has been added to your cart.`
+                              : soldByTheBox
+                                ? `${quantity} boxes of ${productName} have been added to your cart.`
+                                : `${quantity} \u00D7 ${fullName} have been added to your cart.`,
+                          icon: "\uD83D\uDD25",
+                          action: {
+                            label: "View Cart",
+                            onClick: () => useCartUIStore.getState().openCart(),
+                          },
+                        });
+                      }}
+                    >
+                      Add to Cart
+                    </button>
+                  </div>
+                )}
+
+                {available && minimumBoxes > 1 && (
                   <p className="text-xs text-text-muted">
-                    {quantityInStock > 0 ? `${quantityInStock} in stock` : "Backordered"}
+                    {minimumBoxes}-box minimum per order. Mix and match across the blends.
                   </p>
                 )}
 
-                {available ? (
-                  <button
-                    className="w-full rounded bg-primary-500 px-6 py-3 font-bold text-text-inverse transition hover:bg-primary-600 sm:w-auto"
-                    onClick={() => {
-                      const productName = typeof product.name === "string" ? product.name : "";
-                      const variantDisplay = selectedVariant?.option_values?.map((value) => `${value.value}`).join(", ") || "";
-                      const fullName = variantDisplay ? `${productName} - ${variantDisplay}` : productName;
-
-                      useCartStore.getState().addItem({
-                        productId: product.id,
-                        variantId: selectedVariant?.id,
-                        name: fullName,
-                        price,
-                        quantity: 1,
-                        primaryImageUrl: (() => {
-                          try {
-                            return (
-                              (product.primary_image as any)?.url ||
-                              (product.primary_image as any)?.file?.url ||
-                              "/placeholder.svg"
-                            );
-                          } catch (error) {
-                            return "/placeholder.svg";
-                          }
-                        })(),
-                      });
-
-                      toast("Added to Cart", {
-                        description: `${fullName} has been added to your cart.`,
-                        icon: "\uD83D\uDD25",
-                        action: {
-                          label: "View Cart",
-                          onClick: () => useCartUIStore.getState().openCart(),
-                        },
-                      });
-                    }}
-                  >
-                    Add to Cart
-                  </button>
-                ) : (
-                  <p className={`text-lg font-semibold sm:text-xl ${stateStyles.outOfStock}`}>Coming soon</p>
+                {soldByTheBox && selectedVariant && (
+                  <YearSupplyButton
+                    variant={selectedVariant}
+                    productId={product.id}
+                    name={fullName}
+                    productName={productName}
+                    imageUrl={primaryImageUrl}
+                  />
                 )}
               </>
             )}

@@ -50,6 +50,15 @@ export interface OrderData {
     country: string;
   };
   estimatedDelivery?: string;
+  /**
+   * Store-wide final-sale posture (`sale.final_sale`), read server-side by
+   * `lib/services/order-confirmation.ts`. Optional and defaulting to `true` on
+   * purpose: a caller that forgets it sends the disclosure rather than omitting
+   * it, and only an explicit `false` drops the line. Passed in rather than read
+   * here so this stays a leaf template module — importing `@/lib/sale/settings`
+   * would pull lib/db and the Drizzle schema barrel into every unit test.
+   */
+  finalSale?: boolean;
 }
 
 export interface EmailResult {
@@ -184,7 +193,7 @@ function generateOrderConfirmationHTML(orderData: OrderData): string {
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Order Confirmed!</h2>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${escapeHtml(orderData.customerName)},</p>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order! Your teas are being prepared and will be shipped soon.</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Thank you for your order, truly. Your teas are being prepared and will be shipped soon.${orderData.finalSale !== false ? " As part of our closing sale this order is final sale, but if anything arrives damaged or goes missing we'll still make it right." : ''}</p>
 
           <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 8px;">Order #${escapeHtml(orderData.orderNumber)}</p>
@@ -568,7 +577,7 @@ function generateGiftCardDeliveryHTML(data: GiftCardEmailData): string {
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">A little glow, just for you 🎁</h2>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${recipient},</p>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">${fromLine} Build your beauty from within — redeem it at checkout for any of our organic skincare teas.</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">${fromLine} Build your beauty from within: redeem it at checkout for any of our organic skincare teas.</p>
         </div>
 
         ${
@@ -800,7 +809,7 @@ function generateShippingConfirmationHTML(data: ShippingConfirmationData): strin
         <div style="padding: 24px 32px;">
           <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0 0 16px;">Your order has shipped</h2>
           <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 16px;">Hi ${greeting},</p>
-          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 8px;">Good news — order <strong>#${orderNumber}</strong> is on its way to you. Your daily glow ritual is nearly home.</p>
+          <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 8px;">Good news: order <strong>#${orderNumber}</strong> is on its way to you. Your daily glow ritual is nearly home.</p>
         </div>
 
         ${trackingBlock}
@@ -979,7 +988,7 @@ function getTypeSpecificContent(
         extra: `
           <div style="background-color: #fdf8f6; border-left: 4px solid #c4a87c; border-radius: 4px; padding: 12px 16px; margin: 16px 0;">
             <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0 0 8px;"><strong>Recurring billing:</strong> You'll be charged ${amountText} ${cadence}, automatically, until you cancel.${nextChargeLine}</p>
-            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime — no fees, no commitment — from your <a href="${escapeHtml(data.manageUrl)}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
+            <p style="color: #7c2d12; font-size: 14px; line-height: 20px; margin: 0;">You can cancel anytime, with no fees and no commitment, from your <a href="${escapeHtml(data.manageUrl)}" style="color: #c4a87c; font-weight: bold;">subscription management page</a>.</p>
           </div>
         `,
       };
@@ -1064,7 +1073,7 @@ export async function sendNewOrderMerchantNotification(
       .join('\n');
 
     const lines = orderData.items
-      .map((i) => `  ${i.quantity} x ${i.name} — ${i.lineTotal}`)
+      .map((i) => `  ${i.quantity} x ${i.name}: ${i.lineTotal}`)
       .join('\n');
 
     // Deep-link to the specific order (BMC-216C). The per-order admin page is
@@ -1122,7 +1131,7 @@ export async function sendNewOrderMerchantNotification(
       from: `${brand.name} Orders <${brand.contact.email}>`,
       to: [MERCHANT_NOTIFICATION_EMAIL],
       replyTo: orderData.customerEmail,
-      subject: `New order ${orderData.orderNumber} — ${orderData.total}`,
+      subject: `New order ${orderData.orderNumber}: ${orderData.total}`,
       html,
       text,
     });

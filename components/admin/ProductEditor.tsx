@@ -34,6 +34,20 @@ function toStoredVariant(variant: any) {
   return next;
 }
 
+/**
+ * The values the Product Type dropdown offers. The catalog also holds free-text
+ * types from the Shopify ETL that are not in this list, and those must survive an
+ * edit — see the dropdown itself for what happened when they didn't.
+ */
+const KNOWN_PRODUCT_TYPES = [
+  "simple",
+  "configurable",
+  "bundle",
+  "digital",
+  "subscription",
+  "service",
+];
+
 interface ProductEditorProps {
   product: Product | null;
   isOpen: boolean;
@@ -190,9 +204,22 @@ export default function ProductEditor({
     }
   };
 
-  const saveCurrentVariantData = () => {
-    if (variants.length === 0) return;
-    
+  /**
+   * Merge the variant form fields into the selected variant and RETURN the new
+   * array as well as committing it to state.
+   *
+   * The return value is what makes this safe to call from `handleSave`.
+   * `setVariants` is asynchronous: it schedules a re-render, it does not mutate
+   * the `variants` binding the calling function already closed over. `handleSave`
+   * called this and then read `variants` in the same tick, so it sent the
+   * PRE-EDIT array — every change typed into a variant field (inventory, price,
+   * SKU, weight, barcode, status) was silently dropped, the PUT rewrote the
+   * values that were already there, and the save reported success. Callers that
+   * need the merged data must use what this returns, never the state variable.
+   */
+  const saveCurrentVariantData = (): any[] => {
+    if (variants.length === 0) return variants;
+
     const updatedVariants = [...variants];
     const currentVariant = updatedVariants[selectedVariantIndex] || {};
     
@@ -235,8 +262,9 @@ export default function ProductEditor({
       position: variantPosition ? parseInt(variantPosition) : undefined,
       attributes: attributesObj
     };
-    
+
     setVariants(updatedVariants);
+    return updatedVariants;
   };
 
   const addNewVariant = () => {
@@ -623,10 +651,14 @@ export default function ProductEditor({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Save current variant data before saving
-      if (variants.length > 0 && selectedVariantIndex < variants.length) {
-        saveCurrentVariantData();
-      }
+      // Merge the open variant form into the array we are about to send. Use the
+      // RETURNED array, not the `variants` state: setVariants doesn't update this
+      // closure, so reading the state here sent the pre-edit values (see
+      // saveCurrentVariantData).
+      const variantsToSave =
+        variants.length > 0 && selectedVariantIndex < variants.length
+          ? saveCurrentVariantData()
+          : variants;
 
       const productData: Partial<Product> = {
         ...(product?.id && !isNew ? { id: product.id } : {}), // Include ID for existing products
@@ -756,10 +788,10 @@ export default function ProductEditor({
       }
 
       // Add all variants data
-      if (variants.length > 0) {
-        productData.variants = variants;
+      if (variantsToSave.length > 0) {
+        productData.variants = variantsToSave;
         // Set default variant to first variant
-        productData.default_variant_id = variants[0]?.id;
+        productData.default_variant_id = variantsToSave[0]?.id;
       } else if (isNew) {
         // For new products without variants, create a default variant
         const defaultVariant = {
@@ -996,6 +1028,22 @@ export default function ProductEditor({
                   className="w-full admin-input border rounded px-3 py-2"
                 >
                   <option value="">Select type...</option>
+                  {/*
+                    The catalog's real `type` values are free text from the Shopify
+                    ETL ("Tea Bags", "Drinkware", "Gift Card"), none of which appear
+                    in the fixed list below. A controlled <select> whose value matches
+                    no <option> renders with nothing selected, so the field showed
+                    blank and a single interaction replaced the stored value: that is
+                    how the Evening blend's "Tea Bags" became "simple", which silently
+                    switched off its box count and year-supply offer, because
+                    isSoldByTheBox (lib/sale/year-supply.ts) gates on the type
+                    normalizing to "teabags". Surfacing the current value as its own
+                    option keeps the control valid and makes overwriting it a
+                    deliberate choice.
+                  */}
+                  {productType && !KNOWN_PRODUCT_TYPES.includes(productType) && (
+                    <option value={productType}>{productType} (current)</option>
+                  )}
                   <option value="simple">Simple Product</option>
                   <option value="configurable">Configurable Product</option>
                   <option value="bundle">Bundle</option>

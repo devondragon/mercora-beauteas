@@ -46,6 +46,19 @@ vi.mock('@/lib/models/mach/products', () => ({
   getProductVariant: vi.fn(),
 }));
 
+// GOOB: this suite pins the BMC-132/C5/BMC-161 place_order behavior with
+// single-item, single-quantity carts — it isn't about the box minimum (that
+// has its own dedicated test, mcp-sale-minimum-order.test.ts). Pin
+// minimumBoxes to 0 so the new gate never trips here.
+vi.mock('@/lib/sale/settings', () => ({
+  getSaleRules: vi.fn().mockResolvedValue({
+    minimumBoxes: 0,
+    finalSale: true,
+    subscriptionsEnabled: false,
+    tiers: [],
+  }),
+}));
+
 import { requireOwnedSession } from '@/lib/mcp/session';
 import { retrievePaymentIntent } from '@/lib/stripe';
 import { verifyOrderChargeSufficient } from '@/lib/services/order-pricing';
@@ -283,20 +296,23 @@ describe('place_order persists catalog-canonicalized display + total (BMC-161)',
   });
 });
 
-// Defect 1 (BMC-161 follow-up): the free-shipping threshold + tax are computed in
-// DOLLARS, but the MCP cart carries prices in CENTS. computeOrderTotals is the
-// shared shipping/tax helper; its callers pass a dollars subtotal (`…Cents / 100`).
-describe('free-shipping threshold uses dollars, not cents (BMC-161 follow-up)', () => {
-  it('charges standard shipping below the $100 threshold', () => {
-    // $50 goods → under the free-shipping threshold → $9.99 standard shipping.
+// Defect 1 (BMC-161 follow-up): shipping + tax are computed in DOLLARS, but the
+// MCP cart carries prices in CENTS. computeOrderTotals is the shared
+// shipping/tax helper; its callers pass a dollars subtotal (`…Cents / 100`).
+//
+// Final-review fix wave, item 5: this path never grants free shipping at any
+// subtotal — see calculateShipping's doc comment in order-pricing.ts for why
+// (the stale $100 threshold this describe block is named for is gone).
+describe('shipping charges apply to dollars, not cents, with no free-shipping threshold (BMC-161 follow-up)', () => {
+  it('charges standard shipping for a modest subtotal', () => {
     const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), { region: 'CA' } as any);
     expect(shipping.toMach().amount).toBe(9.99);
   });
 
-  it('gives free shipping at/above the $100 threshold', () => {
-    // $150 goods → at/above threshold → free shipping.
+  it('still charges standard shipping for a large subtotal (no free-shipping threshold)', () => {
     const { shipping } = computeOrderTotals(Money.fromMajor(150, 'USD'), { region: 'CA' } as any);
-    expect(shipping.isZero()).toBe(true);
+    expect(shipping.isZero()).toBe(false);
+    expect(shipping.toMach().amount).toBe(9.99);
   });
 
   it('does not falsely trip the budget gate for a $20 (2000c) cart under a $100 budget', async () => {

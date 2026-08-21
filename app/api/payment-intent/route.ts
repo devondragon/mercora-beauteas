@@ -48,6 +48,8 @@ import { getOrCreateCustomer } from '@/lib/account/ensure-customer';
 import { isUniqueViolation } from '@/lib/utils/db-errors';
 import { Money } from '@/lib/money';
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '@/lib/sale/rules';
+import { getSaleRules } from '@/lib/sale/settings';
 import type { Address } from '@/lib/types';
 import { logCritical } from '@/lib/utils/observe';
 import { validateUsShippingAddress } from '@/lib/utils/address';
@@ -273,6 +275,73 @@ export async function POST(req: NextRequest) {
       order,
       discountCodes,
     }: PaymentIntentRequest = await req.json();
+
+    // GOOB: the box minimum is a purchase rule, so it is enforced here rather
+    // than only in the cart UI (Task 7) — a crafted request bypasses the UI
+    // entirely. Runs immediately once `items`/`order` are resolved from the
+    // body, before any other validation, Stripe work, or catalog pricing, so a
+    // rejected cart costs nothing. Uses the identical message POST /api/orders
+    // returns, so the two money endpoints can never disagree.
+    //
+    // GATE THE LIST THAT PERSISTS. `persistPendingOrder` below writes
+    // `order.items` (see `draft.items` at the top of that function), and the
+    // Stripe webhook later promotes that row through `finalizePaidOrder` with
+    // NO minimum check of its own — so this is the only pre-capture chokepoint,
+    // and the draft is the list a minimum has to hold for. The previous
+    // precedence (top-level `items` first, draft as fallback) gated a list that
+    // never persists: a request with 10 boxes in `items` and 2 in `order.items`
+    // cleared the gate and shipped 2 boxes. Fall back to the top-level list only
+    // when there is no draft at all. Deliberately NOT `draftItems?.length ? …`:
+    // a draft with no items persists an empty cart, so it must gate as zero
+    // boxes rather than fall through to `items`.
+    const draftItems = Array.isArray(order?.items) ? (order!.items as any[]) : null;
+    const topLevelItems = Array.isArray(items) ? items : null;
+    const gateItems = order ? (draftItems ?? []) : (topLevelItems ?? []);
+
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(gateItems), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return NextResponse.json(
+        { error: minimumOrderMessage(minimum.short, saleRules.minimumBoxes) },
+        { status: 400 }
+      );
+    }
+
+    // The storefront builds BOTH lists from the same cart array in one call
+    // (CheckoutClient.createPaymentIntent → `items.map(...)` plus
+    // `buildCreateOrderBody({ items })`), so their product/variant identities and
+    // quantities are identical by construction and can never legitimately
+    // differ. A divergence means a crafted request. Reject it rather than let
+    // the priced list and the persisted list describe different carts — the
+    // catalog floor below prices `items` and stamps expected shipping/tax from
+    // them, while `order.items` is what ships. Runs AFTER the minimum check so
+    // an under-minimum cart always gets `minimumOrderMessage`, never this.
+    if (draftItems && topLevelItems) {
+      const identity = (list: any[]) =>
+        JSON.stringify(
+          list
+            .map((it) => ({
+              product_id: it?.product_id ?? it?.productId ?? null,
+              variant_id: it?.variant_id ?? it?.variantId ?? null,
+              quantity: countBoxes([it]),
+            }))
+            .sort((a, b) =>
+              `${a.product_id}|${a.variant_id}`.localeCompare(`${b.product_id}|${b.variant_id}`)
+            )
+        );
+      if (identity(draftItems) !== identity(topLevelItems)) {
+        console.warn(
+          `[payment-intent] order ${orderId}: item list divergence between the priced list and the persisted order draft; refusing`
+        );
+        return NextResponse.json(
+          {
+            error: 'Your cart changed while checking out. Please refresh your cart and try again.',
+            code: 'cart_items_mismatch',
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validate required fields
     if (!amount || amount <= 0) {

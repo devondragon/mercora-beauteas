@@ -302,7 +302,7 @@ describe('flagOversoldForReview', () => {
     expect(updateOrderNotes).toHaveBeenCalledTimes(1);
     const [id, note] = vi.mocked(updateOrderNotes).mock.calls[0];
     expect(id).toBe('O1');
-    expect(note).toBe('Paid via Stripe\n\nNEEDS REVIEW (BMC-178): oversold — Mug (requested 3, 1 on hand)');
+    expect(note).toBe('Paid via Stripe\n\nNEEDS REVIEW (BMC-178): oversold: Mug (requested 3, 1 on hand)');
   });
 
   it('is a no-op when nothing is oversold', async () => {
@@ -318,7 +318,7 @@ describe('flagOversoldForReview', () => {
       logPrefix: '[test]',
     });
     expect(vi.mocked(updateOrderNotes).mock.calls[0][1]).toBe(
-      'NEEDS REVIEW (BMC-178): oversold — v1 (requested 2, 0 on hand)'
+      'NEEDS REVIEW (BMC-178): oversold: v1 (requested 2, 0 on hand)'
     );
   });
 

@@ -6,6 +6,7 @@ import { computeCatalogSubtotalCents, MAX_ORDER_LINE_ITEMS } from "@/lib/service
 import { resolveShippingOptions } from "@/lib/services/checkout-charges";
 import { enforceRateLimit, getClientIp } from "@/lib/rate-limit";
 import { validateUsShippingAddress } from "@/lib/utils/address";
+import { countBoxes } from "@/lib/sale/rules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
     // rates come from admin-configured flat methods and don't factor in weight.
     const { options } = await resolveShippingOptions(subtotalCents, {
       subtotalPriceable: errors.length === 0,
+      boxes: countBoxes(lineItems),
     });
 
     return NextResponse.json({ options });

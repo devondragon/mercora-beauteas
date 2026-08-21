@@ -131,6 +131,6 @@ export function ritualBundleSuggestions(variety: number): string[] {
     ];
   }
   return [
-    'Complete the Clearly Calendula ritual set — Morning, Afternoon & Evening blends bundle together at a saving.',
+    'Complete the Clearly Calendula ritual set: Morning, Afternoon & Evening blends bundle together at a saving.',
   ];
 }

@@ -16,6 +16,8 @@ import {
   computeOrderTotals,
 } from '../../services/order-pricing';
 import { Money, toWireMoney } from '../../money';
+import { countBoxes, checkMinimumOrder, minimumOrderMessage } from '../../sale/rules';
+import { getSaleRules } from '../../sale/settings';
 
 // Wire-shaped zero total, reused for every failure response (BMC-164) —
 // OrderResponse.total is MACH { amount, currency, precision }, not a bare
@@ -157,6 +159,25 @@ export async function placeOrder(
       return orderFailure(sessionId, agentId, startTime, 'TOO_MANY_LINE_ITEMS',
         `Cart has too many distinct items (max ${MAX_ORDER_LINE_ITEMS}).`,
         ['Reduce the number of distinct items in the cart before placing the order']);
+    }
+
+    // GOOB: the box minimum is a purchase rule enforced identically at every
+    // money surface — POST /api/payment-intent, POST /api/orders, and MCP
+    // create_payment_intent. Also gated here (not just at create_payment_intent)
+    // because the session cart is mutable between minting a PaymentIntent and
+    // calling place_order: an agent could mint a PI against a qualifying cart,
+    // then remove items before placing the order, persisting a below-minimum
+    // order funded by what is now an overpayment. Runs before any Stripe
+    // verification call and before the order is persisted, so a rejected
+    // agent cart is never written as an order. Uses the identical
+    // lib/sale/rules seam as the HTTP gates and create_payment_intent, so the
+    // threshold and message can't drift between surfaces.
+    const saleRules = await getSaleRules();
+    const minimum = checkMinimumOrder(countBoxes(cart), saleRules.minimumBoxes);
+    if (!minimum.ok) {
+      return orderFailure(sessionId, agentId, startTime, 'BELOW_MINIMUM_ORDER',
+        minimumOrderMessage(minimum.short, saleRules.minimumBoxes),
+        ['Add more items to the cart', 'Retry place_order once the cart meets the minimum']);
     }
 
     // Enhanced user context for order
@@ -447,7 +468,7 @@ export async function placeOrder(
         processing_time_ms: processingTime
       },
       recommendations: {
-        bundling_opportunities: generatePostOrderRecommendations(cart),
+        bundling_opportunities: generatePostOrderRecommendations(cart, saleRules.subscriptionsEnabled),
         cost_optimization: [`Order saved $${(userContext.budget || totalMajor) - totalMajor} vs budget`]
       },
       metadata: {
@@ -590,7 +611,7 @@ function formatAddressForDB(address: Address): string {
   });
 }
 
-function generatePostOrderRecommendations(cart: CartItem[]): string[] {
+function generatePostOrderRecommendations(cart: CartItem[], subscriptionsEnabled: boolean): string[] {
   const recommendations: string[] = [];
 
   if (cart.length === 0) return recommendations;
@@ -600,8 +621,11 @@ function generatePostOrderRecommendations(cart: CartItem[]): string[] {
     recommendations.push('Build your daily ritual: add our Morning, Afternoon, and Evening blends for full-day skin support.');
   }
 
-  // Subscriptions are a first-class BeauTeas feature — encourage recurring delivery.
-  recommendations.push('Subscribe & save: set up a recurring delivery so you never run out of your blend.');
+  // GOOB: subscriptions are gated off for the closing sale (sale.subscriptions_enabled) —
+  // don't pitch a recurring delivery the storefront won't let anyone set up.
+  if (subscriptionsEnabled) {
+    recommendations.push('Subscribe & save: set up a recurring delivery so you never run out of your blend.');
+  }
 
   return recommendations;
 }

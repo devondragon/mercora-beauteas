@@ -29,12 +29,14 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft, Package, RotateCcw, XCircle, RefreshCw,
   DollarSign, AlertTriangle, CheckCircle,
-  Calendar, User, MapPin, CreditCard
+  Calendar, User, MapPin, CreditCard, Truck, Pencil
 } from "lucide-react";
 import { orderStatusConfig } from "@/lib/ui/status-styles";
 import { Money } from "@/lib/money";
 import FulfillmentTimeline from "@/components/admin/orders/FulfillmentTimeline";
-import type { FulfillmentEventLike } from "@/lib/fulfillment/queue-view";
+import MarkShippedModal, { type MarkShippedSubmit } from "@/components/admin/orders/MarkShippedModal";
+import EditTrackingModal, { type EditTrackingSubmit } from "@/components/admin/orders/EditTrackingModal";
+import { deriveQueueRowState, type FulfillmentEventLike } from "@/lib/fulfillment/queue-view";
 
 interface Order {
   id: string;
@@ -66,6 +68,10 @@ interface Order {
   }>;
   payment_method?: string;
   payment_status?: string;
+  // Fulfillment-owned, written only by POST .../ship and PATCH .../tracking.
+  // `extensions.carrier` is the pre-BMC-216 legacy home for the same value and
+  // is still rendered as a fallback below.
+  shipping_carrier?: string;
   tracking_number?: string;
   created_at: string;
   updated_at: string;
@@ -131,6 +137,16 @@ export default function OrderDetailPage() {
   const [events, setEvents] = useState<FulfillmentEventLike[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
+
+  // Fulfillment actions, mirroring the queue page's modals so an operator who
+  // opened an order directly does not have to go back to the list to ship it.
+  const [shipModalOpen, setShipModalOpen] = useState(false);
+  const [trackingModalOpen, setTrackingModalOpen] = useState(false);
+  const [fulfillmentBusy, setFulfillmentBusy] = useState(false);
+  const [fulfillmentError, setFulfillmentError] = useState<string | null>(null);
+  const [fulfillmentNotice, setFulfillmentNotice] = useState<
+    { tone: "success" | "warning"; message: string } | null
+  >(null);
 
   const fetchEvents = useCallback(async () => {
     setEventsLoading(true);
@@ -198,6 +214,112 @@ export default function OrderDetailPage() {
       // Keep default values on error
     }
   }, []);
+
+  /**
+   * Mark the order shipped. Same endpoint, same body shape, and the same
+   * carrier/tracking-optional-as-a-pair contract the queue page uses — the
+   * modal builds the pair and `parseShipmentInput` rejects a half of one, so
+   * an empty body is the deliberate "untracked shipment" signal.
+   *
+   * On success both the order and the fulfillment timeline are refetched
+   * rather than patched locally: the server owns `shipped_at`, the normalized
+   * carrier, and the audit event, and the detail page already has fetchers for
+   * all of it.
+   */
+  const handleShipConfirm = useCallback(
+    async (input: MarkShippedSubmit) => {
+      setFulfillmentBusy(true);
+      setFulfillmentError(null);
+      try {
+        const response = await fetch(`/api/admin/orders/${orderId}/ship`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(input.carrier ? { carrier: input.carrier } : {}),
+            ...(input.trackingNumber ? { trackingNumber: input.trackingNumber } : {}),
+          }),
+        });
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+          status?: string;
+          email?: { attempted?: boolean; success?: boolean; error?: string };
+        };
+        if (!response.ok) {
+          // `code` alone reads as an app bug ("not_fulfillable"), so annotate
+          // it with the status the server reported — the same fallback chain
+          // OrdersQueueClient uses.
+          setFulfillmentError(
+            body.error ??
+              (body.code ? `${body.code}${body.status ? ` (order is ${body.status})` : ""}` : null) ??
+              `Could not mark the order shipped (${response.status})`,
+          );
+          return;
+        }
+
+        setShipModalOpen(false);
+        if (body.email?.attempted && !body.email.success) {
+          setFulfillmentNotice({
+            tone: "warning",
+            message: `Order marked shipped, but the shipping email failed to send${
+              body.email.error ? `: ${body.email.error}` : ""
+            }. Retry it from the Shipped tab on the orders queue.`,
+          });
+        } else if (body.email?.success) {
+          setFulfillmentNotice({
+            tone: "success",
+            message: "Order marked shipped and the shipping email was sent.",
+          });
+        } else {
+          setFulfillmentNotice({ tone: "success", message: "Order marked shipped." });
+        }
+        await Promise.all([fetchOrder(), fetchEvents()]);
+      } catch (error) {
+        setFulfillmentError(
+          error instanceof Error ? error.message : "Could not mark the order shipped",
+        );
+      } finally {
+        setFulfillmentBusy(false);
+      }
+    },
+    [orderId, fetchOrder, fetchEvents],
+  );
+
+  /** Correct carrier/tracking on an already-shipped order. Sends no email. */
+  const handleTrackingConfirm = useCallback(
+    async (input: EditTrackingSubmit) => {
+      setFulfillmentBusy(true);
+      setFulfillmentError(null);
+      try {
+        const response = await fetch(`/api/admin/orders/${orderId}/tracking`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ carrier: input.carrier, trackingNumber: input.trackingNumber }),
+        });
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+        };
+        if (!response.ok) {
+          setFulfillmentError(
+            body.error ?? body.code ?? `Could not update tracking (${response.status})`,
+          );
+          return;
+        }
+        setTrackingModalOpen(false);
+        setFulfillmentNotice({
+          tone: "success",
+          message: "Tracking updated. No email was sent to the customer.",
+        });
+        await Promise.all([fetchOrder(), fetchEvents()]);
+      } catch (error) {
+        setFulfillmentError(error instanceof Error ? error.message : "Could not update tracking");
+      } finally {
+        setFulfillmentBusy(false);
+      }
+    },
+    [orderId, fetchOrder, fetchEvents],
+  );
 
   const getStatusBadge = (status: Order["status"]) => {
     const config = orderStatusConfig[status];
@@ -446,6 +568,12 @@ export default function OrderDetailPage() {
     );
   }
 
+  // The same derivation the queue rows use, so the two pages can never
+  // disagree about whether an order is shippable or what its tracking link is.
+  // It reads the fulfillment-owned `shipping_carrier` column; `extensions.carrier`
+  // is only a display fallback for pre-BMC-216 rows.
+  const fulfillment = deriveQueueRowState(order);
+
   return (
     <div className="p-6 space-y-6">
       {/* Debug Information - Remove after fixing */}
@@ -535,19 +663,103 @@ export default function OrderDetailPage() {
                 {order.shipping_address.city}, {order.shipping_address.region} {order.shipping_address.postal_code}
               </div>
               <div>{order.shipping_address.country}</div>
-              {order.tracking_number && (
-                <div className="mt-3 pt-3 border-t border-border-default">
-                  <p className="text-xs text-text-secondary mb-1">Tracking</p>
-                  <p className="font-medium">{order.tracking_number}</p>
-                  {order.extensions?.carrier && (
-                    <p className="text-xs text-text-secondary">{order.extensions.carrier}</p>
-                  )}
-                </div>
-              )}
             </div>
           ) : (
             <p className="text-text-secondary text-sm">No shipping address</p>
           )}
+
+          {/* Fulfillment: shipment state plus the action available for it. */}
+          <div className="mt-4 pt-4 border-t border-border-default space-y-3">
+            {fulfillment.trackingNumber ? (
+              <div className="text-sm">
+                <p className="text-xs text-text-secondary mb-1">Tracking</p>
+                {fulfillment.trackingUrl ? (
+                  <a
+                    href={fulfillment.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium break-all text-primary-600 hover:underline"
+                  >
+                    {fulfillment.trackingNumber}
+                  </a>
+                ) : (
+                  <p className="font-medium break-all text-text-primary">
+                    {fulfillment.trackingNumber}
+                  </p>
+                )}
+                <p className="text-xs text-text-secondary">
+                  {fulfillment.carrierLabel ?? order.extensions?.carrier ?? "Carrier not recorded"}
+                </p>
+              </div>
+            ) : (
+              order.status === 'shipped' && (
+                <p className="text-sm text-text-secondary">Shipped without tracking.</p>
+              )
+            )}
+
+            {fulfillment.shippedAt && (
+              <p className="text-xs text-text-secondary">
+                Shipped {new Date(fulfillment.shippedAt).toLocaleString()}
+              </p>
+            )}
+
+            {fulfillment.action === 'mark_shipped' && (
+              <Button
+                onClick={() => {
+                  setFulfillmentError(null);
+                  setFulfillmentNotice(null);
+                  setShipModalOpen(true);
+                }}
+                className="w-full bg-primary-500 hover:bg-primary-600"
+              >
+                <Truck className="w-4 h-4 mr-2" />
+                Mark as Shipped
+              </Button>
+            )}
+
+            {fulfillment.action === 'edit_tracking' && (
+              <Button
+                onClick={() => {
+                  setFulfillmentError(null);
+                  setFulfillmentNotice(null);
+                  setTrackingModalOpen(true);
+                }}
+                variant="outline"
+                className="w-full"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                {fulfillment.trackingNumber ? 'Edit tracking' : 'Add tracking'}
+              </Button>
+            )}
+
+            {fulfillment.action === 'none' && (
+              // Say WHY rather than hiding the control silently. `delivered` is
+              // read-only carrier state; everything else is a status or an
+              // unpaid order that the ship endpoint would reject anyway.
+              <p className="text-xs text-text-muted">
+                {order.status === 'delivered'
+                  ? 'Delivered. No fulfillment action available.'
+                  : order.status === 'cancelled' || order.status === 'refunded'
+                    ? `Order is ${order.status}. No fulfillment action available.`
+                    : `Shipping becomes available once the order is processing and paid (currently ${order.status} / ${order.payment_status ?? 'pending'}).`}
+              </p>
+            )}
+
+            {fulfillmentNotice && (
+              <p
+                className={`text-sm ${
+                  fulfillmentNotice.tone === 'warning' ? 'text-state-warning' : 'text-state-success'
+                }`}
+              >
+                {fulfillmentNotice.message}
+              </p>
+            )}
+            {/* The modals surface their own errors while open; this catches one
+                left behind after a failure the operator dismissed. */}
+            {fulfillmentError && !shipModalOpen && !trackingModalOpen && (
+              <p className="text-sm text-state-error">{fulfillmentError}</p>
+            )}
+          </div>
         </Card>
 
         {/* Order Totals */}
@@ -1010,6 +1222,40 @@ export default function OrderDetailPage() {
           <h3 className="text-lg font-semibold text-text-primary mb-4">Order Notes</h3>
           <p className="text-text-secondary whitespace-pre-line">{order.notes}</p>
         </Card>
+      )}
+
+      {/* Mounted conditionally, as on the queue page: both modals hold their
+          form state in useState seeded from props, so unmounting on close is
+          what resets them for the next open. */}
+      {shipModalOpen && (
+        <MarkShippedModal
+          open
+          orderId={order.id}
+          recipient={order.shipping_address?.recipient || "the customer"}
+          submitting={fulfillmentBusy}
+          error={fulfillmentError}
+          onCancel={() => {
+            setShipModalOpen(false);
+            setFulfillmentError(null);
+          }}
+          onConfirm={handleShipConfirm}
+        />
+      )}
+
+      {trackingModalOpen && (
+        <EditTrackingModal
+          open
+          orderId={order.id}
+          initialCarrier={fulfillment.carrier}
+          initialTrackingNumber={fulfillment.trackingNumber}
+          submitting={fulfillmentBusy}
+          error={fulfillmentError}
+          onCancel={() => {
+            setTrackingModalOpen(false);
+            setFulfillmentError(null);
+          }}
+          onConfirm={handleTrackingConfirm}
+        />
       )}
     </div>
   );

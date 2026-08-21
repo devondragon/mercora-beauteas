@@ -96,7 +96,7 @@ UPDATE pages SET template = 'legal'
 -- ── Ledes for the three pages with no intro paragraph of their own ───────────
 -- Brewing Directions, Contact, About Us, Subscriptions, Privacy and Terms all
 -- open with a real intro paragraph, which the renderer promotes automatically.
-UPDATE pages SET excerpt = 'Ingredients, caffeine, brewing and subscriptions — the things people ask us most.'
+UPDATE pages SET excerpt = 'Ingredients, caffeine, brewing and subscriptions: the things people ask us most.'
   WHERE slug = 'faq' AND excerpt IS NULL;
 UPDATE pages SET excerpt = 'How and when your order gets to you.'
   WHERE slug = 'shipping-policy' AND excerpt IS NULL;

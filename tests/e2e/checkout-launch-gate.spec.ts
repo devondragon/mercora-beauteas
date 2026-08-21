@@ -84,6 +84,14 @@ test('US discounted checkout reaches PaymentIntent creation with one authoritati
   });
 
   await page.goto('/product/clearly-calendula-morning');
+  // The sale enforces a 10-box minimum (sale.minimum_boxes) and every SKU is
+  // now one box, so a cart under ten leaves CheckoutClient showing the blocking
+  // "add more to check out" panel instead of the address form. The quantity
+  // picker beside Add to Cart opens AT that minimum for a blend
+  // (startingQuantity in lib/sale/year-supply.ts), so one click adds the ten
+  // boxes as a single cart line — the item count badge counts lines, not units,
+  // so it reads "1 item". This used to be ten clicks of a quantity-1 button;
+  // against the picker that builds a 100-box cart instead.
   await page.getByRole('button', { name: 'Add to Cart' }).click();
   await expect(page.getByRole('button', { name: /Cart \(1 item\)/ })).toBeVisible();
 
@@ -110,7 +118,12 @@ test('US discounted checkout reaches PaymentIntent creation with one authoritati
   expect(taxRequest.orderId).toMatch(/^WEB-GUEST-/);
   expect(paymentIntentRequest.orderId).toBe(taxRequest.orderId);
   expect(paymentIntentRequest.discountCodes).toEqual(['SAVE20']);
-  expect(paymentIntentRequest.amount).toBe(18.37);
+  // amount is computed client-side from real cart state (cart-store.ts
+  // calculateTotals), NOT copied from the mocked /api/tax response body, so it
+  // reflects the 10-box cart above, not the single-box math the mock's fixed
+  // breakdown describes: 10 * $14.99 = $149.90 subtotal, - $3 discount =
+  // $146.90, + $5.99 standard shipping = $152.89, + $0.39 mocked tax = $153.28.
+  expect(paymentIntentRequest.amount).toBe(153.28);
   await expect(page.getByText('100 Tea Way')).toBeVisible();
 });
 

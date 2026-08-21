@@ -76,7 +76,7 @@ export default function QueueOrderRow({
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-secondary">
             <span className="flex items-center">
               <Calendar className="mr-1 h-3 w-3" />
-              {order.created_at ? new Date(order.created_at).toLocaleDateString() : "—"}
+              {order.created_at ? new Date(order.created_at).toLocaleDateString() : "–"}
             </span>
             <span className="flex items-center">
               <User className="mr-1 h-3 w-3" />
@@ -122,7 +122,7 @@ export default function QueueOrderRow({
             <span>
               Shipped{" "}
               <span className="text-text-primary">
-                {row.shippedAt ? new Date(row.shippedAt).toLocaleString() : "—"}
+                {row.shippedAt ? new Date(row.shippedAt).toLocaleString() : "–"}
               </span>
             </span>
             <span>

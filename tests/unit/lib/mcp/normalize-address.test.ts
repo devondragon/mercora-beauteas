@@ -55,7 +55,7 @@ describe('normalizeAddress — legacy street/state keys (backward compat)', () =
 describe('computeOrderTotals — region-dependent pricing via legacy keys', () => {
   it('applies AK surcharge when state: AK is supplied (legacy shape)', () => {
     const addr = normalizeAddress({ street: '1 Arctic Way', state: 'AK', city: 'Anchorage', country: 'US' });
-    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), addr); // under $100 → not free
+    const { shipping } = computeOrderTotals(Money.fromMajor(50, 'USD'), addr);
     expect(shipping.toMach().amount).toBe(19.99);
   });
 
@@ -83,10 +83,14 @@ describe('computeOrderTotals — region-dependent pricing via legacy keys', () =
     expect(tax.toMach().amount).toBeCloseTo(8.75);
   });
 
-  it('free shipping over $100 regardless of address shape', () => {
+  // Final-review fix wave, item 5: no free-shipping threshold exists on this
+  // path anymore (see calculateShipping's doc comment in order-pricing.ts) —
+  // pinned here for both address shapes so a future change can't quietly
+  // reintroduce it for one shape but not the other.
+  it('never grants free shipping regardless of address shape', () => {
     const legacyAddr = normalizeAddress({ street: '1 St', state: 'CA', city: 'LA', country: 'US' });
     const machAddr = normalizeAddress({ line1: '1 St', region: 'CA', city: 'LA', country: 'US' });
-    expect(computeOrderTotals(Money.fromMajor(100, 'USD'), legacyAddr).shipping.isZero()).toBe(true);
-    expect(computeOrderTotals(Money.fromMajor(100, 'USD'), machAddr).shipping.isZero()).toBe(true);
+    expect(computeOrderTotals(Money.fromMajor(150, 'USD'), legacyAddr).shipping.isZero()).toBe(false);
+    expect(computeOrderTotals(Money.fromMajor(150, 'USD'), machAddr).shipping.isZero()).toBe(false);
   });
 });
