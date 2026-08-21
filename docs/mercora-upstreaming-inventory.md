@@ -56,13 +56,47 @@ Genuine platform bugs fixed after `v1.0.0` are not in the tag, and are more
 valuable upstream than anything that is. Record each one here and reconstruct
 it from `main` rather than the tag.
 
+Most of these live only on the `goob` branch (the going-out-of-business sale
+ships from `goob` and is never merged to `main`), so they were invisible to
+this table until now. The backfilled group has been reconstructed onto `main`
+via branch `fix/platform-backfill-from-goob`; the entangled group is recorded
+here for later upstream reconstruction but was intentionally left off the first
+backfill PR to keep it to clean, low-risk changes.
+
+**Backfilled to `main`** (reconstructed on `fix/platform-backfill-from-goob`,
+sale material and data-repair migrations stripped):
+
 | BeauTeas commit | Area | Summary | Upstream status |
 | --- | --- | --- | --- |
-| _(none yet)_ | | | |
+| `3749ccf` | `components/admin/ProductEditor.tsx`, `lib/models/mach/products.ts` | Admin variant saves discarded edits and double-encoded the JSON columns (the `0033` data-repair migration stays on `goob`) | Backfilled to `main`; not yet upstreamed |
+| `d5f0ef5` + `fb72e2a` | `tailwind.config.ts`, `lib/ui/state-styles.ts`, `components/ui/switch.tsx` | Tailwind scanned only `app/`+`components/` (classes used only from `lib/` were purged), and stock shadcn tokens (`bg-primary`/`bg-input`/`bg-destructive`…) resolved to no CSS on this Tailwind-v3 brand palette, so those utilities emitted nothing (the Switch had an invisible track) | Backfilled to `main`; not yet upstreamed |
+| `61b7b1d` | `lib/admin/settings-parse.ts`, `app/admin/settings/page.tsx`, `components/ui/switch.tsx` | One unparseable legacy `admin_settings` row threw inside an unguarded `JSON.parse` loop, aborting the whole load so every field kept its default and the next Save overwrote all stored settings; adds a row-by-row parser and a `settingsLoaded` save guard | Backfilled to `main`; not yet upstreamed |
+| `231e190` | `lib/utils/product-image.ts`, `components/ProductCard.tsx`, `components/agent/ProductCard.tsx` | Product cards read `img.url` only, so any product saved through the admin editor (MACH `{file:{url}}` shape) silently lost its card image to the placeholder while its PDP kept working; adds a pure resolver for both shapes | Backfilled to `main`; not yet upstreamed |
+| `6b8df3b` | `lib/services/order-pricing.ts` | Order-item image was set only when `primary_image` was a string, but the catalog stores it as an object, so confirmation emails rendered a "No Image" box; resolves through `resolveProductImageUrl` | Backfilled to `main`; not yet upstreamed |
+| `bee22ff` | `app/product/[slug]/ProductDisplay.tsx` | PDP computed availability as `quantityInStock > 0`, ignoring `track_inventory === false` / `allow_backorder`, so it hid Add to Cart for variants the rest of the platform (`isVariantAvailable`, recommendations blend) treats as purchasable | Backfilled to `main`; not yet upstreamed |
+| `713c691` | `package-lock.json` | nanoid (high) and dompurify (moderate XSS) advisories | Backfilled to `main` (reproduced via `npm audit fix`); belongs with `U01` dependency-security upstream |
 
-If this table grows beyond a handful of rows, the tag has stopped being a
-usable source and the project should move to a maintained sale-free branch
-instead.
+**Entangled with sale behavior — recorded for later reconstruction, not on the
+backfill PR:**
+
+| BeauTeas commit | Area | Summary | Upstream status |
+| --- | --- | --- | --- |
+| `ba7557b` | `lib/config/commerce.ts`, `lib/services/order-pricing.ts` | Archiving a product did not stop it selling — status was never checked by the PDP or the server pricing path | Not yet upstreamed (goob-only) |
+| `5db8acc` | `components/checkout/*` | A persisted `shippingOption` from localStorage painted the shipping step complete while its tax/PaymentIntent/step-advance handler had never run (general sub-fix); tangled with the sale's single-method auto-advance | Record-only; general sub-fix is upstreamable |
+| `69a949e` | `lib/stores/chat-store.ts` | Chat store replayed persisted product cards (name/price/stock) from localStorage forever with no refetch; makes product cards session state and expires stale transcripts (general mechanism) | Record-only; general mechanism is upstreamable |
+| `18d37f5` | `lib/services/order-pricing.ts` | Removed a hardcoded "free shipping over $100" rule on the MCP/order-pricing path unrelated to any configured shipping model; fails closed to flat rates (real fix — routing through `resolveShippingOptions` — deliberately deferred) | Record-only; upstream fix is the deferred routing, not the stopgap |
+| `a8bc7bd` | `app/admin/orders/[id]/page.tsx` | Mark-Shipped / Edit-Tracking actions added to the admin order detail page, mirroring the queue page | Record-only; belongs with the `U13 + U14` fulfillment slice |
+
+Also noted: `7784dd6` (sale box-minimum enforcement) additionally fixed a
+pre-existing `tsc` failure in `lib/mcp/tools`; carry that when those files are
+next upstreamed.
+
+This table has now grown well beyond the "handful of rows" that was set as the
+signal to stop treating tag `v1.0.0` as the source of truth. The
+`fix/platform-backfill-from-goob` branch is the start of that transition: a
+maintained, sale-free line off `main` is the better long-term source than the
+tag plus this reconstruction table. Recommend adopting it before the next wave
+of post-baseline fixes.
 
 ## Research Basis
 
