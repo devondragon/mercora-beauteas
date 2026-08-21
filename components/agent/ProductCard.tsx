@@ -4,10 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Money } from "@/lib/money";
+import { resolveProductImageSrc } from "@/lib/utils/product-image";
 
 export default function ProductCard({ product }: { product: any }) {
-  // Extract primary image URL from the new product structure
-  const imageUrl = product.primary_image?.url || product.media?.[0]?.url || "/placeholder.svg";
+  // Accepts both stored shapes — flat ({url}) from the ETL and MACH
+  // ({file:{url}}) from the admin editor. Reading only `.url` here made Chai's
+  // product cards fall back to the placeholder for any product that had been
+  // saved through /admin/products. See lib/utils/product-image.ts.
+  const imageUrl = resolveProductImageSrc(product.primary_image, product.media);
 
   // Get price from first variant (amount is integer minor units)
   const variant = product.variants?.[0];
