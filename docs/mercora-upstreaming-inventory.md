@@ -66,15 +66,23 @@ backfill PR to keep it to clean, low-risk changes.
 **Backfilled to `main`** (reconstructed on `fix/platform-backfill-from-goob`,
 sale material and data-repair migrations stripped):
 
+Upstreaming outcome (per-fix audit against Mercora `main` at `ff163b0`): the
+four fixes whose bug reproduces upstream — `3749ccf`, `61b7b1d`, `231e190`, and
+the nanoid half of `713c691` — were reconstructed into a single Mercora PR
+[`#81`](https://github.com/russellkmoore/mercora/pull/81). The other three do
+not apply upstream and say why in the status column; the shadcn-token gap is
+real upstream too but is a theme-design decision, filed as Mercora issue
+[`#80`](https://github.com/russellkmoore/mercora/issues/80).
+
 | BeauTeas commit | Area | Summary | Upstream status |
 | --- | --- | --- | --- |
-| `3749ccf` | `components/admin/ProductEditor.tsx`, `lib/models/mach/products.ts` | Admin variant saves discarded edits and double-encoded the JSON columns (the `0033` data-repair migration stays on `goob`) | Backfilled to `main`; not yet upstreamed |
-| `d5f0ef5` + `fb72e2a` | `tailwind.config.ts`, `lib/ui/state-styles.ts` | Tailwind scanned only `app/`+`components/` (classes used only from `lib/` were purged), and stock shadcn tokens (`bg-primary`/`bg-input`/`bg-destructive`…) resolved to no CSS on this Tailwind-v3 brand palette, so those utilities emitted nothing (the Switch, restyled in `61b7b1d`, had an invisible track) | Backfilled to `main`; not yet upstreamed |
-| `61b7b1d` | `lib/admin/settings-parse.ts`, `app/admin/settings/page.tsx`, `components/ui/switch.tsx` | One unparseable legacy `admin_settings` row threw inside an unguarded `JSON.parse` loop, aborting the whole load so every field kept its default and the next Save overwrote all stored settings; adds a row-by-row parser and a `settingsLoaded` save guard | Backfilled to `main`; not yet upstreamed |
-| `231e190` | `lib/utils/product-image.ts`, `components/ProductCard.tsx`, `components/agent/ProductCard.tsx` | Product cards read `img.url` only, so any product saved through the admin editor (MACH `{file:{url}}` shape) silently lost its card image to the placeholder while its PDP kept working; adds a pure resolver for both shapes | Backfilled to `main`; not yet upstreamed |
-| `6b8df3b` | `lib/services/order-pricing.ts` | Order-item image was set only when `primary_image` was a string, but the catalog stores it as an object, so confirmation emails rendered a "No Image" box; resolves through `resolveProductImageUrl` | Backfilled to `main`; not yet upstreamed |
-| `bee22ff` | `app/product/[slug]/ProductDisplay.tsx` | PDP computed availability as `quantityInStock > 0`, ignoring `track_inventory === false` / `allow_backorder`, so it hid Add to Cart for variants the rest of the platform (`isVariantAvailable`, recommendations blend) treats as purchasable | Backfilled to `main`; not yet upstreamed |
-| `713c691` | `package-lock.json` | nanoid (high) and dompurify (moderate XSS) advisories | Backfilled to `main` (reproduced via `npm audit fix`); belongs with `U01` dependency-security upstream |
+| `3749ccf` | `components/admin/ProductEditor.tsx`, `lib/models/mach/products.ts` | Admin variant saves discarded edits and double-encoded the JSON columns (the `0033` data-repair migration stays on `goob`) | Backfilled to `main` (#124); upstreamed in Mercora PR #81 |
+| `d5f0ef5` + `fb72e2a` | `tailwind.config.ts`, `lib/ui/state-styles.ts` | Tailwind scanned only `app/`+`components/` (classes used only from `lib/` were purged), and stock shadcn tokens (`bg-primary`/`bg-input`/`bg-destructive`…) resolved to no CSS on this Tailwind-v3 brand palette, so those utilities emitted nothing (the Switch, restyled in `61b7b1d`, had an invisible track) | Backfilled to `main` (#124); NOT upstreamed — Mercora's CSS-variable theme has the same shadcn-token gap (Switch track invisible), tracked as Mercora issue #80 |
+| `61b7b1d` | `lib/admin/settings-parse.ts`, `app/admin/settings/page.tsx`, `components/ui/switch.tsx` | One unparseable legacy `admin_settings` row threw inside an unguarded `JSON.parse` loop, aborting the whole load so every field kept its default and the next Save overwrote all stored settings; adds a row-by-row parser and a `settingsLoaded` save guard | Backfilled to `main` (#124); upstreamed in Mercora PR #81 |
+| `231e190` | `lib/utils/product-image.ts`, `components/ProductCard.tsx`, `components/agent/ProductCard.tsx` | Product cards read `img.url` only, so any product saved through the admin editor (MACH `{file:{url}}` shape) silently lost its card image to the placeholder while its PDP kept working; adds a pure resolver for both shapes | Backfilled to `main` (#124); upstreamed in Mercora PR #81 |
+| `6b8df3b` | `lib/services/order-pricing.ts` | Order-item image was set only when `primary_image` was a string, but the catalog stores it as an object, so confirmation emails rendered a "No Image" box; resolves through `resolveProductImageUrl` | Backfilled to `main` (#124); NOT upstreamed — Mercora has no `canonicalizeOrderItemsDisplay` path yet |
+| `bee22ff` | `app/product/[slug]/ProductDisplay.tsx` | PDP computed availability as `quantityInStock > 0`, ignoring `track_inventory === false` / `allow_backorder`, so it hid Add to Cart for variants the rest of the platform (`isVariantAvailable`, recommendations blend) treats as purchasable | Backfilled to `main` (#124); NOT upstreamed — Mercora already computes `available_for_sale ?? isVariantAvailable()` |
+| `713c691` | `package-lock.json` | nanoid (high) and dompurify (moderate XSS) advisories | Backfilled to `main` (#124, both); nanoid half upstreamed in Mercora PR #81 (dompurify not flagged upstream) |
 
 **Entangled with sale behavior — recorded for later reconstruction, not on the
 backfill PR:**
