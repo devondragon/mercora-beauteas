@@ -14,6 +14,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Product } from "@/lib/types";
+import type { SubscriptionPlan } from "@/lib/types/subscription";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -68,6 +69,30 @@ function render(product: Product): string {
   );
 }
 
+const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  {
+    id: "plan_monthly",
+    product_id: "prod_avail",
+    frequency: "monthly",
+    discount_percent: 10,
+    stripe_price_id: "price_monthly",
+    is_active: true,
+    created_at: null,
+    updated_at: null,
+  },
+];
+
+function renderWithSubscriptions(product: Product): string {
+  return renderToStaticMarkup(
+    <ProductDisplay
+      product={product}
+      reviews={[]}
+      recommendations={[]}
+      subscriptionPlans={SUBSCRIPTION_PLANS}
+    />
+  );
+}
+
 describe("ProductDisplay availability", () => {
   it("offers Add to Cart when the variant has stock", () => {
     const html = render(makeProduct({ quantity: 5 }));
@@ -91,5 +116,38 @@ describe("ProductDisplay availability", () => {
     const html = render(makeProduct({ quantity: 0, allow_backorder: true }));
     expect(html).toContain("Add to Cart");
     expect(html).not.toContain("Coming soon");
+  });
+
+  // The BeauTeas PDP renders SubscriptionToggle for subscription-enabled
+  // products and passes `available` down as a prop, so the fix has to hold on
+  // that path too — not just the inline Add to Cart button.
+  describe("with subscription plans (SubscriptionToggle path)", () => {
+    it("offers Add to Cart when the variant has stock", () => {
+      const html = renderWithSubscriptions(makeProduct({ quantity: 5 }));
+      expect(html).toContain("Add to Cart");
+      expect(html).not.toContain("Coming soon");
+    });
+
+    it("hides Add to Cart for a plain tracked variant at quantity 0", () => {
+      const html = renderWithSubscriptions(makeProduct({ quantity: 0 }));
+      expect(html).not.toContain("Add to Cart");
+      expect(html).toContain("Coming soon");
+    });
+
+    it("treats an untracked variant at quantity 0 as purchasable", () => {
+      const html = renderWithSubscriptions(
+        makeProduct({ quantity: 0, track_inventory: false })
+      );
+      expect(html).toContain("Add to Cart");
+      expect(html).not.toContain("Coming soon");
+    });
+
+    it("treats a backorder-allowed variant at quantity 0 as purchasable", () => {
+      const html = renderWithSubscriptions(
+        makeProduct({ quantity: 0, allow_backorder: true })
+      );
+      expect(html).toContain("Add to Cart");
+      expect(html).not.toContain("Coming soon");
+    });
   });
 });

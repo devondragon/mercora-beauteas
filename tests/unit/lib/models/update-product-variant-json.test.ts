@@ -12,10 +12,11 @@
  * `priceToCents`, `Money.fromStored` all re-parse a string starting with `{`),
  * so nothing errored and nothing looked wrong on the storefront. The damage was
  * only visible from SQL — `json_extract(inventory, '$.quantity')` is NULL for a
- * text scalar, so the guarded stock decrement in
- * lib/services/inventory-adjustment.ts matched zero rows and every sale of an
- * affected variant was flagged oversold while its stock never moved. Production
- * carried four corrupted rows before migration 0033 repaired them.
+ * text scalar, which the guarded stock decrement in
+ * lib/services/inventory-adjustment.ts coalesces to 0, so it matched zero rows
+ * and every sale of an affected variant was flagged oversold while its stock
+ * never moved. The BeauTeas repair migration for the rows this wrote (`0033`)
+ * lives on the `goob` branch and was not backfilled to `main`.
  *
  * The assertion is therefore on the exact TYPE handed to Drizzle, which is the
  * only layer where the bug is observable.

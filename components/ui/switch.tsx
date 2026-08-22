@@ -11,12 +11,16 @@ import { cn } from "@/lib/utils"
  * The stock shadcn styling this replaced was written for Tailwind v4 with the
  * shadcn CSS-variable palette (`bg-primary`, `bg-input`, `bg-background`,
  * `ring-ring/50`). This project is Tailwind v3 with a custom brand palette
- * (tailwind.config.ts), where:
+ * (tailwind.config.ts). When that stock styling was in place:
  *
- *   - `input` is not a color at all, so the UNCHECKED track had no background;
- *   - `primary` is a scale with no DEFAULT key, so `bg-primary` generates no
+ *   - `input` was not a color at all, so the UNCHECKED track had no background;
+ *   - `primary` was a scale with no DEFAULT key, so `bg-primary` generated no
  *     rule either and the CHECKED track had no background;
  *   - `background` IS mapped (to the cream surface), so the thumb still painted.
+ *
+ * (tailwind.config.ts now adds `input` and a `primary.DEFAULT` alias, so those
+ * shadcn tokens resolve — but this switch does not depend on them; it uses the
+ * explicit brand classes below.)
  *
  * The result was a switch that rendered as a floating dot with no visible track
  * in either state, which makes its position — and therefore whether the setting

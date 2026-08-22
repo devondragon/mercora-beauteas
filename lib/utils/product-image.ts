@@ -23,7 +23,11 @@
  * PURE ON PURPOSE - no imports. Both product cards are client components.
  */
 
-/** One image record in either shape, or a JSON string of one, or a bare path. */
+/**
+ * One image record in either shape, or a JSON string of one, or a bare path.
+ * Also accepts a `src` key as a third fallback, for records that carry the URL
+ * under that name.
+ */
 function urlFromImageRecord(image: unknown): string | null {
   if (!image) return null;
 

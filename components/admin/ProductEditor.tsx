@@ -239,7 +239,14 @@ export default function ProductEditor({
       compare_at_price: compareAtPrice ? Money.fromMajor(compareAtPrice, "USD").toJSON() : undefined,
       cost: cost ? Money.fromMajor(cost, "USD").toJSON() : undefined,
       sku: sku || undefined,
-      inventory: inventory ? { quantity: parseInt(inventory) } : undefined,
+      // Merge onto the existing inventory record rather than rebuilding it from
+      // the quantity field alone: `track_inventory` and `allow_backorder` live on
+      // this same object and are what make a variant purchasable at quantity 0
+      // (see the PDP `available` logic in app/product/[slug]/ProductDisplay.tsx).
+      // Overwriting with `{ quantity }` silently stripped them on every edit.
+      inventory: inventory
+        ? { ...(currentVariant.inventory ?? {}), quantity: parseInt(inventory) }
+        : currentVariant.inventory,
       weight: weight ? { value: parseFloat(weight), unit: "lb" } : undefined,
       dimensions: dimensionsObj,
       barcode: barcode || undefined,

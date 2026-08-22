@@ -137,5 +137,11 @@ describe('ProductEditor — saving an edited variant field', () => {
 
     // The bug: 250.
     expect(variant.inventory.quantity).toBe(144);
+
+    // Editing quantity must not drop the sibling inventory flags. These are what
+    // make a variant purchasable at quantity 0; rebuilding inventory as
+    // `{ quantity }` used to strip them on every save.
+    expect(variant.inventory.track_inventory).toBe(true);
+    expect(variant.inventory.allow_backorder).toBe(false);
   });
 });

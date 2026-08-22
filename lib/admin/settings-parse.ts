@@ -2,7 +2,7 @@
  * === Admin settings row parsing (pure) ===
  *
  * `admin_settings.value` is JSON for every row the app writes, but NOT for the
- * legacy rows that predate that convention. Production carries eleven of them
+ * legacy rows that predate that convention. Production carries several of them
  * from the original seed and the Shopify ETL, holding bare strings:
  *
  *   currency = USD

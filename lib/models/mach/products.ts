@@ -356,13 +356,15 @@ export async function updateProduct(id: string, updates: Partial<Product>): Prom
         // `priceToCents`, and `Money.fromStored` all re-parse a string that starts
         // with `{`. SQL does not. The guarded stock decrement in
         // lib/services/inventory-adjustment.ts matches on
-        // `json_extract(inventory, '$.quantity')`, which is NULL for a text scalar,
-        // so its compare-and-swap matched zero rows and every sale of an affected
+        // `COALESCE(json_extract(inventory, '$.quantity'), 0) >= q`, and
+        // `json_extract` returns NULL for a text scalar, so that coalesces to 0
+        // and the compare-and-swap matched zero rows — every sale of an affected
         // variant was recorded as OVERSOLD while its stock never moved.
         //
         // `updateProductVariant` below has always passed values straight through;
-        // this loop was the only writer that did not. Migration 0033 repairs the
-        // rows it wrote.
+        // this loop was the only writer that did not. The BeauTeas data-repair
+        // migration for the rows it wrote (`0033`) lives on the `goob` branch and
+        // was deliberately not backfilled here; see docs/mercora-upstreaming-inventory.md.
         const JSON_VARIANT_COLUMNS = [
           'inventory',
           'price',
