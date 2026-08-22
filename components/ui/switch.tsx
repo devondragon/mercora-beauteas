@@ -5,6 +5,28 @@ import * as SwitchPrimitive from "@radix-ui/react-switch"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Toggle switch.
+ *
+ * The stock shadcn styling this replaced was written for Tailwind v4 with the
+ * shadcn CSS-variable palette (`bg-primary`, `bg-input`, `bg-background`,
+ * `ring-ring/50`). This project is Tailwind v3 with a custom brand palette
+ * (tailwind.config.ts). When that stock styling was in place:
+ *
+ *   - `input` was not a color at all, so the UNCHECKED track had no background;
+ *   - `primary` was a scale with no DEFAULT key, so `bg-primary` generated no
+ *     rule either and the CHECKED track had no background;
+ *   - `background` IS mapped (to the cream surface), so the thumb still painted.
+ *
+ * (tailwind.config.ts now adds `input` and a `primary.DEFAULT` alias, so those
+ * shadcn tokens resolve — but this switch does not depend on them; it uses the
+ * explicit brand classes below.)
+ *
+ * The result was a switch that rendered as a floating dot with no visible track
+ * in either state, which makes its position — and therefore whether the setting
+ * is on — impossible to read. Every class below resolves against the real
+ * palette; keep it that way rather than reaching for shadcn's variable names.
+ */
 function Switch({
   className,
   ...props
@@ -13,7 +35,11 @@ function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "peer data-[state=checked]:bg-primary data-[state=unchecked]:bg-input focus-visible:border-ring focus-visible:ring-ring/50 dark:data-[state=unchecked]:bg-input/80 inline-flex h-[1.15rem] w-8 shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
+        "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors",
+        "border-border-default bg-border-dark",
+        "data-[state=checked]:border-primary-600 data-[state=checked]:bg-primary-500",
+        "outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
@@ -21,7 +47,8 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "bg-background dark:data-[state=unchecked]:bg-foreground dark:data-[state=checked]:bg-primary-foreground pointer-events-none block size-4 rounded-full ring-0 transition-transform data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0"
+          "pointer-events-none block size-5 rounded-full bg-white shadow ring-0 transition-transform",
+          "data-[state=checked]:translate-x-[1.375rem] data-[state=unchecked]:translate-x-0.5"
         )}
       />
     </SwitchPrimitive.Root>

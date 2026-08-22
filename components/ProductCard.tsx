@@ -42,6 +42,7 @@ import Image from "next/image";
 import type { Product, ProductVariant } from "@/lib/types";
 import { getLightBlurPlaceholder } from "@/lib/utils/image-placeholders";
 import { normalizeProductRating } from "@/lib/utils/ratings";
+import { resolveProductImageSrc } from "@/lib/utils/product-image";
 import { StarRating } from "@/components/reviews/StarRating";
 import { stateStyles } from "@/lib/ui/state-styles";
 import { Money } from "@/lib/money";
@@ -101,31 +102,11 @@ export default function ProductCard({ product, priority = false }: ProductCardPr
     typeof product.slug === "string"
       ? product.slug
       : Object.values(product.slug || {})[0] || "";
-  // Handle consistent flat JSON structure: {"url": "...", "alt_text": "..."}
-  const imageUrl = (() => {
-    try {
-      if (!product.primary_image) return "/placeholder.svg";
-      
-      // If it's a JSON string, parse it first
-      let imageData = product.primary_image;
-      if (typeof imageData === "string" && (imageData as string).startsWith("{")) {
-        try {
-          imageData = JSON.parse(imageData);
-        } catch {
-          return "/placeholder.svg";
-        }
-      }
-      
-      const img = imageData as any;
-      const url = img?.url;
-      
-      if (!url) return "/placeholder.svg";
-      
-      return url.startsWith("/") ? url : "/" + url;
-    } catch {
-      return "/placeholder.svg";
-    }
-  })();
+  // Both stored shapes, flat ({url}) and MACH ({file:{url}}), resolve here. This
+  // used to read `img.url` only, so a product saved through /admin/products —
+  // which writes the MACH shape — silently lost its card image to the
+  // placeholder while its PDP kept working. See lib/utils/product-image.ts.
+  const imageUrl = resolveProductImageSrc(product.primary_image, product.media);
   const imageAlt = name;
   const ratingSummary = normalizeProductRating(product.rating);
   const hasRatings = Boolean(ratingSummary && ratingSummary.count > 0);

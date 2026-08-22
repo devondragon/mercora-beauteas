@@ -190,9 +190,22 @@ export default function ProductEditor({
     }
   };
 
-  const saveCurrentVariantData = () => {
-    if (variants.length === 0) return;
-    
+  /**
+   * Merge the variant form fields into the selected variant and RETURN the new
+   * array as well as committing it to state.
+   *
+   * The return value is what makes this safe to call from `handleSave`.
+   * `setVariants` is asynchronous: it schedules a re-render, it does not mutate
+   * the `variants` binding the calling function already closed over. `handleSave`
+   * called this and then read `variants` in the same tick, so it sent the
+   * PRE-EDIT array — every change typed into a variant field (inventory, price,
+   * SKU, weight, barcode, status) was silently dropped, the PUT rewrote the
+   * values that were already there, and the save reported success. Callers that
+   * need the merged data must use what this returns, never the state variable.
+   */
+  const saveCurrentVariantData = (): any[] => {
+    if (variants.length === 0) return variants;
+
     const updatedVariants = [...variants];
     const currentVariant = updatedVariants[selectedVariantIndex] || {};
     
@@ -226,7 +239,14 @@ export default function ProductEditor({
       compare_at_price: compareAtPrice ? Money.fromMajor(compareAtPrice, "USD").toJSON() : undefined,
       cost: cost ? Money.fromMajor(cost, "USD").toJSON() : undefined,
       sku: sku || undefined,
-      inventory: inventory ? { quantity: parseInt(inventory) } : undefined,
+      // Merge onto the existing inventory record rather than rebuilding it from
+      // the quantity field alone: `track_inventory` and `allow_backorder` live on
+      // this same object and are what make a variant purchasable at quantity 0
+      // (see the PDP `available` logic in app/product/[slug]/ProductDisplay.tsx).
+      // Overwriting with `{ quantity }` silently stripped them on every edit.
+      inventory: inventory
+        ? { ...(currentVariant.inventory ?? {}), quantity: parseInt(inventory) }
+        : currentVariant.inventory,
       weight: weight ? { value: parseFloat(weight), unit: "lb" } : undefined,
       dimensions: dimensionsObj,
       barcode: barcode || undefined,
@@ -235,8 +255,9 @@ export default function ProductEditor({
       position: variantPosition ? parseInt(variantPosition) : undefined,
       attributes: attributesObj
     };
-    
+
     setVariants(updatedVariants);
+    return updatedVariants;
   };
 
   const addNewVariant = () => {
@@ -623,10 +644,14 @@ export default function ProductEditor({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Save current variant data before saving
-      if (variants.length > 0 && selectedVariantIndex < variants.length) {
-        saveCurrentVariantData();
-      }
+      // Merge the open variant form into the array we are about to send. Use the
+      // RETURNED array, not the `variants` state: setVariants doesn't update this
+      // closure, so reading the state here sent the pre-edit values (see
+      // saveCurrentVariantData).
+      const variantsToSave =
+        variants.length > 0 && selectedVariantIndex < variants.length
+          ? saveCurrentVariantData()
+          : variants;
 
       const productData: Partial<Product> = {
         ...(product?.id && !isNew ? { id: product.id } : {}), // Include ID for existing products
@@ -756,10 +781,10 @@ export default function ProductEditor({
       }
 
       // Add all variants data
-      if (variants.length > 0) {
-        productData.variants = variants;
+      if (variantsToSave.length > 0) {
+        productData.variants = variantsToSave;
         // Set default variant to first variant
-        productData.default_variant_id = variants[0]?.id;
+        productData.default_variant_id = variantsToSave[0]?.id;
       } else if (isNew) {
         // For new products without variants, create a default variant
         const defaultVariant = {

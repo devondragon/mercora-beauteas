@@ -50,6 +50,7 @@ import type { MACHAddress as Address } from '@/lib/types/mach/Address';
 import { getProduct, getProductVariant } from '@/lib/models/mach/products';
 import { getGiftCardByCode } from '@/lib/models/mach/giftCard';
 import { resolveCartDiscountCents } from '@/lib/services/discount-pricing';
+import { resolveProductImageUrl } from '@/lib/utils/product-image';
 import {
   GIFT_CARD_PRODUCT_ID,
   giftCardPurchasesEnabled,
@@ -336,7 +337,18 @@ export async function canonicalizeOrderItemsDisplay<T extends { product_id?: str
       if (!product) return item;
 
       const name = coerceProductName((product as any).name);
-      const image = typeof (product as any).primary_image === 'string' ? (product as any).primary_image : undefined;
+      // `primary_image` is a string on only some rows. It is an OBJECT in both of
+      // the shapes the catalog actually stores — flat `{url}` from the Shopify
+      // ETL and MACH `{file:{url}}` from the admin editor — so the string-only
+      // check here left `imageUrl` unset for essentially every product, and the
+      // order confirmation email rendered its "No Image" box in place of the
+      // thumbnail. `resolveProductImageUrl` returns the bare R2 key, which is
+      // what the email's own `getAbsoluteImageUrl` expects to turn into a CDN
+      // URL (lib/utils/email.ts).
+      const image = resolveProductImageUrl(
+        (product as any).primary_image,
+        (product as any).media
+      ) ?? undefined;
       return {
         ...item,
         ...(name ? { product_name: name } : {}),
